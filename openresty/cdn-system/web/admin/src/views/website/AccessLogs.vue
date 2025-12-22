@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-tabs v-model="activeTab" type="card">
       <el-tab-pane label="日志查询" name="query" />
@@ -7,12 +7,18 @@
 
     <div v-if="activeTab === 'query'">
       <div class="filter-container">
-        <!-- Row 1: Simple Search + Actions -->
         <div class="filter-row">
-          <el-select v-model="listQuery.domain" placeholder="所有域名" clearable filterable style="width: 200px" class="filter-item">
+          <el-select
+            v-model="listQuery.domain"
+            placeholder="所有域名"
+            clearable
+            filterable
+            style="width: 200px"
+            class="filter-item"
+          >
             <el-option v-for="item in domainOptions" :key="item" :label="item" :value="item" />
           </el-select>
-          <el-button type="primary" class="filter-item" icon="Search" @click="handleFilter">搜索</el-button>
+          <el-button type="primary" class="filter-item" :icon="Search" @click="handleFilter">搜索</el-button>
           <el-button class="filter-item" @click="handleDownload">申请下载</el-button>
           <el-button link class="filter-item" @click="toggleAdvanced">
             高级搜索
@@ -23,7 +29,6 @@
           </el-button>
         </div>
 
-        <!-- Advanced Filter Area -->
         <div v-show="advancedVisible" class="advanced-filter-area">
           <el-form :inline="true" label-position="right" label-width="80px">
             <el-form-item label="时间范围">
@@ -43,10 +48,10 @@
             <el-form-item label="请求地址">
               <el-input v-model="listQuery.uri" placeholder="不包含域名部分的URI" clearable style="width: 300px">
                 <template #prepend>
-                   <el-select v-model="listQuery.uri_mode" style="width: 80px">
-                     <el-option label="模糊" value="fuzzy" />
-                     <el-option label="精确" value="exact" />
-                   </el-select>
+                  <el-select v-model="listQuery.uri_mode" style="width: 80px">
+                    <el-option label="模糊" value="fuzzy" />
+                    <el-option label="精确" value="exact" />
+                  </el-select>
                 </template>
               </el-input>
             </el-form-item>
@@ -63,27 +68,27 @@
             <el-form-item label="状态码">
               <el-input v-model="listQuery.status" placeholder="请输入状态码" clearable />
             </el-form-item>
-             <el-form-item label="访问端口">
+            <el-form-item label="访问端口">
               <el-input v-model="listQuery.port" placeholder="请输入访问端口" clearable />
             </el-form-item>
-             <el-form-item label="节点ID">
+            <el-form-item label="节点ID">
               <el-input v-model="listQuery.node_id" placeholder="请输入节点ID" clearable />
             </el-form-item>
             <el-form-item>
-               <el-button @click="resetFilters">重置</el-button>
-               <el-button link @click="advancedVisible = false">收起搜索</el-button>
+              <el-button @click="resetFilters">重置</el-button>
+              <el-button link @click="advancedVisible = false">收起搜索</el-button>
             </el-form-item>
           </el-form>
         </div>
       </div>
 
-       <!-- Filter Tags (Optional display of active filters) -->
-       <div v-if="hasActiveFilters" class="filter-tags-container">
-          <el-tag v-if="listQuery.timeRange" closable @close="listQuery.timeRange = null">时间范围: {{ listQuery.timeRange[0] }} - {{ listQuery.timeRange[1] }}</el-tag>
-          <el-tag v-if="listQuery.domain" closable @close="listQuery.domain = ''">域名: {{ listQuery.domain }}</el-tag>
-          <!-- Add more tags as needed -->
-          <el-button link type="primary" size="small" @click="resetFilters">清除</el-button>
-       </div>
+      <div v-if="hasActiveFilters" class="filter-tags-container">
+        <el-tag v-if="listQuery.timeRange?.length" closable @close="listQuery.timeRange = []">
+          时间范围: {{ listQuery.timeRange[0] }} - {{ listQuery.timeRange[1] }}
+        </el-tag>
+        <el-tag v-if="listQuery.domain" closable @close="listQuery.domain = ''">域名: {{ listQuery.domain }}</el-tag>
+        <el-button link type="primary" size="small" @click="resetFilters">清除</el-button>
+      </div>
 
       <el-table
         v-loading="listLoading"
@@ -101,11 +106,11 @@
         <el-table-column prop="method" label="方法" width="70" />
         <el-table-column prop="uri" label="URI" min-width="200" show-overflow-tooltip />
         <el-table-column prop="status" label="状态码" width="70">
-           <template #default="{row}">
-              <span :class="getStatusColor(row.status)">{{ row.status }}</span>
-           </template>
+          <template #default="{ row }">
+            <span :class="getStatusColor(row.status)">{{ row.status }}</span>
+          </template>
         </el-table-column>
-        <el-table-column prop="client_ip" label="客户IP" width="130" />
+        <el-table-column prop="client_ip" label="客户端IP" width="130" />
         <el-table-column prop="location" label="地理位置" width="120" show-overflow-tooltip />
         <el-table-column prop="origin" label="源地址" width="140" show-overflow-tooltip />
         <el-table-column prop="content_type" label="内容类型" width="120" show-overflow-tooltip />
@@ -119,9 +124,9 @@
         <el-table-column prop="l2_ip" label="L2 IP" width="120" />
         <el-table-column prop="node_id" label="节点ID" width="70" />
         <el-table-column label="操作" width="60" fixed="right" align="center">
-           <template #default>
-              <el-button link type="primary" size="small">详情</el-button>
-           </template>
+          <template #default>
+            <el-button link type="primary" size="small">详情</el-button>
+          </template>
         </el-table-column>
       </el-table>
 
@@ -154,7 +159,7 @@ const advancedVisible = ref(true)
 const listLoading = ref(false)
 const list = ref([])
 const total = ref(0)
-const domainOptions = ref([]) // Load from API
+const domainOptions = ref([])
 
 const listQuery = reactive({
   page: 1,
@@ -163,7 +168,7 @@ const listQuery = reactive({
   timeRange: [],
   client_ip: '',
   uri: '',
-  uri_mode: 'precise', // exact or fuzzy (using precise as translation for now)
+  uri_mode: 'fuzzy',
   method: '',
   status: '',
   port: '',
@@ -171,16 +176,16 @@ const listQuery = reactive({
 })
 
 const hasActiveFilters = computed(() => {
-  return listQuery.domain || listQuery.timeRange || listQuery.client_ip || listQuery.uri || listQuery.status
+  return Boolean(listQuery.domain || listQuery.timeRange.length || listQuery.client_ip || listQuery.uri || listQuery.status)
 })
 
-const getStatusColor = (status) => {
-    const s = parseInt(status)
-    if (s >= 200 && s < 300) return 'text-success'
-    if (s >= 300 && s < 400) return 'text-warning'
-    if (s >= 400 && s < 500) return 'text-danger'
-    if (s >= 500) return 'text-critical'
-    return ''
+const getStatusColor = status => {
+  const code = parseInt(status, 10)
+  if (code >= 200 && code < 300) return 'text-success'
+  if (code >= 300 && code < 400) return 'text-warning'
+  if (code >= 400 && code < 500) return 'text-danger'
+  if (code >= 500) return 'text-critical'
+  return ''
 }
 
 const toggleAdvanced = () => {
@@ -188,86 +193,71 @@ const toggleAdvanced = () => {
 }
 
 const resetFilters = () => {
-    listQuery.domain = ''
-    listQuery.timeRange = []
-    listQuery.client_ip = ''
-    listQuery.uri = ''
-    listQuery.method = ''
-    listQuery.status = ''
-    listQuery.port = ''
-    listQuery.node_id = ''
-    handleFilter()
+  listQuery.domain = ''
+  listQuery.timeRange = []
+  listQuery.client_ip = ''
+  listQuery.uri = ''
+  listQuery.method = ''
+  listQuery.status = ''
+  listQuery.port = ''
+  listQuery.node_id = ''
+  handleFilter()
 }
 
 const handleFilter = () => {
   listLoading.value = true
-  // Mock API call or Real API call
   request.get('/logs/access', { params: listQuery }).then(res => {
-     list.value = res.list || []
-     total.value = res.total || 0
-     listLoading.value = false
+    list.value = res.list || []
+    total.value = res.total || 0
+    listLoading.value = false
   }).catch(() => {
-     listLoading.value = false
-     // Mock data for display if API fails (for dev)
-     // if (process.env.NODE_ENV === 'development') {
-     //    list.value = generateMockData()
-     //    total.value = 100
-     // }
+    listLoading.value = false
   })
 }
 
 const handleDownload = () => {
-    // TODO: Implement download logic
+  // TODO: Implement download logic
 }
 
 onMounted(() => {
-    // Set default time range: today
-    const end = new Date()
-    const start = new Date()
-    start.setHours(0, 0, 0, 0)
-    // listQuery.timeRange = [start.toISOString(), end.toISOString()] // Use formatting lib
-
-    handleFilter()
+  handleFilter()
 })
 </script>
 
 <style scoped>
 .filter-container {
-    margin-bottom: 20px;
+  margin-bottom: 20px;
 }
 .filter-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 .advanced-filter-area {
-    background: #f8f9fa;
-    padding: 15px;
-    border-radius: 4px;
-    margin-bottom: 10px;
-    border: 1px solid #ebeef5;
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  border: 1px solid #ebeef5;
 }
 .filter-tags-container {
-    margin-bottom: 10px;
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
+  margin-bottom: 10px;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
 }
-
-/* Status colors */
-.text-success { color: #67C23A; }
-.text-warning { color: #E6A23C; }
-.text-danger { color: #F56C6C; }
-.text-critical { color: #FF0000; font-weight: bold; }
-
+.text-success { color: #67c23a; }
+.text-warning { color: #e6a23c; }
+.text-danger { color: #f56c6c; }
+.text-critical { color: #ff0000; font-weight: bold; }
 .pagination-container {
-    margin-top: 15px;
-    text-align: right;
+  margin-top: 15px;
+  text-align: right;
 }
 .empty-block {
-    text-align: center;
-    padding: 50px;
-    color: #909399;
+  text-align: center;
+  padding: 50px;
+  color: #909399;
 }
 </style>

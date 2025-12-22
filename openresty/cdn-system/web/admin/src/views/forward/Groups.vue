@@ -1,39 +1,39 @@
-<template>
+ï»¿<template>
   <div class="app-container">
     <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
-      <el-tab-pane label="×ª·¢ÁĞ±í" name="list" />
-      <el-tab-pane label="·Ö×éÉèÖÃ" name="groups" />
-      <el-tab-pane label="Ä¬ÈÏÉèÖÃ" name="default" />
-      <el-tab-pane label="ÊµÊ±¼à¿Ø" name="monitor" />
+      <el-tab-pane label="è½¬å‘åˆ—è¡¨" name="list" />
+      <el-tab-pane label="åˆ†ç»„è®¾ç½®" name="groups" />
+      <el-tab-pane label="é»˜è®¤è®¾ç½®" name="default" />
+      <el-tab-pane label="å®æ—¶ç›‘æ§" name="monitor" />
     </el-tabs>
     <div class="filter-container">
-      <el-button type="primary" @click="openCreate">Ìí¼Ó·Ö×é</el-button>
+      <el-button type="primary" @click="openCreate">æ·»åŠ åˆ†ç»„</el-button>
     </div>
 
     <el-table v-loading="loading" :data="groups" border style="width: 100%;">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="name" label="·Ö×éÃû³Æ" min-width="200" />
-      <el-table-column prop="remark" label="±¸×¢" min-width="200" />
-      <el-table-column label="²Ù×÷" width="160" align="center">
+      <el-table-column prop="name" label="åˆ†ç»„åç§°" min-width="200" />
+      <el-table-column prop="remark" label="å¤‡æ³¨" min-width="200" />
+      <el-table-column label="æ“ä½œ" width="160" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openEdit(row)">±à¼­</el-button>
-          <el-button link type="danger" size="small" @click="removeGroup(row)">É¾³ı</el-button>
+          <el-button link type="primary" size="small" @click="openEdit(row)">ç¼–è¾‘</el-button>
+          <el-button link type="danger" size="small" @click="removeGroup(row)">åˆ é™¤</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="420px">
       <el-form :model="form" label-width="80px">
-        <el-form-item label="Ãû³Æ">
+        <el-form-item label="åç§°">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="±¸×¢">
+        <el-form-item label="å¤‡æ³¨">
           <el-input v-model="form.remark" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">È¡Ïû</el-button>
-        <el-button type="primary" @click="submitForm">È·¶¨</el-button>
+        <el-button @click="dialogVisible = false">å–æ¶ˆ</el-button>
+        <el-button type="primary" @click="submitForm">ç¡®å®š</el-button>
       </template>
     </el-dialog>
   </div>
@@ -69,7 +69,7 @@ const form = reactive({
   remark: ''
 })
 
-const dialogTitle = computed(() => (editingId.value ? '±à¼­·Ö×é' : 'Ìí¼Ó·Ö×é'))
+const dialogTitle = computed(() => (editingId.value ? 'ç¼–è¾‘åˆ†ç»„' : 'æ·»åŠ åˆ†ç»„'))
 
 const fetchGroups = () => {
   loading.value = true
@@ -99,13 +99,13 @@ const submitForm = () => {
   const payload = { id: editingId.value, name: form.name, remark: form.remark }
   if (editingId.value) {
     request.put('/forward_groups', payload).then(() => {
-      ElMessage.success('¸üĞÂ³É¹¦')
+      ElMessage.success('æ›´æ–°æˆåŠŸ')
       dialogVisible.value = false
       fetchGroups()
     })
   } else {
     request.post('/forward_groups', payload).then(() => {
-      ElMessage.success('´´½¨³É¹¦')
+      ElMessage.success('åˆ›å»ºæˆåŠŸ')
       dialogVisible.value = false
       fetchGroups()
     })
@@ -113,13 +113,13 @@ const submitForm = () => {
 }
 
 const removeGroup = row => {
-  ElMessageBox.confirm('È·ÈÏÉ¾³ı¸Ã·Ö×é?', 'ÌáÊ¾', {
-    confirmButtonText: 'È·¶¨',
-    cancelButtonText: 'È¡Ïû',
+  ElMessageBox.confirm('ç¡®è®¤åˆ é™¤è¯¥åˆ†ç»„?', 'æç¤º', {
+    confirmButtonText: 'ç¡®å®š',
+    cancelButtonText: 'å–æ¶ˆ',
     type: 'warning'
   }).then(() => {
     request.delete('/forward_groups', { data: { id: row.id } }).then(() => {
-      ElMessage.success('É¾³ı³É¹¦')
+      ElMessage.success('åˆ é™¤æˆåŠŸ')
       fetchGroups()
     })
   })
@@ -133,4 +133,5 @@ onMounted(fetchGroups)
   margin-bottom: 16px;
 }
 </style>
+
 

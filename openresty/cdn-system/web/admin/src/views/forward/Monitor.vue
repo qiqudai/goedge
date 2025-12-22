@@ -1,49 +1,49 @@
-<template>
+ï»¿<template>
   <div class="app-container">
     <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
-      <el-tab-pane label="×ª·¢ÁÐ±í" name="list" />
-      <el-tab-pane label="·Ö×éÉèÖÃ" name="groups" />
-      <el-tab-pane label="Ä¬ÈÏÉèÖÃ" name="default" />
-      <el-tab-pane label="ÊµÊ±¼à¿Ø" name="monitor" />
+      <el-tab-pane label="è½¬å‘åˆ—è¡¨" name="list" />
+      <el-tab-pane label="åˆ†ç»„è®¾ç½®" name="groups" />
+      <el-tab-pane label="é»˜è®¤è®¾ç½®" name="default" />
+      <el-tab-pane label="å®žæ—¶ç›‘æŽ§" name="monitor" />
     </el-tabs>
     <el-tabs v-model="activeTab" class="monitor-tabs">
-      <el-tab-pane label="´ø¿íÁ÷Á¿" name="traffic">
+      <el-tab-pane label="å¸¦å®½æµé‡" name="traffic">
         <div class="filter-container">
-          <el-input v-model="query.keyword" placeholder="ÊäÈë¶Ë¿Ú, Èç88/TCP 99/UDP" style="width: 240px;" />
+          <el-input v-model="query.keyword" placeholder="è¾“å…¥ç«¯å£, å¦‚88/TCP 99/UDP" style="width: 240px;" />
           <el-button-group>
-            <el-button :type="range === '1h' ? 'primary' : 'default'" @click="setRange('1h')">½ü1Ð¡Ê±</el-button>
-            <el-button :type="range === '6h' ? 'primary' : 'default'" @click="setRange('6h')">½ü6Ð¡Ê±</el-button>
-            <el-button :type="range === '12h' ? 'primary' : 'default'" @click="setRange('12h')">½ü12Ð¡Ê±</el-button>
-            <el-button :type="range === 'custom' ? 'primary' : 'default'" @click="setRange('custom')">×Ô¶¨Òå</el-button>
+            <el-button :type="range === '1h' ? 'primary' : 'default'" @click="setRange('1h')">è¿‘1å°æ—¶</el-button>
+            <el-button :type="range === '6h' ? 'primary' : 'default'" @click="setRange('6h')">è¿‘6å°æ—¶</el-button>
+            <el-button :type="range === '12h' ? 'primary' : 'default'" @click="setRange('12h')">è¿‘12å°æ—¶</el-button>
+            <el-button :type="range === 'custom' ? 'primary' : 'default'" @click="setRange('custom')">è‡ªå®šä¹‰</el-button>
           </el-button-group>
-          <el-button type="primary" @click="reload">²éÑ¯</el-button>
+          <el-button type="primary" @click="reload">æŸ¥è¯¢</el-button>
         </div>
         <el-row :gutter="16">
           <el-col :span="12">
-            <div class="chart-title">´ø¿í</div>
+            <div class="chart-title">å¸¦å®½</div>
             <div id="bandwidthChart" class="chart"></div>
           </el-col>
           <el-col :span="12">
-            <div class="chart-title">Á÷Á¿</div>
+            <div class="chart-title">æµé‡</div>
             <div id="trafficChart" class="chart"></div>
           </el-col>
         </el-row>
       </el-tab-pane>
 
-      <el-tab-pane label="¶Ë¿ÚÅÅÐÐ" name="ranking">
+      <el-tab-pane label="ç«¯å£æŽ’è¡Œ" name="ranking">
         <div class="filter-container">
           <el-button-group>
-            <el-button :type="rankRange === '10m' ? 'primary' : 'default'" @click="setRankRange('10m')">10·ÖÖÓÊµÊ±</el-button>
-            <el-button :type="rankRange === '30m' ? 'primary' : 'default'" @click="setRankRange('30m')">½ü30·ÖÖÓ</el-button>
-            <el-button :type="rankRange === '1h' ? 'primary' : 'default'" @click="setRankRange('1h')">½ü1Ð¡Ê±</el-button>
+            <el-button :type="rankRange === '10m' ? 'primary' : 'default'" @click="setRankRange('10m')">10åˆ†é’Ÿå®žæ—¶</el-button>
+            <el-button :type="rankRange === '30m' ? 'primary' : 'default'" @click="setRankRange('30m')">è¿‘30åˆ†é’Ÿ</el-button>
+            <el-button :type="rankRange === '1h' ? 'primary' : 'default'" @click="setRankRange('1h')">è¿‘1å°æ—¶</el-button>
           </el-button-group>
-          <el-button type="primary" @click="reloadRanking">Ë¢ÐÂ</el-button>
+          <el-button type="primary" @click="reloadRanking">åˆ·æ–°</el-button>
         </div>
         <el-table :data="ranking" border size="small">
-          <el-table-column prop="rank" label="ÅÅÐÐ" width="80" />
-          <el-table-column prop="port" label="¶Ë¿Ú" />
-          <el-table-column prop="connections" label="Á¬½ÓÊý" sortable />
-          <el-table-column prop="traffic" label="Á÷Á¿" sortable />
+          <el-table-column prop="rank" label="æŽ’è¡Œ" width="80" />
+          <el-table-column prop="port" label="ç«¯å£" />
+          <el-table-column prop="connections" label="è¿žæŽ¥æ•°" sortable />
+          <el-table-column prop="traffic" label="æµé‡" sortable />
         </el-table>
       </el-tab-pane>
     </el-tabs>
@@ -112,7 +112,7 @@ const renderCharts = () => {
     grid: { left: 40, right: 20, top: 20, bottom: 30 },
     xAxis: { type: 'category', data: times },
     yAxis: { type: 'value' },
-    series: [{ ...buildSeries('´ø¿í', '#409eff'), data: bandwidth }]
+    series: [{ ...buildSeries('å¸¦å®½', '#409eff'), data: bandwidth }]
   })
 
   trafficChart.setOption({
@@ -120,7 +120,7 @@ const renderCharts = () => {
     grid: { left: 40, right: 20, top: 20, bottom: 30 },
     xAxis: { type: 'category', data: times },
     yAxis: { type: 'value' },
-    series: [{ ...buildSeries('Á÷Á¿', '#67c23a'), data: traffic }]
+    series: [{ ...buildSeries('æµé‡', '#67c23a'), data: traffic }]
   })
 }
 
@@ -178,4 +178,5 @@ onMounted(() => {
   color: #606266;
 }
 </style>
+
 

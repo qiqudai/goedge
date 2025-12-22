@@ -154,6 +154,25 @@ func Setup(r *gin.Engine) {
 			admin.DELETE("/dnsapi/:id", dnsapiCtr.Delete)
 			admin.GET("/dnsapi/types", dnsapiCtr.Types)
 
+			// Forward
+			forwardCtr := &controllers.ForwardController{}
+			admin.GET("/forwards", forwardCtr.AdminList)
+			admin.POST("/forwards", forwardCtr.AdminCreate)
+			admin.POST("/forwards/batch", forwardCtr.AdminBatchCreate)
+			admin.POST("/forwards/batch_update", forwardCtr.AdminBatchUpdate)
+			admin.POST("/forwards/batch_action", forwardCtr.AdminBatchAction)
+
+			forwardGroupCtr := &controllers.ForwardGroupController{}
+			admin.GET("/forward_groups", forwardGroupCtr.List)
+			admin.POST("/forward_groups", forwardGroupCtr.Create)
+			admin.PUT("/forward_groups", forwardGroupCtr.Update)
+			admin.DELETE("/forward_groups", forwardGroupCtr.Delete)
+
+			forwardDefaultCtr := &controllers.ForwardDefaultController{}
+			admin.GET("/forward_defaults", forwardDefaultCtr.List)
+			admin.POST("/forward_defaults", forwardDefaultCtr.Create)
+			admin.DELETE("/forward_defaults", forwardDefaultCtr.Delete)
+
 			// Task (Purge/Preheat)
 			taskCtr := &controllers.TaskController{}
 			admin.GET("/tasks", taskCtr.List)
@@ -204,5 +223,6 @@ func Setup(r *gin.Engine) {
 
 	}
 }
+
 
 

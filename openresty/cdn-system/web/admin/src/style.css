@@ -1,41 +1,292 @@
 ﻿:root {
-  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC",
+    system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  --app-bg: #f5f7fa;
+  --content-bg: #f5f7fa;
+  --card-bg: #ffffff;
+  --border-color: #dcdfe6;
+  --text-color: #303133;
+  --muted-text: #606266;
+  --sidebar-bg: #4f5760;
+  --sidebar-text: #ffffff;
+  --sidebar-active: #ffd04b;
+  --sidebar-logo-bg: #3f464d;
+  --header-bg: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  --app-bg: #1e1f22;
+  --content-bg: #1e1f22;
+  --card-bg: #262a31;
+  --border-color: #3a3f47;
+  --text-color: #e5eaf3;
+  --muted-text: #b0b6c3;
+  --sidebar-bg: #2b2f36;
+  --sidebar-text: #e5eaf3;
+  --sidebar-active: #ffd04b;
+  --sidebar-logo-bg: #24272d;
+  --header-bg: #2b2f36;
+}
+
+body {
+  margin: 0;
+  background-color: var(--app-bg);
+  color: var(--text-color);
 }
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: #409eff;
   text-decoration: inherit;
 }
+
 a:hover {
-  color: #535bf2;
+  color: #2a7bd9;
 }
 
 #app {
   width: 100%;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.el-main {
+  background-color: var(--content-bg);
 }
 
+.el-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+.el-table {
+  color: var(--text-color);
+}
+
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.el-divider__text {
+  color: var(--text-color);
+}
+
+
+:root[data-theme="dark"] .el-table {
+  --el-table-border-color: var(--border-color);
+  --el-table-header-bg-color: #2f333b;
+  --el-table-row-hover-bg-color: #2b3038;
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-table th.el-table__cell,
+:root[data-theme="dark"] .el-table td.el-table__cell {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-table__header-wrapper th.el-table__cell {
+  background-color: #2f333b;
+}
+
+:root[data-theme="dark"] .el-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-input__wrapper,
+:root[data-theme="dark"] .el-textarea__inner,
+:root[data-theme="dark"] .el-select__wrapper,
+:root[data-theme="dark"] .el-pagination {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-input__inner,
+:root[data-theme="dark"] .el-textarea__inner {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-pagination button,
+:root[data-theme="dark"] .el-pagination .el-pager li {
+  background-color: #2a2f36;
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-dialog,
+:root[data-theme="dark"] .el-drawer {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-dialog__header,
+:root[data-theme="dark"] .el-dialog__footer {
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-form-item__label,
+:root[data-theme="dark"] .el-form-item__content,
+:root[data-theme="dark"] .el-text,
+:root[data-theme="dark"] .el-descriptions__label,
+:root[data-theme="dark"] .el-descriptions__content {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-input__wrapper,
+:root[data-theme="dark"] .el-textarea__inner,
+:root[data-theme="dark"] .el-select__wrapper,
+:root[data-theme="dark"] .el-input-number,
+:root[data-theme="dark"] .el-input-group__prepend,
+:root[data-theme="dark"] .el-input-group__append,
+:root[data-theme="dark"] .el-tabs__nav-wrap {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-input__inner::placeholder,
+:root[data-theme="dark"] .el-textarea__inner::placeholder {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-input-number__decrease,
+:root[data-theme="dark"] .el-input-number__increase {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs__item {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-tabs__item.is-active {
+  color: #409eff;
+}
+
+:root[data-theme="dark"] .el-tabs__nav-wrap::after {
+  background-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-card,
+:root[data-theme="dark"] .el-collapse,
+:root[data-theme="dark"] .el-collapse-item__header,
+:root[data-theme="dark"] .el-collapse-item__wrap {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-table__header-wrapper,
+:root[data-theme="dark"] .el-table__body-wrapper,
+:root[data-theme="dark"] .el-table__empty-block {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-table__empty-text {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-pagination,
+:root[data-theme="dark"] .el-pagination__total,
+:root[data-theme="dark"] .el-pagination__jump {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-button--default {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-dialog,
+:root[data-theme="dark"] .el-dialog__body,
+:root[data-theme="dark"] .el-drawer__body {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-popover,
+:root[data-theme="dark"] .el-dropdown-menu {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card > .el-tabs__header {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card > .el-tabs__content {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card .el-tabs__item {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card .el-tabs__item.is-active {
+  color: #409eff;
+}
+
+:root[data-theme="dark"] .el-alert {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-alert__title,
+:root[data-theme="dark"] .el-alert__description {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-date-editor .el-input__wrapper {
+  background-color: #2a2f36;
+}
+
+:root[data-theme="dark"] .advanced-filter-area {
+  background: #24282f;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .dashboard-container {
+  background: var(--content-bg);
+}
+
+:root[data-theme="dark"] .dashboard-container .user-meta,
+:root[data-theme="dark"] .dashboard-container .overview-title,
+:root[data-theme="dark"] .dashboard-container .ops-title,
+:root[data-theme="dark"] .dashboard-container .pkg-desc,
+:root[data-theme="dark"] .dashboard-container .announcement-list li,
+:root[data-theme="dark"] .dashboard-container .resource-list .status-row,
+:root[data-theme="dark"] .dashboard-container .admin-user-info,
+:root[data-theme="dark"] .dashboard-container .status-list,
+:root[data-theme="dark"] .dashboard-container .status-tip,
+:root[data-theme="dark"] .dashboard-container .license-list .status-row {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .dashboard-container .overview-value,
+:root[data-theme="dark"] .dashboard-container .admin-user-name,
+:root[data-theme="dark"] .dashboard-container .pkg-name,
+:root[data-theme="dark"] .dashboard-container .card-header span {
+  color: var(--text-color);
+}

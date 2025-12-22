@@ -1,24 +1,24 @@
-<template>
+ï»¿<template>
   <div class="app-container">
     <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
-      <el-tab-pane label="×ª·¢ÁÐ±í" name="list" />
-      <el-tab-pane label="·Ö×éÉèÖÃ" name="groups" />
-      <el-tab-pane label="Ä¬ÈÏÉèÖÃ" name="default" />
-      <el-tab-pane label="ÊµÊ±¼à¿Ø" name="monitor" />
+      <el-tab-pane label="è½¬å‘åˆ—è¡¨" name="list" />
+      <el-tab-pane label="åˆ†ç»„è®¾ç½®" name="groups" />
+      <el-tab-pane label="é»˜è®¤è®¾ç½®" name="default" />
+      <el-tab-pane label="å®žæ—¶ç›‘æŽ§" name="monitor" />
     </el-tabs>
     <div class="filter-container">
       <div class="filter-left">
-        <el-button type="primary" @click="openCreateDialog">Ìí¼Ó×ª·¢</el-button>
-        <el-button :disabled="!selectedRows.length" @click="openBatchEdit">ÅúÁ¿ÐÞ¸Ä</el-button>
+        <el-button type="primary" @click="openCreateDialog">æ·»åŠ è½¬å‘</el-button>
+        <el-button :disabled="!selectedRows.length" @click="openBatchEdit">æ‰¹é‡ä¿®æ”¹</el-button>
         <el-dropdown trigger="click">
           <el-button>
-            ¸ü¶à²Ù×÷<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            æ›´å¤šæ“ä½œ<el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="handleBatchAction('enable')">ÆôÓÃ</el-dropdown-item>
-              <el-dropdown-item @click="handleBatchAction('disable')">½ûÓÃ</el-dropdown-item>
-              <el-dropdown-item @click="handleBatchAction('delete')">É¾³ý</el-dropdown-item>
+              <el-dropdown-item @click="handleBatchAction('enable')">å¯ç”¨</el-dropdown-item>
+              <el-dropdown-item @click="handleBatchAction('disable')">ç¦ç”¨</el-dropdown-item>
+              <el-dropdown-item @click="handleBatchAction('delete')">åˆ é™¤</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -26,21 +26,21 @@
 
       <div class="filter-right">
         <el-select v-model="listQuery.searchField" class="filter-item" style="width: 120px;">
-          <el-option label="¼àÌý¶Ë¿Ú" value="listen" />
-          <el-option label="Ô´Õ¾" value="origin" />
+          <el-option label="ç›‘å¬ç«¯å£" value="listen" />
+          <el-option label="æºç«™" value="origin" />
           <el-option label="CNAME" value="cname" />
-          <el-option label="ÓÃ»§" value="user" />
-          <el-option label="È«×Ö¶Î" value="all" />
+          <el-option label="ç”¨æˆ·" value="user" />
+          <el-option label="å…¨å­—æ®µ" value="all" />
         </el-select>
         <el-input
           v-model="listQuery.keyword"
-          placeholder="ÊäÈë¼àÌý¶Ë¿Ú"
+          placeholder="è¾“å…¥ç›‘å¬ç«¯å£"
           style="width: 260px;"
           class="filter-item"
           @keyup.enter="handleFilter"
         />
-        <el-button type="primary" class="filter-item" @click="handleFilter">²éÑ¯</el-button>
-        <el-button link class="filter-item" @click="advancedVisible = true">¸ß¼¶ËÑË÷</el-button>
+        <el-button type="primary" class="filter-item" @click="handleFilter">æŸ¥è¯¢</el-button>
+        <el-button link class="filter-item" @click="advancedVisible = true">é«˜çº§æœç´¢</el-button>
       </div>
     </div>
 
@@ -55,32 +55,32 @@
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="user_name" label="ÓÃ»§" width="120" />
-      <el-table-column prop="listen_ports" label="¼àÌý¶Ë¿Ú" width="120" />
-      <el-table-column prop="origin_display" label="Ô´Õ¾" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="user_package_name" label="Ì×²Í" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="group_name" label="·Ö×é" width="120" />
-      <el-table-column prop="node_group_name" label="ÇøÓò(ÏßÂ·×é)" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="user_name" label="ç”¨æˆ·" width="120" />
+      <el-table-column prop="listen_ports" label="ç›‘å¬ç«¯å£" width="120" />
+      <el-table-column prop="origin_display" label="æºç«™" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="user_package_name" label="å¥—é¤" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="group_name" label="åˆ†ç»„" width="120" />
+      <el-table-column prop="node_group_name" label="åŒºåŸŸ(çº¿è·¯ç»„)" min-width="140" show-overflow-tooltip />
       <el-table-column prop="cname" label="CNAME" min-width="200" show-overflow-tooltip />
-      <el-table-column label="×´Ì¬" width="90" align="center">
+      <el-table-column label="çŠ¶æ€" width="90" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.status ? 'success' : 'info'">{{ row.status ? 'Õý³£' : 'Í£ÓÃ' }}</el-tag>
+          <el-tag :type="row.status ? 'success' : 'info'">{{ row.status ? 'æ­£å¸¸' : 'åœç”¨' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="remark" label="±¸×¢" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="created_at" label="Ìí¼ÓÊ±¼ä" width="180" />
-      <el-table-column label="²Ù×÷" width="140" align="center">
+      <el-table-column prop="remark" label="å¤‡æ³¨" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="created_at" label="æ·»åŠ æ—¶é—´" width="180" />
+      <el-table-column label="æ“ä½œ" width="140" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openEdit(row)">¹ÜÀí</el-button>
+          <el-button link type="primary" size="small" @click="openEdit(row)">ç®¡ç†</el-button>
           <el-dropdown trigger="click">
             <span class="link-more">
-              ¸ü¶à<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              æ›´å¤š<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="handleRowAction('enable', row)">ÆôÓÃ</el-dropdown-item>
-                <el-dropdown-item @click="handleRowAction('disable', row)">½ûÓÃ</el-dropdown-item>
-                <el-dropdown-item @click="handleRowAction('delete', row)">É¾³ý</el-dropdown-item>
+                <el-dropdown-item @click="handleRowAction('enable', row)">å¯ç”¨</el-dropdown-item>
+                <el-dropdown-item @click="handleRowAction('disable', row)">ç¦ç”¨</el-dropdown-item>
+                <el-dropdown-item @click="handleRowAction('delete', row)">åˆ é™¤</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -100,18 +100,18 @@
       />
     </div>
 
-    <el-dialog v-model="createVisible" width="620px" title="Ìí¼Ó×ª·¢">
+    <el-dialog v-model="createVisible" width="620px" title="æ·»åŠ è½¬å‘">
       <el-tabs v-model="createTab" type="card">
-        <el-tab-pane label="µ¥¸ö" name="single">
+        <el-tab-pane label="å•ä¸ª" name="single">
           <el-form :model="createForm" label-width="90px">
-            <el-form-item label="ÓÃ»§Ñ¡Ôñ">
+            <el-form-item label="ç”¨æˆ·é€‰æ‹©">
               <el-select
                 v-model="createForm.user_id"
                 filterable
                 remote
                 clearable
                 reserve-keyword
-                placeholder="ÊäÈëID¡¢ÓÊÏä¡¢ÓÃ»§Ãû¡¢ÊÖ»úºÅËÑË÷"
+                placeholder="è¾“å…¥IDã€é‚®ç®±ã€ç”¨æˆ·åã€æ‰‹æœºå·æœç´¢"
                 :remote-method="searchUsers"
                 :loading="userLoading"
                 style="width: 100%;"
@@ -120,44 +120,44 @@
                 <el-option v-for="u in userOptions" :key="u.id" :label="`${u.name} (${u.id})`" :value="u.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="ÓÃ»§Ì×²Í">
-              <el-select v-model="createForm.user_package_id" clearable placeholder="ÇëÑ¡Ôñ" style="width: 100%;">
+            <el-form-item label="ç”¨æˆ·å¥—é¤">
+              <el-select v-model="createForm.user_package_id" clearable placeholder="è¯·é€‰æ‹©" style="width: 100%;">
                 <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="¼àÌý¶Ë¿Ú">
-              <el-input v-model="createForm.listen_ports_input" placeholder="88, 99/udp»ò88/tcp, ¶à¸ö¶Ë¿Ú¿Õ¸ñ·Ö¸ô" />
+            <el-form-item label="ç›‘å¬ç«¯å£">
+              <el-input v-model="createForm.listen_ports_input" placeholder="88, 99/udpæˆ–88/tcp, å¤šä¸ªç«¯å£ç©ºæ ¼åˆ†éš”" />
             </el-form-item>
-            <el-form-item label="Ô´Õ¾µØÖ·¶Ë¿Ú">
-              <el-input v-model="createForm.origin_input" placeholder="1.1.1.1:99»òwww.abc.com:99" />
+            <el-form-item label="æºç«™åœ°å€ç«¯å£">
+              <el-input v-model="createForm.origin_input" placeholder="1.1.1.1:99æˆ–www.abc.com:99" />
             </el-form-item>
             <div class="expand-more" @click="createMore = !createMore">
-              <span>Õ¹¿ª¸ü¶à</span>
+              <span>å±•å¼€æ›´å¤š</span>
               <el-icon><ArrowDown /></el-icon>
             </div>
             <div v-if="createMore" class="extra-fields">
-              <el-form-item label="ËùÊô·Ö×é">
-                <el-select v-model="createForm.group_id" clearable placeholder="×ª·¢·Ö×é, ¿É²»Ñ¡" style="width: 100%;">
+              <el-form-item label="æ‰€å±žåˆ†ç»„">
+                <el-select v-model="createForm.group_id" clearable placeholder="è½¬å‘åˆ†ç»„, å¯ä¸é€‰" style="width: 100%;">
                   <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="±¸×¢">
-                <el-input v-model="createForm.remark" placeholder="ÊäÈë±¸×¢ÐÅÏ¢" />
+              <el-form-item label="å¤‡æ³¨">
+                <el-input v-model="createForm.remark" placeholder="è¾“å…¥å¤‡æ³¨ä¿¡æ¯" />
               </el-form-item>
             </div>
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="ÅúÁ¿" name="batch">
+        <el-tab-pane label="æ‰¹é‡" name="batch">
           <el-form :model="batchForm" label-width="90px">
-            <el-form-item label="ÓÃ»§Ñ¡Ôñ">
+            <el-form-item label="ç”¨æˆ·é€‰æ‹©">
               <el-select
                 v-model="batchForm.user_id"
                 filterable
                 remote
                 clearable
                 reserve-keyword
-                placeholder="ÊäÈëID¡¢ÓÊÏä¡¢ÓÃ»§Ãû¡¢ÊÖ»úºÅËÑË÷"
+                placeholder="è¾“å…¥IDã€é‚®ç®±ã€ç”¨æˆ·åã€æ‰‹æœºå·æœç´¢"
                 :remote-method="searchUsers"
                 :loading="userLoading"
                 style="width: 100%;"
@@ -166,130 +166,130 @@
                 <el-option v-for="u in userOptions" :key="u.id" :label="`${u.name} (${u.id})`" :value="u.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="ÓÃ»§Ì×²Í">
-              <el-select v-model="batchForm.user_package_id" clearable placeholder="ÇëÑ¡Ôñ" style="width: 100%;">
+            <el-form-item label="ç”¨æˆ·å¥—é¤">
+              <el-select v-model="batchForm.user_package_id" clearable placeholder="è¯·é€‰æ‹©" style="width: 100%;">
                 <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="×ª·¢Êý¾Ý">
+            <el-form-item label="è½¬å‘æ•°æ®">
               <el-input
                 v-model="batchForm.data"
                 type="textarea"
                 rows="5"
-                placeholder="¸ñÊ½Îª: ¼àÌý¶Ë¿Ú|IP|»ØÔ´¶Ë¿Ú&#10;88|1.2.3.4|8080&#10;77|6.6.8.8|8080"
+                placeholder="æ ¼å¼ä¸º: ç›‘å¬ç«¯å£|IP|å›žæºç«¯å£&#10;88|1.2.3.4|8080&#10;77|6.6.8.8|8080"
               />
             </el-form-item>
-            <el-form-item label="ºöÂÔ´íÎó">
+            <el-form-item label="å¿½ç•¥é”™è¯¯">
               <el-switch v-model="batchForm.ignore_error" />
-              <span class="help-text">ÓÐ×ª·¢Ìí¼Ó³ö´íÊ±£¬²»ÖÐ¶Ï£¬¼ÌÐøÌí¼ÓÏÂÒ»Ìõ¡£</span>
+              <span class="help-text">æœ‰è½¬å‘æ·»åŠ å‡ºé”™æ—¶ï¼Œä¸ä¸­æ–­ï¼Œç»§ç»­æ·»åŠ ä¸‹ä¸€æ¡ã€‚</span>
             </el-form-item>
             <div class="expand-more" @click="batchMore = !batchMore">
-              <span>Õ¹¿ª¸ü¶à</span>
+              <span>å±•å¼€æ›´å¤š</span>
               <el-icon><ArrowDown /></el-icon>
             </div>
             <div v-if="batchMore" class="extra-fields">
-              <el-form-item label="ËùÊô·Ö×é">
-                <el-select v-model="batchForm.group_id" clearable placeholder="×ª·¢·Ö×é, ¿É²»Ñ¡" style="width: 100%;">
+              <el-form-item label="æ‰€å±žåˆ†ç»„">
+                <el-select v-model="batchForm.group_id" clearable placeholder="è½¬å‘åˆ†ç»„, å¯ä¸é€‰" style="width: 100%;">
                   <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="±¸×¢">
-                <el-input v-model="batchForm.remark" placeholder="ÊäÈë±¸×¢ÐÅÏ¢" />
+              <el-form-item label="å¤‡æ³¨">
+                <el-input v-model="batchForm.remark" placeholder="è¾“å…¥å¤‡æ³¨ä¿¡æ¯" />
               </el-form-item>
             </div>
           </el-form>
         </el-tab-pane>
       </el-tabs>
       <template #footer>
-        <el-button @click="createVisible = false">È¡Ïû</el-button>
-        <el-button type="primary" @click="handleCreateSubmit">È·¶¨</el-button>
+        <el-button @click="createVisible = false">å–æ¶ˆ</el-button>
+        <el-button type="primary" @click="handleCreateSubmit">ç¡®å®š</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="batchEditVisible" title="ÅúÁ¿ÐÞ¸Ä×ª·¢" width="720px">
-      <div class="batch-header">ÕýÔÚÐÞ¸ÄµÄ×ª·¢: {{ selectedIdsText }}</div>
+    <el-dialog v-model="batchEditVisible" title="æ‰¹é‡ä¿®æ”¹è½¬å‘" width="720px">
+      <div class="batch-header">æ­£åœ¨ä¿®æ”¹çš„è½¬å‘: {{ selectedIdsText }}</div>
       <div class="batch-dialog-body">
         <el-form label-width="90px">
           <el-collapse v-model="batchCollapse">
-            <el-collapse-item title="»ù±¾ÉèÖÃ" name="basic">
+            <el-collapse-item title="åŸºæœ¬è®¾ç½®" name="basic">
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.user_package_id">Ì×²Í</el-checkbox>
-                <el-select v-model="batchEditForm.user_package_id" clearable placeholder="ÇëÑ¡Ôñ" style="width: 70%;">
+                <el-checkbox v-model="batchEditChecks.user_package_id">å¥—é¤</el-checkbox>
+                <el-select v-model="batchEditForm.user_package_id" clearable placeholder="è¯·é€‰æ‹©" style="width: 70%;">
                   <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
                 </el-select>
               </div>
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.group_id">ËùÊô·Ö×é</el-checkbox>
-                <el-select v-model="batchEditForm.group_id" clearable placeholder="ÇëÑ¡Ôñ" style="width: 70%;">
+                <el-checkbox v-model="batchEditChecks.group_id">æ‰€å±žåˆ†ç»„</el-checkbox>
+                <el-select v-model="batchEditForm.group_id" clearable placeholder="è¯·é€‰æ‹©" style="width: 70%;">
                   <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
                 </el-select>
               </div>
               <div class="batch-action">
-                <el-button type="primary" @click="submitBatchEdit">ÅúÁ¿ÐÞ¸Ä</el-button>
+                <el-button type="primary" @click="submitBatchEdit">æ‰¹é‡ä¿®æ”¹</el-button>
               </div>
             </el-collapse-item>
 
-            <el-collapse-item title="Ô´Õ¾ÉèÖÃ" name="origin">
+            <el-collapse-item title="æºç«™è®¾ç½®" name="origin">
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.balance_way">¸ºÔØ·½Ê½</el-checkbox>
+                <el-checkbox v-model="batchEditChecks.balance_way">è´Ÿè½½æ–¹å¼</el-checkbox>
                 <el-radio-group v-model="batchEditForm.balance_way">
-                  <el-radio label="rr">ÂÖÑ­</el-radio>
-                  <el-radio label="ip_hash">¶¨Ô´</el-radio>
+                  <el-radio label="rr">è½®å¾ª</el-radio>
+                  <el-radio label="ip_hash">å®šæº</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.backsource_port">»ØÔ´¶Ë¿Ú</el-checkbox>
-                <el-input v-model="batchEditForm.backsource_port" placeholder="ÇëÊäÈë»ØÔ´¶Ë¿Ú" style="width: 70%;" />
+                <el-checkbox v-model="batchEditChecks.backsource_port">å›žæºç«¯å£</el-checkbox>
+                <el-input v-model="batchEditForm.backsource_port" placeholder="è¯·è¾“å…¥å›žæºç«¯å£" style="width: 70%;" />
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.proxy_protocol">Proxy Protocol</el-checkbox>
                 <el-radio-group v-model="batchEditForm.proxy_protocol">
-                  <el-radio :label="true">¿ªÆô</el-radio>
-                  <el-radio :label="false">¹Ø±Õ</el-radio>
+                  <el-radio :label="true">å¼€å¯</el-radio>
+                  <el-radio :label="false">å…³é—­</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.origins">Ô´Õ¾ÁÐ±í</el-checkbox>
-                <el-button size="small" type="primary" @click="openOriginDialog">ÐÂÔöÔ´Õ¾ÐÅÏ¢</el-button>
+                <el-checkbox v-model="batchEditChecks.origins">æºç«™åˆ—è¡¨</el-checkbox>
+                <el-button size="small" type="primary" @click="openOriginDialog">æ–°å¢žæºç«™ä¿¡æ¯</el-button>
               </div>
               <el-table v-if="batchEditForm.origins.length" :data="batchEditForm.origins" border size="small">
-                <el-table-column label="Ô´µØÖ·">
+                <el-table-column label="æºåœ°å€">
                   <template #default="{ row }">
-                    <el-input v-model="row.address" placeholder="IP»òÓòÃû" />
+                    <el-input v-model="row.address" placeholder="IPæˆ–åŸŸå" />
                   </template>
                 </el-table-column>
-                <el-table-column label="È¨ÖØ" width="100">
+                <el-table-column label="æƒé‡" width="100">
                   <template #default="{ row }">
                     <el-input v-model="row.weight" />
                   </template>
                 </el-table-column>
-                <el-table-column label="×´Ì¬" width="120">
+                <el-table-column label="çŠ¶æ€" width="120">
                   <template #default="{ row }">
                     <el-switch v-model="row.enable" />
                   </template>
                 </el-table-column>
-                <el-table-column label="²Ù×÷" width="100">
+                <el-table-column label="æ“ä½œ" width="100">
                   <template #default="{ $index }">
-                    <el-button link type="danger" @click="removeOrigin($index)">É¾³ý</el-button>
+                    <el-button link type="danger" @click="removeOrigin($index)">åˆ é™¤</el-button>
                   </template>
                 </el-table-column>
               </el-table>
               <div class="batch-action">
-                <el-button type="primary" @click="submitBatchEdit">ÅúÁ¿ÐÞ¸Ä</el-button>
+                <el-button type="primary" @click="submitBatchEdit">æ‰¹é‡ä¿®æ”¹</el-button>
               </div>
             </el-collapse-item>
 
-            <el-collapse-item title="·ÃÎÊ¿ØÖÆ" name="access">
+            <el-collapse-item title="è®¿é—®æŽ§åˆ¶" name="access">
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.acl_default">ACLÄ¬ÈÏÐÐÎª</el-checkbox>
+                <el-checkbox v-model="batchEditChecks.acl_default">ACLé»˜è®¤è¡Œä¸º</el-checkbox>
                 <el-radio-group v-model="batchEditForm.acl_default">
-                  <el-radio label="allow">ÔÊÐí</el-radio>
-                  <el-radio label="deny">¾Ü¾ø</el-radio>
+                  <el-radio label="allow">å…è®¸</el-radio>
+                  <el-radio label="deny">æ‹’ç»</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.acl_rules">ACL¹æÔò</el-checkbox>
-                <el-button size="small" type="primary" @click="addAclRule">ÐÂÔö¹æÔò</el-button>
+                <el-checkbox v-model="batchEditChecks.acl_rules">ACLè§„åˆ™</el-checkbox>
+                <el-button size="small" type="primary" @click="addAclRule">æ–°å¢žè§„åˆ™</el-button>
               </div>
               <el-table v-if="batchEditForm.acl_rules.length" :data="batchEditForm.acl_rules" border size="small">
                 <el-table-column label="IP">
@@ -297,43 +297,43 @@
                     <el-input v-model="row.ip" placeholder="IP" />
                   </template>
                 </el-table-column>
-                <el-table-column label="ÐÐÎª" width="120">
+                <el-table-column label="è¡Œä¸º" width="120">
                   <template #default="{ row }">
-                    <el-select v-model="row.action" placeholder="ÐÐÎª" style="width: 100%;">
-                      <el-option label="ÔÊÐí" value="allow" />
-                      <el-option label="¾Ü¾ø" value="deny" />
+                    <el-select v-model="row.action" placeholder="è¡Œä¸º" style="width: 100%;">
+                      <el-option label="å…è®¸" value="allow" />
+                      <el-option label="æ‹’ç»" value="deny" />
                     </el-select>
                   </template>
                 </el-table-column>
-                <el-table-column label="²Ù×÷" width="100">
+                <el-table-column label="æ“ä½œ" width="100">
                   <template #default="{ $index }">
-                    <el-button link type="danger" @click="removeAclRule($index)">É¾³ý</el-button>
+                    <el-button link type="danger" @click="removeAclRule($index)">åˆ é™¤</el-button>
                   </template>
                 </el-table-column>
               </el-table>
 
               <div class="batch-row" style="margin-top: 16px;">
-                <el-checkbox v-model="batchEditChecks.region_block">ÇøÓòÆÁ±Î</el-checkbox>
+                <el-checkbox v-model="batchEditChecks.region_block">åŒºåŸŸå±è”½</el-checkbox>
                 <el-radio-group v-model="batchEditForm.region_mode">
-                  <el-radio label="none">²»ÉèÖÃ</el-radio>
-                  <el-radio label="overseas_without_hk">¹úÍâ(²»°üÀ¨¸Û°ÄÌ¨)</el-radio>
-                  <el-radio label="overseas_with_hk">¹úÍâ(°üÀ¨¸Û°ÄÌ¨)</el-radio>
-                  <el-radio label="china_with_hk">ÖÐ¹ú(°üÀ¨¸Û°ÄÌ¨)</el-radio>
-                  <el-radio label="china_without_hk">ÖÐ¹ú(²»°üÀ¨¸Û°ÄÌ¨)</el-radio>
-                  <el-radio label="custom">×Ô¶¨Òå</el-radio>
+                  <el-radio label="none">ä¸è®¾ç½®</el-radio>
+                  <el-radio label="overseas_without_hk">å›½å¤–(ä¸åŒ…æ‹¬æ¸¯æ¾³å°)</el-radio>
+                  <el-radio label="overseas_with_hk">å›½å¤–(åŒ…æ‹¬æ¸¯æ¾³å°)</el-radio>
+                  <el-radio label="china_with_hk">ä¸­å›½(åŒ…æ‹¬æ¸¯æ¾³å°)</el-radio>
+                  <el-radio label="china_without_hk">ä¸­å›½(ä¸åŒ…æ‹¬æ¸¯æ¾³å°)</el-radio>
+                  <el-radio label="custom">è‡ªå®šä¹‰</el-radio>
                 </el-radio-group>
               </div>
               <country-selector v-if="batchEditForm.region_mode === 'custom'" v-model="batchEditForm.region_custom" />
 
               <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.ipv6">IPv6¿ªÆô</el-checkbox>
+                <el-checkbox v-model="batchEditChecks.ipv6">IPv6å¼€å¯</el-checkbox>
                 <el-radio-group v-model="batchEditForm.ipv6">
-                  <el-radio :label="true">¿ªÆô</el-radio>
-                  <el-radio :label="false">¹Ø±Õ</el-radio>
+                  <el-radio :label="true">å¼€å¯</el-radio>
+                  <el-radio :label="false">å…³é—­</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-action">
-                <el-button type="primary" @click="submitBatchEdit">ÅúÁ¿ÐÞ¸Ä</el-button>
+                <el-button type="primary" @click="submitBatchEdit">æ‰¹é‡ä¿®æ”¹</el-button>
               </div>
             </el-collapse-item>
           </el-collapse>
@@ -341,37 +341,37 @@
       </div>
     </el-dialog>
 
-    <el-dialog v-model="originDialogVisible" title="ÐÂÔöÔ´Õ¾ÐÅÏ¢" width="520px">
+    <el-dialog v-model="originDialogVisible" title="æ–°å¢žæºç«™ä¿¡æ¯" width="520px">
       <el-form :model="originForm" label-width="80px">
-        <el-form-item label="Ô´µØÖ·">
-          <el-input v-model="originForm.address" placeholder="ÇëÊäÈëip»òÓòÃû" />
+        <el-form-item label="æºåœ°å€">
+          <el-input v-model="originForm.address" placeholder="è¯·è¾“å…¥ipæˆ–åŸŸå" />
         </el-form-item>
-        <el-form-item label="È¨ÖØ">
+        <el-form-item label="æƒé‡">
           <el-input v-model="originForm.weight" />
         </el-form-item>
-        <el-form-item label="×´Ì¬">
+        <el-form-item label="çŠ¶æ€">
           <el-select v-model="originForm.enable" style="width: 100%;">
-            <el-option label="ÉÏÏß" :value="true" />
-            <el-option label="ÏÂÏß" :value="false" />
+            <el-option label="ä¸Šçº¿" :value="true" />
+            <el-option label="ä¸‹çº¿" :value="false" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="originDialogVisible = false">È¡Ïû</el-button>
-        <el-button type="primary" @click="confirmOrigin">È·¶¨</el-button>
+        <el-button @click="originDialogVisible = false">å–æ¶ˆ</el-button>
+        <el-button type="primary" @click="confirmOrigin">ç¡®å®š</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="advancedVisible" title="¸ß¼¶ËÑË÷" width="520px">
+    <el-dialog v-model="advancedVisible" title="é«˜çº§æœç´¢" width="520px">
       <el-form :model="advancedForm" label-width="90px">
-        <el-form-item label="ÓÃ»§">
+        <el-form-item label="ç”¨æˆ·">
           <el-select
             v-model="advancedForm.user_id"
             filterable
             remote
             clearable
             reserve-keyword
-            placeholder="ÊäÈëID¡¢ÓÊÏä¡¢ÓÃ»§Ãû¡¢ÊÖ»úºÅËÑË÷"
+            placeholder="è¾“å…¥IDã€é‚®ç®±ã€ç”¨æˆ·åã€æ‰‹æœºå·æœç´¢"
             :remote-method="searchUsers"
             :loading="userLoading"
             style="width: 100%;"
@@ -379,20 +379,20 @@
             <el-option v-for="u in userOptions" :key="u.id" :label="`${u.name} (${u.id})`" :value="u.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Ì×²Í">
-          <el-select v-model="advancedForm.user_package_id" clearable placeholder="ÇëÑ¡Ôñ" style="width: 100%;">
+        <el-form-item label="å¥—é¤">
+          <el-select v-model="advancedForm.user_package_id" clearable placeholder="è¯·é€‰æ‹©" style="width: 100%;">
             <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="·Ö×é">
-          <el-select v-model="advancedForm.group_id" clearable placeholder="ÇëÑ¡Ôñ" style="width: 100%;">
+        <el-form-item label="åˆ†ç»„">
+          <el-select v-model="advancedForm.group_id" clearable placeholder="è¯·é€‰æ‹©" style="width: 100%;">
             <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="advancedVisible = false">È¡Ïû</el-button>
-        <el-button type="primary" @click="applyAdvancedFilter">È·ÈÏ</el-button>
+        <el-button @click="advancedVisible = false">å–æ¶ˆ</el-button>
+        <el-button type="primary" @click="applyAdvancedFilter">ç¡®è®¤</el-button>
       </template>
     </el-dialog>
   </div>
@@ -542,7 +542,7 @@ const openCreateDialog = () => {
 
 const openBatchEdit = () => {
   if (!selectedRows.value.length) {
-    ElMessage.warning('ÇëÑ¡Ôñ×ª·¢')
+    ElMessage.warning('è¯·é€‰æ‹©è½¬å‘')
     return
   }
   batchEditVisible.value = true
@@ -563,13 +563,13 @@ const handleCreateSubmit = () => {
       origin_input: createForm.origin_input,
       remark: createForm.remark
     }).then(() => {
-      ElMessage.success('´´½¨³É¹¦')
+      ElMessage.success('åˆ›å»ºæˆåŠŸ')
       createVisible.value = false
       fetchList()
     })
   } else {
     request.post('/forwards/batch', batchForm).then(res => {
-      ElMessage.success(res.message || 'ÅúÁ¿´´½¨Íê³É')
+      ElMessage.success(res.message || 'æ‰¹é‡åˆ›å»ºå®Œæˆ')
       createVisible.value = false
       fetchList()
     })
@@ -579,7 +579,7 @@ const handleCreateSubmit = () => {
 const submitBatchEdit = () => {
   const ids = selectedRows.value.map(row => row.id)
   if (!ids.length) {
-    ElMessage.warning('ÇëÑ¡Ôñ×ª·¢')
+    ElMessage.warning('è¯·é€‰æ‹©è½¬å‘')
     return
   }
   const payload = { ids }
@@ -609,7 +609,7 @@ const submitBatchEdit = () => {
   }
 
   request.post('/forwards/batch_update', payload).then(() => {
-    ElMessage.success('ÅúÁ¿ÐÞ¸ÄÍê³É')
+    ElMessage.success('æ‰¹é‡ä¿®æ”¹å®Œæˆ')
     batchEditVisible.value = false
     fetchList()
   })
@@ -617,17 +617,17 @@ const submitBatchEdit = () => {
 
 const handleBatchAction = action => {
   if (!selectedRows.value.length) {
-    ElMessage.warning('ÇëÑ¡Ôñ×ª·¢')
+    ElMessage.warning('è¯·é€‰æ‹©è½¬å‘')
     return
   }
   const ids = selectedRows.value.map(row => row.id)
-  ElMessageBox.confirm(`È·¶¨Ö´ÐÐ${action}²Ù×÷?`, 'ÌáÊ¾', {
-    confirmButtonText: 'È·¶¨',
-    cancelButtonText: 'È¡Ïû',
+  ElMessageBox.confirm(`ç¡®å®šæ‰§è¡Œ${action}æ“ä½œ?`, 'æç¤º', {
+    confirmButtonText: 'ç¡®å®š',
+    cancelButtonText: 'å–æ¶ˆ',
     type: 'warning'
   }).then(() => {
     request.post('/forwards/batch_action', { action, ids }).then(res => {
-      ElMessage.success(res.message || '²Ù×÷³É¹¦')
+      ElMessage.success(res.message || 'æ“ä½œæˆåŠŸ')
       fetchList()
     })
   })
@@ -674,7 +674,7 @@ const openOriginDialog = () => {
 
 const confirmOrigin = () => {
   if (!originForm.address) {
-    ElMessage.warning('ÇëÊäÈëÔ´µØÖ·')
+    ElMessage.warning('è¯·è¾“å…¥æºåœ°å€')
     return
   }
   batchEditForm.origins.push({
@@ -774,6 +774,7 @@ onMounted(() => {
   margin-left: 8px;
 }
 </style>
+
 
 
 
