@@ -1,0 +1,101 @@
+<template>
+  <div class="app-container">
+    <div class="filter-container">
+      <el-select v-model="filters.type" placeholder="订单类型" style="width: 140px;">
+        <el-option label="全部" value="" />
+        <el-option label="购买" value="purchase" />
+        <el-option label="续费" value="renew" />
+        <el-option label="充值" value="recharge" />
+      </el-select>
+      <el-input v-model="filters.keyword" placeholder="订单号/备注" style="width: 240px;" />
+      <el-button type="primary" @click="applyFilter">查询</el-button>
+    </div>
+
+    <el-table :data="list" border style="width: 100%;">
+      <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column prop="type_label" label="类型" width="120" />
+      <el-table-column prop="remark" label="备注" min-width="200" />
+      <el-table-column prop="price" label="原价" width="120" />
+      <el-table-column prop="pay" label="实际支付" width="120" />
+      <el-table-column prop="more" label="更多" min-width="180" />
+      <el-table-column prop="pay_type" label="支付方式" width="140" />
+      <el-table-column prop="order_no" label="订单号" min-width="200" />
+      <el-table-column prop="created_at" label="创建时间" width="180" />
+      <el-table-column label="已付款" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.paid ? 'success' : 'info'">{{ row.paid ? '已付款' : '未付款' }}</el-tag>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <div class="pagination-container">
+      <el-pagination
+        v-model:current-page="filters.page"
+        v-model:page-size="filters.pageSize"
+        :page-sizes="[10, 20, 30]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="total"
+        @size-change="applyFilter"
+        @current-change="applyFilter"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive } from 'vue'
+
+const allRows = ref([
+  {
+    id: 14,
+    type: 'purchase',
+    type_label: '购买',
+    remark: '套餐: 13 开始: 2025-06-29 17:…',
+    price: '0元',
+    pay: '0元',
+    more: '套餐: 13 开始: 2025-06-29 17:…',
+    pay_type: '--',
+    order_no: '20251106162949',
+    created_at: '2025-11-06 16:29:49',
+    paid: true
+  }
+])
+
+const list = ref([...allRows.value])
+const total = ref(allRows.value.length)
+
+const filters = reactive({
+  type: '',
+  keyword: '',
+  page: 1,
+  pageSize: 10
+})
+
+const applyFilter = () => {
+  let filtered = allRows.value
+  if (filters.type) {
+    filtered = filtered.filter(row => row.type === filters.type)
+  }
+  if (filters.keyword) {
+    const keyword = filters.keyword.trim()
+    filtered = filtered.filter(row => row.order_no.includes(keyword) || row.remark.includes(keyword))
+  }
+  total.value = filtered.length
+  const start = (filters.page - 1) * filters.pageSize
+  list.value = filtered.slice(start, start + filters.pageSize)
+}
+</script>
+
+<style scoped>
+.filter-container {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.pagination-container {
+  margin-top: 16px;
+  text-align: right;
+}
+</style>

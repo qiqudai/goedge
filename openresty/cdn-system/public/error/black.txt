@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Blocked</title>
+    <style>
+        body {
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f5f5f5;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        
+        .container {
+            text-align: center;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 90%;
+            width: 500px;
+        }
+        
+        .icon {
+            font-size: 4rem;
+            color: #dc2626;
+            margin-bottom: 1rem;
+        }
+        
+        h1 {
+            color: #1f2937;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .ip {
+            background: #f3f4f6;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 1rem 0;
+            display: inline-block;
+        }
+        
+        p {
+            color: #4b5563;
+            line-height: 1.6;
+            margin: 0.5rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">⚠️</div>
+        <h1 id="title"></h1>
+        <p id="blacklist-notice"></p>
+        <div class="ip">{client_ip}</div>
+        <p id="detail-message"></p>
+    </div>
+
+    <script>
+        const translations = {
+            en: {
+                title: "Access Blocked",
+                blacklistNotice: "Your IP address has been blacklisted",
+                detailMessage: "Your access request has been denied due to suspicious activity."
+            },
+            zh: {
+                title: "访问已被阻止",
+                blacklistNotice: "您的 IP 地址已被列入黑名单",
+                detailMessage: "由于检测到可疑活动，您的访问请求已被系统拒绝。"
+            }
+        };
+
+        // 获取浏览器语言
+        function getBrowserLanguage() {
+            const language = navigator.language || navigator.userLanguage;
+            // 简单处理中文和英文，其他语言默认使用英文
+            return language.toLowerCase().startsWith("zh") ? "zh" : "en";
+        }
+
+        // 更新页面内容
+        function updateContent(lang) {
+            const content = translations[lang];
+            document.getElementById("title").textContent = content.title;
+            document.getElementById("blacklist-notice").textContent = content.blacklistNotice;
+            document.getElementById("detail-message").textContent = content.detailMessage;
+            document.documentElement.lang = lang;
+            document.title = content.title;
+        }
+
+        // 初始化页面
+        updateContent(getBrowserLanguage());
+    </script>
+</body>
+</html>
