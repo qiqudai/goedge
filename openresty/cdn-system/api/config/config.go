@@ -10,7 +10,7 @@ type AppConfig struct {
 
 var App = &AppConfig{
 	Port:      "8080",
-	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
+	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdnfy?charset=utf8mb4&parseTime=True&loc=Local",
 	RedisAddr: "127.0.0.1:6379",
 }
 

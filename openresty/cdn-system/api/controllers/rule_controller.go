@@ -90,7 +90,8 @@ func (c *RuleController) ListMatchers(ctx *gin.Context) {
 		return
 	}
 
-	userMap, _ := loadUserNameMapFromRules(items)
+	// Correctly call loadUserNameMapFromMatchers
+	userMap, _ := loadUserNameMapFromMatchers(items)
 	list := make([]gin.H, 0, len(items))
 	for _, item := range items {
 		list = append(list, gin.H{
@@ -135,7 +136,8 @@ func (c *RuleController) ListFilters(ctx *gin.Context) {
 		return
 	}
 
-	userMap, _ := loadUserNameMapFromRules(items)
+	// Correctly call loadUserNameMapFromFilters
+	userMap, _ := loadUserNameMapFromFilters(items)
 	list := make([]gin.H, 0, len(items))
 	for _, item := range items {
 		list = append(list, gin.H{
@@ -213,6 +215,13 @@ func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
 			"rules":     rules,
 		},
 	})
+}
+
+func mapRuleType(userID int64, internal bool) string {
+	if userID == 0 || internal {
+		return "system"
+	}
+	return "user"
 }
 
 func loadUserNameMapFromRules(items []models.CCRule) (map[int64]string, error) {

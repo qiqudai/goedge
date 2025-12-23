@@ -1,44 +1,39 @@
 package controllers
 
 import (
+	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services/dns"
-
-	// Register providers
-	_ "cdn-api/services/dns/providers"
 	"net/http"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
+
+	_ "cdn-api/services/dns/providers"
 
 	"github.com/gin-gonic/gin"
 )
 
 type DnsController struct{}
 
-var (
-	mockProviders      = []models.DNSProvider{}
-	mockProvidersMutex sync.Mutex
-	mockProviderNextID int64 = 1
-)
-
-func init() {
-	// Add some dummy data
-	mockProviders = append(mockProviders, models.DNSProvider{
-		ID:        mockProviderNextID,
-		Name:      "My Cloudflare",
-		Type:      "cloudflare",
-		CreatedAt: time.Now(),
-	})
-	mockProviderNextID++
-}
-
 // ListProviders
 func (ctr *DnsController) ListProviders(c *gin.Context) {
+	var list []models.DNSAPI
+	query := db.DB.Model(&models.DNSAPI{})
+	if uidStr := strings.TrimSpace(c.Query("user_id")); uidStr != "" {
+		if uid, err := strconv.ParseInt(uidStr, 10, 64); err == nil {
+			query = query.Where("uid = ?", uid)
+		}
+	}
+	if err := query.Order("id desc").Find(&list).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Failed to fetch providers"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"list": mockProviders,
+			"list": list,
 		},
 	})
 }
@@ -61,25 +56,46 @@ func (ctr *DnsController) GetProviderTypes(c *gin.Context) {
 
 // CreateProvider
 func (ctr *DnsController) CreateProvider(c *gin.Context) {
-	var req models.DNSProvider
+	var req struct {
+		UserID      int64  `json:"user_id"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Credentials string `json:"credentials"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Request"})
 		return
 	}
 
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Type) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Name and type are required"})
+		return
+	}
+
 	// Validate Credentials with Factory
-	_, err := dns.GetProvider(req.Type, req.Credentials)
-	if err != nil {
+	if _, err := dns.GetProvider(req.Type, req.Credentials); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Credentials: " + err.Error()})
 		return
 	}
 
-	mockProvidersMutex.Lock()
-	req.ID = mockProviderNextID
-	req.CreatedAt = time.Now()
-	mockProviders = append(mockProviders, req)
-	mockProviderNextID++
-	mockProvidersMutex.Unlock()
+	if req.UserID == 0 {
+		req.UserID = parseUserID(mustGet(c, "userID"))
+	}
+
+	item := models.DNSAPI{
+		UserID:    req.UserID,
+		Name:      req.Name,
+		Remark:    "",
+		Type:      req.Type,
+		Auth:      req.Credentials,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if err := db.DB.Create(&item).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Create failed"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
 }
@@ -88,17 +104,14 @@ func (ctr *DnsController) CreateProvider(c *gin.Context) {
 func (ctr *DnsController) DeleteProvider(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
-
-	mockProvidersMutex.Lock()
-	defer mockProvidersMutex.Unlock()
-
-	newProviders := []models.DNSProvider{}
-	for _, p := range mockProviders {
-		if p.ID != id {
-			newProviders = append(newProviders, p)
-		}
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid ID"})
+		return
 	}
-	mockProviders = newProviders
+	if err := db.DB.Delete(&models.DNSAPI{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Delete failed"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
 }

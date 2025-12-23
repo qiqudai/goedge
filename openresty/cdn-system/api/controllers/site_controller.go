@@ -173,6 +173,7 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 				UpdatedAt:     time.Now(),
 			}
 			site.CnameHostname = domain + ".cdn.node.com"
+			services.ApplySiteDefaults(site, defaults)
 			if err := createSiteWithGroup(site, req.GroupID); err != nil {
 				if req.IgnoreError {
 					continue

@@ -70,11 +70,12 @@ func (ctr *UserController) ToggleStatus(c *gin.Context) {
 		return
 	}
 
-	if err := db.DB.Model(&models.User{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	enabled := req.Status == 1
+	if err := db.DB.Model(&models.User{}).Where("id = ?", id).Update("enable", enabled).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Update Failed"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"msg": "User " + id + " status updated to " + strconv.Itoa(req.Status)})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "User " + id + " status updated to " + strconv.Itoa(req.Status)})
 }
 
 // DeleteUser removes a user

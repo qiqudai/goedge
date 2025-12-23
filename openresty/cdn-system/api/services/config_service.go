@@ -227,3 +227,80 @@ func parseACLID(value interface{}) int64 {
 	}
 	return 0
 }
+
+func buildRedisConfig() *models.EdgeRedisConfig {
+	// Parse RedisAddr "host:port"
+	addr := config.App.RedisAddr
+	if addr == "" {
+		return nil
+	}
+	host := "127.0.0.1"
+	port := 6379
+
+	parts := strings.Split(addr, ":")
+	if len(parts) > 0 {
+		host = parts[0]
+	}
+	if len(parts) > 1 {
+		if p, err := strconv.Atoi(parts[1]); err == nil {
+			port = p
+		}
+	}
+
+	return &models.EdgeRedisConfig{
+		Host:     host,
+		Port:     port,
+	}
+}
+
+func buildUpstreamTargets(backends []string, protocol string) []models.EdgeUpstreamTarget {
+	var targets []models.EdgeUpstreamTarget
+	for _, backend := range backends {
+		if strings.TrimSpace(backend) == "" {
+			continue
+		}
+		// Basic implementation
+		targets = append(targets, models.EdgeUpstreamTarget{
+			Addr:   backend,
+			Weight: 10,
+		})
+	}
+	return targets
+}
+
+func mapBalancePolicy(way string) string {
+	switch way {
+	case "ip_hash":
+		return "ip_hash"
+	case "random":
+		return "random"
+	default:
+		return "round_robin"
+	}
+}
+
+func buildHeaderMap(settings map[string]interface{}) map[string]string {
+	if settings == nil {
+		return nil
+	}
+	headers, ok := settings["headers"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	result := make(map[string]string)
+	for k, v := range headers {
+		if s, ok := v.(string); ok {
+			result[k] = s
+		}
+	}
+	return result
+}
+
+func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
+	for _, cert := range certs {
+		if cert.Domain == domain {
+			return &cert
+		}
+	}
+	return nil
+}

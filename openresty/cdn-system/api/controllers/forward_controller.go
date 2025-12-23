@@ -119,6 +119,7 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 			ListenPorts:   listenPorts,
 			Origins:       origins,
 			Remark:        req.Remark,
+			BackendPort:   extractBackendPort(origins),
 			Enable:        true,
 			State:         "running",
 			CreatedAt:     time.Now(),
@@ -168,18 +169,22 @@ func (ctrl *ForwardController) AdminBatchUpdate(c *gin.Context) {
 			updates["user_package"] = *req.UserPackageID
 		}
 		if req.ListenPorts != nil {
-			updates["listen_ports"] = encodeStringList(*req.ListenPorts)
+			updates["listen"] = encodeStringList(*req.ListenPorts)
 		}
 		if req.Origins != nil {
-			b, _ := json.Marshal(*req.Origins)
-			updates["origins"] = string(b)
-		}
-		if req.Remark != nil {
-			updates["remark"] = *req.Remark
+			updates["backend"] = encodeOrigins(*req.Origins)
 		}
 		if req.Settings != nil {
 			b, _ := json.Marshal(req.Settings)
-			updates["settings"] = string(b)
+			updates["acl"] = string(b)
+			applyOriginSettings(req.Settings, updates)
+		}
+		if req.Remark != nil {
+			if _, ok := updates["acl"]; !ok {
+				settings := map[string]interface{}{"remark": *req.Remark}
+				b, _ := json.Marshal(settings)
+				updates["acl"] = string(b)
+			}
 		}
 		if len(updates) > 0 {
 			if err := tx.Model(&models.Forward{}).Where("id IN ?", req.IDs).Updates(updates).Error; err != nil {
@@ -188,7 +193,7 @@ func (ctrl *ForwardController) AdminBatchUpdate(c *gin.Context) {
 		}
 
 		if req.GroupID != nil {
-			if err := tx.Where("forward_id IN ?", req.IDs).Delete(&models.ForwardGroupRelation{}).Error; err != nil {
+			if err := tx.Where("stream_id IN ?", req.IDs).Delete(&models.ForwardGroupRelation{}).Error; err != nil {
 				return err
 			}
 			if *req.GroupID != 0 {
@@ -246,7 +251,7 @@ func (ctrl *ForwardController) AdminBatchAction(c *gin.Context) {
 		}
 	case "delete":
 		err := db.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("forward_id IN ?", req.IDs).Delete(&models.ForwardGroupRelation{}).Error; err != nil {
+			if err := tx.Where("stream_id IN ?", req.IDs).Delete(&models.ForwardGroupRelation{}).Error; err != nil {
 				return err
 			}
 			return tx.Where("id IN ?", req.IDs).Delete(&models.Forward{}).Error
@@ -306,6 +311,7 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, int
 		ListenPorts:   listenPorts,
 		Origins:       origins,
 		Remark:        req.Remark,
+		BackendPort:   extractBackendPort(origins),
 		Enable:        true,
 		State:         "running",
 		CreatedAt:     time.Now(),
@@ -356,11 +362,11 @@ func queryForwards(c *gin.Context) (*forwardQueryResult, error) {
 				return &forwardQueryResult{Forwards: []models.Forward{}, Total: 0}, nil
 			}
 		case "listen":
-			query = query.Where("listen_ports LIKE ?", like)
+			query = query.Where("listen LIKE ?", like)
 		case "origin":
-			query = query.Where("origins LIKE ?", like)
+			query = query.Where("backend LIKE ?", like)
 		case "cname":
-			query = query.Where("cname LIKE ?", like)
+			query = query.Where("cname_hostname LIKE ?", like)
 		case "package":
 			ids, err := findUserPackageIDsByName(keyword)
 			if err != nil {
@@ -389,7 +395,7 @@ func queryForwards(c *gin.Context) (*forwardQueryResult, error) {
 			}
 			query = query.Where("uid IN ?", userIDs)
 		default:
-			cond := db.DB.Where("listen_ports LIKE ? OR origins LIKE ? OR cname LIKE ?", like, like, like)
+			cond := db.DB.Where("listen LIKE ? OR backend LIKE ? OR cname_hostname LIKE ?", like, like, like)
 			if id, err := strconv.ParseInt(keyword, 10, 64); err == nil {
 				cond = cond.Or("id = ?", id)
 			}
@@ -533,14 +539,6 @@ func parseOrigins(input string) []models.ForwardOrigin {
 	return origins
 }
 
-func encodeStringList(items []string) string {
-	if len(items) == 0 {
-		return ""
-	}
-	b, _ := json.Marshal(items)
-	return string(b)
-}
-
 func loadUsersForForward(items []models.Forward) (map[int64]string, error) {
 	ids := uniqueIDsForward(items, func(f models.Forward) int64 { return f.UserID })
 	result := map[int64]string{}
@@ -581,7 +579,7 @@ func loadForwardGroups(items []models.Forward) (map[int64]string, map[int64]int6
 		return groupMap, relMap, nil
 	}
 	var relations []models.ForwardGroupRelation
-	if err := db.DB.Where("forward_id IN ?", ids).Find(&relations).Error; err != nil {
+	if err := db.DB.Where("stream_id IN ?", ids).Find(&relations).Error; err != nil {
 		return nil, nil, err
 	}
 	groupIDs := make([]int64, 0, len(relations))
@@ -665,4 +663,153 @@ func findForwardIDsByGroupIDs(groupIDs []int64) ([]int64, error) {
 		ids = append(ids, rel.ForwardID)
 	}
 	return ids, nil
+}
+
+func applyOriginSettings(settings map[string]interface{}, updates map[string]interface{}) {
+	origin, ok := settings["origin"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if v, ok := origin["balance_way"]; ok {
+		if s := toString(v); s != "" {
+			updates["balance_way"] = s
+		}
+	}
+	if v, ok := origin["proxy_protocol"]; ok {
+		updates["proxy_protocol"] = toBool(v)
+	}
+	if v, ok := origin["backsource_port"]; ok {
+		if s := toString(v); s != "" {
+			updates["backend_port"] = s
+		}
+	}
+	if v, ok := origin["origins"]; ok {
+		if encoded := encodeOriginsAny(v); encoded != "" {
+			updates["backend"] = encoded
+		}
+	}
+}
+
+func extractBackendPort(origins []models.ForwardOrigin) string {
+	if len(origins) == 0 {
+		return ""
+	}
+	addr := strings.TrimSpace(origins[0].Address)
+	if addr == "" {
+		return ""
+	}
+	if strings.Count(addr, ":") == 1 {
+		parts := strings.Split(addr, ":")
+		if len(parts) == 2 && parts[1] != "" {
+			return parts[1]
+		}
+	}
+	if strings.Contains(addr, "]:") {
+		parts := strings.Split(addr, "]:")
+		if len(parts) == 2 && parts[1] != "" {
+			return parts[1]
+		}
+	}
+	return ""
+}
+
+func encodeOriginsAny(v interface{}) string {
+	switch value := v.(type) {
+	case []models.ForwardOrigin:
+		return encodeOrigins(value)
+	case []interface{}:
+		origins := make([]models.ForwardOrigin, 0, len(value))
+		for _, item := range value {
+			if m, ok := item.(map[string]interface{}); ok {
+				origins = append(origins, models.ForwardOrigin{
+					Address: toString(m["address"]),
+					Weight:  toInt(m["weight"], 1),
+					Enable:  toBoolWithDefault(m["enable"], true),
+				})
+			}
+		}
+		return encodeOrigins(origins)
+	default:
+		return ""
+	}
+}
+
+func toString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case float64:
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(t)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
+}
+
+func toBool(v interface{}) bool {
+	return toBoolWithDefault(v, false)
+}
+
+func toBoolWithDefault(v interface{}, def bool) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" {
+			return def
+		}
+		return t == "1" || t == "true" || t == "yes" || t == "on"
+	case float64:
+		return t != 0
+	case int:
+		return t != 0
+	case int64:
+		return t != 0
+	default:
+		return def
+	}
+}
+
+func toInt(v interface{}, def int) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(t)); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+func encodeStringList(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(items)
+	return string(b)
+}
+
+func encodeOrigins(items []models.ForwardOrigin) string {
+	if len(items) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(items)
+	return string(b)
 }

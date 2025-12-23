@@ -4,7 +4,6 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -42,12 +41,7 @@ type updatePasswordRequest struct {
 	Next    string `json:"next"`
 }
 
-func verifyPassword(stored, provided string) bool {
-	if strings.HasPrefix(stored, "$2a$") || strings.HasPrefix(stored, "$2b$") || strings.HasPrefix(stored, "$2y$") {
-		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(provided)) == nil
-	}
-	return stored == provided
-}
+
 
 // GetProfile
 // GET /api/v1/user/profile

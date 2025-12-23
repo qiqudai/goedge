@@ -89,6 +89,8 @@ func Setup(r *gin.Engine) {
 			admin.POST("/config_items", configItemCtr.Upsert)
 
 			// Packages
+			admin.GET("/packages", (&controllers.PackageController{}).ListVersions)
+			admin.POST("/packages", (&controllers.PackageController{}).UploadVersion)
 			admin.POST("/packages/grayscale", (&controllers.PackageController{}).UpdateGrayScale)
 
 			// Plans (Packages)
@@ -100,6 +102,7 @@ func Setup(r *gin.Engine) {
 
 			// User Plans (Sold)
 			admin.GET("/user_plans", planCtr.ListUserPlans)
+			admin.POST("/user_plans/assign", planCtr.AssignUserPlan)
 
 			// Finance
 			admin.GET("/orders", (&controllers.FinanceController{}).ListOrders)
