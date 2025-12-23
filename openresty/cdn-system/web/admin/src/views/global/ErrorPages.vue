@@ -3,8 +3,8 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>??????</span>
-          <el-button type="primary" @click="saveConfig" :loading="loading">??????</el-button>
+          <span>自定义错误页面</span>
+          <el-button type="primary" @click="saveConfig" :loading="loading">保存配置</el-button>
         </div>
       </template>
 
@@ -14,14 +14,14 @@
             <div class="tab-content-scroll">
               <div class="editor-header">
                 <h3>{{ code.label }} ({{ code.key }})</h3>
-                <span class="tip">????:</span>
+                <span class="tip">编辑内容:</span>
               </div>
 
               <el-input
                 v-model="errorPages[code.key]"
                 type="textarea"
                 :rows="25"
-                placeholder="<!-- ?? HTML ?? -->"
+                placeholder="<!-- 请输入 HTML 内容 -->"
                 font-family="monospace"
               />
 
@@ -45,14 +45,14 @@ const errorPages = reactive({})
 const fullConfig = ref({})
 
 const errorCodes = [
-  { key: '400', label: '400 ????' },
-  { key: '403', label: '403 ????' },
-  { key: '502', label: '502 ????' },
-  { key: '504', label: '504 ????' },
-  { key: 'traffic_limit', label: '??????' },
-  { key: 'site_locked', label: '????' },
-  { key: 'domain_invalid', label: '?????' },
-  { key: 'conn_limit', label: '?????' }
+  { key: '400', label: '400 \u9519\u8bef\u9875\u9762' },
+  { key: '403', label: '403 \u9519\u8bef\u9875\u9762' },
+  { key: '502', label: '502 \u9519\u8bef\u9875\u9762' },
+  { key: '504', label: '504 \u9519\u8bef\u9875\u9762' },
+  { key: 'traffic_limit', label: '\u6d41\u91cf\u8d85\u9650' },
+  { key: 'site_locked', label: '\u7f51\u7ad9\u88ab\u9501' },
+  { key: 'domain_invalid', label: '\u57df\u540d\u65e0\u6548' },
+  { key: 'conn_limit', label: '\u8fde\u63a5\u6570\u8d85\u9650' }
 ]
 
 const loadConfig = () => {
@@ -79,7 +79,7 @@ const saveConfig = () => {
   fullConfig.value.error_pages = errorPages
   request.post('/global_config', fullConfig.value).then(res => {
     if (res.code === 0) {
-      ElMessage.success('?????')
+      ElMessage.success('\u4fdd\u5b58\u6210\u529f')
     }
   }).finally(() => {
     loading.value = false

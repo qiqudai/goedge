@@ -1,25 +1,27 @@
 <template>
   <div class="app-container">
     <div class="filter-container">
-      <el-select v-model="filters.type" placeholder="ÏûÏ¢ÀàĞÍ" style="width: 140px;">
-        <el-option label="È«²¿" value="" />
-        <el-option label="´ø¿í³¬ÏŞ" value="bandwidth" />
-        <el-option label="Á÷Á¿³¬ÏŞ" value="traffic" />
-        <el-option label="Ì×²Íµ½ÆÚ" value="package" />
+      <el-select v-model="filters.type" placeholder="æ¶ˆæ¯ç±»å‹" style="width: 180px;">
+        <el-option label="å…¨éƒ¨" value="" />
+        <el-option label="å¥—é¤åˆ°æœŸ" value="package-expire" />
+        <el-option label="æµé‡è¶…é™" value="traffic-exceed" />
+        <el-option label="è¿æ¥æ•°è¶…é™" value="connection-exceed" />
+        <el-option label="å¸¦å®½è¶…é™" value="bandwidth-exceed" />
+        <el-option label="é˜²æŠ¤è§„åˆ™åˆ‡æ¢" value="cc-switch" />
+        <el-option label="è¯ä¹¦åˆ°æœŸ" value="cert-expire" />
       </el-select>
-      <el-input v-model="filters.keyword" placeholder="±êÌâ/ÍøÕ¾ID" style="width: 240px;" />
-      <el-button type="primary" @click="applyFilter">²éÑ¯</el-button>
+      <el-input v-model="filters.keyword" placeholder="æ ‡é¢˜/ç½‘ç«™ID" style="width: 240px;" />
+      <el-button type="primary" @click="applyFilter">æŸ¥è¯¢</el-button>
     </div>
 
     <el-table :data="list" border style="width: 100%;">
-      <el-table-column prop="user_id" label="ËùÊôÓÃ»§ID" width="120" />
-      <el-table-column prop="type_label" label="ÀàĞÍ" width="140" />
-      <el-table-column prop="title" label="±êÌâ" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="site_id" label="ÍøÕ¾ID" width="120" />
-      <el-table-column prop="created_at" label="´´½¨Ê±¼ä" width="180" />
-      <el-table-column label="²Ù×÷" width="120" align="center">
+      <el-table-column prop="type_label" label="ç±»å‹" width="160" />
+      <el-table-column prop="title" label="æ ‡é¢˜" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="site_id" label="ç½‘ç«™ID" width="120" />
+      <el-table-column prop="created_at" label="åˆ›å»ºæ—¶é—´" width="180" />
+      <el-table-column label="æ“ä½œ" width="120" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openDetail(row)">ÏêÇé</el-button>
+          <el-button link type="primary" @click="openDetail(row)">è¯¦æƒ…</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -36,53 +38,31 @@
       />
     </div>
 
-    <el-dialog v-model="detailVisible" title="ÏûÏ¢ÏêÇé" width="560px">
+    <el-dialog v-model="detailVisible" title="æ¶ˆæ¯è¯¦æƒ…" width="560px">
       <el-form label-width="80px">
-        <el-form-item label="±êÌâ">
+        <el-form-item label="æ ‡é¢˜">
           <div>{{ detail.title }}</div>
         </el-form-item>
-        <el-form-item label="ÓÊ¼şÄÚÈİ">
+        <el-form-item label="é‚®ä»¶å†…å®¹">
           <div class="detail-content" v-html="detail.email"></div>
         </el-form-item>
-        <el-form-item label="¶ÌĞÅÄÚÈİ">
+        <el-form-item label="é‚®ä»¶å†…å®¹">
           <div class="detail-content" v-html="detail.sms"></div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" @click="detailVisible = false">È·¶¨</el-button>
+        <el-button type="primary" @click="detailVisible = false">å…³é—­</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import request from '@/utils/request'
 
-const allRows = ref([
-  {
-    user_id: 17,
-    type: 'bandwidth',
-    type_label: '´ø¿í³¬ÏŞ',
-    title: 'cdnÌ×²Í´ø¿í³¬ÏŞÌáĞÑ!',
-    site_id: 14,
-    created_at: '2025-12-22 10:45:33',
-    email: '<p>×ğ¾´µÄfeiyang666£º</p><p>ÄúµÄÌ×²Í( ID: 14£¬Ãû³ÆÉÌÒµ°æK(³©) )µ±Ç°´ø¿íÎª249.39Mbps£¬ÒÑ³¬¹ıÏŞÖÆµÄ50.0Mbps£¬ÏÖÏµÍ³ÒÑ¿ªÆôÏŞËÙ¡£</p>',
-    sms: '¡¾cdn¡¿×ğ¾´µÄfeiyang666£¬ÄúµÄÌ×²Í( ID: 14£¬Ãû³ÆÉÌÒµ°æK(³©) )µ±Ç°´ø¿íÎª249.39Mbps£¬ÒÑ³¬¹ıÏŞÖÆµÄ50.0Mbps£¬ÏÖÏµÍ³ÒÑ¿ªÆôÏŞËÙ¡£'
-  },
-  {
-    user_id: 17,
-    type: 'traffic',
-    type_label: 'Á÷Á¿³¬ÏŞ',
-    title: 'cdnÌ×²ÍÁ÷Á¿³¬ÏŞÌáĞÑ!',
-    site_id: 14,
-    created_at: '2025-12-11 14:22:00',
-    email: '<p>×ğ¾´µÄfeiyang666£º</p><p>ÄúµÄÌ×²ÍÁ÷Á¿ÒÑ½Ó½üÉÏÏŞ£¬Çë¼°Ê±³äÖµ¡£</p>',
-    sms: '¡¾cdn¡¿ÄúµÄÌ×²ÍÁ÷Á¿ÒÑ½Ó½üÉÏÏŞ£¬Çë¼°Ê±³äÖµ¡£'
-  }
-])
-
-const list = ref([...allRows.value])
-const total = ref(allRows.value.length)
+const list = ref([])
+const total = ref(0)
 
 const filters = reactive({
   type: '',
@@ -99,25 +79,21 @@ const detail = reactive({
 })
 
 const applyFilter = () => {
-  let filtered = allRows.value
-  if (filters.type) {
-    filtered = filtered.filter(row => row.type === filters.type)
-  }
-  if (filters.keyword) {
-    const keyword = filters.keyword.trim()
-    filtered = filtered.filter(row => row.title.includes(keyword) || String(row.site_id).includes(keyword))
-  }
-  total.value = filtered.length
-  const start = (filters.page - 1) * filters.pageSize
-  list.value = filtered.slice(start, start + filters.pageSize)
+  request.get('/messages', { params: filters }).then(res => {
+    list.value = res.data?.list || []
+    total.value = res.data?.total || 0
+  })
 }
 
 const openDetail = row => {
   detail.title = row.title
-  detail.email = row.email
-  detail.sms = row.sms
+  detail.email = row.content
+  detail.sms = row.phone
   detailVisible.value = true
+  request.post(`/messages/${row.id}/read`)
 }
+
+onMounted(() => applyFilter())
 </script>
 
 <style scoped>

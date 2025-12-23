@@ -4,40 +4,40 @@
       <el-row :gutter="24" class="profile-row">
         <el-col :span="6">
           <div class="profile-item">
-            <div class="label">ÓÃ»§Ãû:</div>
-            <div class="value">{{ profile.username }}</div>
+            <div class="label">ç”¨æˆ·å:</div>
+            <div class="value">{{ profile.name }}</div>
           </div>
           <div class="profile-item">
-            <div class="label">Óà¶î:</div>
-            <div class="value">{{ profile.balance }}</div>
+            <div class="label">ä½™é¢:</div>
+            <div class="value">{{ balanceText }}</div>
           </div>
         </el-col>
         <el-col :span="8">
           <div class="profile-item">
             <div class="label">QQ:</div>
             <div class="value">
-              {{ profile.qq || 'Î´ÉèÖÃ' }}
-              <el-button link type="primary" size="small" @click="editing.qq = true">ÐÞ¸Ä</el-button>
+              {{ profile.qq || 'æœªè®¾ç½®' }}
+              <el-button link type="primary" size="small" @click="editing.qq = true">ç¼–è¾‘</el-button>
             </div>
           </div>
           <div v-if="editing.qq" class="inline-edit">
-            <el-input v-model="profile.qq" placeholder="ÇëÊäÈëQQ" size="small" style="width: 180px;" />
-            <el-button type="primary" size="small" @click="saveProfile">±£´æ</el-button>
+            <el-input v-model="profile.qq" placeholder="è¯·è¾“å…¥QQ" size="small" style="width: 180px;" />
+            <el-button type="primary" size="small" @click="saveProfile">ä¿å­˜</el-button>
           </div>
         </el-col>
         <el-col :span="6">
           <div class="profile-item">
-            <div class="label">ÃÜÂë:</div>
+            <div class="label">å¯†ç :</div>
             <div class="value">
               ******
-              <el-button link type="primary" size="small" @click="dialogVisible = true">ÐÞ¸Ä</el-button>
+              <el-button link type="primary" size="small" @click="dialogVisible = true">ä¿®æ”¹</el-button>
             </div>
           </div>
         </el-col>
         <el-col :span="4">
           <div class="profile-item">
-            <div class="label">×¢²áÊ±¼ä:</div>
-            <div class="value">{{ profile.registered_at }}</div>
+            <div class="label">æ³¨å†Œæ—¶é—´:</div>
+            <div class="value">{{ profile.create_at }}</div>
           </div>
         </el-col>
       </el-row>
@@ -45,33 +45,33 @@
 
     <el-card class="section-card" shadow="never">
       <div class="section-header">
-        <div class="section-title">ÊµÃûÈÏÖ¤</div>
-        <el-button type="primary" size="small">Á¢¼´ÈÏÖ¤</el-button>
+        <div class="section-title">å®žåè®¤è¯</div>
+        <el-button type="primary" size="small" @click="saveCert">ä¿å­˜è®¤è¯</el-button>
       </div>
       <el-tabs v-model="verifyTab">
-        <el-tab-pane label="¸öÈËÈÏÖ¤" name="personal">
+        <el-tab-pane label="ä¸ªäººè®¤è¯" name="personal">
           <el-form :model="personalForm" label-width="80px" class="section-form">
-            <el-form-item label="ÐÕÃû">
-              <el-input v-model="personalForm.name" placeholder="ÇëÊäÈëÐÕÃû" />
+            <el-form-item label="å§“å">
+              <el-input v-model="personalForm.name" placeholder="è¯·è¾“å…¥å§“å" />
             </el-form-item>
-            <el-form-item label="Éí·ÝÖ¤ºÅ">
-              <el-input v-model="personalForm.id" placeholder="ÇëÊäÈëÉí·ÝÖ¤ºÅ" />
+            <el-form-item label="èº«ä»½è¯å·">
+              <el-input v-model="personalForm.id" placeholder="è¯·è¾“å…¥èº«ä»½è¯å·" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary">È·¶¨</el-button>
+              <el-button type="primary" @click="saveCert">ä¿å­˜</el-button>
             </el-form-item>
           </el-form>
         </el-tab-pane>
-        <el-tab-pane label="ÆóÒµÈÏÖ¤" name="company">
+        <el-tab-pane label="ä¼ä¸šè®¤è¯" name="company">
           <el-form :model="companyForm" label-width="80px" class="section-form">
-            <el-form-item label="ÆóÒµÃû³Æ">
-              <el-input v-model="companyForm.name" placeholder="ÇëÊäÈëÆóÒµÃû³Æ" />
+            <el-form-item label="èº«ä»½è¯å·">
+              <el-input v-model="companyForm.name" placeholder="è¯·è¾“å…¥ä¼ä¸šåç§°" />
             </el-form-item>
-            <el-form-item label="Éç»áÐÅÓÃ´úÂë">
-              <el-input v-model="companyForm.code" placeholder="ÇëÊäÈëÉç»áÐÅÓÃ´úÂë" />
+            <el-form-item label="ç»Ÿä¸€ç¤¾ä¼šä¿¡ç”¨ä»£ç ">
+              <el-input v-model="companyForm.code" placeholder="è¯·è¾“å…¥ä¿¡ç”¨ä»£ç " />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary">È·¶¨</el-button>
+              <el-button type="primary" @click="saveCompanyCert">ä¿å­˜</el-button>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -80,98 +80,108 @@
 
     <el-card class="section-card" shadow="never">
       <div class="section-header">
-        <div class="section-title">ÊÖ»ú°ó¶¨</div>
-        <el-button type="primary" size="small">Á¢¼´°ó¶¨</el-button>
+        <div class="section-title">æ‰‹æœºç»‘å®š</div>
+        <el-button type="primary" size="small" @click="savePhone">ä¿å­˜ç»‘å®š</el-button>
       </div>
       <el-form :model="phoneForm" label-width="80px" class="section-form">
-        <el-form-item label="ÊÖ»úºÅ">
-          <el-input v-model="phoneForm.mobile" placeholder="ÇëÊäÈëÊÖ»úºÅ" />
+        <el-form-item label="æ‰‹æœºå·">
+          <el-input v-model="phoneForm.mobile" placeholder="è¯·è¾“å…¥æ‰‹æœºå·" />
         </el-form-item>
-        <el-form-item label="ÑéÖ¤Âë">
+        <el-form-item label="éªŒè¯ç ">
           <div class="code-row">
-            <el-input v-model="phoneForm.code" placeholder="¶ÌÐÅÑéÖ¤Âë" />
-            <el-button>»ñÈ¡ÑéÖ¤Âë</el-button>
+            <el-input v-model="phoneForm.code" placeholder="è¯·è¾“å…¥éªŒè¯ç " />
+            <el-button disabled>èŽ·å–éªŒè¯ç </el-button>
           </div>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary">È·¶¨</el-button>
+          <el-button type="primary" @click="savePhone">ä¿å­˜</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="section-card" shadow="never">
       <div class="section-header">
-        <div class="section-title">ÓÊÏä°ó¶¨</div>
-        <el-button type="primary" size="small">Á¢¼´°ó¶¨</el-button>
+        <div class="section-title">é‚®ç®±ç»‘å®š</div>
+        <el-button type="primary" size="small" @click="saveEmail">ä¿å­˜ç»‘å®š</el-button>
       </div>
       <el-form :model="emailForm" label-width="80px" class="section-form">
-        <el-form-item label="ÓÊÏä">
-          <el-input v-model="emailForm.email" placeholder="ÇëÊäÈëÓÊÏä" />
+        <el-form-item label="å§“å">
+          <el-input v-model="emailForm.email" placeholder="è¯·è¾“å…¥é‚®ç®±" />
         </el-form-item>
-        <el-form-item label="ÑéÖ¤Âë">
+        <el-form-item label="éªŒè¯ç ">
           <div class="code-row">
-            <el-input v-model="emailForm.code" placeholder="ÓÊÏäÑéÖ¤Âë" />
-            <el-button>»ñÈ¡ÑéÖ¤Âë</el-button>
+            <el-input v-model="emailForm.code" placeholder="è¯·è¾“å…¥éªŒè¯ç " />
+            <el-button disabled>èŽ·å–éªŒè¯ç </el-button>
           </div>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary">È·¶¨</el-button>
+          <el-button type="primary" @click="saveEmail">ä¿å­˜</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="section-card" shadow="never">
       <div class="section-header">
-        <div class="section-title">µÇÂ¼°²È«ÉèÖÃ</div>
-        <el-button type="primary" size="small">Á¢¼´ÉèÖÃ</el-button>
+        <div class="section-title">å®‰å…¨è®¾ç½®</div>
+        <el-button type="primary" size="small" @click="saveSecurity">ä¿å­˜è®¾ç½®</el-button>
       </div>
       <el-form :model="securityForm" label-width="90px" class="section-form">
-        <el-form-item label="µÇÂ¼°×Ãûµ¥">
-          <el-input v-model="securityForm.whitelist" placeholder="¶à¸öIP¿Õ¸ñ·Ö¸ô" />
+        <el-form-item label="IPç™½åå•">
+          <el-input v-model="securityForm.whitelist" placeholder="å¤šä¸ªIPæ¢è¡Œåˆ†éš”" />
         </el-form-item>
-        <el-form-item label="µÇÂ¼ÑéÖ¤">
+        <el-form-item label="èº«ä»½è¯å·">
           <el-radio-group v-model="securityForm.verify">
-            <el-radio label="none">ÎÞ</el-radio>
-            <el-radio label="sms">¶ÌÐÅÑéÖ¤Âë</el-radio>
-            <el-radio label="email">ÓÊ¼þÑéÖ¤Âë</el-radio>
+            <el-radio label="none">ä¸è®¾ç½®</el-radio>
+            <el-radio label="sms">çŸ­ä¿¡éªŒè¯</el-radio>
+            <el-radio label="email">é‚®ç®±éªŒè¯</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary">È·¶¨</el-button>
+          <el-button type="primary" @click="saveSecurity">ä¿å­˜</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="ÐÞ¸ÄÃÜÂë" width="420px">
+    <el-dialog v-model="dialogVisible" title="ä¿®æ”¹å¯†ç " width="420px">
       <el-form :model="passwordForm" label-width="90px">
-        <el-form-item label="µ±Ç°ÃÜÂë">
+        <el-form-item label="èº«ä»½è¯å·">
           <el-input v-model="passwordForm.current" type="password" />
         </el-form-item>
-        <el-form-item label="ÐÂÃÜÂë">
+        <el-form-item label="æ–°å¯†ç ">
           <el-input v-model="passwordForm.next" type="password" />
         </el-form-item>
-        <el-form-item label="È·ÈÏÃÜÂë">
+        <el-form-item label="èº«ä»½è¯å·">
           <el-input v-model="passwordForm.confirm" type="password" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">È¡Ïû</el-button>
-        <el-button type="primary" @click="savePassword">È·¶¨</el-button>
+        <el-button @click="dialogVisible = false">å–æ¶ˆ</el-button>
+        <el-button type="primary" @click="savePassword">ç¡®å®š</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import request from '@/utils/request'
 
 const profile = reactive({
-  username: 'feiyang666',
-  balance: '0Ôª',
+  name: '',
+  balance: 0,
   qq: '',
-  registered_at: '2025-11-06 16:26:17'
+  email: '',
+  phone: '',
+  create_at: '',
+  cert_name: '',
+  cert_no: '',
+  cert_verified: false,
+  white_ip: '',
+  login_captcha: 'none'
 })
+
+const balanceText = computed(() => `${(profile.balance / 100).toFixed(2)}å…ƒ`)
 
 const editing = reactive({
   qq: false
@@ -195,7 +205,7 @@ const phoneForm = reactive({
 })
 
 const emailForm = reactive({
-  email: 'feiyang666@cdn.cn',
+  email: '',
   code: ''
 })
 
@@ -211,15 +221,101 @@ const passwordForm = reactive({
   confirm: ''
 })
 
+const loadProfile = () => {
+  request.get('/profile').then(res => {
+    const data = res.data || {}
+    profile.name = data.name || ''
+    profile.balance = data.balance || 0
+    profile.qq = data.qq || ''
+    profile.email = data.email || ''
+    profile.phone = data.phone || ''
+    profile.create_at = data.create_at || ''
+    profile.cert_name = data.cert_name || ''
+    profile.cert_no = data.cert_no || ''
+    profile.cert_verified = !!data.cert_verified
+    profile.white_ip = data.white_ip || ''
+    profile.login_captcha = data.login_captcha || 'none'
+
+    personalForm.name = profile.cert_name
+    personalForm.id = profile.cert_no
+    companyForm.name = profile.cert_name
+    companyForm.code = profile.cert_no
+    phoneForm.mobile = profile.phone
+    emailForm.email = profile.email
+    securityForm.whitelist = profile.white_ip
+    securityForm.verify = profile.login_captcha || 'none'
+  })
+}
+
+const updateProfile = payload => {
+  return request.put('/profile', payload).then(() => {
+    ElMessage.success('\u4fdd\u5b58\u6210\u529f')
+  })
+}
+
 const saveProfile = () => {
   editing.qq = false
-  ElMessage.success('×ÊÁÏÒÑ±£´æ')
+  updateProfile({
+    qq: profile.qq,
+    email: profile.email,
+    phone: profile.phone,
+    white_ip: profile.white_ip,
+    login_captcha: profile.login_captcha,
+    cert_name: profile.cert_name,
+    cert_no: profile.cert_no
+  })
+}
+
+const saveCert = () => {
+  profile.cert_name = personalForm.name
+  profile.cert_no = personalForm.id
+  saveProfile()
+}
+
+const saveCompanyCert = () => {
+  profile.cert_name = companyForm.name
+  profile.cert_no = companyForm.code
+  saveProfile()
+}
+
+const savePhone = () => {
+  profile.phone = phoneForm.mobile
+  saveProfile()
+}
+
+const saveEmail = () => {
+  profile.email = emailForm.email
+  saveProfile()
+}
+
+const saveSecurity = () => {
+  profile.white_ip = securityForm.whitelist
+  profile.login_captcha = securityForm.verify
+  saveProfile()
 }
 
 const savePassword = () => {
-  dialogVisible.value = false
-  ElMessage.success('ÃÜÂëÒÑ¸üÐÂ')
+  if (!passwordForm.current || !passwordForm.next) {
+    ElMessage.warning('\u8bf7\u8f93\u5165\u5b8c\u6574\u4fe1\u606f')
+    return
+  }
+  if (passwordForm.next !== passwordForm.confirm) {
+    ElMessage.warning('\u4e24\u6b21\u5bc6\u7801\u4e0d\u4e00\u81f4')
+    return
+  }
+  request.put('/password', {
+    current: passwordForm.current,
+    next: passwordForm.next
+  }).then(() => {
+    dialogVisible.value = false
+    passwordForm.current = ''
+    passwordForm.next = ''
+    passwordForm.confirm = ''
+    ElMessage.success('\u4fdd\u5b58\u6210\u529f')
+  })
 }
+
+onMounted(() => loadProfile())
 </script>
 
 <style scoped>

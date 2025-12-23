@@ -70,6 +70,12 @@ func (c *TaskController) List(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"list":  list,
+			"total": total,
+			"page":  page,
+		},
 		"list":  list,
 		"total": total,
 		"page":  page,

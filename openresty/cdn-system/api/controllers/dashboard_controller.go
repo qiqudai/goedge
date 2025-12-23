@@ -1,8 +1,10 @@
-﻿package controllers
+package controllers
 
 import (
 	"net/http"
 
+	"cdn-api/db"
+	"cdn-api/models"
 	"github.com/gin-gonic/gin"
 )
 

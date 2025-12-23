@@ -1,29 +1,29 @@
 <template>
   <div class="app-container">
     <div class="filter-container">
-      <el-select v-model="filters.type" placeholder="????" style="width: 140px;">
-        <el-option label="??" value="" />
-        <el-option label="??" value="purchase" />
-        <el-option label="??" value="renew" />
-        <el-option label="??" value="recharge" />
+      <el-select v-model="filters.type" placeholder="类型" style="width: 140px;">
+        <el-option label="全部" value="" />
+        <el-option label="购买" value="purchase" />
+        <el-option label="续购" value="renew" />
+        <el-option label="充值" value="recharge" />
       </el-select>
-      <el-input v-model="filters.keyword" placeholder="???/??" style="width: 240px;" />
-      <el-button type="primary" @click="applyFilter">??</el-button>
+      <el-input v-model="filters.keyword" placeholder="订单号/备注" style="width: 240px;" />
+      <el-button type="primary" @click="applyFilter">查询</el-button>
     </div>
 
     <el-table :data="list" border style="width: 100%;">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="type_label" label="??" width="120" />
-      <el-table-column prop="remark" label="??" min-width="200" />
-      <el-table-column prop="price" label="??" width="120" />
-      <el-table-column prop="pay" label="????" width="120" />
-      <el-table-column prop="more" label="??" min-width="180" />
-      <el-table-column prop="pay_type" label="????" width="140" />
-      <el-table-column prop="order_no" label="???" min-width="200" />
-      <el-table-column prop="created_at" label="????" width="180" />
-      <el-table-column label="???" width="100" align="center">
+      <el-table-column prop="type_label" label="类型" width="120" />
+      <el-table-column prop="remark" label="备注" min-width="200" />
+      <el-table-column prop="price" label="类型" width="120" />
+      <el-table-column prop="pay" label="实际支付" width="120" />
+      <el-table-column prop="more" label="更多" min-width="180" />
+      <el-table-column prop="pay_type" label="支付方式" width="140" />
+      <el-table-column prop="order_no" label="订单号" min-width="200" />
+      <el-table-column prop="created_at" label="创建时间" width="180" />
+      <el-table-column label="已付款" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.paid ? 'success' : 'info'">{{ row.paid ? '???' : '???' }}</el-tag>
+          <el-tag :type="row.paid ? 'success' : 'info'">{{ row.paid ? '\u5df2\u4ed8\u6b3e' : '\u672a\u4ed8\u6b3e' }}</el-tag>
         </template>
       </el-table-column>
     </el-table>

@@ -66,7 +66,7 @@
           <el-icon v-else color="#C0C4CC"><CircleCloseFilled /></el-icon>
         </template>
       </el-table-column>
-      <el-table-column label="??" width="90" align="center">
+      <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="row.enable ? 'success' : 'info'">{{ row.enable ? '正常' : '禁用' }}</el-tag>
         </template>
@@ -156,7 +156,7 @@
               </el-radio-group>
             </el-form-item>
             <el-form-item label="域名">
-              <el-input v-model="batchForm.domains" type="textarea" :rows="5" placeholder="??????" />
+              <el-input v-model="batchForm.domains" type="textarea" :rows="5" placeholder="输入域名，一行一个" />
             </el-form-item>
             <el-form-item label="DNS API">
               <el-select v-model="batchForm.dnsapi" clearable placeholder="请选择" style="width: 100%;">
@@ -227,10 +227,10 @@
     <el-dialog v-model="dnsapiDialogVisible" title="新增DNS API" width="520px">
       <el-form :model="dnsapiForm" label-width="90px">
         <el-form-item label="名称" required>
-          <el-input v-model="dnsapiForm.name" placeholder="?????" />
+          <el-input v-model="dnsapiForm.name" placeholder="请输入名称" />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="dnsapiForm.remark" placeholder="?????" />
+          <el-input v-model="dnsapiForm.remark" placeholder="请输入备注" />
         </el-form-item>
         <el-form-item label="DNS" required>
           <el-select v-model="dnsapiForm.type" placeholder="请选择" style="width: 100%;" @change="resetDnsapiAuth">

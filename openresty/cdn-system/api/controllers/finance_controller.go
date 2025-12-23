@@ -246,3 +246,46 @@ func (ctr *FinanceController) Recharge(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"msg": "Recharge Successful"})
 }
+
+// UserRecharge
+// POST /api/v1/user/recharge
+func (ctr *FinanceController) UserRecharge(c *gin.Context) {
+	userIDAny, _ := c.Get("userID")
+	userID, _ := userIDAny.(int64)
+
+	var req struct {
+		Amount float64 `json:"amount"`
+		Remark string  `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "Invalid Params"})
+		return
+	}
+	if req.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "Invalid amount"})
+		return
+	}
+
+	amountCents := int64(req.Amount * 100)
+	now := time.Now()
+
+	order := models.Order{
+		UserID:        userID,
+		Type:          "recharge",
+		Description:   req.Remark,
+		Data:          "",
+		CreatedAt:     now,
+		PaidAt:        time.Time{},
+		Amount:        amountCents,
+		PayType:       "online",
+		MerchantOrder: "recharge-" + now.Format("20060102150405"),
+		TransactionID: "",
+		State:         "pending",
+	}
+	if err := db.DB.Create(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Create Failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Order Created"})
+}

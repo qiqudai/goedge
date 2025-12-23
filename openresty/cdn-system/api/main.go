@@ -49,6 +49,9 @@ func main() {
 		&models.ACL{},
 		&models.Order{},
 		&models.APIKey{},
+		&models.Message{},
+		&models.MessageRead{},
+		&models.MessageSub{},
 	)
 
 	// Ensure Admin Role / User Exists

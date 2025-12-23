@@ -66,6 +66,9 @@ func Setup(r *gin.Engine) {
 			admin.GET("/logs/block/stats", blockLogCtr.ListStats)
 			admin.GET("/logs/block/history", blockLogCtr.ListHistory)
 
+			// Messages
+			admin.GET("/messages", (&controllers.MessageController{}).AdminList)
+
 			// Statistics & Ranking
 			statCtr := &controllers.StatController{}
 			admin.GET("/stats/ranking", statCtr.ListRanking)
@@ -101,6 +104,13 @@ func Setup(r *gin.Engine) {
 			// Finance
 			admin.GET("/orders", (&controllers.FinanceController{}).ListOrders)
 			admin.POST("/recharge", (&controllers.FinanceController{}).Recharge)
+
+			// Announcements
+			annCtr := &controllers.AnnouncementController{}
+			admin.GET("/announcements", annCtr.List)
+			admin.POST("/announcements", annCtr.Create)
+			admin.PUT("/announcements/:id", annCtr.Update)
+			admin.DELETE("/announcements/:id", annCtr.Delete)
 
 			// System
 			admin.GET("/system_info", (&controllers.SystemController{}).GetInfo)
@@ -211,9 +221,19 @@ func Setup(r *gin.Engine) {
 			user.GET("/config_items", configItemCtr.ListUser)
 			user.POST("/config_items", configItemCtr.UpsertUser)
 
+			profileCtr := &controllers.UserProfileController{}
+			user.GET("/profile", profileCtr.GetProfile)
+			user.PUT("/profile", profileCtr.UpdateProfile)
+			user.PUT("/password", profileCtr.UpdatePassword)
+			user.POST("/recharge", (&controllers.FinanceController{}).UserRecharge)
+
 			// Orders
 			user.GET("/orders", (&controllers.FinanceController{}).ListUserOrders)
 			user.GET("/logs/operation", (&controllers.LogController{}).ListOpLogsUser)
+			user.GET("/messages", (&controllers.MessageController{}).UserList)
+			user.POST("/messages/:id/read", (&controllers.MessageController{}).MarkRead)
+			user.GET("/message_sub", (&controllers.MessageController{}).GetSubscriptions)
+			user.PUT("/message_sub", (&controllers.MessageController{}).UpdateSubscriptions)
 
 			apiKeyCtr := &controllers.APIKeyController{}
 			user.GET("/api_key", apiKeyCtr.GetKey)
