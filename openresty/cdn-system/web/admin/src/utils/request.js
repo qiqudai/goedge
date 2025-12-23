@@ -3,13 +3,15 @@ import { ElMessage } from 'element-plus'
 
 // Create axios instance
 const service = axios.create({
-  baseURL: '/api/v1/admin', // Proxy will handle this
+  baseURL: '/api/v1/admin', // Default, overridden per-role
   timeout: 5000
 })
 
 // Request interceptor
 service.interceptors.request.use(
   config => {
+    const role = localStorage.getItem('role') || 'user'
+    config.baseURL = role === 'admin' ? '/api/v1/admin' : '/api/v1/user'
     // Inject Token if exists
     const token = localStorage.getItem('admin_token')
     if (token) {

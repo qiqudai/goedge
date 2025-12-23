@@ -1,35 +1,40 @@
 <template>
   <div class="app-container">
     <el-tabs v-model="activeTab" @tab-click="handleTabClick">
-      <!-- 当前拉黑 -->
-      <el-tab-pane label="当前拉黑" name="current">
+      <el-tab-pane label="????" name="current">
         <div class="filter-container">
-          <el-button type="primary" class="filter-item" @click="handleUnblockBatch">解封</el-button>
-          <el-button class="filter-item" @click="handleUnblockSite">解封网站</el-button>
-          <el-button class="filter-item" @click="handleExportCurrent">导出黑名单</el-button>
-          
-          <div class="filter-item" style="display: inline-block; margin-left: 10px;">
-            <el-select v-model="currentFilter.type" style="width: 100px" placeholder="类型">
-              <el-option label="IP地址" value="ip" />
-              <el-option label="网站ID" value="site_id" />
+          <el-button type="primary" class="filter-item" @click="handleUnblockBatch">??</el-button>
+          <el-button class="filter-item" @click="handleUnblockSite">????</el-button>
+          <el-button class="filter-item" @click="handleExportCurrent">?????</el-button>
+
+          <div class="filter-item filter-inline">
+            <el-select v-model="currentFilter.type" style="width: 120px" placeholder="??">
+              <el-option label="IP??" value="ip" />
+              <el-option label="??ID" value="site_id" />
             </el-select>
-            <el-input v-model="currentFilter.keyword" placeholder="输入关键词" style="width: 200px;" class="filter-item" @keyup.enter="fetchCurrentList" />
+            <el-input
+              v-model="currentFilter.keyword"
+              placeholder="??????"
+              style="width: 200px;"
+              class="filter-item"
+              @keyup.enter="fetchCurrentList"
+            />
             <el-button class="filter-item" type="primary" :icon="Search" @click="fetchCurrentList" />
           </div>
         </div>
 
         <el-table :data="currentList" border style="width: 100%" v-loading="loading">
           <el-table-column type="selection" width="55" />
-          <el-table-column prop="site_id" label="网站ID" width="100" />
-          <el-table-column prop="domain" label="域名" />
+          <el-table-column prop="site_id" label="??ID" width="100" />
+          <el-table-column prop="domain" label="??" />
           <el-table-column prop="ip" label="IP" />
-          <el-table-column prop="location" label="位置" />
-          <el-table-column prop="filter" label="过滤器" />
-          <el-table-column prop="block_time" label="拉黑时间" />
-          <el-table-column prop="release_time" label="解封时间" />
-          <el-table-column label="操作" width="100">
+          <el-table-column prop="location" label="??" />
+          <el-table-column prop="filter" label="???" />
+          <el-table-column prop="block_time" label="????" />
+          <el-table-column prop="release_time" label="????" />
+          <el-table-column label="??" width="100">
             <template #default="scope">
-              <el-button type="text" size="small" @click="handleUnblock(scope.row)">解封</el-button>
+              <el-button type="text" size="small" @click="handleUnblock(scope.row)">??</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -47,17 +52,16 @@
         </div>
       </el-tab-pane>
 
-      <!-- 拉黑统计 -->
-      <el-tab-pane label="拉黑统计" name="stats">
+      <el-tab-pane label="????" name="stats">
         <div class="filter-container">
-           <el-radio-group v-model="statsType" style="margin-bottom: 20px;">
-             <el-radio-button label="rank">排行</el-radio-button>
-           </el-radio-group>
+          <el-radio-group v-model="statsType" style="margin-bottom: 20px;">
+            <el-radio-button label="rank">??</el-radio-button>
+          </el-radio-group>
         </div>
 
         <el-table :data="statsList" border style="width: 100%" v-loading="loading">
-          <el-table-column prop="site_id" label="网站ID" />
-          <el-table-column prop="count" label="黑名单数" />
+          <el-table-column prop="site_id" label="??ID" />
+          <el-table-column prop="count" label="????" />
         </el-table>
 
         <div class="pagination-container">
@@ -73,50 +77,55 @@
         </div>
       </el-tab-pane>
 
-      <!-- 历史拉黑 -->
-      <el-tab-pane label="历史拉黑" name="history">
+      <el-tab-pane label="????" name="history">
         <div class="filter-container">
-           <el-button class="filter-item" @click="handleExportHistory">导出黑名单</el-button>
-           
-           <div class="filter-item" style="display: inline-block; margin-left: 10px;">
-            <el-dropdown trigger="click" @command="handleHistoryFilterCommand" style="margin-right: 10px">
-                <span class="el-dropdown-link">
-                    {{ historyFilterLabel }} <el-icon class="el-icon--right"><arrow-down /></el-icon>
-                </span>
-                <template #dropdown>
-                    <el-dropdown-menu>
-                    <el-dropdown-item command="ip">IP</el-dropdown-item>
-                    <el-dropdown-item command="site_id">网站ID</el-dropdown-item>
-                    <el-dropdown-item command="time_range">时间范围</el-dropdown-item>
-                    </el-dropdown-menu>
-                </template>
+          <el-button class="filter-item" @click="handleExportHistory">?????</el-button>
+
+          <div class="filter-item filter-inline">
+            <el-dropdown trigger="click" @command="handleHistoryFilterCommand" style="margin-right: 10px;">
+              <span class="el-dropdown-link">
+                {{ historyFilterLabel }}
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="ip">IP</el-dropdown-item>
+                  <el-dropdown-item command="site_id">??ID</el-dropdown-item>
+                  <el-dropdown-item command="time_range">????</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
             </el-dropdown>
-            <el-input v-if="historyFilter.type !== 'time_range'" v-model="historyFilter.keyword" placeholder="输入关键词" style="width: 200px;" class="filter-item" @keyup.enter="fetchHistoryList" />
+            <el-input
+              v-if="historyFilter.type !== 'time_range'"
+              v-model="historyFilter.keyword"
+              placeholder="??????"
+              style="width: 200px;"
+              class="filter-item"
+              @keyup.enter="fetchHistoryList"
+            />
             <el-date-picker
-                v-else
-                v-model="historyFilter.dateRange"
-                type="daterange"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
-                style="width: 250px"
-                class="filter-item"
+              v-else
+              v-model="historyFilter.dateRange"
+              type="daterange"
+              range-separator="?"
+              start-placeholder="????"
+              end-placeholder="????"
+              style="width: 250px"
+              class="filter-item"
             />
             <el-button class="filter-item" type="primary" :icon="Search" @click="fetchHistoryList" />
           </div>
         </div>
 
         <el-table :data="historyList" border style="width: 100%" v-loading="loading">
-          <el-table-column prop="site_id" label="网站ID" width="100" />
-          <el-table-column prop="domain" label="域名" />
+          <el-table-column prop="site_id" label="??ID" width="100" />
+          <el-table-column prop="domain" label="??" />
           <el-table-column prop="ip" label="IP" />
-          <el-table-column prop="location" label="位置" />
-          <el-table-column prop="filter" label="过滤器" />
-          <el-table-column prop="block_time" label="拉黑时间" />
-          <el-table-column prop="is_manual" label="手动解封?">
-             <template #default="scope">
-                {{ scope.row.is_manual ? '是' : '否' }}
-             </template>
+          <el-table-column prop="location" label="??" />
+          <el-table-column prop="filter" label="???" />
+          <el-table-column prop="block_time" label="????" />
+          <el-table-column prop="is_manual" label="????">
+            <template #default="scope">{{ scope.row.is_manual ? '?' : '?' }}</template>
           </el-table-column>
         </el-table>
 
@@ -139,7 +148,7 @@
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
-import request from '@/utils/request' // Assuming request utils
+import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const activeTab = ref('current')
@@ -154,17 +163,15 @@ const currentFilter = reactive({ type: 'ip', keyword: '' })
 const fetchCurrentList = async () => {
   loading.value = true
   try {
-    const res = await request.get('/admin/logs/block/current', {
-      params: { 
-        ...currentQuery, 
-        type: currentFilter.type, 
-        keyword: currentFilter.keyword 
+    const res = await request.get('/logs/block/current', {
+      params: {
+        ...currentQuery,
+        type: currentFilter.type,
+        keyword: currentFilter.keyword
       }
     })
-    if (res.code === 0) {
-        currentList.value = res.data.list
-        currentTotal.value = res.data.total
-    }
+    currentList.value = res.data?.list || []
+    currentTotal.value = res.data?.total || 0
   } catch (error) {
     console.error(error)
   } finally {
@@ -173,17 +180,16 @@ const fetchCurrentList = async () => {
 }
 
 const handleUnblockBatch = () => {
-    ElMessage.info('批量解封功能开发中')
+  ElMessage.info('?????????')
 }
 const handleUnblockSite = () => {
-    ElMessage.info('解封网站功能开发中')
+  ElMessage.info('?????????')
 }
 const handleExportCurrent = () => {
-    ElMessage.info('导出功能开发中')
+  ElMessage.info('???????')
 }
-const handleUnblock = (row) => {
-    ElMessage.success(`解封 IP: ${row.ip}`)
-    // API call to unblock
+const handleUnblock = row => {
+  ElMessage.success(`????? IP: ${row.ip}`)
 }
 
 // --- Statistics ---
@@ -196,13 +202,11 @@ const fetchStatsList = async () => {
   if (activeTab.value !== 'stats') return
   loading.value = true
   try {
-     const res = await request.get('/admin/logs/block/stats', {
+    const res = await request.get('/logs/block/stats', {
       params: { ...statsQuery }
     })
-    if (res.code === 0) {
-        statsList.value = res.data.list
-        statsTotal.value = res.data.total
-    }
+    statsList.value = res.data?.list || []
+    statsTotal.value = res.data?.total || 0
   } catch (error) {
     console.error(error)
   } finally {
@@ -217,32 +221,29 @@ const historyQuery = reactive({ page: 1, pageSize: 10 })
 const historyFilter = reactive({ type: 'ip', keyword: '', dateRange: [] })
 
 const historyFilterLabel = computed(() => {
-    const map = { 'ip': 'IP', 'site_id': '网站ID', 'time_range': '时间范围' }
-    return map[historyFilter.type] || 'IP'
+  const map = { ip: 'IP', site_id: '??ID', time_range: '????' }
+  return map[historyFilter.type] || 'IP'
 })
 
-const handleHistoryFilterCommand = (command) => {
-    historyFilter.type = command
-    historyFilter.keyword = ''
-    historyFilter.dateRange = []
+const handleHistoryFilterCommand = command => {
+  historyFilter.type = command
+  historyFilter.keyword = ''
+  historyFilter.dateRange = []
 }
 
 const fetchHistoryList = async () => {
   if (activeTab.value !== 'history') return
   loading.value = true
   try {
-    const res = await request.get('/admin/logs/block/history', {
-      params: { 
-        ...historyQuery, 
-        type: historyFilter.type, 
-        keyword: historyFilter.keyword,
-        // Handle date range if selected
+    const res = await request.get('/logs/block/history', {
+      params: {
+        ...historyQuery,
+        type: historyFilter.type,
+        keyword: historyFilter.keyword
       }
     })
-     if (res.code === 0) {
-        historyList.value = res.data.list
-        historyTotal.value = res.data.total
-    }
+    historyList.value = res.data?.list || []
+    historyTotal.value = res.data?.total || 0
   } catch (error) {
     console.error(error)
   } finally {
@@ -251,18 +252,17 @@ const fetchHistoryList = async () => {
 }
 
 const handleExportHistory = () => {
-    ElMessage.info('导出历史功能开发中')
+  ElMessage.info('???????')
 }
 
-
-const handleTabClick = (tab) => {
-    if (tab.props.name === 'current') {
-        fetchCurrentList()
-    } else if (tab.props.name === 'stats') {
-        fetchStatsList()
-    } else if (tab.props.name === 'history') {
-        fetchHistoryList()
-    }
+const handleTabClick = tab => {
+  if (tab.props.name === 'current') {
+    fetchCurrentList()
+  } else if (tab.props.name === 'stats') {
+    fetchStatsList()
+  } else if (tab.props.name === 'history') {
+    fetchHistoryList()
+  }
 }
 
 onMounted(() => {
@@ -277,15 +277,21 @@ onMounted(() => {
 .filter-item {
   margin-right: 10px;
 }
+.filter-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 .pagination-container {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
 }
 .el-dropdown-link {
-    cursor: pointer;
-    color: var(--el-color-primary);
-    display: flex;
-    align-items: center;
+  cursor: pointer;
+  color: var(--el-color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>

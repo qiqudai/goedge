@@ -132,7 +132,7 @@ const searchPlaceholder = computed(() => {
 const fetchRankingList = async () => {
   loading.value = true
   try {
-    const res = await request.get('/admin/stats/ranking', {
+    const res = await request.get('/stats/ranking', {
       params: { 
         type: rankingType.value,
         time_range: timeRange.value,
@@ -165,7 +165,7 @@ const initChart = (dom, title, xAxisData, seriesData, unit) => {
 
 const fetchBasicStats = async () => {
     try {
-        const res = await request.get('/admin/stats/basic')
+        const res = await request.get('/stats/basic')
         if (res.code === 0) {
             const data = res.data
             await nextTick()
@@ -178,7 +178,7 @@ const fetchBasicStats = async () => {
 
 const fetchQualityStats = async () => {
     try {
-        const res = await request.get('/admin/stats/quality')
+        const res = await request.get('/stats/quality')
         if (res.code === 0) {
             const data = res.data
              await nextTick()
@@ -193,7 +193,7 @@ const fetchQualityStats = async () => {
 
 const fetchOriginStats = async () => {
      try {
-        const res = await request.get('/admin/stats/origin')
+        const res = await request.get('/stats/origin')
         if (res.code === 0) {
             const data = res.data
              await nextTick()

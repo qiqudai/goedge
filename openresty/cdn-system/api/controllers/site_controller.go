@@ -1,13 +1,14 @@
-﻿package controllers
+package controllers
 
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -94,6 +95,8 @@ func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 		return
 	}
 
+	services.BumpConfigVersion("site", []int64{site.ID})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Site created successfully", "data": site})
 }
 
@@ -109,6 +112,8 @@ func (ctrl *SiteController) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create site"})
 		return
 	}
+
+	services.BumpConfigVersion("site", []int64{site.ID})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Site created successfully", "data": site})
 }
@@ -136,8 +141,15 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		return
 	}
 
+	defaults, err := services.GetSiteDefaultMap(req.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load defaults"})
+		return
+	}
+
 	lines := splitLines(req.Data)
 	created := 0
+	createdIDs := make([]int64, 0)
 	for _, line := range lines {
 		item, err := parseBatchLine(line)
 		if err != nil {
@@ -169,7 +181,12 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 				return
 			}
 			created++
+			createdIDs = append(createdIDs, site.ID)
 		}
+	}
+
+	if created > 0 {
+		services.BumpConfigVersion("site", createdIDs)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Batch create completed", "created": created})
@@ -178,18 +195,18 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 // AdminBatchUpdate updates fields for selected sites
 func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	var req struct {
-		IDs             []int64               `json:"ids"`
-		UserPackageID   *int64                `json:"user_package_id"`
-		GroupID         *int64                `json:"group_id"`
-		DNSProviderID   *int64                `json:"dns_provider_id"`
-		HttpListen      *[]string             `json:"http_listen"`
-		HttpsListen     *[]string             `json:"https_listen"`
-		BalanceWay      *string               `json:"balance_way"`
-		BackendProtocol *string               `json:"backend_protocol"`
-		CcDefaultRule   *int64                `json:"cc_default_rule"`
-		BlackIP         *string               `json:"black_ip"`
-		WhiteIP         *string               `json:"white_ip"`
-		BlockRegion     *string               `json:"block_region"`
+		IDs             []int64                `json:"ids"`
+		UserPackageID   *int64                 `json:"user_package_id"`
+		GroupID         *int64                 `json:"group_id"`
+		DNSProviderID   *int64                 `json:"dns_provider_id"`
+		HttpListen      *[]string              `json:"http_listen"`
+		HttpsListen     *[]string              `json:"https_listen"`
+		BalanceWay      *string                `json:"balance_way"`
+		BackendProtocol *string                `json:"backend_protocol"`
+		CcDefaultRule   *int64                 `json:"cc_default_rule"`
+		BlackIP         *string                `json:"black_ip"`
+		WhiteIP         *string                `json:"white_ip"`
+		BlockRegion     *string                `json:"block_region"`
 		Settings        map[string]interface{} `json:"settings"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -262,6 +279,9 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Batch update failed"})
 		return
 	}
+
+	services.BumpConfigVersion("site", req.IDs)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Batch update completed"})
 }
 
@@ -315,6 +335,8 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 		return
 	}
 
+	services.BumpConfigVersion("site", req.IDs)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Action completed"})
 }
 
@@ -348,6 +370,8 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			return
 		}
 	}
+
+	services.BumpConfigVersion("site", req.IDs)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Certificate apply queued"})
 }
@@ -465,6 +489,12 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 	if site.CnameHostname == "" && len(domains) > 0 {
 		site.CnameHostname = domains[0] + ".cdn.node.com"
 	}
+
+	defaults, err := services.GetSiteDefaultMap(userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	services.ApplySiteDefaults(site, defaults)
 
 	return site, req.GroupID, nil
 }
@@ -984,5 +1014,3 @@ func splitByComma(input string) []string {
 	}
 	return out
 }
-
-

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -32,15 +34,21 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		Upstreams: make([]models.EdgeUpstream, 0),
 	}
 
+	redisCfg := buildRedisConfig()
+	if redisCfg != nil {
+		payload.Redis = redisCfg
+	}
+	if globalCfg := loadGlobalConfig(); globalCfg != nil {
+		payload.WAF = &globalCfg.WAF
+	}
+
 	// 1. Find Node Groups this node belongs to
-	// Query 'line' table for node_group_id
 	var lines []models.Line
 	if err := db.DB.Where("node_id = ?", node.ID).Find(&lines).Error; err != nil {
 		return nil, err
 	}
 
 	if len(lines) == 0 {
-		// Node not assigned to any group? Return empty config
 		payload.Version = hashConfigVersion(payload)
 		return payload, nil
 	}
@@ -51,35 +59,22 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	}
 
 	// 2. Find Sites assigned to these Node Groups
-	// In db.sql, 'site' table has 'node_group_id'
-	// It also has 'backup_node_group' - we might want to include those too?
-	// For now, let's just stick to primary node_group_id
 	var sites []models.Site
 	if err := db.DB.Where("node_group_id IN ?", groupIDs).Find(&sites).Error; err != nil {
 		return nil, err
 	}
+
+	// Preload certs for HTTPS mapping
+	var certs []models.Cert
+	_ = db.DB.Where("enable = ?", true).Find(&certs).Error
 
 	for _, site := range sites {
 		if !site.Enable {
 			continue
 		}
 
-		// NOTE: Site config in db.sql is complex (json fields).
-		// We need to parse fields like Backend, HTTPListen, etc.
-		// For this refactor, I will create a basic valid structure.
-		// Real implementation needs robust JSON parsing for Site fields.
-
 		upstreamKey := fmt.Sprintf("upstream_%d", site.ID)
-
-		// Parse Backend JSON to get targets
-		// db.sql: backend text
-		// We'll need a struct for that in future. For now, assuming empty or simple.
-
-		// MOCK: Add a dummy target for compilation/testing if backend is empty
-		// In real world, we parse site.Backend
-		targets := []models.EdgeUpstreamTarget{}
-		// TODO: Parse site.Backend -> targets
-
+		targets := buildUpstreamTargets(site.Backends, site.BackendProtocol)
 		if len(targets) > 0 {
 			payload.Upstreams = append(payload.Upstreams, models.EdgeUpstream{
 				ID:      upstreamKey,
@@ -87,22 +82,33 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			})
 		}
 
-		// Build Server Config
-		// site.Domain is also JSON/text in db.sql? "domain text"
-		// We need to parse it.
+		policy := mapBalancePolicy(site.BalanceWay)
+		headers := buildHeaderMap(site.Settings)
+		hasHTTPS := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
 
-		domainConfig := models.EdgeDomain{
-			Name:              site.CnameHostname, // Or parse site.Domain
-			UpstreamKey:       upstreamKey,
-			LoadBalancePolicy: "round_robin", // site.BalanceWay
-			Status:            "active",
+		aclDefault, aclRules := buildACLForSite(site)
+		for _, domain := range site.Domains {
+			domainConf := models.EdgeDomain{
+				Name:              domain,
+				UpstreamKey:       upstreamKey,
+				LoadBalancePolicy: policy,
+				Headers:           headers,
+				Status:            "active",
+				ACLDefaultAction:  aclDefault,
+				ACLRules:          aclRules,
+			}
+			if hasHTTPS {
+				cert := findCertForDomain(domain, certs)
+				if cert != nil {
+					domainConf.SSLCertData = cert.Cert
+					domainConf.SSLKeyData = cert.Key
+				}
+			}
+			payload.Domains = append(payload.Domains, domainConf)
 		}
-		payload.Domains = append(payload.Domains, domainConfig)
 	}
 
-	// Stable version based on config content to avoid unnecessary reloads
 	payload.Version = hashConfigVersion(payload)
-
 	return payload, nil
 }
 
@@ -134,4 +140,90 @@ func findNode(nodeID string) (*models.Node, error) {
 		return nil, errors.New("node not found")
 	}
 	return &node, nil
+}
+
+func loadGlobalConfig() *models.GlobalConfig {
+	var sys models.SysConfig
+	if err := db.DB.First(&sys, "`key` = ?", "global_config").Error; err != nil {
+		return nil
+	}
+	if sys.Value == "" {
+		return nil
+	}
+	var cfg models.GlobalConfig
+	if err := json.Unmarshal([]byte(sys.Value), &cfg); err != nil {
+		return nil
+	}
+	return &cfg
+}
+
+func buildACLForSite(site models.Site) (string, []models.EdgeACLRule) {
+	if site.Settings == nil {
+		return "", nil
+	}
+	access, ok := site.Settings["access"].(map[string]interface{})
+	if !ok {
+		return "", nil
+	}
+	aclID := parseACLID(access["acl"])
+	if aclID == 0 {
+		return "", nil
+	}
+	var acl models.ACL
+	if err := db.DB.Where("id = ?", aclID).First(&acl).Error; err != nil {
+		return "", nil
+	}
+	defaultAction := strings.TrimSpace(acl.DefaultAction)
+	if defaultAction == "" {
+		defaultAction = "allow"
+	}
+	rules := parseACLRules(acl.Data)
+	return defaultAction, rules
+}
+
+func parseACLRules(raw string) []models.EdgeACLRule {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var items []models.EdgeACLRule
+	if err := json.Unmarshal([]byte(raw), &items); err == nil {
+		return items
+	}
+	// Try list of objects
+	var generic []map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &generic); err != nil {
+		return nil
+	}
+	for _, item := range generic {
+		entry := models.EdgeACLRule{}
+		if v, ok := item["ip"].(string); ok {
+			entry.IP = v
+		}
+		if v, ok := item["action"].(string); ok {
+			entry.Action = v
+		}
+		if entry.IP != "" {
+			if entry.Action == "" {
+				entry.Action = "allow"
+			}
+			items = append(items, entry)
+		}
+	}
+	return items
+}
+
+func parseACLID(value interface{}) int64 {
+	switch v := value.(type) {
+	case float64:
+		return int64(v)
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case string:
+		if id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+			return id
+		}
+	}
+	return 0
 }

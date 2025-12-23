@@ -13,6 +13,7 @@ import (
 
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -45,6 +46,8 @@ func (ctrl *CertController) Upload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save certificate"})
 		return
 	}
+
+	services.BumpConfigVersion("cert", []int64{int64(certModel.ID)})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Certificate uploaded successfully", "data": certModel})
 }
@@ -93,6 +96,8 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		return
 	}
 
+	services.BumpConfigVersion("cert", []int64{int64(id)})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Certificate updated successfully"})
 }
 
@@ -107,6 +112,9 @@ func (ctrl *CertController) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete certificate"})
 		return
 	}
+
+	services.BumpConfigVersion("cert", []int64{int64(id)})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Deleted"})
 }
 
@@ -152,6 +160,8 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown action"})
 		return
 	}
+
+	services.BumpConfigVersion("cert", req.IDs)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Action completed"})
 }
@@ -216,6 +226,8 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create certificates"})
 		return
 	}
+
+	services.BumpConfigVersion("cert", []int64{})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Batch created", "created": len(domains)})
 }

@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/services"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -40,6 +41,13 @@ func (ctr *AgentController) GetConfig(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate config"})
 		return
+	}
+
+	if verStr := c.Query("version"); verStr != "" {
+		if ver, err := strconv.ParseInt(verStr, 10, 64); err == nil && ver == config.Version {
+			c.Status(http.StatusNotModified)
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, config)

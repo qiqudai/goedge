@@ -9,8 +9,9 @@ type AppConfig struct {
 }
 
 var App = &AppConfig{
-	Port: "8080",
-	DBDSN: "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
+	Port:      "8080",
+	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
+	RedisAddr: "127.0.0.1:6379",
 }
 
 func Load() {
@@ -20,5 +21,8 @@ func Load() {
 	}
 	if dsn := os.Getenv("DB_DSN"); dsn != "" {
 		App.DBDSN = dsn
+	}
+	if redisAddr := os.Getenv("REDIS_ADDR"); redisAddr != "" {
+		App.RedisAddr = redisAddr
 	}
 }

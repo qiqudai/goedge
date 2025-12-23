@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 // CDN Core API - Stateless & Scalable
 // Developed by Antigravity
@@ -40,13 +40,15 @@ func main() {
 		// &models.UserNodeGroup{}, // Deprecated
 		&models.DNSAPI{},
 		&models.DNSProvider{}, // Check if exists
-		// &models.UserLoginLog{}, // Check if exists
-		// &models.UserOperationLog{}, // Check if exists
+		&models.UserLoginLog{},
+		&models.UserOperationLog{},
 		&models.CnameDomain{}, // Check if exists
 		&models.CCRule{},
 		&models.CCMatch{},
 		&models.CCFilter{},
 		&models.ACL{},
+		&models.Order{},
+		&models.APIKey{},
 	)
 
 	// Ensure Admin Role / User Exists
@@ -102,4 +104,3 @@ func main() {
 	log.Printf("Starting CDN Core API on :%s", config.App.Port)
 	r.Run(":" + config.App.Port)
 }
-

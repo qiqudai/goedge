@@ -10,6 +10,19 @@ local UA_BLACKLIST = { "sqlmap", "nikto", "w3af", "nmap" }
 
 local cdnfly = require "lua.cdnfly_wrapper"
 
+
+local function in_list(list, ip)
+    if not list or list == "" then return false end
+    for line in string.gmatch(list, "[^\n]+") do
+        line = string.gsub(line, "^%s+", "")
+        line = string.gsub(line, "%s+$", "")
+        if line ~= "" and line == ip then
+            return true
+        end
+    end
+    return false
+end
+
 -- Ensure we can find the migrated libraries
 -- We append 'lua/lib/?.lua' to the search path
 -- This assumes the running directory is roughly the base of cdn-edge-node or similar
@@ -20,6 +33,18 @@ end
 
 function _M.check()
     local ip = ngx.var.remote_addr
+    local config = _G.cdn_config
+    if config and config.waf and config.waf.enable == false then
+        return
+    end
+    if config and config.waf then
+        if in_list(config.waf.whitelist_ips, ip) then
+            return
+        end
+        if in_list(config.waf.blacklist_ips, ip) then
+            ngx.exit(403)
+        end
+    end
     
     -- 1. Cache-Aside IP Blacklist Check (Zero Latency Path)
     local is_blocked = nil

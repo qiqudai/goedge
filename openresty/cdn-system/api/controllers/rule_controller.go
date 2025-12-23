@@ -1,7 +1,12 @@
 package controllers
 
 import (
+	"cdn-api/db"
+	"cdn-api/models"
+	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,36 +18,49 @@ type RuleController struct{}
 // ListCCRuleGroups Lists CC rule groups
 // GET /api/v1/admin/rules/cc/groups
 func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
-	type RuleGroup struct {
-		ID         int    `json:"id"`
-		User       string `json:"user"` // system or user
-		Name       string `json:"name"`
-		IsSystem   bool   `json:"is_system"`
-		IsOn       bool   `json:"is_on"`
-		Status     string `json:"status"` // normal
-		SortOrder  int    `json:"sort_order"`
-		CreateTime string `json:"create_time"`
+	query := db.DB.Model(&models.CCRule{})
+	if name := strings.TrimSpace(ctx.Query("name")); name != "" {
+		query = query.Where("name LIKE ?", "%"+name+"%")
+	}
+	status := strings.TrimSpace(ctx.Query("status"))
+	if status == "on" {
+		query = query.Where("enable = ?", true)
+	} else if status == "off" {
+		query = query.Where("enable = ?", false)
 	}
 
-	// Mock Data
-	list := []RuleGroup{
-		{10002, "系统", "关闭", true, true, "正常", 1, "2025-04-02 09:10:16"},
-		{6, "系统", "宽松", true, true, "正常", 2, "2025-04-02 09:10:16"},
-		{1, "系统", "JS验证", true, true, "正常", 3, "2025-04-02 09:10:15"},
-		{10001, "系统", "5秒盾", true, true, "正常", 4, "2025-04-02 09:10:16"},
-		{10000, "系统", "点击验证", true, true, "正常", 5, "2025-04-02 09:10:16"},
-		{2, "系统", "滑块验证", true, true, "正常", 6, "2025-04-02 09:10:15"},
-		{4, "系统", "验证码", true, true, "正常", 7, "2025-04-02 09:10:16"},
-		{10003, "系统", "旋转图片", true, true, "正常", 8, "2025-04-02 09:10:16"},
-		{10004, "系统", "点击验证(简单)", true, true, "正常", 9, "2025-04-02 09:10:16"},
-		{10005, "系统", "滑块验证(简单)", true, true, "正常", 10, "2025-04-02 09:10:16"},
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load rules"})
+		return
+	}
+	var items []models.CCRule
+	if err := query.Order("sort asc, id desc").Find(&items).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load rules"})
+		return
+	}
+
+	userMap, _ := loadUserNameMapFromRules(items)
+	list := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		list = append(list, gin.H{
+			"id":          item.ID,
+			"user":        userMap[item.UserID],
+			"name":        item.Name,
+			"is_system":   item.Internal || item.UserID == 0,
+			"is_on":       item.Enable,
+			"is_show":     item.IsShow,
+			"status":      "normal",
+			"sort_order":  item.Sort,
+			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
 			"list":  list,
-			"total": len(list),
+			"total": total,
 		},
 	})
 }
@@ -50,93 +68,220 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 // ListMatchers Lists available matchers
 // GET /api/v1/admin/rules/cc/matchers
 func (c *RuleController) ListMatchers(ctx *gin.Context) {
-	type Matcher struct {
-		ID         int    `json:"id"`
-		User       string `json:"user"`
-		Name       string `json:"name"`
-		IsSystem   bool   `json:"is_system"`
-		Status     string `json:"status"`
-		CreateTime string `json:"create_time"`
-		Rules      string `json:"rules"` // Simplified for list
+	query := db.DB.Model(&models.CCMatch{})
+	if name := strings.TrimSpace(ctx.Query("name")); name != "" {
+		query = query.Where("name LIKE ?", "%"+name+"%")
+	}
+	status := strings.TrimSpace(ctx.Query("status"))
+	if status == "on" {
+		query = query.Where("enable = ?", true)
+	} else if status == "off" {
+		query = query.Where("enable = ?", false)
 	}
 
-	// Mock Matchers
-	list := []Matcher{
-		{5, "系统", "匹配内置资源", true, "正常", "2025-04-02 09:10:15", ""},
-		{4, "系统", "匹配静态资源", true, "正常", "2025-04-02 09:10:15", ""},
-		{3, "系统", "匹配所有资源", true, "正常", "2025-04-02 09:10:15", ""},
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load matchers"})
+		return
+	}
+	var items []models.CCMatch
+	if err := query.Order("id desc").Find(&items).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load matchers"})
+		return
+	}
+
+	userMap, _ := loadUserNameMapFromRules(items)
+	list := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		list = append(list, gin.H{
+			"id":          item.ID,
+			"user":        userMap[item.UserID],
+			"name":        item.Name,
+			"is_system":   item.Internal || item.UserID == 0,
+			"status":      "normal",
+			"is_on":       item.Enable,
+			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
+		},
+		)
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"code": 0, "data": gin.H{"list": list, "total": len(list)},
+		"code": 0, "data": gin.H{"list": list, "total": total},
 	})
 }
 
 // ListFilters Lists available filters
 // GET /api/v1/admin/rules/cc/filters
 func (c *RuleController) ListFilters(ctx *gin.Context) {
-	type Filter struct {
-		ID         int    `json:"id"`
-		User       string `json:"user"`
-		Name       string `json:"name"`
-		IsSystem   bool   `json:"is_system"`
-		Type       string `json:"type"` // e.g., "滑动验证(简单)"
-		Status     string `json:"status"`
-		CreateTime string `json:"create_time"`
+	query := db.DB.Model(&models.CCFilter{})
+	if name := strings.TrimSpace(ctx.Query("name")); name != "" {
+		query = query.Where("name LIKE ?", "%"+name+"%")
+	}
+	status := strings.TrimSpace(ctx.Query("status"))
+	if status == "on" {
+		query = query.Where("enable = ?", true)
+	} else if status == "off" {
+		query = query.Where("enable = ?", false)
 	}
 
-	// Mock Filters based on screenshot/requirements
-	list := []Filter{
-		{10004, "系统", "滑动过滤(简单)60-5", true, "滑动验证(简单)", "正常", "2025-04-02 09:10:15"},
-		{10003, "系统", "点击过滤(简单)60-5", true, "点击验证(简单)", "正常", "2025-04-02 09:10:15"},
-		{10002, "系统", "旋转图片60-5", true, "旋转图片", "正常", "2025-04-02 09:10:15"},
-		{10001, "系统", "5秒盾60-5", true, "5秒盾", "正常", "2025-04-02 09:10:15"},
-		{10000, "系统", "点击验证60-5", true, "点击验证", "正常", "2025-04-02 09:10:15"},
-		{12, "系统", "临时白名单专用2", true, "请求频率", "正常", "2025-04-02 09:10:15"},
-		{11, "系统", "临时白名单专用1", true, "请求频率", "正常", "2025-04-02 09:10:15"},
-		{10, "系统", "请求速率5-200-50", true, "请求速率", "正常", "2025-04-02 09:10:15"},
-		{9, "系统", "请求速率5-300-50", true, "请求速率", "正常", "2025-04-02 09:10:15"},
-		{8, "系统", "浏览器特征60-5", true, "无感验证", "正常", "2025-04-02 09:10:15"},
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load filters"})
+		return
+	}
+	var items []models.CCFilter
+	if err := query.Order("id desc").Find(&items).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load filters"})
+		return
+	}
+
+	userMap, _ := loadUserNameMapFromRules(items)
+	list := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		list = append(list, gin.H{
+			"id":          item.ID,
+			"user":        userMap[item.UserID],
+			"name":        item.Name,
+			"is_system":   item.Internal || item.UserID == 0,
+			"type":        item.Type,
+			"status":      "normal",
+			"is_on":       item.Enable,
+			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"code": 0, "data": gin.H{"list": list, "total": len(list)},
+		"code": 0, "data": gin.H{"list": list, "total": total},
 	})
 }
 
 // GetRuleGroup Retrieves details of a rule group
 // GET /api/v1/admin/rules/cc/groups/:id
 func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
-	// id := ctx.Param("id")
-
-	// Mock a detailed response for editing
-	// Rules structure: Matcher + Filters + Action
-	type Rule struct {
-		ID          int    `json:"id"`
-		MatcherID   int    `json:"matcher_id"`
-		MatcherName string `json:"matcher_name"`
-		Filter1ID   int    `json:"filter1_id"`
-		Filter1Name string `json:"filter1_name"`
-		Filter2ID   int    `json:"filter2_id"`
-		Filter2Name string `json:"filter2_name"`
-		Action      string `json:"action"` // block, allow, etc.
-		Mode        string `json:"mode"`   // next, stop
-		IsOn        bool   `json:"is_on"`
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var rule models.CCRule
+	if err := db.DB.Where("id = ?", id).First(&rule).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
 	}
 
-	rules := []Rule{
-		{1, 1, "匹配所有资源", 1, "滑动过滤(简单)60-5", 0, "", "block", "next", true},
+	rules := []gin.H{}
+	if rule.Data != "" {
+		var parsed struct {
+			Rules []map[string]interface{} `json:"rules"`
+		}
+		if err := json.Unmarshal([]byte(rule.Data), &parsed); err == nil {
+			for _, r := range parsed.Rules {
+				item := gin.H{}
+				if v, ok := r["matcher_id"]; ok {
+					item["matcher_id"] = v
+				}
+				if v, ok := r["matcher_name"]; ok {
+					item["matcher_name"] = v
+				}
+				if v, ok := r["filter1_id"]; ok {
+					item["filter1_id"] = v
+				}
+				if v, ok := r["filter1_name"]; ok {
+					item["filter1_name"] = v
+				}
+				if v, ok := r["action"]; ok {
+					item["action"] = v
+				}
+				if v, ok := r["mode"]; ok {
+					item["mode"] = v
+				}
+				if len(item) > 0 {
+					rules = append(rules, item)
+				}
+			}
+		}
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"id":        10002,
-			"name":      "关闭",
-			"remark":    "内置规则",
-			"is_system": true,
-			"type":      "system", // system or user
+			"id":        rule.ID,
+			"name":      rule.Name,
+			"remark":    rule.Description,
+			"is_system": rule.Internal || rule.UserID == 0,
+			"type":      mapRuleType(rule.UserID, rule.Internal),
 			"rules":     rules,
 		},
 	})
+}
+
+func loadUserNameMapFromRules(items []models.CCRule) (map[int64]string, error) {
+	ids := uniqueUserIDsFromRules(items)
+	return loadUsersByIDs(ids)
+}
+
+func loadUserNameMapFromMatchers(items []models.CCMatch) (map[int64]string, error) {
+	ids := uniqueUserIDsFromMatchers(items)
+	return loadUsersByIDs(ids)
+}
+
+func loadUserNameMapFromFilters(items []models.CCFilter) (map[int64]string, error) {
+	ids := uniqueUserIDsFromFilters(items)
+	return loadUsersByIDs(ids)
+}
+
+func uniqueUserIDsFromRules(items []models.CCRule) []int64 {
+	seen := map[int64]struct{}{}
+	for _, item := range items {
+		if item.UserID == 0 {
+			continue
+		}
+		seen[item.UserID] = struct{}{}
+	}
+	return mapKeysToSlice(seen)
+}
+
+func uniqueUserIDsFromMatchers(items []models.CCMatch) []int64 {
+	seen := map[int64]struct{}{}
+	for _, item := range items {
+		if item.UserID == 0 {
+			continue
+		}
+		seen[item.UserID] = struct{}{}
+	}
+	return mapKeysToSlice(seen)
+}
+
+func uniqueUserIDsFromFilters(items []models.CCFilter) []int64 {
+	seen := map[int64]struct{}{}
+	for _, item := range items {
+		if item.UserID == 0 {
+			continue
+		}
+		seen[item.UserID] = struct{}{}
+	}
+	return mapKeysToSlice(seen)
+}
+
+func mapKeysToSlice(m map[int64]struct{}) []int64 {
+	ids := make([]int64, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func loadUsersByIDs(ids []int64) (map[int64]string, error) {
+	result := map[int64]string{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var users []models.User
+	if err := db.DB.Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	for _, u := range users {
+		result[u.ID] = u.Name
+	}
+	return result, nil
 }

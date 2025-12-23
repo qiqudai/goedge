@@ -1,83 +1,98 @@
-﻿<template>
+<template>
   <div class="app-container">
-    <el-tabs type="border-card">
-      <el-tab-pane label="通知渠道">
-        <el-form label-width="140px">
-          <el-form-item label="邮件地址">
-            <el-input v-model="form.notify_email" placeholder="alert@example.com" />
-          </el-form-item>
-          <el-form-item label="Telegram 群组 ID">
-            <el-input v-model="form.notify_telegram" placeholder="-100xxxxxxx" />
-          </el-form-item>
-          <el-form-item label="短信手机号">
-            <el-input v-model="form.notify_phone" placeholder="+86138..." />
-          </el-form-item>
-        </el-form>
-      </el-tab-pane>
-
-      <el-tab-pane label="消息模板">
-        <el-collapse>
-          <el-collapse-item title="IP 恢复模板" name="1">
-            <el-input type="textarea" :rows="3" v-model="form.template_ip_up" />
-          </el-collapse-item>
-          <el-collapse-item title="IP 宕机模板" name="2">
-            <el-input type="textarea" :rows="3" v-model="form.template_ip_down" />
-          </el-collapse-item>
-          <el-collapse-item title="带宽告警模板" name="3">
-            <el-input
-              type="textarea"
-              :rows="3"
-              v-model="form.template_bw_limit"
-              placeholder="Node {{node_id}} Bandwidth Exceeded"
-            />
-          </el-collapse-item>
-        </el-collapse>
-      </el-tab-pane>
-
-      <el-tab-pane label="实时监控">
-        <el-alert title="即将上线：实时监控仪表盘" type="warning" :closable="false" />
-      </el-tab-pane>
-    </el-tabs>
-
-    <div class="action-bar">
-      <el-button type="primary" @click="saveConfig">保存所有配置</el-button>
-    </div>
+    <el-form label-width="160px" :model="form">
+      <el-form-item label="?????">
+        <el-input v-model="form.notification_period" placeholder="8-22" />
+      </el-form-item>
+      <el-form-item label="????">
+        <el-select v-model="form.notify_method" placeholder="???">
+          <el-option label="??" value="email" />
+          <el-option label="??" value="sms" />
+          <el-option label="??+??" value="email sms" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="????">
+        <el-checkbox-group v-model="notifyMsgTypes">
+          <el-checkbox label="node_ip_dns">??IP??</el-checkbox>
+          <el-checkbox label="bandwidth">????</el-checkbox>
+          <el-checkbox label="backup_ip">??IP</el-checkbox>
+          <el-checkbox label="backup_default_line">??????</el-checkbox>
+          <el-checkbox label="backup_group">?????</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="??">
+        <el-input v-model="form.email" placeholder="admin@example.com" />
+      </el-form-item>
+      <el-form-item label="?????">
+        <el-input v-model="form.phone" placeholder="+86138..." />
+      </el-form-item>
+      <el-form-item label="??????">
+        <el-input-number v-model="form.bw_exceed_times" :min="1" />
+      </el-form-item>
+      <el-form-item label="??API">
+        <el-input v-model="form.monitor_api" placeholder="http://..." />
+      </el-form-item>
+      <el-form-item label="????(?)">
+        <el-input-number v-model="form.interval" :min="10" />
+      </el-form-item>
+      <el-form-item label="??????">
+        <el-input-number v-model="form.failed_times" :min="1" />
+      </el-form-item>
+      <el-form-item label="?????(%)">
+        <el-input v-model="form.failed_rate" placeholder="50" />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="saveConfig">????</el-button>
+      </el-form-item>
+    </el-form>
   </div>
 </template>
 
 <script setup>
-import { reactive, onMounted } from 'vue'
+import { reactive, onMounted, ref, watch } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const form = reactive({
-  notify_email: '',
-  notify_telegram: '',
-  notify_phone: '',
-  template_ip_up: '',
-  template_ip_down: '',
-  template_bw_limit: ''
+  notification_period: '8-22',
+  notify_method: 'email sms',
+  notify_msg_type: '',
+  email: '',
+  phone: '',
+  bw_exceed_times: 2,
+  monitor_api: '',
+  interval: 30,
+  failed_times: 3,
+  failed_rate: '50'
 })
+
+const notifyMsgTypes = ref([])
+
+const syncMsgTypes = () => {
+  form.notify_msg_type = notifyMsgTypes.value.join(' ')
+}
+
+watch(notifyMsgTypes, () => syncMsgTypes(), { deep: true })
 
 const getConfig = () => {
   request.get('/monitor_config').then(res => {
     if (res.data) {
       Object.assign(form, res.data)
+      if (form.notify_msg_type) {
+        notifyMsgTypes.value = String(form.notify_msg_type).split(' ').filter(Boolean)
+      } else {
+        notifyMsgTypes.value = []
+      }
     }
   })
 }
 
 const saveConfig = () => {
+  syncMsgTypes()
   request.post('/monitor_config', form).then(() => {
-    ElMessage.success('保存成功')
+    ElMessage.success('????')
   })
 }
 
 onMounted(() => getConfig())
 </script>
-
-<style scoped>
-.action-bar {
-  margin-top: 20px;
-}
-</style>

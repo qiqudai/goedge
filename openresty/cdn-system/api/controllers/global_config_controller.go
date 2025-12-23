@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -197,6 +198,7 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 
 	// 4. Trigger Node Sync
 	go notifyNodes(sysConfig.Version)
+	services.BumpConfigVersion("global_config", []int64{})
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Global Config Updated & Nodes Notified"})
 }

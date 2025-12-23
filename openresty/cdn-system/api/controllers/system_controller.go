@@ -22,7 +22,7 @@ func (ctr *SystemController) GetInfo(c *gin.Context) {
 	if result.Error != nil {
 		// Return defaults
 		settings = models.SystemSettings{
-			SystemName:           "cdn 4.0",
+			SystemName:           "CDN 4.0",
 			AdminTitle:           "cdn管理员控制台",
 			UserTitle:            "cdn用户控制台",
 			FooterText:           "Copyright © 2025 Cdn All Rights Reserved",

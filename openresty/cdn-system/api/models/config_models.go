@@ -24,9 +24,10 @@ type Origin struct {
 type EdgeConfig struct {
 	Version   int64            `json:"version"`
 	NodeID    string           `json:"node_id,omitempty"`
-	Domains   []EdgeDomain      `json:"domains"`
-	Upstreams []EdgeUpstream    `json:"upstreams"`
-	Redis     *EdgeRedisConfig  `json:"redis,omitempty"`
+	Domains   []EdgeDomain     `json:"domains"`
+	Upstreams []EdgeUpstream   `json:"upstreams"`
+	Redis     *EdgeRedisConfig `json:"redis,omitempty"`
+	WAF       *WAFConfig       `json:"waf,omitempty"`
 }
 
 type EdgeDomain struct {
@@ -37,10 +38,12 @@ type EdgeDomain struct {
 	Status            string            `json:"status,omitempty"` // active, suspended
 	SSLCertData       string            `json:"ssl_cert_data,omitempty"`
 	SSLKeyData        string            `json:"ssl_key_data,omitempty"`
+	ACLDefaultAction  string            `json:"acl_default_action,omitempty"`
+	ACLRules          []EdgeACLRule     `json:"acl_rules,omitempty"`
 }
 
 type EdgeUpstream struct {
-	ID      string           `json:"id"`
+	ID      string               `json:"id"`
 	Targets []EdgeUpstreamTarget `json:"targets"`
 }
 
@@ -53,4 +56,10 @@ type EdgeRedisConfig struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	Password string `json:"password,omitempty"`
+}
+
+
+type EdgeACLRule struct {
+	IP     string `json:"ip"`
+	Action string `json:"action"`
 }

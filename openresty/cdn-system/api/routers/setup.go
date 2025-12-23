@@ -1,4 +1,4 @@
-﻿package routers
+package routers
 
 import (
 	"cdn-api/controllers"
@@ -27,6 +27,7 @@ func Setup(r *gin.Engine) {
 		// 1. Admin Routes (Require Admin Auth Middleware)
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthRequired("admin"))
+		admin.Use(middleware.OperationLog())
 		{
 			nodeCtr := &controllers.NodeController{}
 			admin.GET("/nodes", nodeCtr.ListNodes)
@@ -79,6 +80,10 @@ func Setup(r *gin.Engine) {
 			// Global Config
 			admin.GET("/global_config", (&controllers.GlobalConfigController{}).GetConfig)
 			admin.POST("/global_config", (&controllers.GlobalConfigController{}).UpdateConfig)
+			// Config Items (defaults)
+			configItemCtr := &controllers.ConfigItemController{}
+			admin.GET("/config_items", configItemCtr.List)
+			admin.POST("/config_items", configItemCtr.Upsert)
 
 			// Packages
 			admin.POST("/packages/grayscale", (&controllers.PackageController{}).UpdateGrayScale)
@@ -184,16 +189,36 @@ func Setup(r *gin.Engine) {
 			admin.GET("/rules/cc/groups/:id", ruleCtr.GetRuleGroup)
 			admin.GET("/rules/cc/matchers", ruleCtr.ListMatchers)
 			admin.GET("/rules/cc/filters", ruleCtr.ListFilters)
+
+			aclCtr := &controllers.ACLController{}
+			admin.GET("/rules/acl", aclCtr.List)
+			admin.GET("/rules/acl/:id", aclCtr.Get)
+			admin.POST("/rules/acl", aclCtr.Create)
+			admin.PUT("/rules/acl/:id", aclCtr.Update)
+			admin.DELETE("/rules/acl/:id", aclCtr.Delete)
 		}
 
 		// 2. User Routes (Require User Auth Middleware)
 		user := v1.Group("/user")
 		user.Use(middleware.AuthRequired("user"))
+		user.Use(middleware.OperationLog())
 		{
 			// Domain Management
 			user.GET("/domains", (&controllers.UserDomainController{}).ListDomains)
 			user.POST("/domains", (&controllers.UserDomainController{}).CreateDomain)
 			user.GET("/domains/:id/config", (&controllers.UserDomainController{}).GetConfig)
+			configItemCtr := &controllers.ConfigItemController{}
+			user.GET("/config_items", configItemCtr.ListUser)
+			user.POST("/config_items", configItemCtr.UpsertUser)
+
+			// Orders
+			user.GET("/orders", (&controllers.FinanceController{}).ListUserOrders)
+			user.GET("/logs/operation", (&controllers.LogController{}).ListOpLogsUser)
+
+			apiKeyCtr := &controllers.APIKeyController{}
+			user.GET("/api_key", apiKeyCtr.GetKey)
+			user.PUT("/api_key", apiKeyCtr.UpdateKey)
+			user.POST("/api_key/reset", apiKeyCtr.ResetSecret)
 
 			// Site management
 			siteController := new(controllers.SiteController)
@@ -223,6 +248,3 @@ func Setup(r *gin.Engine) {
 
 	}
 }
-
-
-

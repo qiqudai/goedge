@@ -21,6 +21,27 @@ end
 waf.check()
 
 -- 4. Dynamic Routing & Config Lookup
+
+local function acl_check(domain_conf, ip)
+    if not domain_conf then return end
+    local rules = domain_conf.acl_rules
+    if rules then
+        for _, rule in ipairs(rules) do
+            if rule.ip == ip then
+                if rule.action == "deny" then
+                    ngx.exit(403)
+                else
+                    return
+                end
+            end
+        end
+    end
+    local default_action = domain_conf.acl_default_action
+    if default_action == "deny" then
+        ngx.exit(403)
+    end
+end
+
 local host = ngx.var.host
 local config = _G.cdn_config 
 local domain_conf = nil

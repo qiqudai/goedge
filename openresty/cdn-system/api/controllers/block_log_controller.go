@@ -25,8 +25,8 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 
 	// Mock Data
 	list := []BlockedItem{
-		{1, 30073, "example.com", "211.90.251.15", "中国_浙江省", "区域屏蔽", time.Now().Add(-1 * time.Hour).Format("2006-01-02 15:04:05"), time.Now().Add(23 * time.Hour).Format("2006-01-02 15:04:05")},
-		{2, 30073, "test.com", "36.49.228.76", "中国_吉林省", "WAF规则", time.Now().Add(-2 * time.Hour).Format("2006-01-02 15:04:05"), "永久"},
+		{1, 30073, "example.com", "211.90.251.15", "CN-ZJ", "REGION_BLOCK", time.Now().Add(-1 * time.Hour).Format("2006-01-02 15:04:05"), time.Now().Add(23 * time.Hour).Format("2006-01-02 15:04:05")},
+		{2, 30073, "test.com", "36.49.228.76", "CN-JL", "WAF_RULE", time.Now().Add(-2 * time.Hour).Format("2006-01-02 15:04:05"), "PERMANENT"},
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
@@ -78,9 +78,9 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 
 	// Mock Data
 	list := []HistoryItem{
-		{1, 30073, "example.com", "211.90.251.15", "中国_浙江省", "区域屏蔽", "2025-12-22 08:15:33", false},
-		{2, 30073, "example.com", "36.49.228.76", "中国_吉林省", "区域屏蔽", "2025-12-22 08:15:33", false},
-		{3, 30073, "example.com", "112.229.182.52", "中国_山东省", "CC防御", "2025-12-22 08:15:33", true},
+		{1, 30073, "example.com", "211.90.251.15", "CN-ZJ", "REGION_BLOCK", "2025-12-22 08:15:33", false},
+		{2, 30073, "example.com", "36.49.228.76", "CN-JL", "REGION_BLOCK", "2025-12-22 08:15:33", false},
+		{3, 30073, "example.com", "112.229.182.52", "CN-SD", "CC_DEFENSE", "2025-12-22 08:15:33", true},
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{

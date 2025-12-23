@@ -1,8 +1,9 @@
 package controllers
 
 import (
-	"cdn-api/models"
+	"cdn-api/db"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,19 +11,67 @@ import (
 
 type LogController struct{}
 
+type LoginLogRow struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id" gorm:"column:uid"`
+	Username    string    `json:"username"`
+	IP          string    `json:"ip"`
+	Success     bool      `json:"success"`
+	PostContent string    `json:"post_content"`
+	CreatedAt   time.Time `json:"created_at" gorm:"column:create_at"`
+}
+
+type OpLogRow struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id" gorm:"column:uid"`
+	Type        string    `json:"type"`
+	Action      string    `json:"action"`
+	Content     string    `json:"content"`
+	Diff        string    `json:"diff"`
+	IP          string    `json:"ip"`
+	Process     string    `json:"process"`
+	CreatedAt   time.Time `json:"created_at" gorm:"column:create_at"`
+	Username    string    `json:"username"`
+	Description string    `json:"description"`
+}
+
 // ListLoginLogs
 // GET /api/v1/admin/logs/login
 func (ctr *LogController) ListLoginLogs(c *gin.Context) {
-	// Mock Data
-	logs := []models.UserLoginLog{
-		{ID: 1, UserID: 1, Username: "admin", IP: "127.0.0.1", Status: 1, CreatedAt: time.Now()},
-		{ID: 2, UserID: 2, Username: "test_user", IP: "192.168.1.5", Status: 0, CreatedAt: time.Now().Add(-1 * time.Hour)},
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
 	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	keyword := c.Query("keyword")
+	query := db.DB.Table("login_log").Select("login_log.*, user.name as username").
+		Joins("left join user on user.id = login_log.uid")
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("user.name LIKE ? OR login_log.ip LIKE ?", like, like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	var logs []LoginLogRow
+	if err := query.Order("login_log.id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
 			"list":  logs,
-			"total": 2,
+			"total": total,
 		},
 	})
 }
@@ -30,15 +79,40 @@ func (ctr *LogController) ListLoginLogs(c *gin.Context) {
 // ListOpLogs
 // GET /api/v1/admin/logs/operation
 func (ctr *LogController) ListOpLogs(c *gin.Context) {
-	// Mock Data
-	logs := []models.UserOperationLog{
-		{ID: 1, UserID: 1, Username: "admin", Action: "Update Config", Description: "Modified Nginx Settings", IP: "127.0.0.1", CreatedAt: time.Now()},
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
 	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	keyword := c.Query("keyword")
+	query := db.DB.Table("op_log").Select("op_log.*, user.name as username, op_log.content as description").
+		Joins("left join user on user.id = op_log.uid")
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("user.name LIKE ? OR op_log.action LIKE ? OR op_log.content LIKE ? OR op_log.ip LIKE ?", like, like, like, like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	var logs []OpLogRow
+	if err := query.Order("op_log.id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
 			"list":  logs,
-			"total": 1,
+			"total": total,
 		},
 	})
 }
@@ -46,104 +120,54 @@ func (ctr *LogController) ListOpLogs(c *gin.Context) {
 // ListAccessLogs
 // GET /api/v1/admin/logs/access
 func (ctr *LogController) ListAccessLogs(c *gin.Context) {
-	// Mock Data based on user request fields
-	type AccessLog struct {
-		Time        string  `json:"time"`
-		Domain      string  `json:"domain"`
-		Port        int     `json:"port"`
-		Scheme      string  `json:"scheme"`
-		Method      string  `json:"method"`
-		URI         string  `json:"uri"`
-		Status      int     `json:"status"`
-		ClientIP    string  `json:"client_ip"`
-		Location    string  `json:"location"`
-		Origin      string  `json:"origin"`
-		ContentType string  `json:"content_type"`
-		Referer     string  `json:"referer"`
-		UserAgent   string  `json:"user_agent"`
-		OriginTime  float64 `json:"origin_time"`
-		Bytes       int     `json:"bytes"`
-		CacheHit    string  `json:"cache_hit"` // HIT, MISS
-		L1Hit       string  `json:"l1_hit"`
-		L2Hit       string  `json:"l2_hit"`
-		L2IP        string  `json:"l2_ip"`
-		NodeID      int     `json:"node_id"`
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"list":  []interface{}{},
+			"total": 0,
+		},
+	})
+}
+
+// ListOpLogsUser
+// GET /api/v1/user/logs/operation
+func (ctr *LogController) ListOpLogsUser(c *gin.Context) {
+	userIDAny, _ := c.Get("userID")
+	userID, _ := userIDAny.(int64)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
 	}
 
-	logs := []AccessLog{
-		{
-			Time:        time.Now().Format("2006-01-02 15:04:05"),
-			Domain:      "for-test.cdnfly.cn",
-			Port:        80,
-			Scheme:      "HTTP/1.1",
-			Method:      "GET",
-			URI:         "/favicon.ico",
-			Status:      403,
-			ClientIP:    "121.237.36.26",
-			Location:    "中国-江苏省-南京市",
-			Origin:      "1.1.1.1:80",
-			ContentType: "text/html; charset=UTF-8",
-			Referer:     "",
-			UserAgent:   "Dalvik/2.1.0 (Linux; U; Android 10; SM-G981B Build/QP1A.190711.020)",
-			OriginTime:  0.023,
-			Bytes:       3085,
-			CacheHit:    "MISS",
-			L1Hit:       "MISS",
-			L2Hit:       "MISS",
-			L2IP:        "",
-			NodeID:      1,
-		},
-		{
-			Time:        time.Now().Add(-10 * time.Minute).Format("2006-01-02 15:04:05"),
-			Domain:      "for-test.cdnfly.cn",
-			Port:        80,
-			Scheme:      "HTTP/1.1",
-			Method:      "GET",
-			URI:         "/index.php?model=abc&action=list",
-			Status:      200,
-			ClientIP:    "114.231.58.200",
-			Location:    "中国-江苏省-南通市",
-			Origin:      "1.1.1.1:80",
-			ContentType: "text/html; charset=UTF-8",
-			Referer:     "https://www.google.com",
-			UserAgent:   "Mozilla/5.0 (Linux; Android 10; SM-A205U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.101 Mobile Safari/537.36",
-			OriginTime:  0.022,
-			Bytes:       3067,
-			CacheHit:    "MISS",
-			L1Hit:       "MISS",
-			L2Hit:       "MISS",
-			L2IP:        "",
-			NodeID:      1,
-		},
-		{
-			Time:        time.Now().Add(-15 * time.Minute).Format("2006-01-02 15:04:05"),
-			Domain:      "156.227.1.72-no-config",
-			Port:        80,
-			Scheme:      "HTTP/1.1",
-			Method:      "GET",
-			URI:         "/.env",
-			Status:      404, // Mock 404
-			ClientIP:    "78.153.140.179",
-			Location:    "英国-英格兰-伦敦",
-			Origin:      "-",
-			ContentType: "text/html; charset=UTF-8",
-			Referer:     "",
-			UserAgent:   "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0)",
-			OriginTime:  0,
-			Bytes:       3972,
-			CacheHit:    "MISS",
-			L1Hit:       "MISS",
-			L2Hit:       "MISS",
-			L2IP:        "",
-			NodeID:      2,
-		},
+	keyword := c.Query("keyword")
+	query := db.DB.Table("op_log").Where("uid = ?", userID)
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("action LIKE ? OR content LIKE ? OR ip LIKE ?", like, like, like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	var logs []OpLogRow
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
 			"list":  logs,
-			"total": 3,
+			"total": total,
 		},
 	})
 }

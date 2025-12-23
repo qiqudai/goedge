@@ -2,8 +2,8 @@
   <div class="app-container">
     <el-card shadow="never">
       <div class="key-row">
-        <div class="label">密钥状态</div>
-        <el-switch v-model="keyEnabled" />
+        <div class="label">????</div>
+        <el-switch v-model="keyEnabled" disabled />
       </div>
 
       <div class="key-row">
@@ -27,43 +27,65 @@
       </div>
 
       <div class="key-row">
-        <div class="label">IP白名单</div>
-        <el-input v-model="whitelist" type="textarea" rows="3" placeholder="多个IP以分隔" />
+        <div class="label">IP???</div>
+        <el-input v-model="whitelist" type="textarea" rows="3" placeholder="??IP???????" />
       </div>
 
       <div class="key-actions">
-        <el-button type="primary" @click="resetSecret">重置密钥</el-button>
+        <el-button @click="saveWhitelist">?????</el-button>
+        <el-button type="primary" @click="resetSecret">????</el-button>
       </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DocumentCopy } from '@element-plus/icons-vue'
+import request from '@/utils/request'
 
-const keyEnabled = ref(true)
-const apiKey = ref('WUBHA9ISzOuNRZ8d')
-const apiSecret = ref('JU3ETXfvD19kNjAC0HgOW2oRlpbQy')
+const keyEnabled = ref(false)
+const apiKey = ref('')
+const apiSecret = ref('')
 const whitelist = ref('')
+
+const loadKey = () => {
+  request.get('/api_key').then(res => {
+    const data = res.data || {}
+    apiKey.value = data.api_key || ''
+    apiSecret.value = data.api_secret || ''
+    whitelist.value = data.api_ip || ''
+    keyEnabled.value = Boolean(apiKey.value)
+  })
+}
 
 const copyText = value => {
   navigator.clipboard?.writeText(value).then(() => {
-    ElMessage.success('已复制')
+    ElMessage.success('???')
+  })
+}
+
+const saveWhitelist = () => {
+  request.put('/api_key', { api_ip: whitelist.value }).then(() => {
+    ElMessage.success('???')
   })
 }
 
 const resetSecret = () => {
-  ElMessageBox.confirm('确认重置密钥?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
+  ElMessageBox.confirm('???????', '??', {
+    confirmButtonText: '??',
+    cancelButtonText: '??',
     type: 'warning'
   }).then(() => {
-    apiSecret.value = Math.random().toString(36).slice(2, 18)
-    ElMessage.success('密钥已重置')
+    request.post('/api_key/reset').then(res => {
+      apiSecret.value = res.data?.api_secret || apiSecret.value
+      ElMessage.success('?????')
+    })
   })
 }
+
+onMounted(() => loadKey())
 </script>
 
 <style scoped>
@@ -84,5 +106,7 @@ const resetSecret = () => {
 }
 .key-actions {
   margin-top: 6px;
+  display: flex;
+  gap: 10px;
 }
 </style>
