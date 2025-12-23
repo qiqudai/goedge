@@ -365,3 +365,13 @@ a:hover {
 :root[data-theme="dark"] .dashboard-container .card-header span {
   color: var(--text-color);
 }
+
+:root[data-theme="dark"] .el-button--primary.is-plain,
+:root[data-theme="dark"] .el-button--success.is-plain,
+:root[data-theme="dark"] .el-button--warning.is-plain,
+:root[data-theme="dark"] .el-button--danger.is-plain,
+:root[data-theme="dark"] .el-button--info.is-plain {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}

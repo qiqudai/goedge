@@ -31,8 +31,10 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 	}
 
 	model := models.CnameDomain{
-		Domain: input.Domain,
-		Note:   input.Note,
+		Domain:    input.Domain,
+		Note:      input.Note,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	if err := db.DB.Create(&model).Error; err != nil {

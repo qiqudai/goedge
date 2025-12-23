@@ -1,12 +1,12 @@
 <template>
   <div class="app-container">
     <div class="filter-container" style="margin-bottom: 20px;">
-      <el-input v-model="listQuery.username" placeholder="用户名" style="width: 200px;" class="filter-item" @keyup.enter="handleFilter" />
+      <el-input v-model="listQuery.keyword" :placeholder="t.keywordPlaceholder" style="width: 200px;" class="filter-item" @keyup.enter="handleFilter" />
       <el-button class="filter-item" type="primary" :icon="Search" @click="handleFilter">
-        搜索
+        {{ t.search }}
       </el-button>
       <el-button class="filter-item" style="margin-left: 10px;" type="primary" :icon="Edit" @click="handleCreate">
-        添加用户
+        {{ t.addUser }}
       </el-button>
     </div>
 
@@ -16,47 +16,47 @@
       border
       fit
       highlight-current-row
-      style="width: 100%;">
-      
+      style="width: 100%;"
+    >
       <el-table-column label="ID" prop="id" sortable="custom" align="center" width="80">
         <template #default="scope">
           <span>{{ scope.row.id }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="用户名" min-width="150px">
-        <template #default="{row}">
-          <span class="link-type" @click="handleUpdate(row)">{{ row.username }}</span>
-          <el-tag v-if="row.role === 'admin'" type="danger" size="small" style="margin-left: 5px">管理员</el-tag>
+      <el-table-column :label="t.userName" min-width="150">
+        <template #default="{ row }">
+          <span class="link-type" @click="handleUpdate(row)">{{ row.name }}</span>
+          <el-tag v-if="row.type === 1" type="danger" size="small" style="margin-left: 5px">{{ t.admin }}</el-tag>
         </template>
       </el-table-column>
 
-      <el-table-column label="邮箱" min-width="150px" align="center">
-        <template #default="{row}">
+      <el-table-column :label="t.email" min-width="150" align="center">
+        <template #default="{ row }">
           <span>{{ row.email }}</span>
         </template>
       </el-table-column>
-      
-      <el-table-column label="手机号" width="120px" align="center">
-        <template #default="{row}">
+
+      <el-table-column :label="t.phone" width="120" align="center">
+        <template #default="{ row }">
           <span>{{ row.phone || '-' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="QQ" width="110px" align="center">
-        <template #default="{row}">
+      <el-table-column label="QQ" width="110" align="center">
+        <template #default="{ row }">
           <span>{{ row.qq || '-' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="余额" width="110px" align="center">
-        <template #default="{row}">
+      <el-table-column :label="t.balance" width="110" align="center">
+        <template #default="{ row }">
           <span>{{ row.balance }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="状态" class-name="status-col" width="100">
-        <template #default="{row}">
+      <el-table-column :label="t.status" class-name="status-col" width="100">
+        <template #default="{ row }">
           <el-switch
             v-model="row.status"
             :active-value="1"
@@ -66,19 +66,19 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="备注" align="center" min-width="150">
-        <template #default="{row}">
-          <span>{{ row.remark }}</span>
+      <el-table-column :label="t.remark" align="center" min-width="150">
+        <template #default="{ row }">
+          <span>{{ row.des || '-' }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" align="center" width="230" class-name="small-padding fixed-width">
-        <template #default="{row}">
+      <el-table-column :label="t.action" align="center" width="230" class-name="small-padding fixed-width">
+        <template #default="{ row }">
           <el-button type="primary" size="small" @click="handleUpdate(row)">
-            编辑
+            {{ t.edit }}
           </el-button>
-          <el-button v-if="row.status!='deleted'" size="small" type="danger" @click="handleDelete(row)">
-            删除
+          <el-button size="small" type="danger" @click="handleDelete(row)">
+            {{ t.delete }}
           </el-button>
         </template>
       </el-table-column>
@@ -87,34 +87,65 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { Search, Edit } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const t = {
+  keywordPlaceholder: '用户名/邮箱/手机号',
+  search: '搜索',
+  addUser: '添加用户',
+  userName: '用户名',
+  admin: '管理员',
+  email: '邮箱',
+  phone: '手机号',
+  balance: '余额',
+  status: '状态',
+  remark: '备注',
+  action: '操作',
+  edit: '编辑',
+  delete: '删除',
+  createUserTip: '创建用户功能开发中',
+  editUserTip: '编辑用户: ',
+  statusUpdated: '状态更新成功',
+  deleteConfirm: '确认删除该用户?',
+  warning: '警告',
+  confirm: '确定',
+  cancel: '取消',
+  deleteSuccess: '删除成功'
+}
+
 const list = ref([])
 const listLoading = ref(true)
+const initSwitchLock = ref(true)
 const listQuery = reactive({
   page: 1,
-  limit: 20,
-  username: undefined,
+  pageSize: 20,
+  keyword: '',
   sort: '+id'
 })
 
 const getList = () => {
   listLoading.value = true
+  initSwitchLock.value = true
   request({
     url: '/users',
     method: 'get',
     params: listQuery
   }).then(response => {
-    // Expected response structure: { code: 0, data: { list: [], total: x } }
-    if (response.data) {
-        list.value = response.data.list
-    }
+    const data = response.data || {}
+    const items = data.list || []
+    list.value = items.map(item => ({
+      ...item,
+      status: item.enable ? 1 : 0,
+      name: item.name || item.username || ''
+    }))
+  }).finally(() => {
     listLoading.value = false
-  }).catch(() => {
-    listLoading.value = false
+    nextTick(() => {
+      initSwitchLock.value = false
+    })
   })
 }
 
@@ -124,38 +155,41 @@ const handleFilter = () => {
 }
 
 const handleCreate = () => {
-  ElMessage.info('创建用户功能开发中')
+  ElMessage.info(t.createUserTip)
 }
 
-const handleUpdate = (row) => {
-    ElMessage.info('编辑用户: ' + row.username)
+const handleUpdate = row => {
+  ElMessage.info(t.editUserTip + (row.name || row.username || row.id))
 }
 
-const handleStatusChange = (row) => {
+const handleStatusChange = row => {
+  if (initSwitchLock.value) {
+    return
+  }
+  request({
+    url: `/users/${row.id}/status`,
+    method: 'put',
+    data: { status: row.status }
+  }).then(() => {
+    ElMessage.success(t.statusUpdated)
+  })
+}
+
+const handleDelete = row => {
+  ElMessageBox.confirm(t.deleteConfirm, t.warning, {
+    confirmButtonText: t.confirm,
+    cancelButtonText: t.cancel,
+    type: 'warning'
+  }).then(() => {
     request({
-        url: `/users/${row.id}/status`,
-        method: 'put',
-        data: { status: row.status }
+      url: `/users/${row.id}`,
+      method: 'delete'
     }).then(() => {
-        ElMessage.success('状态更新成功')
+      ElMessage.success(t.deleteSuccess)
+      const index = list.value.indexOf(row)
+      list.value.splice(index, 1)
     })
-}
-
-const handleDelete = (row) => {
-    ElMessageBox.confirm('确认删除该用户吗?', '警告', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-    }).then(() => {
-        request({
-            url: `/users/${row.id}`,
-            method: 'delete'
-        }).then(() => {
-             ElMessage.success('Deleted Successfully')
-             const index = list.value.indexOf(row)
-             list.value.splice(index, 1)
-        })
-    })
+  })
 }
 
 onMounted(() => {
