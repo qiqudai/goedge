@@ -26,9 +26,9 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-      </div>
+        
+        <el-divider direction="vertical" style="height: 32px; margin: 0 12px; border-color: #dcdfe6;" />
 
-      <div class="filter-right">
         <el-select v-model="listQuery.searchField" class="filter-item" style="width: 140px;">
           <el-option label="全字段" value="all" />
           <el-option label="域名" value="domain" />
@@ -37,6 +37,9 @@
           <el-option label="网站分组" value="group" />
           <el-option label="网站ID" value="site_id" />
           <el-option label="CNAME" value="cname" />
+          <el-option label="网站套餐" value="package" />
+          <el-option label="HTTP监听端口" value="http_port" />
+          <el-option label="HTTPS监听端口" value="https_port" />
         </el-select>
         <el-input
           v-model="listQuery.keyword"
@@ -120,6 +123,19 @@
       />
     </div>
 
+    <!-- Add Group Dialog -->
+    <el-dialog v-model="createGroupVisible" title="添加分组" width="400px">
+      <el-form :model="createGroupForm" label-width="80px">
+        <el-form-item label="名称">
+          <el-input v-model="createGroupForm.name" placeholder="请输入分组名称" @keyup.enter="submitCreateGroup" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createGroupVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitCreateGroup">确定</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="createVisible" width="620px" title="添加网站">
       <el-tabs v-model="createTab" type="card">
         <el-tab-pane label="单个" name="single">
@@ -136,9 +152,12 @@
             </div>
             <div v-if="createMore" class="extra-fields">
               <el-form-item label="所属分组">
-                <el-select v-model="createForm.group_id" clearable placeholder="网站分组, 可不选" style="width: 100%;">
-                  <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
-                </el-select>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                  <el-select v-model="createForm.group_id" clearable placeholder="网站分组, 可不选" style="flex: 1;">
+                    <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+                  </el-select>
+                  <el-button :icon="Plus" circle @click="openCreateGroupDialog" />
+                </div>
               </el-form-item>
               <el-form-item label="DNS API">
                 <el-select v-model="createForm.dns_provider_id" clearable placeholder="自动添加记录, 可不选" style="width: 100%;">
@@ -173,9 +192,12 @@
             </div>
             <div v-if="batchMore" class="extra-fields">
               <el-form-item label="所属分组">
-                <el-select v-model="batchForm.group_id" clearable placeholder="网站分组, 可不选" style="width: 100%;">
-                  <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
-                </el-select>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                  <el-select v-model="batchForm.group_id" clearable placeholder="网站分组, 可不选" style="flex: 1;">
+                    <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+                  </el-select>
+                  <el-button :icon="Plus" circle @click="openCreateGroupDialog" />
+                </div>
               </el-form-item>
               <el-form-item label="DNS API">
                 <el-select v-model="batchForm.dns_provider_id" clearable placeholder="自动添加记录, 可不选" style="width: 100%;">
@@ -791,7 +813,7 @@
     <el-dialog v-model="advancedVisible" title="高级搜索" width="520px">
       <el-form :model="advancedForm" label-width="90px">
         <el-form-item label="分组">
-          <el-select v-model="advancedForm.group_id" clearable placeholder="请选择" style="width: 100%;">
+          <el-select v-model="advancedForm.group_id" multiple clearable placeholder="请选择" style="width: 100%;">
             <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
@@ -819,7 +841,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { ArrowDown, CircleCheckFilled, CircleCloseFilled, Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useRouter } from 'vue-router'
 import CountrySelector from '@/components/CountrySelector.vue'
@@ -840,7 +862,7 @@ const listQuery = reactive({
 
 const advancedVisible = ref(false)
 const advancedForm = reactive({
-  group_id: '',
+  group_id: [],
   status: '',
   https: ''
 })
@@ -850,14 +872,14 @@ const createTab = ref('single')
 const createMore = ref(false)
 const batchMore = ref(false)
 const createForm = reactive({
-  group_id: '',
-  dns_provider_id: '',
+  group_id: undefined,
+  dns_provider_id: undefined,
   domains_input: '',
   backends_input: ''
 })
 const batchForm = reactive({
-  group_id: '',
-  dns_provider_id: '',
+  group_id: undefined,
+  dns_provider_id: undefined,
   data: '',
   ignore_error: false
 })
@@ -865,8 +887,8 @@ const batchForm = reactive({
 const batchEditVisible = ref(false)
 const batchCollapse = ref(['basic'])
 const batchEditForm = reactive({
-  group_id: '',
-  dns_provider_id: '',
+  group_id: undefined,
+  dns_provider_id: undefined,
   http_enable: true,
   http_listen: '',
   https_enable: true,
@@ -1002,7 +1024,14 @@ const activeTags = computed(() => {
   const tags = []
   if (listQuery.keyword) {
     tags.push({ key: 'keyword', label: `${labelForSearchField(listQuery.searchField)}: ${listQuery.keyword}` })
-  }\n\nif (advancedForm.group_id) tags.push({ key: 'group_id', label: `分组: ${advancedForm.group_id}` })
+  }
+  if (advancedForm.group_id && advancedForm.group_id.length) {
+    const groupNames = advancedForm.group_id
+      .map(id => groupOptions.value.find(g => g.id === id)?.name)
+      .filter(Boolean)
+      .join(', ')
+    tags.push({ key: 'group_id', label: `分组: ${groupNames}` })
+  }
   if (advancedForm.status) tags.push({ key: 'status', label: `状态: ${advancedForm.status === 'enabled' ? '正常' : '停用'}` })
   if (advancedForm.https !== '') tags.push({ key: 'https', label: `HTTPS: ${advancedForm.https === '1' ? '开启' : '关闭'}` })
   return tags
@@ -1028,7 +1057,7 @@ const fetchList = () => {
       pageSize: listQuery.pageSize,
       keyword: listQuery.keyword,
       search_field: listQuery.searchField,
-      group_id: advancedForm.group_id || undefined,
+      group_id: advancedForm.group_id?.length ? advancedForm.group_id.join(',') : undefined,
       status: advancedForm.status || undefined,
       https: advancedForm.https !== '' ? advancedForm.https : undefined
     }
@@ -1288,7 +1317,7 @@ const removeTag = key => {
 
 const clearFilters = () => {
   listQuery.keyword = ''
-  advancedForm.group_id = ''
+  advancedForm.group_id = []
   advancedForm.status = ''
   advancedForm.https = ''
   handleFilter()
@@ -1391,7 +1420,11 @@ const labelForSearchField = value => {
     multi_domain: '多域名',
     origin: '源IP',
     group: '网站分组',
-    site_id: '网站ID',\n    cname: 'CNAME'
+    site_id: '网站ID',
+    cname: 'CNAME',
+    package: '网站套餐',
+    http_port: 'HTTP端口',
+    https_port: 'HTTPS端口'
   }
   return mapping[value] || '搜索'
 }
@@ -1401,6 +1434,26 @@ onMounted(() => {
   loadGroups()
   loadDnsProviders()
 })
+
+const createGroupVisible = ref(false)
+const createGroupForm = reactive({ name: '' })
+
+const openCreateGroupDialog = () => {
+  createGroupForm.name = ''
+  createGroupVisible.value = true
+}
+
+const submitCreateGroup = () => {
+  if (!createGroupForm.name) {
+    ElMessage.warning('请输入分组名称')
+    return
+  }
+  request.post('/site_groups', { name: createGroupForm.name }).then(() => {
+    ElMessage.success('创建成功')
+    createGroupVisible.value = false
+    loadGroups()
+  })
+}
 </script>
 
 <style scoped>

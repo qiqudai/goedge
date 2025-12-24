@@ -77,7 +77,7 @@
               <el-table-column prop="create_time" label="创建时间" width="160" />
               <el-table-column label="操作" width="150" align="center">
                 <template #default="{row}">
-                  <el-button type="primary" link size="small">编辑</el-button>
+                  <el-button type="primary" link size="small" @click="handleEditMatcher(row)">编辑</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -442,11 +442,30 @@ const handleEditGroup = async row => {
   dialogFormVisible.value = true
   const { data } = await request.get(`/rules/cc/groups/${row.id}`)
   Object.assign(tempGroup, data)
+  // Ensure rules is an array
+  if (!tempGroup.rules) tempGroup.rules = []
 }
 
-const saveGroup = () => {
-  dialogFormVisible.value = false
-  fetchGroups()
+const saveGroup = async () => {
+  const payload = { ...tempGroup }
+  // Ensure internal boolean is set correctly based on type
+  if (payload.type === 'system') {
+    // Backend handles this but good to be explicit or leave it to backend
+  } 
+  
+  try {
+    if (tempGroup.id) {
+      await request.put(`/rules/cc/groups/${tempGroup.id}`, payload)
+      ElMessage.success('更新成功')
+    } else {
+      await request.post('/rules/cc/groups', payload)
+      ElMessage.success('创建成功')
+    }
+    dialogFormVisible.value = false
+    fetchGroups()
+  } catch (error) {
+    // Error handled by request interceptor usually
+  }
 }
 
 const handleAddRule = async () => {
@@ -478,11 +497,26 @@ const removeRule = index => {
 const handleCreateMatcher = () => {
   matcherDialogVisible.value = true
   Object.assign(tempMatcher, {
+    id: undefined,
     type: 'system',
     name: '',
     remark: '',
     is_on: true,
     rules: [{ item: 'ip', operator: 'eq', value: '' }]
+  })
+}
+
+const handleEditMatcher = async (row) => {
+  matcherDialogVisible.value = true
+  const { data } = await request.get(`/rules/cc/matchers/${row.id}`)
+  
+  Object.assign(tempMatcher, {
+    id: data.id,
+    type: data.type,
+    name: data.name,
+    remark: data.remark || '',
+    is_on: !!data.is_on,
+    rules: data.rules || []
   })
 }
 
@@ -494,9 +528,21 @@ const removeMatcherRule = index => {
   tempMatcher.rules.splice(index, 1)
 }
 
-const saveMatcher = () => {
-  matcherDialogVisible.value = false
-  fetchMatchers()
+const saveMatcher = async () => {
+  const payload = { ...tempMatcher }
+  try {
+    if (tempMatcher.id) {
+      await request.put(`/rules/cc/matchers/${tempMatcher.id}`, payload)
+      ElMessage.success('更新成功')
+    } else {
+      await request.post('/rules/cc/matchers', payload)
+      ElMessage.success('创建成功')
+    }
+    matcherDialogVisible.value = false
+    fetchMatchers()
+  } catch (error) {
+    // console.error(error)
+  }
 }
 
 const openAclDialog = async row => {

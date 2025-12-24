@@ -133,7 +133,8 @@ func getDefaultConfig() models.GlobalConfig {
 // GetConfig
 func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
 	var sysConfig models.SysConfig
-	result := db.DB.First(&sysConfig, "key = ?", GlobalConfigKey)
+	// Match db.sql config structure: name="global_config", type="system", scope_id=0, scope_name="global"
+	result := db.DB.Where("name = ? AND type = ?", GlobalConfigKey, "system").Take(&sysConfig)
 
 	var config models.GlobalConfig
 
@@ -142,9 +143,13 @@ func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
 		config = getDefaultConfig()
 		jsonBytes, _ := json.Marshal(config)
 		sysConfig = models.SysConfig{
-			Key:       GlobalConfigKey,
+			Name:      GlobalConfigKey,
 			Value:     string(jsonBytes),
-			Version:   1,
+			Type:      "system",
+			ScopeID:   0,
+			ScopeName: "global",
+			Enable:    true,
+			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 		db.DB.Create(&sysConfig)
@@ -174,9 +179,22 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	// 1. Fetch existing to get current version
+	// 1. Fetch existing
 	var sysConfig models.SysConfig
-	db.DB.First(&sysConfig, "key = ?", GlobalConfigKey)
+	err := db.DB.Where("name = ? AND type = ?", GlobalConfigKey, "system").Take(&sysConfig).Error
+    
+    isNew := false
+    if err != nil {
+        isNew = true
+        sysConfig = models.SysConfig{
+            Name: GlobalConfigKey,
+            Type: "system",
+            ScopeID: 0,
+            ScopeName: "global",
+            Enable: true,
+            CreatedAt: time.Now(),
+        }
+    }
 
 	// 2. Marshal new config
 	jsonBytes, err := json.Marshal(req)
@@ -186,18 +204,28 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 	}
 
 	// 3. Save to DB
-	sysConfig.Key = GlobalConfigKey
 	sysConfig.Value = string(jsonBytes)
-	sysConfig.Version += 1
 	sysConfig.UpdatedAt = time.Now()
 
-	if db.DB.Save(&sysConfig).Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Save Error"})
-		return
+    if isNew {
+        if db.DB.Create(&sysConfig).Error != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Create Error"})
+            return
+        }
+    	} else {
+		// Use Updates because model has no primary key (ID)
+		if db.DB.Model(&models.SysConfig{}).Where("name = ? AND type = ?", GlobalConfigKey, "system").Updates(map[string]interface{}{
+			"value":     sysConfig.Value,
+			"update_at": sysConfig.UpdatedAt,
+		}).Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Update Error"})
+			return
+		}
 	}
 
-	// 4. Trigger Node Sync
-	go notifyNodes(sysConfig.Version)
+	// 4. Trigger Node Sync (Use timestamp as version)
+	version := sysConfig.UpdatedAt.Unix()
+	go notifyNodes(version)
 	services.BumpConfigVersion("global_config", []int64{})
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Global Config Updated & Nodes Notified"})

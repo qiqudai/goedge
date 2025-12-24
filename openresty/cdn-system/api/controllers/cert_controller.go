@@ -328,7 +328,7 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 
 func (ctrl *CertController) GetDefaultSettings(c *gin.Context) {
 	var sys models.SysConfig
-	if err := db.DB.First(&sys, "key = ?", "cert_default_settings").Error; err != nil {
+	if err := db.DB.Where("name = ? AND type = ?", "cert_default_settings", "system").First(&sys).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"data": certDefaultSettings{Type: "system", DNSAPI: 0}})
 		return
 	}
@@ -354,11 +354,15 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 	}
 	b, _ := json.Marshal(req)
 	var sys models.SysConfig
-	if err := db.DB.First(&sys, "key = ?", "cert_default_settings").Error; err != nil {
+	if err := db.DB.Where("name = ? AND type = ?", "cert_default_settings", "system").First(&sys).Error; err != nil {
 		sys = models.SysConfig{
-			Key:       "cert_default_settings",
+			Name:      "cert_default_settings",
 			Value:     string(b),
-			Version:   1,
+			Type:      "system",
+			ScopeID:   0,
+			ScopeName: "global",
+			Enable:    true,
+			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 		if err := db.DB.Create(&sys).Error; err != nil {
@@ -367,7 +371,6 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 		}
 	} else {
 		sys.Value = string(b)
-		sys.Version += 1
 		sys.UpdatedAt = time.Now()
 		if err := db.DB.Save(&sys).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Save failed"})

@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,7 +30,7 @@ const nodeMonitorConfigKey = "node_monitor_config"
 // GetMonitorConfig
 func (ctr *MonitorController) GetConfig(c *gin.Context) {
 	var sysConfig models.SysConfig
-	result := db.DB.First(&sysConfig, "key = ?", nodeMonitorConfigKey)
+	result := db.DB.Where("name = ? AND type = ?", nodeMonitorConfigKey, "system").First(&sysConfig)
 
 	var cfg NodeMonitorConfig
 	if result.Error != nil {
@@ -56,6 +57,7 @@ func (ctr *MonitorController) GetConfig(c *gin.Context) {
 }
 
 // UpdateMonitorConfig
+// UpdateMonitorConfig
 func (ctr *MonitorController) UpdateConfig(c *gin.Context) {
 	var req NodeMonitorConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -66,12 +68,34 @@ func (ctr *MonitorController) UpdateConfig(c *gin.Context) {
 	payload, _ := json.Marshal(req)
 
 	var sysConfig models.SysConfig
-	db.DB.Where(models.SysConfig{Key: nodeMonitorConfigKey}).Attrs(models.SysConfig{
-		Value: string(payload),
-	}).FirstOrCreate(&sysConfig)
-
-	sysConfig.Value = string(payload)
-	db.DB.Save(&sysConfig)
+	// Check if exists
+	err := db.DB.Where("name = ? AND type = ?", nodeMonitorConfigKey, "system").First(&sysConfig).Error
+	if err != nil {
+		// Create new
+		sysConfig = models.SysConfig{
+			Name:      nodeMonitorConfigKey,
+			Type:      "system",
+			Value:     string(payload),
+			Enable:    true,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			TaskID:    nil, // Allow NULL
+		}
+		if err := db.DB.Create(&sysConfig).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Create Error: " + err.Error()})
+			return
+		}
+	} else {
+		// Update existing using Where clause because we don't have a simple ID primary key
+		updates := map[string]interface{}{
+			"value":     string(payload),
+			"update_at": time.Now(),
+		}
+		if err := db.DB.Model(&models.SysConfig{}).Where("name = ? AND type = ?", nodeMonitorConfigKey, "system").Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Save Error: " + err.Error()})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Monitor Config Updated"})
 }

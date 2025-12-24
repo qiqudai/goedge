@@ -622,6 +622,10 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 				cond = cond.Or("id IN ?", siteIDs)
 			}
 			query = query.Where(cond)
+		case "http_port":
+			query = query.Where("http_listen LIKE ?", like)
+		case "https_port":
+			query = query.Where("https_listen LIKE ?", like)
 		}
 	}
 
@@ -636,8 +640,15 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 		}
 	}
 	if groupStr := c.Query("group_id"); groupStr != "" {
-		if id, err := strconv.Atoi(groupStr); err == nil {
-			siteIDs, err := findSiteIDsByGroupID(int64(id))
+		groupIDStrs := strings.Split(groupStr, ",")
+		var groupIDs []int64
+		for _, idStr := range groupIDStrs {
+			if id, err := strconv.Atoi(strings.TrimSpace(idStr)); err == nil {
+				groupIDs = append(groupIDs, int64(id))
+			}
+		}
+		if len(groupIDs) > 0 {
+			siteIDs, err := findSiteIDsByGroupIDs(groupIDs)
 			if err != nil {
 				return nil, err
 			}

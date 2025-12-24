@@ -13,12 +13,36 @@ import (
 type SiteGroupController struct{}
 
 func (ctr *SiteGroupController) List(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	keyword := c.Query("keyword")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
 	var groups []models.SiteGroup
-	if err := db.DB.Order("id desc").Find(&groups).Error; err != nil {
+	var total int64
+	query := db.DB.Model(&models.SiteGroup{})
+
+	if keyword != "" {
+		query = query.Where("name LIKE ?", "%"+keyword+"%")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups}})
+
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&groups).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups, "total": total}})
 }
 
 func (ctr *SiteGroupController) Create(c *gin.Context) {

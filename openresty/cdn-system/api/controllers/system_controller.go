@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,7 +17,7 @@ const SystemSettingsKey = "system_settings"
 // GetInfo
 func (ctr *SystemController) GetInfo(c *gin.Context) {
 	var sysConfig models.SysConfig
-	result := db.DB.First(&sysConfig, "key = ?", SystemSettingsKey)
+	result := db.DB.Where("name = ? AND type = ?", SystemSettingsKey, "system").First(&sysConfig)
 
 	var settings models.SystemSettings
 	if result.Error != nil {
@@ -63,12 +64,23 @@ func (ctr *SystemController) UpdateInfo(c *gin.Context) {
 
 	// Upsert
 	var sysConfig models.SysConfig
-	db.DB.Where(models.SysConfig{Key: SystemSettingsKey}).Attrs(models.SysConfig{
-		Value: string(jsonBytes),
-	}).FirstOrCreate(&sysConfig)
 
-	sysConfig.Value = string(jsonBytes)
-	db.DB.Save(&sysConfig)
+    err := db.DB.Where("name = ? AND type = ?", SystemSettingsKey, "system").First(&sysConfig).Error
+    if err != nil {
+        sysConfig = models.SysConfig{
+            Name:      SystemSettingsKey,
+            Type:      "system",
+            Value:     string(jsonBytes),
+            Enable:    true,
+            CreatedAt: time.Now(),
+            UpdatedAt: time.Now(),
+        }
+        db.DB.Create(&sysConfig)
+    } else {
+        sysConfig.Value = string(jsonBytes)
+        sysConfig.UpdatedAt = time.Now()
+        db.DB.Save(&sysConfig)
+    }
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "System Settings Updated"})
 }

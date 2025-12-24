@@ -78,7 +78,7 @@
 
       <el-table-column :label="t.status" align="center" width="80">
         <template #default="{ row }">
-          <el-switch v-model="row.enable" :active-value="true" :inactive-value="false" disabled />
+          <el-switch v-model="row.enable" :active-value="true" :inactive-value="false" @change="handleStatusChange(row)" />
         </template>
       </el-table-column>
 
@@ -536,6 +536,19 @@ const handleBatch = (action, rows) => {
       ElMessage.success(res.msg)
       getList()
     })
+  })
+}
+
+const handleStatusChange = (row) => {
+  const action = row.enable ? 'start' : 'stop'
+  request({
+    url: '/nodes/batch',
+    method: 'post',
+    data: { action, ids: [row.id] }
+  }).then(res => {
+    ElMessage.success(res.msg)
+  }).catch(() => {
+    row.enable = !row.enable // Revert on failure
   })
 }
 

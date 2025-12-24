@@ -1,13 +1,13 @@
 ﻿package controllers
 
 import (
-  "cdn-api/db"
-  "cdn-api/models"
-  "encoding/json"
-  "net/http"
-  "time"
+	"cdn-api/db"
+	"cdn-api/models"
+	"encoding/json"
+	"net/http"
+	"time"
 
-  "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 type ForwardDefaultController struct{}
@@ -92,7 +92,7 @@ func (ctrl *ForwardDefaultController) Delete(c *gin.Context) {
 
 func loadForwardDefaultItems() ([]forwardDefaultItem, error) {
   var cfg models.SysConfig
-  if err := db.DB.Where("`key` = ?", forwardDefaultKey).First(&cfg).Error; err != nil {
+  if err := db.DB.Where("name = ? AND type = ?", forwardDefaultKey, "system").First(&cfg).Error; err != nil {
     return []forwardDefaultItem{}, nil
   }
   var items []forwardDefaultItem
@@ -104,12 +104,24 @@ func loadForwardDefaultItems() ([]forwardDefaultItem, error) {
 
 func saveForwardDefaultItems(items []forwardDefaultItem) error {
   data, _ := json.Marshal(items)
-  cfg := models.SysConfig{
-    Key:       forwardDefaultKey,
-    Value:     string(data),
-    Version:   time.Now().Unix(),
-    UpdatedAt: time.Now(),
+  var cfg models.SysConfig
+  if err := db.DB.Where("name = ? AND type = ?", forwardDefaultKey, "system").First(&cfg).Error; err != nil {
+    // create
+    cfg = models.SysConfig{
+        Name:      forwardDefaultKey,
+        Value:     string(data),
+        Type:      "system",
+        ScopeID:   0,
+        ScopeName: "global",
+        Enable:    true,
+        CreatedAt: time.Now(),
+        UpdatedAt: time.Now(),
+    }
+    return db.DB.Create(&cfg).Error
   }
+  // update
+  cfg.Value = string(data)
+  cfg.UpdatedAt = time.Now()
   return db.DB.Save(&cfg).Error
 }
 

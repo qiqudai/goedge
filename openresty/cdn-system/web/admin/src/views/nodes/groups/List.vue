@@ -2,7 +2,7 @@
   <div class="app-container">
     <div class="filter-container">
       <el-button type="primary" :icon="Plus" @click="handleCreate">新增分组</el-button>
-      <el-button @click="handleBatchDelete">删除</el-button>
+<!--      <el-button @click="handleBatchDelete">删除</el-button>-->
       
       <div class="right-actions" style="float: right;">
         <el-select v-model="listQuery.region" placeholder="区域: 默认" style="width: 120px; margin-right: 10px;">
@@ -19,23 +19,18 @@
       <el-table-column label="ID" prop="id" width="80" align="center" />
       <el-table-column label="名称" min-width="150">
         <template #default="{row}">
-          <span class="link-type" @click="handleUpdate(row)">{{ row.name }}</span>
+          <el-button type="primary" link @click="handleUpdate(row)">{{ row.name }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column label="区域" prop="region" width="100" align="center" />
+      <el-table-column label="区域" prop="region_id" width="100" align="center" />
       <el-table-column label="解析值" min-width="200">
         <template #default="{row}">
           <div>{{ row.resolution }} <span style="color: grey;">(IPv4: {{ row.ipv4_resolution }})</span></div>
         </template>
       </el-table-column>
-      <el-table-column label="统计" min-width="250">
-        <template #default="{row}">
-          节点数(1个) 网站数(2个) 独立站(0个)
-        </template>
-      </el-table-column>
       <el-table-column label="L2配置" width="100" align="center">
         <template #default="{row}">
-           <!-- Placeholder -->
+           {{ row.l2_config === 'default' ? '默认配置' : row.l2_config }}
         </template>
       </el-table-column>
       <el-table-column label="排序" prop="sort_order" width="80" align="center" />
@@ -67,12 +62,8 @@
         <el-form-item label="名称:" prop="name">
           <el-input v-model="temp.name" placeholder="分组名称" />
         </el-form-item>
-        <el-form-item label="区域:" prop="region">
-             <el-select v-model="temp.region" placeholder="选择区域" style="width: 100%;">
-                <el-option label="默认" value="默认" />
-                <el-option label="中国" value="中国" />
-                <el-option label="海外" value="海外" />
-             </el-select>
+        <el-form-item label="区域ID:" prop="region_id">
+             <el-input v-model.number="temp.region_id" placeholder="区域ID (0为默认)" />
         </el-form-item>
         <el-form-item label="解析值:" prop="resolution">
           <el-input v-model="temp.resolution" placeholder="CNAME解析值" />
@@ -84,7 +75,7 @@
             <el-input v-model="temp.remark" placeholder="请输入备注" />
         </el-form-item>
         <el-form-item label="排序:" prop="sort_order">
-            <el-input v-model="temp.sort_order" />
+            <el-input v-model="temp.sort_order" placeholder="数字越小越靠前" />
         </el-form-item>
         
         <el-form-item label="L2配置:" prop="l2_config">
@@ -95,9 +86,9 @@
         
         <el-form-item label="备用IP切换:">
             <el-radio-group v-model="temp.spare_ip_switch">
-                <el-radio :label="1">有主IP下线时</el-radio>
-                <el-radio :label="2">在线IP数少于备用IP数时</el-radio>
-                <el-radio :label="3">间隔切换</el-radio>
+                <el-radio label="1">有主IP下线时</el-radio>
+                <el-radio label="2">在线IP数少于备用IP数时</el-radio>
+                <el-radio label="3">间隔切换</el-radio>
             </el-radio-group>
         </el-form-item>
       </el-form>
@@ -138,31 +129,28 @@ const textMap = {
 const temp = reactive({
   id: undefined,
   name: '',
-  region: '默认',
+  region_id: 0,
   resolution: '',
   ipv4_resolution: '',
   remark: '',
   sort_order: 100,
   l2_config: '',
-  spare_ip_switch: 1
+  spare_ip_switch: '1'
 })
 
 const getList = () => {
     listLoading.value = true
-    // Mock API
     request({
-        url: '/node-groups',
+        url: '/node-groups', // Matches controller: /api/v1/admin/node-groups
         method: 'get',
         params: listQuery
     }).then(response => {
+        // Backend returns: { code: 0, data: { list: [], total: 0 } }
         list.value = response.data.list
-        total.value = response.data.total || list.value.length
+        total.value = response.data.total
         listLoading.value = false
     }).catch(() => {
-        // Fallback for development if API fails
-        list.value = [
-            { id: 1, name: 'test', region: '默认', resolution: 'fz2c9mru', ipv4_resolution: 'xqkt5je9', sort_order: 100, spare_ip_switch: 1 }
-        ]
+        list.value = []
         listLoading.value = false
     })
 }
@@ -175,12 +163,13 @@ const handleFilter = () => {
 const resetTemp = () => {
   temp.id = undefined
   temp.name = ''
+  temp.region_id = 0
   temp.resolution = ''
   temp.ipv4_resolution = ''
   temp.remark = ''
   temp.sort_order = 100
   temp.l2_config = ''
-  temp.spare_ip_switch = 1
+  temp.spare_ip_switch = '1'
 }
 
 const handleCreate = () => {
@@ -196,8 +185,24 @@ const createData = () => {
         data: temp
     }).then(() => {
         dialogFormVisible.value = false
+        ElMessage.success('创建成功')
         getList()
     })
+}
+
+const handleUpdate = (row) => {
+    temp.id = row.id
+    temp.name = row.name
+    temp.region_id = row.region_id || 0
+    temp.resolution = row.resolution
+    temp.ipv4_resolution = row.ipv4_resolution
+    temp.remark = row.remark // Model: Description json:"remark"
+    temp.sort_order = row.sort_order
+    temp.l2_config = row.l2_config
+    temp.spare_ip_switch = row.spare_ip_switch // Model: BackupSwitchType json:"spare_ip_switch"
+    
+    dialogStatus.value = 'update'
+    dialogFormVisible.value = true
 }
 
 const updateData = () => {
@@ -207,6 +212,7 @@ const updateData = () => {
         data: temp
     }).then(() => {
         dialogFormVisible.value = false
+        ElMessage.success('更新成功')
         getList()
     })
 }

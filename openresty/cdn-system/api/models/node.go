@@ -31,9 +31,16 @@ type Node struct {
 	CheckNodeGroup string      `json:"check_node_group"`
 	CheckAction    string      `json:"check_action"`
 	BwLimit        string      `json:"bw_limit"`
-	CreatedAt      time.Time   `json:"create_at" gorm:"column:create_at"`
-	UpdatedAt      time.Time   `json:"update_at" gorm:"column:update_at"`
-	SubIPs         []NodeSubIP `json:"sub_ips,omitempty" gorm:"-"`
+	// New fields for Node Settings
+	Level        int    `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2
+	Sort         int    `json:"sort_order" gorm:"column:sort;default:0"`
+	CacheDir     string `json:"cache_dir" gorm:"column:cache_dir"`
+	MaxCacheSize int    `json:"cache_limit" gorm:"column:max_cache_size"`
+	LogDir       string `json:"log_dir" gorm:"column:log_dir"`
+
+	CreatedAt time.Time   `json:"create_at" gorm:"column:create_at"`
+	UpdatedAt time.Time   `json:"update_at" gorm:"column:update_at"`
+	SubIPs    []NodeSubIP `json:"sub_ips,omitempty" gorm:"-"`
 }
 
 func (Node) TableName() string {

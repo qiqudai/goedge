@@ -183,6 +183,11 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 			"check_node_group": req.CheckNodeGroup,
 			"check_action":     req.CheckAction,
 			"bw_limit":         req.BwLimit,
+			"level":            req.Level,
+			"sort":             req.Sort,
+			"cache_dir":        req.CacheDir,
+			"max_cache_size":   req.MaxCacheSize,
+			"log_dir":          req.LogDir,
 			"update_at":        time.Now(),
 		}
 

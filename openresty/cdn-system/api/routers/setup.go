@@ -202,8 +202,13 @@ func Setup(r *gin.Engine) {
 			// Rules Management (CC/ACL)
 			ruleCtr := &controllers.RuleController{}
 			admin.GET("/rules/cc/groups", ruleCtr.ListCCRuleGroups)
+			admin.POST("/rules/cc/groups", ruleCtr.CreateCCRuleGroup)
+			admin.PUT("/rules/cc/groups/:id", ruleCtr.UpdateCCRuleGroup)
 			admin.GET("/rules/cc/groups/:id", ruleCtr.GetRuleGroup)
 			admin.GET("/rules/cc/matchers", ruleCtr.ListMatchers)
+			admin.GET("/rules/cc/matchers/:id", ruleCtr.GetMatcher)
+			admin.POST("/rules/cc/matchers", ruleCtr.CreateMatcher)
+			admin.PUT("/rules/cc/matchers/:id", ruleCtr.UpdateMatcher)
 			admin.GET("/rules/cc/filters", ruleCtr.ListFilters)
 
 			aclCtr := &controllers.ACLController{}

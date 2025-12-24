@@ -43,16 +43,14 @@ func (ctr *NodeGroupController) CreateNodeGroup(c *gin.Context) {
 	req.CreatedAt = time.Now()
 	req.UpdatedAt = time.Now()
 
+	if req.RegionID != nil && *req.RegionID == 0 {
+		req.RegionID = nil
+	}
+
 	if err := db.DB.Create(&req).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Create Failed"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"msg":  "Created",
-		"data": req,
-	})
 }
 
 // UpdateNodeGroup
@@ -67,12 +65,19 @@ func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 		return
 	}
 
+	if req.RegionID != nil && *req.RegionID == 0 {
+		req.RegionID = nil
+	}
+
 	updates := map[string]interface{}{
 		"name":                 req.Name,
 		"region_id":            req.RegionID,
-		"cname_hostname":       req.CnameHostname,
-		"des":                  req.Description,
-		"backup_switch_type":   req.BackupSwitchType,
+		"cname_hostname":       req.CnameHostname,  // maps to resolution
+		"ipv4_resolution":      req.Ipv4Resolution,
+		"des":                  req.Description,    // maps to remark
+		"sort_order":           req.SortOrder,
+		"l2_config":            req.L2Config,
+		"backup_switch_type":   req.BackupSwitchType, // maps to spare_ip_switch
 		"backup_switch_policy": req.BackupSwitchPolicy,
 		"update_at":            time.Now(),
 	}

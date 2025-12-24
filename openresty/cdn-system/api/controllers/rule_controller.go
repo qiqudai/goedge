@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -65,6 +66,100 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 	})
 }
 
+// CreateCCRuleGroup Creates a new CC rule group
+// POST /api/v1/admin/rules/cc/groups
+func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
+	var req struct {
+		Type   string                   `json:"type"`
+		Name   string                   `json:"name"`
+		Remark string                   `json:"remark"`
+		Rules  []map[string]interface{} `json:"rules"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Prepare JSON data for 'data' column
+	dataMap := map[string]interface{}{
+		"rules": req.Rules,
+	}
+	dataBytes, _ := json.Marshal(dataMap)
+
+	ccRule := models.CCRule{
+		Name:        req.Name,
+		Description: req.Remark,
+		Data:        string(dataBytes),
+		Enable:      true,
+		IsShow:      true,
+		Internal:    req.Type == "system",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if req.Type == "user" {
+		// Simplified logic: assume admin wants to create for a specific user if uid passed?
+		// For now, if "type" is user but no uid, assume it's a template for users or system default
+		// Adjust based on requirements. The UI sends type='system' or 'user'.
+		// If 'user', maybe we set Internal=false. UserID is 0 for admin created templates.
+		ccRule.Internal = false
+	} else {
+		ccRule.Internal = true
+	}
+
+	if err := db.DB.Create(&ccRule).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule group"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
+// UpdateCCRuleGroup Updates an existing CC rule group
+// PUT /api/v1/admin/rules/cc/groups/:id
+func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		Type   string                   `json:"type"`
+		Name   string                   `json:"name"`
+		Remark string                   `json:"remark"`
+		Rules  []map[string]interface{} `json:"rules"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var ccRule models.CCRule
+	if err := db.DB.Where("id = ?", id).First(&ccRule).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule group not found"})
+		return
+	}
+
+	dataMap := map[string]interface{}{
+		"rules": req.Rules,
+	}
+	dataBytes, _ := json.Marshal(dataMap)
+
+	ccRule.Name = req.Name
+	ccRule.Description = req.Remark
+	ccRule.Data = string(dataBytes)
+	ccRule.Internal = (req.Type == "system")
+	ccRule.UpdatedAt = time.Now()
+
+	if err := db.DB.Save(&ccRule).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
 // ListMatchers Lists available matchers
 // GET /api/v1/admin/rules/cc/matchers
 func (c *RuleController) ListMatchers(ctx *gin.Context) {
@@ -108,6 +203,132 @@ func (c *RuleController) ListMatchers(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0, "data": gin.H{"list": list, "total": total},
+	})
+}
+
+// CreateMatcher Creates a new matcher
+// POST /api/v1/admin/rules/cc/matchers
+func (c *RuleController) CreateMatcher(ctx *gin.Context) {
+	var req struct {
+		Type   string                   `json:"type"`
+		Name   string                   `json:"name"`
+		Remark string                   `json:"remark"`
+		IsOn   bool                     `json:"is_on"`
+		Rules  []map[string]interface{} `json:"rules"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	dataMap := map[string]interface{}{
+		"rules": req.Rules,
+	}
+	dataBytes, _ := json.Marshal(dataMap)
+
+	matcher := models.CCMatch{
+		Name:        req.Name,
+		Description: req.Remark,
+		Data:        string(dataBytes),
+		Enable:      req.IsOn,
+		Internal:    req.Type == "system",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	if err := db.DB.Create(&matcher).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create matcher"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
+// UpdateMatcher Updates an existing matcher
+// PUT /api/v1/admin/rules/cc/matchers/:id
+func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		Type   string                   `json:"type"`
+		Name   string                   `json:"name"`
+		Remark string                   `json:"remark"`
+		IsOn   bool                     `json:"is_on"`
+		Rules  []map[string]interface{} `json:"rules"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var matcher models.CCMatch
+	if err := db.DB.Where("id = ?", id).First(&matcher).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "matcher not found"})
+		return
+	}
+
+	dataMap := map[string]interface{}{
+		"rules": req.Rules,
+	}
+	dataBytes, _ := json.Marshal(dataMap)
+
+	matcher.Name = req.Name
+	matcher.Description = req.Remark
+	matcher.Data = string(dataBytes)
+	matcher.Enable = req.IsOn
+	matcher.Internal = (req.Type == "system")
+	matcher.UpdatedAt = time.Now()
+
+	if err := db.DB.Save(&matcher).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update matcher"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
+// GetMatcher Retrieves details of a matcher
+// GET /api/v1/admin/rules/cc/matchers/:id
+func (c *RuleController) GetMatcher(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var matcher models.CCMatch
+	if err := db.DB.Where("id = ?", id).First(&matcher).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "matcher not found"})
+		return
+	}
+
+	rules := []gin.H{}
+	if matcher.Data != "" {
+		var parsed struct {
+			Rules []map[string]interface{} `json:"rules"`
+		}
+		if err := json.Unmarshal([]byte(matcher.Data), &parsed); err == nil {
+			for _, r := range parsed.Rules {
+				// Simply return the rule object as map
+				rules = append(rules, r)
+			}
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"id":        matcher.ID,
+			"name":      matcher.Name,
+			"remark":    matcher.Description,
+			"is_system": matcher.Internal || matcher.UserID == 0,
+			"is_on":     matcher.Enable,
+			"type":      mapRuleType(matcher.UserID, matcher.Internal),
+			"rules":     rules,
+		},
 	})
 }
 

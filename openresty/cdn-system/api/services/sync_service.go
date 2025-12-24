@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,34 +30,51 @@ type ConfigChange struct {
 // BumpConfigVersion increments the global config version and optionally publishes via Redis.
 func BumpConfigVersion(resource string, ids []int64) int64 {
 	var cfg models.SysConfig
-	if err := db.DB.Where("`key` = ?", configVersionKey).First(&cfg).Error; err != nil {
+	var version int64 = 1
+
+	// Find the config version record
+	err := db.DB.Where("name = ? AND type = ?", configVersionKey, "system").First(&cfg).Error
+	if err != nil {
+		// Not found, create new
 		cfg = models.SysConfig{
-			Key:       configVersionKey,
-			Version:   1,
+			Name:      configVersionKey,
+			Type:      "system", // Use 'system' type
+			ScopeID:   0,
+			ScopeName: "global",
+			Value:     "1",
+			Enable:    true,
+			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
+		db.DB.Create(&cfg)
 	} else {
-		cfg.Version += 1
+		// Parse existing version
+		v, err := strconv.ParseInt(cfg.Value, 10, 64)
+		if err == nil {
+			version = v + 1
+		}
+		cfg.Value = strconv.FormatInt(version, 10)
 		cfg.UpdatedAt = time.Now()
+		db.DB.Save(&cfg)
 	}
-	_ = db.DB.Save(&cfg).Error
 
 	NotifyConfigChanged(ConfigChange{
-		Version:   cfg.Version,
+		Version:   version,
 		Resource:  resource,
 		IDs:       ids,
 		Timestamp: cfg.UpdatedAt,
 	})
-	return cfg.Version
+	return version
 }
 
 // GetConfigVersion returns the latest global config version.
 func GetConfigVersion() int64 {
 	var cfg models.SysConfig
-	if err := db.DB.Where("`key` = ?", configVersionKey).First(&cfg).Error; err != nil {
+	if err := db.DB.Where("name = ? AND type = ?", configVersionKey, "system").First(&cfg).Error; err != nil {
 		return 0
 	}
-	return cfg.Version
+	v, _ := strconv.ParseInt(cfg.Value, 10, 64)
+	return v
 }
 
 // NotifyConfigChanged publishes a change event to Redis if configured.
