@@ -401,3 +401,8 @@
 
 ## Progress Log
 - 2025-12-23: Fixed admin API errors for users/status, packages, plans, user_plans assign, forwards/forward_groups, and dns/providers; mapped forward models to stream tables and package/user_package to plans.
+- 2025-12-23: Expanded node model/controller to cover node table fields, added sub IP handling via pid children, and updated node list UI with auto-disable and bandwidth limit controls.
+- 2025-12-23: Node create/update now treat region_id as nullable to avoid FK errors when not set.
+- 2025-12-23: Fixed node model column mapping (pid) and removed non-existent token field to stop insert errors.
+- 2025-12-23: Removed node token generation from controller to match DB schema.
+- 2025-12-23: Website list UI removes user/package selects; site create/batch now default user to current admin and auto-pick first user_package when not provided.

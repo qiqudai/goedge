@@ -36,8 +36,6 @@
           <el-option label="源IP" value="origin" />
           <el-option label="网站分组" value="group" />
           <el-option label="网站ID" value="site_id" />
-          <el-option label="网站套餐" value="package" />
-          <el-option label="用户" value="user" />
           <el-option label="CNAME" value="cname" />
         </el-select>
         <el-input
@@ -71,7 +69,6 @@
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="user_name" label="用户" width="120" />
       <el-table-column prop="domain_display" label="域名" min-width="220" show-overflow-tooltip />
       <el-table-column prop="listen_ports" label="监听端口" width="110" />
       <el-table-column prop="origin_display" label="源站" min-width="200" show-overflow-tooltip />
@@ -82,7 +79,6 @@
           <el-icon v-else color="#C0C4CC"><CircleCloseFilled /></el-icon>
         </template>
       </el-table-column>
-      <el-table-column prop="user_package_name" label="套餐" min-width="140" show-overflow-tooltip />
       <el-table-column prop="group_name" label="分组" width="120" />
       <el-table-column prop="node_group_name" label="区域(线路组)" min-width="140" show-overflow-tooltip />
       <el-table-column label="状态" width="90" align="center">
@@ -128,27 +124,6 @@
       <el-tabs v-model="createTab" type="card">
         <el-tab-pane label="单个" name="single">
           <el-form :model="createForm" label-width="90px">
-            <el-form-item label="用户选择">
-              <el-select
-                v-model="createForm.user_id"
-                filterable
-                remote
-                clearable
-                reserve-keyword
-                placeholder="输入ID、邮箱、用户名、手机号搜索"
-                :remote-method="searchUsers"
-                :loading="userLoading"
-                style="width: 100%;"
-                @change="loadUserPackages"
-              >
-                <el-option v-for="u in userOptions" :key="u.id" :label="`${u.name} (${u.id})`" :value="u.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="用户套餐">
-              <el-select v-model="createForm.user_package_id" clearable placeholder="请选择" style="width: 100%;">
-                <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
-              </el-select>
-            </el-form-item>
             <el-form-item label="网站域名">
               <el-input v-model="createForm.domains_input" placeholder="www.abc.com www.abc.com:8080 abc.com:80" />
             </el-form-item>
@@ -176,27 +151,6 @@
 
         <el-tab-pane label="批量" name="batch">
           <el-form :model="batchForm" label-width="90px">
-            <el-form-item label="用户选择">
-              <el-select
-                v-model="batchForm.user_id"
-                filterable
-                remote
-                clearable
-                reserve-keyword
-                placeholder="输入ID、邮箱、用户名、手机号搜索"
-                :remote-method="searchUsers"
-                :loading="userLoading"
-                style="width: 100%;"
-                @change="loadUserPackages"
-              >
-                <el-option v-for="u in userOptions" :key="u.id" :label="`${u.name} (${u.id})`" :value="u.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="用户套餐">
-              <el-select v-model="batchForm.user_package_id" clearable placeholder="请选择" style="width: 100%;">
-                <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
-              </el-select>
-            </el-form-item>
             <el-form-item label="网站数据">
               <el-input
                 v-model="batchForm.data"
@@ -244,12 +198,6 @@
         <el-form label-width="90px">
           <el-collapse v-model="batchCollapse">
             <el-collapse-item title="基本设置" name="basic">
-              <div class="batch-row">
-                <el-checkbox v-model="batchEditChecks.user_package_id">套餐</el-checkbox>
-                <el-select v-model="batchEditForm.user_package_id" clearable placeholder="请选择" style="width: 70%;">
-                  <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
-                </el-select>
-              </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.group_id">所属分组</el-checkbox>
                 <el-select v-model="batchEditForm.group_id" clearable placeholder="请选择" style="width: 70%;">
@@ -842,26 +790,6 @@
 
     <el-dialog v-model="advancedVisible" title="高级搜索" width="520px">
       <el-form :model="advancedForm" label-width="90px">
-        <el-form-item label="用户">
-          <el-select
-            v-model="advancedForm.user_id"
-            filterable
-            remote
-            clearable
-            reserve-keyword
-            placeholder="输入ID、邮箱、用户名、手机号搜索"
-            :remote-method="searchUsers"
-            :loading="userLoading"
-            style="width: 100%;"
-          >
-            <el-option v-for="u in userOptions" :key="u.id" :label="`${u.name} (${u.id})`" :value="u.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="套餐">
-          <el-select v-model="advancedForm.user_package_id" clearable placeholder="请选择" style="width: 100%;">
-            <el-option v-for="p in userPackageOptions" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="分组">
           <el-select v-model="advancedForm.group_id" clearable placeholder="请选择" style="width: 100%;">
             <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
@@ -912,8 +840,6 @@ const listQuery = reactive({
 
 const advancedVisible = ref(false)
 const advancedForm = reactive({
-  user_id: '',
-  user_package_id: '',
   group_id: '',
   status: '',
   https: ''
@@ -924,16 +850,12 @@ const createTab = ref('single')
 const createMore = ref(false)
 const batchMore = ref(false)
 const createForm = reactive({
-  user_id: '',
-  user_package_id: '',
   group_id: '',
   dns_provider_id: '',
   domains_input: '',
   backends_input: ''
 })
 const batchForm = reactive({
-  user_id: '',
-  user_package_id: '',
   group_id: '',
   dns_provider_id: '',
   data: '',
@@ -943,7 +865,6 @@ const batchForm = reactive({
 const batchEditVisible = ref(false)
 const batchCollapse = ref(['basic'])
 const batchEditForm = reactive({
-  user_package_id: '',
   group_id: '',
   dns_provider_id: '',
   http_enable: true,
@@ -1004,7 +925,6 @@ const batchEditForm = reactive({
   adv_body_limit: ''
 })
 const batchEditChecks = reactive({
-  user_package_id: false,
   group_id: false,
   dns_provider_id: false,
   http_enable: false,
@@ -1061,9 +981,6 @@ const batchEditChecks = reactive({
   adv_body_limit: false
 })
 
-const userOptions = ref([])
-const userLoading = ref(false)
-const userPackageOptions = ref([])
 const groupOptions = ref([])
 const dnsOptions = ref([])
 
@@ -1085,10 +1002,7 @@ const activeTags = computed(() => {
   const tags = []
   if (listQuery.keyword) {
     tags.push({ key: 'keyword', label: `${labelForSearchField(listQuery.searchField)}: ${listQuery.keyword}` })
-  }
-  if (advancedForm.user_id) tags.push({ key: 'user_id', label: `用户: ${advancedForm.user_id}` })
-  if (advancedForm.user_package_id) tags.push({ key: 'user_package_id', label: `套餐: ${advancedForm.user_package_id}` })
-  if (advancedForm.group_id) tags.push({ key: 'group_id', label: `分组: ${advancedForm.group_id}` })
+  }\n\nif (advancedForm.group_id) tags.push({ key: 'group_id', label: `分组: ${advancedForm.group_id}` })
   if (advancedForm.status) tags.push({ key: 'status', label: `状态: ${advancedForm.status === 'enabled' ? '正常' : '停用'}` })
   if (advancedForm.https !== '') tags.push({ key: 'https', label: `HTTPS: ${advancedForm.https === '1' ? '开启' : '关闭'}` })
   return tags
@@ -1114,8 +1028,6 @@ const fetchList = () => {
       pageSize: listQuery.pageSize,
       keyword: listQuery.keyword,
       search_field: listQuery.searchField,
-      user_id: advancedForm.user_id || undefined,
-      user_package_id: advancedForm.user_package_id || undefined,
       group_id: advancedForm.group_id || undefined,
       status: advancedForm.status || undefined,
       https: advancedForm.https !== '' ? advancedForm.https : undefined
@@ -1154,8 +1066,6 @@ const openBatchEdit = () => {
 const handleCreateSubmit = () => {
   if (createTab.value === 'single') {
     request.post('/sites', {
-      user_id: createForm.user_id,
-      user_package_id: createForm.user_package_id,
       group_id: createForm.group_id,
       dns_provider_id: createForm.dns_provider_id,
       domains_input: createForm.domains_input,
@@ -1274,7 +1184,6 @@ const submitBatchEdit = () => {
     return
   }
   const payload = { ids }
-  if (batchEditChecks.user_package_id) payload.user_package_id = batchEditForm.user_package_id || 0
   if (batchEditChecks.group_id) payload.group_id = batchEditForm.group_id || 0
   if (batchEditChecks.dns_provider_id) payload.dns_provider_id = batchEditForm.dns_provider_id || 0
   if (batchEditChecks.http_enable || batchEditChecks.http_listen) {
@@ -1379,33 +1288,10 @@ const removeTag = key => {
 
 const clearFilters = () => {
   listQuery.keyword = ''
-  advancedForm.user_id = ''
-  advancedForm.user_package_id = ''
   advancedForm.group_id = ''
   advancedForm.status = ''
   advancedForm.https = ''
   handleFilter()
-}
-
-const searchUsers = keyword => {
-  if (!keyword) {
-    userOptions.value = []
-    return
-  }
-  userLoading.value = true
-  request.get('/users', { params: { keyword, pageSize: 20 } }).then(res => {
-    userOptions.value = res.data?.list || res.list || []
-    userLoading.value = false
-  }).catch(() => {
-    userLoading.value = false
-  })
-}
-
-const loadUserPackages = userId => {
-  const params = userId ? { user_id: userId } : {}
-  request.get('/user_packages', { params }).then(res => {
-    userPackageOptions.value = res.data?.list || res.list || []
-  })
 }
 
 const loadGroups = () => {
@@ -1505,10 +1391,7 @@ const labelForSearchField = value => {
     multi_domain: '多域名',
     origin: '源IP',
     group: '网站分组',
-    site_id: '网站ID',
-    package: '网站套餐',
-    user: '用户',
-    cname: 'CNAME'
+    site_id: '网站ID',\n    cname: 'CNAME'
   }
   return mapping[value] || '搜索'
 }
@@ -1517,7 +1400,6 @@ onMounted(() => {
   fetchList()
   loadGroups()
   loadDnsProviders()
-  loadUserPackages()
 })
 </script>
 
@@ -1595,3 +1477,6 @@ onMounted(() => {
   margin-left: 8px;
 }
 </style>
+
+
+

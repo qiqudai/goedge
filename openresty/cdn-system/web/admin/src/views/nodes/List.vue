@@ -1,6 +1,5 @@
 <template>
   <div class="app-container">
-    <!-- Filter Toolbar -->
     <div class="filter-container" style="margin-bottom: 20px;">
       <el-input v-model="listQuery.keyword" :placeholder="t.nodeKeyword" style="width: 200px;" class="filter-item" @keyup.enter="handleFilter" />
       <el-button class="filter-item" type="primary" :icon="Search" @click="handleFilter">
@@ -10,7 +9,6 @@
         {{ t.addNode }}
       </el-button>
 
-      <!-- Batch Actions -->
       <el-button-group style="margin-left: 20px;">
         <el-button type="success" plain :disabled="!selectedRows.length" @click="handleBatch('start')">{{ t.enableSelected }}</el-button>
         <el-button type="warning" plain :disabled="!selectedRows.length" @click="handleBatch('stop')">{{ t.disableSelected }}</el-button>
@@ -18,7 +16,6 @@
       </el-button-group>
     </div>
 
-    <!-- Data Table -->
     <el-table
       v-loading="listLoading"
       :data="list"
@@ -67,8 +64,8 @@
       </el-table-column>
 
       <el-table-column :label="t.bandwidth" width="100px" align="center">
-        <template #default>
-          0 Mbps
+        <template #default="{ row }">
+          {{ row.bw_limit || '-' }}
         </template>
       </el-table-column>
 
@@ -81,7 +78,7 @@
 
       <el-table-column :label="t.status" align="center" width="80">
         <template #default="{ row }">
-          <el-switch v-model="row.status" :active-value="1" :inactive-value="0" disabled />
+          <el-switch v-model="row.enable" :active-value="true" :inactive-value="false" disabled />
         </template>
       </el-table-column>
 
@@ -94,7 +91,7 @@
           <el-button link type="primary" size="small" @click="handleUpdate(row)">{{ t.setting }}</el-button>
           <el-dropdown trigger="click" style="margin-left: 10px;">
             <span class="el-dropdown-link" style="color: #409EFF; font-size: 12px; cursor: pointer;">
-              {{ t.more }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
+              {{ t.more }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
@@ -119,10 +116,8 @@
       />
     </div>
 
-    <!-- Dialog: Add/Edit Node -->
     <el-dialog :title="textMap[dialogStatus]" v-model="dialogFormVisible" width="600px">
       <el-tabs v-model="activeTab" type="card">
-        <!-- Tab 1: Basic Settings -->
         <el-tab-pane :label="t.basicSettings" name="basic">
           <el-form ref="dataForm" :model="temp" label-position="right" label-width="100px" style="margin-top: 20px;">
             <el-form-item :label="t.name" prop="name">
@@ -151,7 +146,6 @@
           </el-form>
         </el-tab-pane>
 
-        <!-- Tab 2: Node Settings -->
         <el-tab-pane :label="t.nodeSettings" name="settings">
           <el-form :model="temp" label-position="right" label-width="100px" style="margin-top: 20px;">
             <el-form-item :label="t.cacheDir" prop="cache_dir">
@@ -168,12 +162,54 @@
           </el-form>
         </el-tab-pane>
 
-        <!-- Tab 3: Auto Disable -->
         <el-tab-pane :label="t.autoDisable" name="disable">
-          <div style="padding: 20px; text-align: center; color: #909399;">{{ t.noConfig }}</div>
+          <el-form :model="temp" label-position="right" label-width="110px" style="margin-top: 20px;">
+            <el-form-item :label="t.autoDisableEnable">
+              <el-switch v-model="temp.check_on" />
+            </el-form-item>
+            <el-form-item :label="t.bwLimit">
+              <el-input v-model="bwLimitValue" placeholder="100">
+                <template #append>
+                  <el-select v-model="bwLimitUnit" style="width: 90px;">
+                    <el-option label="Mbps" value="Mbps" />
+                    <el-option label="Gbps" value="Gbps" />
+                  </el-select>
+                </template>
+              </el-input>
+            </el-form-item>
+            <el-form-item :label="t.checkProtocol">
+              <el-select v-model="temp.check_protocol" style="width: 200px;">
+                <el-option label="HTTP" value="http" />
+                <el-option label="HTTPS" value="https" />
+                <el-option label="TCP" value="tcp" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t.checkPort">
+              <el-input v-model.number="temp.check_port" placeholder="80" />
+            </el-form-item>
+            <el-form-item :label="t.checkHost">
+              <el-input v-model="temp.check_host" placeholder="example.com" />
+            </el-form-item>
+            <el-form-item :label="t.checkPath">
+              <el-input v-model="temp.check_path" placeholder="/" />
+            </el-form-item>
+            <el-form-item :label="t.checkTimeout">
+              <el-input v-model.number="temp.check_timeout" placeholder="5">
+                <template #append>{{ t.seconds }}</template>
+              </el-input>
+            </el-form-item>
+            <el-form-item :label="t.checkAction">
+              <el-select v-model="temp.check_action" style="width: 200px;">
+                <el-option :label="t.disableAction" value="disable" />
+                <el-option :label="t.switchAction" value="switch" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="temp.check_action === 'switch'" :label="t.checkNodeGroup">
+              <el-input v-model="temp.check_node_group" placeholder="1" />
+            </el-form-item>
+          </el-form>
         </el-tab-pane>
 
-        <!-- Tab 4: Sub IPs -->
         <el-tab-pane :label="t.addSubIp" name="sub_ips">
           <el-form style="margin-top: 20px;">
             <el-form-item :label="t.subIp" label-width="80px">
@@ -201,62 +237,75 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Search, Plus, InfoFilled, Top, Bottom, ArrowDown, Monitor } from '@element-plus/icons-vue'
+import { Search, Plus, Top, Bottom, ArrowDown, Monitor } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const t = {
-  nodeKeyword: '节点名称 / IP',
-  search: '搜索',
-  addNode: '添加节点',
-  enableSelected: '启用选中',
-  disableSelected: '停用选中',
-  deleteSelected: '删除选中',
-  name: '名称',
-  group: '组',
-  groupPrefix: '分组',
-  groupDefault: '默认',
-  nodeIp: '节点IP',
-  fromIp: '从IP',
-  monitor: '监控',
-  bandwidth: '带宽',
-  monthlyTraffic: '月流量',
-  status: '状态',
-  remark: '备注',
-  sort: '排序',
-  action: '操作',
-  setting: '设置',
-  more: '更多',
-  delete: '删除',
-  basicSettings: '基本设置',
-  nodeSettings: '节点设置',
-  autoDisable: '自动禁用',
-  noConfig: '暂无配置',
-  addSubIp: '添加子IP',
-  subIp: '子IP',
-  oneLineOneIp: '一行一个IP',
-  cancel: '取消',
-  confirm: '确认',
-  editNode: '编辑节点',
-  createNode: '创建新节点',
-  remarkPlaceholder: '请输入备注',
-  publicIp: '公网 IP',
-  ipNote: '如果新旧IP是不同节点，请使用待初始化里的替换节点功能。',
-  nodeType: '类型',
-  l1Edge: 'L1 边缘',
-  l2Middle: 'L2 中间',
-  installed: '已安装',
-  l1EdgeNode: 'L1边缘节点',
-  l2MiddleNode: 'L2中间节点',
-  l1Desc: 'L1边缘节点是用户实际访问的节点;',
-  l2Desc: 'L2中间节点是L1与源服务器之间的节点，用于汇聚L1节点请求，提高缓存命中率，或优化回源线路。',
-  cacheDir: '缓存目录',
-  cacheLimit: '缓存上限',
-  logDir: '日志目录',
-  updateSuccess: '更新成功',
-  promptTitle: '提示',
-  batchConfirmPrefix: '确定要执行',
-  batchConfirmSuffix: '操作吗？'
+  nodeKeyword: '\u8282\u70b9\u540d\u79f0 / IP',
+  search: '\u641c\u7d22',
+  addNode: '\u6dfb\u52a0\u8282\u70b9',
+  enableSelected: '\u542f\u7528\u9009\u4e2d',
+  disableSelected: '\u505c\u7528\u9009\u4e2d',
+  deleteSelected: '\u5220\u9664\u9009\u4e2d',
+  name: '\u540d\u79f0',
+  group: '\u7ec4',
+  groupPrefix: '\u5206\u7ec4',
+  groupDefault: '\u9ed8\u8ba4',
+  nodeIp: '\u8282\u70b9IP',
+  fromIp: '\u4eceIP',
+  monitor: '\u76d1\u63a7',
+  bandwidth: '\u5e26\u5bbd',
+  monthlyTraffic: '\u6708\u6d41\u91cf',
+  status: '\u72b6\u6001',
+  remark: '\u5907\u6ce8',
+  sort: '\u6392\u5e8f',
+  action: '\u64cd\u4f5c',
+  setting: '\u8bbe\u7f6e',
+  more: '\u66f4\u591a',
+  delete: '\u5220\u9664',
+  basicSettings: '\u57fa\u672c\u8bbe\u7f6e',
+  nodeSettings: '\u8282\u70b9\u8bbe\u7f6e',
+  autoDisable: '\u81ea\u52a8\u7981\u7528',
+  autoDisableEnable: '\u81ea\u52a8\u7981\u7528',
+  checkProtocol: '\u76d1\u6d4b\u534f\u8bae',
+  checkTimeout: '\u76d1\u6d4b\u8d85\u65f6',
+  checkPort: '\u76d1\u6d4b\u7aef\u53e3',
+  checkHost: '\u76d1\u6d4b\u4e3b\u673a',
+  checkPath: '\u76d1\u6d4b\u8def\u5f84',
+  checkAction: '\u5f02\u5e38\u52a8\u4f5c',
+  checkNodeGroup: '\u5207\u6362\u5206\u7ec4',
+  disableAction: '\u7981\u7528\u8282\u70b9',
+  switchAction: '\u5207\u6362\u5206\u7ec4',
+  bwLimit: '\u5e26\u5bbd\u9650\u5236',
+  seconds: '\u79d2',
+  noConfig: '\u6682\u65e0\u914d\u7f6e',
+  addSubIp: '\u6dfb\u52a0\u5b50IP',
+  subIp: '\u5b50IP',
+  oneLineOneIp: '\u4e00\u884c\u4e00\u4e2aIP',
+  cancel: '\u53d6\u6d88',
+  confirm: '\u786e\u8ba4',
+  editNode: '\u7f16\u8f91\u8282\u70b9',
+  createNode: '\u521b\u5efa\u65b0\u8282\u70b9',
+  remarkPlaceholder: '\u8bf7\u8f93\u5165\u5907\u6ce8',
+  publicIp: '\u516c\u7f51 IP',
+  ipNote: '\u5982\u679c\u65b0\u65e7IP\u662f\u4e0d\u540c\u8282\u70b9\uff0c\u8bf7\u4f7f\u7528\u5f85\u521d\u59cb\u5316\u91cc\u7684\u66ff\u6362\u8282\u70b9\u529f\u80fd\u3002',
+  nodeType: '\u7c7b\u578b',
+  l1Edge: 'L1 \u8fb9\u7f18',
+  l2Middle: 'L2 \u4e2d\u95f4',
+  installed: '\u5df2\u5b89\u88c5',
+  l1EdgeNode: 'L1\u8fb9\u7f18\u8282\u70b9',
+  l2MiddleNode: 'L2\u4e2d\u95f4\u8282\u70b9',
+  l1Desc: 'L1\u8fb9\u7f18\u8282\u70b9\u662f\u7528\u6237\u5b9e\u9645\u8bbf\u95ee\u7684\u8282\u70b9;',
+  l2Desc: 'L2\u4e2d\u95f4\u8282\u70b9\u662fL1\u4e0e\u6e90\u670d\u52a1\u5668\u4e4b\u95f4\u7684\u8282\u70b9\uff0c\u7528\u4e8e\u6c47\u805aL1\u8282\u70b9\u8bf7\u6c42\uff0c\u63d0\u9ad8\u7f13\u5b58\u547d\u4e2d\u7387\uff0c\u6216\u4f18\u5316\u56de\u6e90\u7ebf\u8def\u3002',
+  cacheDir: '\u7f13\u5b58\u76ee\u5f55',
+  cacheLimit: '\u7f13\u5b58\u4e0a\u9650',
+  logDir: '\u65e5\u5fd7\u76ee\u5f55',
+  createSuccess: '\u521b\u5efa\u6210\u529f',
+  updateSuccess: '\u66f4\u65b0\u6210\u529f',
+  promptTitle: '\u63d0\u793a',
+  batchConfirmPrefix: '\u786e\u5b9a\u8981\u6267\u884c',
+  batchConfirmSuffix: '\u64cd\u4f5c\u5417\uff1f'
 }
 
 const list = ref([])
@@ -288,14 +337,24 @@ const temp = reactive({
   cache_dir: '/data/nginx/cache',
   cache_limit: 0,
   log_dir: '/usr/local/openresty/nginx/logs',
-  ssh_host: '',
-  ssh_port: 22,
-  ssh_user: 'root',
-  ssh_password: ''
+  host: '',
+  port: 80,
+  http_proxy: '',
+  is_mgmt: false,
+  check_on: false,
+  check_protocol: 'http',
+  check_timeout: 5,
+  check_port: 80,
+  check_host: '',
+  check_path: '/',
+  check_node_group: '',
+  check_action: 'disable',
+  bw_limit: ''
 })
 
 const tempIPs = ref('')
-const currentEditingNode = ref(null)
+const bwLimitValue = ref('')
+const bwLimitUnit = ref('Mbps')
 
 const getList = () => {
   listLoading.value = true
@@ -334,17 +393,75 @@ const resetTemp = () => {
   temp.cache_dir = ''
   temp.cache_limit = 0
   temp.log_dir = ''
+  temp.host = ''
+  temp.port = 80
+  temp.http_proxy = ''
+  temp.is_mgmt = false
+  temp.check_on = false
+  temp.check_protocol = 'http'
+  temp.check_timeout = 5
+  temp.check_port = 80
+  temp.check_host = ''
+  temp.check_path = '/'
+  temp.check_node_group = ''
+  temp.check_action = 'disable'
+  temp.bw_limit = ''
   activeTab.value = 'basic'
   tempIPs.value = ''
+  bwLimitValue.value = ''
+  bwLimitUnit.value = 'Mbps'
+}
+
+const syncBwLimitFromTemp = () => {
+  if (!temp.bw_limit) {
+    bwLimitValue.value = ''
+    bwLimitUnit.value = 'Mbps'
+    return
+  }
+  const match = temp.bw_limit.match(/^(\d+(?:\.\d+)?)\s*(Mbps|Gbps)$/i)
+  if (match) {
+    bwLimitValue.value = match[1]
+    bwLimitUnit.value = match[2]
+  } else {
+    bwLimitValue.value = temp.bw_limit
+    bwLimitUnit.value = 'Mbps'
+  }
+}
+
+const applyBwLimitToTemp = () => {
+  const value = String(bwLimitValue.value || '').trim()
+  if (!value) {
+    temp.bw_limit = ''
+    return
+  }
+  temp.bw_limit = `${value}${bwLimitUnit.value}`
 }
 
 const handleCreate = () => {
   resetTemp()
+  syncBwLimitFromTemp()
   dialogStatus.value = 'create'
   dialogFormVisible.value = true
 }
 
-// ... createData ...
+const createData = () => {
+  applyBwLimitToTemp()
+  const ipLines = tempIPs.value.split('\n').filter(i => i.trim() !== '')
+  const subIPs = ipLines.map(ip => ({ ip: ip.trim() }))
+  const payload = {
+    ...temp,
+    sub_ips: subIPs
+  }
+  request({
+    url: '/nodes',
+    method: 'post',
+    data: payload
+  }).then(() => {
+    dialogFormVisible.value = false
+    ElMessage.success(t.createSuccess)
+    getList()
+  })
+}
 
 const handleUpdate = row => {
   temp.id = row.id
@@ -357,29 +474,38 @@ const handleUpdate = row => {
   temp.cache_dir = row.cache_dir || ''
   temp.cache_limit = row.cache_limit || 0
   temp.log_dir = row.log_dir || ''
+  temp.host = row.host || ''
+  temp.port = row.port || 80
+  temp.http_proxy = row.http_proxy || ''
+  temp.is_mgmt = row.is_mgmt || false
+  temp.check_on = row.check_on || false
+  temp.check_protocol = row.check_protocol || 'http'
+  temp.check_timeout = row.check_timeout || 5
+  temp.check_port = row.check_port || 80
+  temp.check_host = row.check_host || ''
+  temp.check_path = row.check_path || '/'
+  temp.check_node_group = row.check_node_group || ''
+  temp.check_action = row.check_action || 'disable'
+  temp.bw_limit = row.bw_limit || ''
 
-  // Convert SubIPs to string for textarea
-  tempIPs.value = row.sub_ips ? row.sub_ips.map(i => i.ip).join('
-') : ''
+  tempIPs.value = row.sub_ips ? row.sub_ips.map(i => i.ip).join('\n') : ''
 
+  syncBwLimitFromTemp()
   dialogStatus.value = 'update'
   dialogFormVisible.value = true
   activeTab.value = 'basic'
 }
 
 const updateData = () => {
-  // 1. Parse SubIPs
-  const ipLines = tempIPs.value.split('
-').filter(i => i.trim() !== '')
+  applyBwLimitToTemp()
+  const ipLines = tempIPs.value.split('\n').filter(i => i.trim() !== '')
   const subIPs = ipLines.map(ip => ({ ip: ip.trim() }))
 
-  // 2. Prepare Payload
   const payload = {
     ...temp,
     sub_ips: subIPs
   }
 
-  // 3. Call API
   request({
     url: `/nodes/${temp.id}`,
     method: 'put',

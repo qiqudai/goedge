@@ -93,27 +93,27 @@ import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const t = {
-  keywordPlaceholder: '用户名/邮箱/手机号',
-  search: '搜索',
-  addUser: '添加用户',
-  userName: '用户名',
-  admin: '管理员',
-  email: '邮箱',
-  phone: '手机号',
-  balance: '余额',
-  status: '状态',
-  remark: '备注',
-  action: '操作',
-  edit: '编辑',
-  delete: '删除',
-  createUserTip: '创建用户功能开发中',
-  editUserTip: '编辑用户: ',
-  statusUpdated: '状态更新成功',
-  deleteConfirm: '确认删除该用户?',
-  warning: '警告',
-  confirm: '确定',
-  cancel: '取消',
-  deleteSuccess: '删除成功'
+  keywordPlaceholder: '\u7528\u6237\u540d/\u90ae\u7bb1/\u624b\u673a\u53f7',
+  search: '\u641c\u7d22',
+  addUser: '\u6dfb\u52a0\u7528\u6237',
+  userName: '\u7528\u6237\u540d',
+  admin: '\u7ba1\u7406\u5458',
+  email: '\u90ae\u7bb1',
+  phone: '\u624b\u673a\u53f7',
+  balance: '\u4f59\u989d',
+  status: '\u72b6\u6001',
+  remark: '\u5907\u6ce8',
+  action: '\u64cd\u4f5c',
+  edit: '\u7f16\u8f91',
+  delete: '\u5220\u9664',
+  createUserTip: '\u521b\u5efa\u7528\u6237\u529f\u80fd\u5f00\u53d1\u4e2d',
+  editUserTip: '\u7f16\u8f91\u7528\u6237: ',
+  statusUpdated: '\u72b6\u6001\u66f4\u65b0\u6210\u529f',
+  deleteConfirm: '\u786e\u8ba4\u5220\u9664\u8be5\u7528\u6237?',
+  warning: '\u8b66\u544a',
+  confirm: '\u786e\u5b9a',
+  cancel: '\u53d6\u6d88',
+  deleteSuccess: '\u5220\u9664\u6210\u529f'
 }
 
 const list = ref([])

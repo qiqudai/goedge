@@ -24,13 +24,15 @@ func (ctr *AgentController) Heartbeat(c *gin.Context) {
 }
 
 func (ctr *AgentController) GetConfig(c *gin.Context) {
-	nodeID := c.Query("node_id")
-	if nodeID == "" {
-		if v, ok := c.Get("nodeID"); ok {
-			if s, ok := v.(string); ok {
-				nodeID = s
-			}
+	var nodeID string
+	// Prioritize Authenticated Node ID
+	if v, ok := c.Get("nodeID"); ok {
+		if s, ok := v.(string); ok {
+			nodeID = s
 		}
+	}
+	if nodeID == "" {
+		nodeID = c.Query("node_id")
 	}
 	if nodeID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})

@@ -43,11 +43,8 @@ const handleLogin = () => {
         localStorage.setItem('username', form.username)
         ElMessage.success('登录成功')
         
-        if (res.role === 'admin') {
-            router.push('/admin/nodes')
-        } else {
-            router.push('/site/list')
-        }
+        // Redirect to Dashboard for all users as requested
+        router.push('/dashboard')
     }).catch(() => {
         loading.value = false
     })

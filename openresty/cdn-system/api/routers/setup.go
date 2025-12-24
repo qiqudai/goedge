@@ -3,6 +3,7 @@ package routers
 import (
 	"cdn-api/controllers"
 	"cdn-api/middleware"
+	"cdn-api/services"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,9 @@ func Setup(r *gin.Engine) {
 		admin.Use(middleware.AuthRequired("admin"))
 		admin.Use(middleware.OperationLog())
 		{
-			nodeCtr := &controllers.NodeController{}
+			nodeCtr := &controllers.NodeController{
+				NodeService: services.NewNodeService(),
+			}
 			admin.GET("/nodes", nodeCtr.ListNodes)
 			admin.POST("/nodes", nodeCtr.CreateNode)
 			admin.PUT("/nodes/:id", nodeCtr.UpdateNode)

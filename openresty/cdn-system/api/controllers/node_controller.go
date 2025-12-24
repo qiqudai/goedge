@@ -3,6 +3,8 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,12 +14,13 @@ import (
 	"gorm.io/gorm"
 )
 
-type NodeController struct{}
+type NodeController struct {
+	NodeService *services.NodeService
+}
 
 // ListNodes
 // GET /api/v1/admin/nodes
 func (ctr *NodeController) ListNodes(c *gin.Context) {
-	// 1. Parse Params
 	keyword := c.Query("keyword")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
@@ -29,9 +32,8 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 		pageSize = 20
 	}
 
-	// 2. Query DB
 	var nodes []models.Node
-	query := db.DB.Model(&models.Node{})
+	query := db.DB.Model(&models.Node{}).Where("pid = 0")
 	if keyword != "" {
 		keywordLike := "%" + strings.ToLower(keyword) + "%"
 		query = query.Where("lower(name) LIKE ? OR ip LIKE ?", keywordLike, keywordLike)
@@ -43,13 +45,31 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 		return
 	}
 
-	// Order by ID desc
 	if err := query.Order("id desc").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&nodes).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error"})
+		log.Println("[Error] ListNodes DB Error:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error: " + err.Error()})
 		return
+	}
+
+	if len(nodes) > 0 {
+		parentIDs := make([]int64, 0, len(nodes))
+		for _, node := range nodes {
+			parentIDs = append(parentIDs, node.ID)
+		}
+
+		var subNodes []models.Node
+		if err := db.DB.Select("id", "pid", "ip").Where("pid IN ?", parentIDs).Find(&subNodes).Error; err == nil {
+			subMap := make(map[int64][]models.NodeSubIP)
+			for _, sub := range subNodes {
+				subMap[sub.PID] = append(subMap[sub.PID], models.NodeSubIP{ID: sub.ID, IP: sub.IP})
+			}
+			for i := range nodes {
+				nodes[i].SubIPs = subMap[nodes[i].ID]
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -75,21 +95,49 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 		return
 	}
 
-	// Set Defaults
+	if req.RegionID != nil && *req.RegionID == 0 {
+		req.RegionID = nil
+	}
+
+	req.PID = 0
 	req.CreatedAt = time.Now()
 	req.UpdatedAt = time.Now()
-	// Default Enable is true if not specified?
-	// If the JSON didn't include "enable", it defaults to false.
-	// But usually we want enabled by default.
-	// Let's assume if user sends "enable": false explicitly, it stays false.
-	// But Request binding zero value is false.
-	// We can't distinguish missing vs false easily without pointer.
-	// For now, let's force true if it's a new node, unless we change model to *bool.
-	req.Enable = true
+	if !req.Enable {
+		req.Enable = true
+	}
 
 	if err := db.DB.Create(&req).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Create Failed"})
 		return
+	}
+
+	if err := replaceSubIPs(db.DB, req.ID, req, req.SubIPs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Create Sub IPs Failed"})
+		return
+	}
+
+	// Sync to Redis
+	if ctr.NodeService != nil {
+		// We should re-fetch full node with SubIPs or just assume replaceSubIPs did DB work.
+		// For simplicity, let's sync what we have, but SubIPs in req might need to be refreshed if we want logic inside Sync.
+		// Actually SyncNodeToRedis implementation assumes `node.IP` is main IP.
+		// We also need to loop SubIPs and sync them.
+		
+		// Let NodeService handle SubIPs if we pass them.
+		// Currently NodeService.SyncNodeToRedis doesn't iterate SubIPs.
+		// I should update NodeService first to handle SubIP iteration or handle iteration here.
+		
+		// Let's handle iteration here for now to avoid re-editing NodeService multiple times.
+		ctr.NodeService.SyncNodeToRedis(&req)
+		
+		// Also sync sub nodes.
+		// replaceSubIPs creates new Node records with PID=req.ID.
+		// We should really fetch them to sync properly.
+        var subNodes []models.Node
+        db.DB.Where("pid = ?", req.ID).Find(&subNodes)
+        for _, sub := range subNodes {
+             ctr.NodeService.SyncNodeToRedis(&sub)
+        }
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -111,23 +159,61 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 		return
 	}
 
-	updates := map[string]interface{}{
-		"name":           req.Name,
-		"des":            req.Description,
-		"ip":             req.IP,
-		"region_id":      req.RegionID,
-		"enable":         req.Enable,
-		"check_on":       req.CheckOn,
-		"check_protocol": req.CheckProtocol,
-		"check_port":     req.CheckPort,
-		"check_host":     req.CheckHost,
-		"check_path":     req.CheckPath,
-		"update_at":      time.Now(),
+	if req.RegionID != nil && *req.RegionID == 0 {
+		req.RegionID = nil
 	}
 
-	if err := db.DB.Model(&models.Node{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"name":             req.Name,
+			"des":              req.Remark,
+			"ip":               req.IP,
+			"region_id":        req.RegionID,
+			"host":             req.Host,
+			"port":             req.Port,
+			"http_proxy":       req.HttpProxy,
+			"is_mgmt":          req.IsMgmt,
+			"enable":           req.Enable,
+			"check_on":         req.CheckOn,
+			"check_protocol":   req.CheckProtocol,
+			"check_timeout":    req.CheckTimeout,
+			"check_port":       req.CheckPort,
+			"check_host":       req.CheckHost,
+			"check_path":       req.CheckPath,
+			"check_node_group": req.CheckNodeGroup,
+			"check_action":     req.CheckAction,
+			"bw_limit":         req.BwLimit,
+			"update_at":        time.Now(),
+		}
+
+		if err := tx.Model(&models.Node{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if err := replaceSubIPs(tx, id, req, req.SubIPs); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Update Failed"})
 		return
+	}
+
+	if ctr.NodeService != nil {
+		// Update Redis
+		var fullNode models.Node
+		db.DB.First(&fullNode, id)
+		ctr.NodeService.SyncNodeToRedis(&fullNode)
+        
+        // Sync SubNodes
+        var subNodes []models.Node
+        db.DB.Where("pid = ?", id).Find(&subNodes)
+        for _, sub := range subNodes {
+             ctr.NodeService.SyncNodeToRedis(&sub)
+        }
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -140,7 +226,7 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 // POST /api/v1/admin/nodes/batch
 func (ctr *NodeController) BatchAction(c *gin.Context) {
 	var req struct {
-		Action string  `json:"action"` // start, stop, delete
+		Action string  `json:"action"`
 		Ids    []int64 `json:"ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -165,10 +251,11 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 			return
 		}
 	case "delete":
-		// Check references in 'line' table? For now just delete node.
 		err := db.DB.Transaction(func(tx *gorm.DB) error {
-			// Delete related lines?
 			if err := tx.Where("node_id IN ?", req.Ids).Delete(&models.Line{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("pid IN ?", req.Ids).Delete(&models.Node{}).Error; err != nil {
 				return err
 			}
 			return tx.Where("id IN ?", req.Ids).Delete(&models.Node{}).Error
@@ -183,4 +270,43 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Batch " + req.Action + " executed on " + strconv.Itoa(len(req.Ids)) + " nodes"})
+}
+
+func replaceSubIPs(tx *gorm.DB, parentID int64, parent models.Node, subIPs []models.NodeSubIP) error {
+	if err := tx.Where("pid = ?", parentID).Delete(&models.Node{}).Error; err != nil {
+		return err
+	}
+
+	if len(subIPs) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	nodes := make([]models.Node, 0, len(subIPs))
+	for _, sub := range subIPs {
+		ip := strings.TrimSpace(sub.IP)
+		if ip == "" {
+			continue
+		}
+		nodes = append(nodes, models.Node{
+			PID:       parentID,
+			RegionID:  parent.RegionID,
+			Name:      parent.Name,
+			Remark:    parent.Remark,
+			IP:        ip,
+			Host:      parent.Host,
+			Port:      parent.Port,
+			HttpProxy: parent.HttpProxy,
+			IsMgmt:    parent.IsMgmt,
+			Enable:    parent.Enable,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+	}
+
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	return tx.Create(&nodes).Error
 }

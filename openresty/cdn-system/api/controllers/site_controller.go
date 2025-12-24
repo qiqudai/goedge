@@ -133,8 +133,19 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		return
 	}
 	if req.UserID == 0 {
+		req.UserID = parseInt64(mustGet(c, "userID"))
+	}
+	if req.UserID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
 		return
+	}
+	if req.UserPackageID == 0 {
+		defaultID, err := findDefaultUserPackageID(req.UserID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		req.UserPackageID = defaultID
 	}
 	if strings.TrimSpace(req.Data) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "data is required"})
@@ -439,6 +450,19 @@ func (ctrl *SiteController) AdminResolve(c *gin.Context) {
 	})
 }
 
+func findDefaultUserPackageID(userID int64) (int64, error) {
+	var pkg models.UserPackage
+	if userID != 0 {
+		if err := db.DB.Where("uid = ?", userID).Order("id asc").First(&pkg).Error; err == nil {
+			return pkg.ID, nil
+		}
+	}
+	if err := db.DB.Order("id asc").First(&pkg).Error; err != nil {
+		return 0, errors.New("user_package not found")
+	}
+	return pkg.ID, nil
+}
+
 func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, error) {
 	var req struct {
 		UserID        int64    `json:"user_id"`
@@ -457,9 +481,18 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 	userID := req.UserID
 	if !admin {
 		userID = parseInt64(mustGet(c, "userID"))
+	} else if userID == 0 {
+		userID = parseInt64(mustGet(c, "userID"))
 	}
 	if userID == 0 {
 		return nil, 0, errors.New("user_id is required")
+	}
+	if req.UserPackageID == 0 {
+		defaultID, err := findDefaultUserPackageID(userID)
+		if err != nil {
+			return nil, 0, err
+		}
+		req.UserPackageID = defaultID
 	}
 
 	domains := req.Domains

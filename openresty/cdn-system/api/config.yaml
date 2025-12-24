@@ -1,0 +1,4 @@
+port: "8080"
+db_dsn: "root:123456@tcp(127.0.0.1:3306)/cdnfy?charset=utf8mb4&parseTime=True&loc=Local"
+redis_addr: "127.0.0.1:6379"
+redis_password: ""

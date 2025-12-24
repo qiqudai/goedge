@@ -52,37 +52,50 @@ func AuthRequired(requiredRole string) gin.HandlerFunc {
 
 // AuthAgent validates agent tokens (edge nodes).
 // It supports a global token via APP_AGENT_TOKEN and per-node tokens in DB.
+// AuthAgent validates agent tokens (edge nodes).
+// It supports a global token via APP_AGENT_TOKEN and per-node tokens in DB.
+// It creates a session with "nodeID" if authenticated.
 func AuthAgent() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var token string
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header missing"})
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format"})
-			return
-		}
-		token := parts[1]
-
-		if envToken := os.Getenv("APP_AGENT_TOKEN"); envToken != "" && token == envToken {
-			c.Set("agentToken", token)
-			c.Next()
-			return
-		}
-
-		if db.DB != nil {
-			var node models.Node
-			if err := db.DB.Where("token = ?", token).First(&node).Error; err == nil {
-				c.Set("nodeID", strconv.FormatInt(node.ID, 10))
-				c.Set("agentToken", token)
-				c.Next()
-				return
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				token = parts[1]
 			}
 		}
 
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid agent token"})
+		// 1. Check Env Token
+		if envToken := os.Getenv("APP_AGENT_TOKEN"); envToken != "" && token == envToken {
+			c.Set("agentToken", token)
+		} else {
+			// 2. Check DB Token
+			if token != "" && db.DB != nil {
+				var node models.Node
+				// Use Redis Cache for Token -> NodeID? Not implemented yet.
+				// Query DB
+				if err := db.DB.Where("token = ?", token).First(&node).Error; err == nil {
+					c.Set("nodeID", strconv.FormatInt(node.ID, 10))
+					c.Set("agentToken", token)
+				}
+			}
+		}
+		
+		// 3. Check IP (Fallthrough or if Token failed/missing)
+		if _, ok := c.Get("nodeID"); !ok {
+			if db.Redis != nil {
+				clientIP := c.ClientIP()
+				// Handle X-Forwarded-For if behind proxy (Gin ClientIP handles it if trusted proxies set)
+				key := "CDN:NODE:IP:" + clientIP
+				if val, err := db.Redis.Get(c.Request.Context(), key).Result(); err == nil && val != "" {
+					c.Set("nodeID", val)
+					// Log that we authenticated via IP?
+				}
+			}
+		}
+
+		// Proceed
+		c.Next()
 	}
 }

@@ -23,6 +23,7 @@ func main() {
 	db.Init()
 	// Auto Migrate
 	db.DB.AutoMigrate(
+		&models.Node{},
 		&models.SysConfig{},
 		&models.Cert{},
 		// &models.Plan{}, // Deprecated? Check Package
@@ -34,7 +35,6 @@ func main() {
 		&models.SiteGroup{},
 		&models.SiteGroupRelation{},
 		// &models.DomainOrigin{}, // Deprecated
-		&models.Node{},
 		// &models.NodeIP{}, // Deprecated
 		&models.NodeGroup{},
 		// &models.UserNodeGroup{}, // Deprecated
@@ -70,10 +70,18 @@ func main() {
 			db.DB.Create(&u)
 			log.Println("Created Admin User")
 		} else {
+			shouldSave := false
 			if u.Type != adminType {
 				u.Type = adminType
+				shouldSave = true
+			}
+			if !u.Enable {
+				u.Enable = true
+				shouldSave = true
+			}
+			if shouldSave {
 				db.DB.Save(&u)
-				log.Println("Fixed Admin Type")
+				log.Println("Fixed Admin Type/Enable Status")
 			}
 		}
 

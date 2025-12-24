@@ -250,6 +250,7 @@ func buildRedisConfig() *models.EdgeRedisConfig {
 	return &models.EdgeRedisConfig{
 		Host:     host,
 		Port:     port,
+		Password: config.App.RedisPassword,
 	}
 }
 
