@@ -7,7 +7,7 @@
       <el-tab-pane label="解析检测" name="resolve" />
     </el-tabs>
 
-    <div class="filter-container">
+    <div v-if="activeTopTab === 'list'" class="filter-container">
       <div class="filter-left">
         <el-button type="primary" @click="openCreateDialog">添加网站</el-button>
         <el-button :disabled="!selectedRows.length" @click="openBatchEdit">批量修改</el-button>
@@ -44,7 +44,7 @@
         <el-input
           v-model="listQuery.keyword"
           placeholder="输入域名, 模糊搜索"
-          style="width: 260px;"
+          style="width: 200px;"
           class="filter-item"
           @keyup.enter="handleFilter"
         />
@@ -62,6 +62,7 @@
     </div>
 
     <el-table
+      v-if="activeTopTab === 'list'"
       v-loading="listLoading"
       :data="list"
       border
@@ -111,7 +112,7 @@
       </el-table-column>
     </el-table>
 
-    <div class="pagination-container">
+    <div v-if="activeTopTab === 'list'" class="pagination-container">
       <el-pagination
         v-model:current-page="listQuery.page"
         v-model:page-size="listQuery.pageSize"
@@ -121,6 +122,39 @@
         @size-change="handleFilter"
         @current-change="handleFilter"
       />
+    </div>
+
+    <div v-if="activeTopTab === 'dns'" class="dnsapi-section">
+      <div class="dnsapi-toolbar">
+        <el-button type="primary" @click="openDnsapiDialog">新增DNS API</el-button>
+        <el-button :disabled="!selectedDnsapi.length" @click="removeDnsapiBatch">删除</el-button>
+      </div>
+      <el-table v-loading="dnsapiLoading" :data="dnsapiList" border style="width: 100%;" @selection-change="handleDnsapiSelection">
+        <el-table-column type="selection" width="55" align="center" />
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="uid" label="用户" width="120" />
+        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="type" label="类型" width="140">
+          <template #default="{ row }">
+            {{ formatDnsType(row.type) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="默认" width="120" align="center">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.is_default"
+              @change="value => setDnsapiDefault(row, value)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
+        <el-table-column label="操作" width="140" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="normal" @click="openDnsapiEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="normal" @click="removeDnsapi(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <!-- Add Group Dialog -->
@@ -145,6 +179,14 @@
             </el-form-item>
             <el-form-item label="源站地址">
               <el-input v-model="createForm.backends_input" placeholder="1.1.1.1或1.2.3.4:8080或www.abc.com:80" />
+            </el-form-item>
+            <el-form-item label="加速类型">
+              <el-radio-group v-model="createForm.site_type">
+                <el-radio label="website">网页加速(常用网站元素缓存)</el-radio>
+                <el-radio label="api">API加速(无缓存快速回源)</el-radio>
+                <el-radio label="download">大文件下载加速(压缩+分片回源)</el-radio>
+                <el-radio label="custom">自定义(手动配置)</el-radio>
+              </el-radio-group>
             </el-form-item>
             <div class="expand-more" @click="createMore = !createMore">
               <span>展开更多</span>
@@ -228,6 +270,37 @@
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
         <el-button type="primary" @click="handleCreateSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="dnsapiDialogVisible" title="DNS API" width="720px" class="dnsapi-dialog">
+      <el-form :model="dnsapiForm" label-width="140px">
+        <el-form-item label="名称">
+          <el-input v-model="dnsapiForm.name" placeholder="请输入名称" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="dnsapiForm.remark" placeholder="请输入备注" />
+        </el-form-item>
+        <el-form-item label="DNS">
+          <el-select v-model="dnsapiForm.type" placeholder="请选择" style="width: 100%;" @change="resetDnsapiAuth">
+            <el-option v-for="t in dnsapiTypes" :key="t.type" :label="t.name" :value="t.type" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="默认DNS API">
+          <el-switch v-model="dnsapiForm.is_default" />
+        </el-form-item>
+        <el-form-item label="验证信息" v-if="currentDnsapiType">
+          <div class="dnsapi-fields">
+            <div v-for="field in currentDnsapiType.fields" :key="field" class="dnsapi-field-row">
+              <div class="dnsapi-field-label">{{ dnsapiFieldLabel(dnsapiForm.type, field) }}</div>
+              <el-input v-model="dnsapiForm.credentials[field]" />
+            </div>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dnsapiDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitDnsapi">确定</el-button>
       </template>
     </el-dialog>
 
@@ -893,6 +966,7 @@ const createForm = reactive({
   user_package_id: undefined,
   group_id: undefined,
   dns_provider_id: undefined,
+  site_type: 'website',
   domains_input: '',
   backends_input: ''
 })
@@ -901,6 +975,20 @@ const batchForm = reactive({
   dns_provider_id: undefined,
   data: '',
   ignore_error: false
+})
+
+const dnsapiList = ref([])
+const dnsapiLoading = ref(false)
+const selectedDnsapi = ref([])
+const dnsapiTypes = ref([])
+const dnsapiDialogVisible = ref(false)
+const dnsapiForm = reactive({
+  id: 0,
+  name: '',
+  remark: '',
+  type: '',
+  credentials: {},
+  is_default: false
 })
 
 const batchEditVisible = ref(false)
@@ -1081,11 +1169,147 @@ const activeTags = computed(() => {
 
 const selectedIdsText = computed(() => selectedRows.value.map(row => row.id).join(','))
 
+const currentDnsapiType = computed(() => dnsapiTypes.value.find(t => t.type === dnsapiForm.type))
+
+const dnsapiFieldLabel = (type, field) => {
+  const mapping = {
+    aliyun: { id: 'AccessKey ID', secret: 'AccessKey Secret' },
+    huawei: { id: 'Access Key ID', secret: 'Secret Access Key' },
+    dnsla: { id: 'API ID', secret: 'API Key' },
+    dnspod: { id: 'ID', token: 'Token' },
+    dnspod_intl: { id: 'ID', token: 'Token' },
+    cloudflare: { email: 'Email', key: 'API Key' },
+    godaddy: { key: 'Key', secret: 'Secret' }
+  }
+  if (mapping[type] && mapping[type][field]) {
+    return mapping[type][field]
+  }
+  return field.replace(/_/g, ' ').toUpperCase()
+}
+
+const formatDnsType = type => {
+  const t = dnsapiTypes.value.find(item => item.type === type)
+  return t ? t.name : type
+}
+
+const confirmRemove = (message, onConfirm) => {
+  ElMessageBox.confirm(message, '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    onConfirm()
+  })
+}
+
+const loadDnsapiList = () => {
+  dnsapiLoading.value = true
+  request.get('/dnsapi').then(res => {
+    dnsapiList.value = res.data?.list || res.list || []
+    dnsapiLoading.value = false
+  }).catch(() => {
+    dnsapiLoading.value = false
+  })
+}
+
+const loadDnsapiTypes = () => {
+  request.get('/dnsapi/types').then(res => {
+    dnsapiTypes.value = res.data?.types || res.list || []
+  })
+}
+
+const resetDnsapiAuth = () => {
+  dnsapiForm.credentials = {}
+}
+
+const openDnsapiDialog = () => {
+  dnsapiForm.id = 0
+  dnsapiForm.name = ''
+  dnsapiForm.remark = ''
+  dnsapiForm.type = ''
+  dnsapiForm.credentials = {}
+  dnsapiForm.is_default = false
+  dnsapiDialogVisible.value = true
+}
+
+const openDnsapiEdit = row => {
+  dnsapiForm.id = row.id
+  dnsapiForm.name = row.name
+  dnsapiForm.remark = row.remark || ''
+  dnsapiForm.type = row.type
+  dnsapiForm.credentials = row.auth ? JSON.parse(row.auth) : {}
+  dnsapiForm.is_default = !!row.is_default
+  dnsapiDialogVisible.value = true
+}
+
+const submitDnsapi = () => {
+  if (!dnsapiForm.name || !dnsapiForm.type) {
+    ElMessage.error('请填写名称和类型')
+    return
+  }
+  const payload = {
+    name: dnsapiForm.name,
+    remark: dnsapiForm.remark,
+    type: dnsapiForm.type,
+    auth: JSON.stringify(dnsapiForm.credentials || {}),
+    is_default: dnsapiForm.is_default
+  }
+  if (dnsapiForm.id) {
+    request.put(`/dnsapi/${dnsapiForm.id}`, payload).then(() => {
+      dnsapiDialogVisible.value = false
+      loadDnsapiList()
+    })
+    return
+  }
+  request.post('/dnsapi', payload).then(() => {
+    dnsapiDialogVisible.value = false
+    loadDnsapiList()
+  })
+}
+
+const setDnsapiDefault = (row, value) => {
+  const payload = {
+    name: row.name,
+    remark: row.remark,
+    type: row.type,
+    auth: row.auth || '',
+    is_default: value
+  }
+  request.put(`/dnsapi/${row.id}`, payload).then(() => {
+    loadDnsapiList()
+  }).catch(() => {
+    loadDnsapiList()
+  })
+}
+
+const removeDnsapi = row => {
+  confirmRemove('确认删除该DNS API?', () => {
+    request.delete(`/dnsapi/${row.id}`).then(() => {
+      loadDnsapiList()
+    })
+  })
+}
+
+const handleDnsapiSelection = rows => {
+  selectedDnsapi.value = rows
+}
+
+const removeDnsapiBatch = () => {
+  if (!selectedDnsapi.value.length) return
+  const ids = selectedDnsapi.value.map(row => row.id)
+  confirmRemove('确认删除选中的DNS API?', () => {
+    Promise.all(ids.map(id => request.delete(`/dnsapi/${id}`))).then(() => {
+      loadDnsapiList()
+    })
+  })
+}
+
 const handleTopTab = tab => {
   if (tab.paneName === 'default') {
     router.push('/global/default')
   } else if (tab.paneName === 'dns') {
-    router.push('/node/dns')
+    loadDnsapiList()
+    loadDnsapiTypes()
   } else if (tab.paneName === 'resolve') {
     router.push('/website/resolve')
   }
@@ -1141,6 +1365,7 @@ const handleCreateSubmit = () => {
       user_package_id: createForm.user_package_id || undefined,
       group_id: createForm.group_id || undefined,
       dns_provider_id: createForm.dns_provider_id || undefined,
+      site_type: createForm.site_type,
       domains_input: createForm.domains_input,
       backends_input: createForm.backends_input
     }
@@ -1381,7 +1606,14 @@ const loadGroups = () => {
 
 const loadDnsProviders = () => {
   request.get('/dns/providers').then(res => {
-    dnsOptions.value = res.data?.list || res.list || []
+    const list = res.data?.list || res.list || []
+    dnsOptions.value = list
+    if (!createForm.dns_provider_id) {
+      const def = list.find(item => item.is_default)
+      if (def) {
+        createForm.dns_provider_id = def.id
+      }
+    }
   })
 }
 
@@ -1404,7 +1636,9 @@ const addOrigin = () => {
 }
 
 const removeOrigin = index => {
-  batchEditForm.origin_list.splice(index, 1)
+  confirmRemove('确认删除该源站?', () => {
+    batchEditForm.origin_list.splice(index, 1)
+  })
 }
 
 const addConditionOrigin = () => {
@@ -1412,7 +1646,9 @@ const addConditionOrigin = () => {
 }
 
 const removeConditionOrigin = index => {
-  batchEditForm.origin_conditions.splice(index, 1)
+  confirmRemove('确认删除该条件源站?', () => {
+    batchEditForm.origin_conditions.splice(index, 1)
+  })
 }
 
 const addCacheRule = () => {
@@ -1420,7 +1656,9 @@ const addCacheRule = () => {
 }
 
 const removeCacheRule = index => {
-  batchEditForm.cache_rules.splice(index, 1)
+  confirmRemove('确认删除该缓存规则?', () => {
+    batchEditForm.cache_rules.splice(index, 1)
+  })
 }
 
 const addSecurityRule = () => {
@@ -1428,7 +1666,9 @@ const addSecurityRule = () => {
 }
 
 const removeSecurityRule = index => {
-  batchEditForm.security_custom_rules.splice(index, 1)
+  confirmRemove('确认删除该安全规则?', () => {
+    batchEditForm.security_custom_rules.splice(index, 1)
+  })
 }
 
 const addErrorPage = () => {
@@ -1436,7 +1676,9 @@ const addErrorPage = () => {
 }
 
 const removeErrorPage = index => {
-  batchEditForm.adv_error_pages.splice(index, 1)
+  confirmRemove('确认删除该错误页?', () => {
+    batchEditForm.adv_error_pages.splice(index, 1)
+  })
 }
 
 const addUrlRedirect = () => {
@@ -1444,7 +1686,9 @@ const addUrlRedirect = () => {
 }
 
 const removeUrlRedirect = index => {
-  batchEditForm.adv_url_redirects.splice(index, 1)
+  confirmRemove('确认删除该跳转规则?', () => {
+    batchEditForm.adv_url_redirects.splice(index, 1)
+  })
 }
 
 const addOriginHeader = () => {
@@ -1452,7 +1696,9 @@ const addOriginHeader = () => {
 }
 
 const removeOriginHeader = index => {
-  batchEditForm.adv_origin_headers.splice(index, 1)
+  confirmRemove('确认删除该回源头?', () => {
+    batchEditForm.adv_origin_headers.splice(index, 1)
+  })
 }
 
 const addCdnHeader = () => {
@@ -1460,7 +1706,9 @@ const addCdnHeader = () => {
 }
 
 const removeCdnHeader = index => {
-  batchEditForm.adv_cdn_headers.splice(index, 1)
+  confirmRemove('确认删除该响应头?', () => {
+    batchEditForm.adv_cdn_headers.splice(index, 1)
+  })
 }
 
 const labelForSearchField = value => {
@@ -1532,6 +1780,53 @@ const submitCreateGroup = () => {
 }
 .filter-tags-clear {
   margin-left: auto;
+}
+.dnsapi-section {
+  margin-top: 16px;
+}
+.dnsapi-toolbar {
+  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+}
+.dnsapi-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dnsapi-field-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+}
+.dnsapi-field-label {
+  width: 220px;
+  text-align: right;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
+}
+.dnsapi-field-row .el-input {
+  flex: 1 1 auto;
+}
+.dnsapi-dialog .el-dialog__header {
+  background: var(--el-color-primary-light-9);
+  border-bottom: 1px solid var(--el-border-color);
+  margin-right: 0;
+  padding: 14px 20px;
+}
+.dnsapi-dialog .el-dialog__title {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.dnsapi-dialog .el-dialog__body {
+  padding-top: 20px;
+}
+.dnsapi-dialog .el-form-item__label {
+  white-space: nowrap;
+}
+.dnsapi-dialog .dnsapi-fields .el-form-item__label {
+  width: 220px;
 }
 .pagination-container {
   margin-top: 16px;

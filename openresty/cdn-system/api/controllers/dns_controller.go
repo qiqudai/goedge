@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	_ "cdn-api/services/dns/providers"
 
@@ -92,8 +91,6 @@ func (ctr *DnsController) CreateProvider(c *gin.Context) {
 		Remark:    "",
 		Type:      req.Type,
 		Auth:      req.Credentials,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
 	}
 
 	if err := db.DB.Create(&item).Error; err != nil {

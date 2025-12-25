@@ -17,7 +17,7 @@
                 :label="getDynamicLabel(form.type, field)"
                 required
               >
-                <el-input v-model="form.credentials[field]" :placeholder="'???' + getDynamicLabel(form.type, field)" style="width: 320px;" />
+                <el-input v-model="form.credentials[field]" :placeholder="'请输入' + getDynamicLabel(form.type, field)" style="width: 320px;" />
               </el-form-item>
             </template>
 
@@ -28,7 +28,7 @@
               <el-switch v-model="form.ip_weight" />
             </el-form-item>
             <el-form-item label="DNS错误">
-              <span class="dns-error">{{ dnsError }}</span>
+              <span class="dns-error">{ dnsError }</span>
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="submitForm" :loading="submitting">保存</el-button>

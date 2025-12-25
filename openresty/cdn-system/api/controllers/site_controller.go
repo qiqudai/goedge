@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
+	"cdn-api/services/dns"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -96,6 +97,7 @@ func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 	}
 
 	services.BumpConfigVersion("site", []int64{site.ID})
+	_ = ensureDNSRecords(site)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Site created successfully", "data": site})
 }
@@ -114,6 +116,7 @@ func (ctrl *SiteController) Create(c *gin.Context) {
 	}
 
 	services.BumpConfigVersion("site", []int64{site.ID})
+	_ = ensureDNSRecords(site)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Site created successfully", "data": site})
 }
@@ -463,6 +466,17 @@ func findDefaultUserPackageID(userID int64) (int64, error) {
 	return pkg.ID, nil
 }
 
+func findDefaultDNSProviderID(userID int64) (int64, error) {
+	var api models.DNSAPI
+	if err := db.DB.Where("uid = ? AND is_default = ?", userID, true).Order("id asc").First(&api).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return api.ID, nil
+}
+
 func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, error) {
 	var req struct {
 		UserID        int64    `json:"user_id"`
@@ -493,6 +507,11 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 			return nil, 0, err
 		}
 		req.UserPackageID = defaultID
+	}
+	if req.DNSProviderID == 0 {
+		if defaultDNS, err := findDefaultDNSProviderID(userID); err == nil && defaultDNS != 0 {
+			req.DNSProviderID = defaultDNS
+		}
 	}
 
 	domains := req.Domains
@@ -554,6 +573,73 @@ func createSiteWithGroup(site *models.Site, groupID int64) error {
 		}
 		return nil
 	})
+}
+
+func ensureDNSRecords(site *models.Site) error {
+	if site == nil || site.DNSProviderID == 0 || len(site.Domains) == 0 {
+		return nil
+	}
+	var api models.DNSAPI
+	if err := db.DB.Where("id = ?", site.DNSProviderID).First(&api).Error; err != nil {
+		return err
+	}
+	provider, err := dns.GetProvider(api.Type, api.Auth)
+	if err != nil || provider == nil {
+		return err
+	}
+	for _, domain := range site.Domains {
+		root, name := splitRootDomain(domain)
+		if root == "" {
+			continue
+		}
+		record := dns.DNSRecord{
+			Type:  "CNAME",
+			Name:  name,
+			Value: site.CnameHostname,
+			TTL:   600,
+		}
+		_ = provider.AddRecord(root, record)
+	}
+	return nil
+}
+
+func splitRootDomain(domain string) (string, string) {
+	host := normalizeDomainHost(domain)
+	if host == "" || net.ParseIP(host) != nil {
+		return "", ""
+	}
+	if strings.HasPrefix(host, "*.") {
+		host = strings.TrimPrefix(host, "*.")
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 {
+		return "", ""
+	}
+	root := strings.Join(parts[len(parts)-2:], ".")
+	name := "@"
+	if len(parts) > 2 {
+		name = strings.Join(parts[:len(parts)-2], ".")
+	}
+	return root, name
+}
+
+func normalizeDomainHost(input string) string {
+	host := strings.TrimSpace(strings.ToLower(input))
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "#"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "?"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	return strings.TrimRight(host, ".")
 }
 
 func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {

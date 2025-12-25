@@ -13,6 +13,10 @@ import (
 type CnameController struct{}
 
 func (c *CnameController) ListDomains(ctx *gin.Context) {
+	if err := ensureCnameTable(); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to init cname table"})
+		return
+	}
 	var list []models.CnameDomain
 	result := db.DB.Find(&list)
 	if result.Error != nil {
@@ -29,6 +33,11 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 	}
 	if err := ctx.BindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid params"})
+		return
+	}
+
+	if err := ensureCnameTable(); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to init cname table"})
 		return
 	}
 
@@ -53,12 +62,33 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 }
 
 func (c *CnameController) DeleteDomain(ctx *gin.Context) {
+	if err := ensureCnameTable(); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to init cname table"})
+		return
+	}
 	id := ctx.Param("id")
 	if err := db.DB.Delete(&models.CnameDomain{}, id).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to delete"})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
+}
+
+func ensureCnameTable() error {
+	if db.DB == nil {
+		return nil
+	}
+	return db.DB.Exec(`
+CREATE TABLE IF NOT EXISTS cname_domains (
+  id INT(11) NOT NULL AUTO_INCREMENT,
+  domain VARCHAR(255) NOT NULL,
+  note VARCHAR(255) DEFAULT '',
+  create_at DATETIME DEFAULT NULL,
+  update_at DATETIME DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY idx_cname_domains_domain (domain)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+`).Error
 }
 
 func normalizeDomainInput(input string) string {
