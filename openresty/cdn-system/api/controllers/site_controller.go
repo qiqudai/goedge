@@ -467,14 +467,18 @@ func findDefaultUserPackageID(userID int64) (int64, error) {
 }
 
 func findDefaultDNSProviderID(userID int64) (int64, error) {
-	var api models.DNSAPI
-	if err := db.DB.Where("uid = ? AND is_default = ?", userID, true).Order("id asc").First(&api).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, nil
+	if userID != 0 {
+		if settings, err := loadCertDefaultSettings("user", "user", int(userID)); err != nil {
+			return 0, err
+		} else if settings != nil && settings.DNSAPI != 0 {
+			return int64(settings.DNSAPI), nil
 		}
+	}
+	settings, err := loadCertDefaultSettings("system", "global", 0)
+	if err != nil || settings == nil || settings.DNSAPI == 0 {
 		return 0, err
 	}
-	return api.ID, nil
+	return int64(settings.DNSAPI), nil
 }
 
 func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, error) {
@@ -509,7 +513,11 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		req.UserPackageID = defaultID
 	}
 	if req.DNSProviderID == 0 {
-		if defaultDNS, err := findDefaultDNSProviderID(userID); err == nil && defaultDNS != 0 {
+		defaultDNS, err := findDefaultDNSProviderID(userID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if defaultDNS != 0 {
 			req.DNSProviderID = defaultDNS
 		}
 	}

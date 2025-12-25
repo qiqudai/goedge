@@ -72,12 +72,18 @@
         </template>
       </el-table-column>
 
-      <el-table-column :label="t.action" align="center" width="230" class-name="small-padding fixed-width">
+      <el-table-column :label="t.action" align="center" width="420" class-name="small-padding fixed-width">
         <template #default="{ row }">
-          <el-button type="primary" size="small" @click="handleUpdate(row)">
+          <el-button type="primary" size="normal" @click="handleUpdate(row)">
             {{ t.edit }}
           </el-button>
-          <el-button size="small" type="danger" @click="handleDelete(row)">
+          <el-button size="normal" type="success" @click="handleImpersonate(row)">
+            {{ t.impersonate }}
+          </el-button>
+          <el-button size="normal" type="warning" @click="handleResetPurge(row)">
+            {{ t.resetPurge }}
+          </el-button>
+          <el-button size="normal" type="danger" @click="handleDelete(row)">
             {{ t.delete }}
           </el-button>
         </template>
@@ -110,6 +116,12 @@ const t = {
   editUserTip: '\u7f16\u8f91\u7528\u6237: ',
   statusUpdated: '\u72b6\u6001\u66f4\u65b0\u6210\u529f',
   deleteConfirm: '\u786e\u8ba4\u5220\u9664\u8be5\u7528\u6237?',
+  resetPurge: '\u91cd\u7f6e\u7f13\u5b58\u6b21\u6570',
+  resetPurgeConfirm: '\u786e\u8ba4\u91cd\u7f6e\u8be5\u7528\u6237\u7684\u5237\u65b0/\u9884\u70ed\u6b21\u6570?',
+  resetPurgeSuccess: '\u91cd\u7f6e\u6210\u529f',
+  impersonate: '\u5207\u6362\u767b\u5f55',
+  impersonateConfirm: '\u786e\u8ba4\u5207\u6362\u4e3a\u8be5\u7528\u6237\u767b\u5f55\u5417?',
+  impersonateSuccess: '\u5207\u6362\u6210\u529f',
   warning: '\u8b66\u544a',
   confirm: '\u786e\u5b9a',
   cancel: '\u53d6\u6d88',
@@ -188,6 +200,42 @@ const handleDelete = row => {
       ElMessage.success(t.deleteSuccess)
       const index = list.value.indexOf(row)
       list.value.splice(index, 1)
+    })
+  })
+}
+
+const handleResetPurge = row => {
+  ElMessageBox.confirm(t.resetPurgeConfirm, t.warning, {
+    confirmButtonText: t.confirm,
+    cancelButtonText: t.cancel,
+    type: 'warning'
+  }).then(() => {
+    request.post(`/users/${row.id}/purge/reset`).then(() => {
+      ElMessage.success(t.resetPurgeSuccess)
+    })
+  })
+}
+
+const handleImpersonate = row => {
+  ElMessageBox.confirm(t.impersonateConfirm, t.warning, {
+    confirmButtonText: t.confirm,
+    cancelButtonText: t.cancel,
+    type: 'warning'
+  }).then(() => {
+    request.post(`/users/${row.id}/impersonate`).then(res => {
+      const token = res.token || res.data?.token
+      const role = res.role || res.data?.role
+      if (!token || !role) {
+        ElMessage.error('切换失败')
+        return
+      }
+      const params = new URLSearchParams({
+        token,
+        role,
+        redirect: '/dashboard'
+      })
+      window.open(`/login?${params.toString()}`, '_blank')
+      ElMessage.success(t.impersonateSuccess)
     })
   })
 }

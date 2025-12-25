@@ -2,9 +2,9 @@
   <div class="app-container">
     <el-tabs v-model="activeName">
       <el-tab-pane label="刷新预热" name="create">
-        <el-form :model="form" label-width="120px" style="margin-top: 20px;">
-          <el-form-item label="类型">
-            <el-radio-group v-model="form.type">
+        <el-form :model="form" label-width="100px" class="purge-form">
+          <el-form-item label="操作类型">
+            <el-radio-group v-model="form.type" @change="loadUsage">
               <el-radio label="refresh_url">刷新URL</el-radio>
               <el-radio label="refresh_dir">刷新目录</el-radio>
               <el-radio label="preheat">预热</el-radio>
@@ -14,35 +14,48 @@
             <el-input
               v-model="form.urls"
               type="textarea"
-              :rows="10"
-              placeholder="请输入URL"
-              style="width: 600px;"
+              :rows="12"
+              placeholder="一行一条URL"
+              class="url-textarea"
             />
+            <div class="limit-tip">
+              {{ limitText }}
+              <el-button link type="primary" size="small" @click="loadUsage">刷新</el-button>
+            </div>
           </el-form-item>
-          <div style="margin-left: 120px; color: #909399; margin-bottom: 20px;">
-            最多100条 每行1条
-          </div>
           <el-form-item>
-            <el-button type="primary" @click="onSubmit" :loading="submitLoading">提交</el-button>
+            <el-button type="primary" :loading="submitLoading" @click="onSubmit">提交</el-button>
           </el-form-item>
         </el-form>
       </el-tab-pane>
 
-      <el-tab-pane label="任务列表" name="list">
-        <div class="filter-container" style="margin-bottom: 20px;">
-          <el-button type="primary" class="filter-item">批量删除</el-button>
-          <el-select v-model="listQuery.type" placeholder="类型" clearable class="filter-item" style="width: 130px; margin-left: 10px;">
+      <el-tab-pane label="操作记录" name="list">
+        <div class="filter-container">
+          <el-button type="primary" :disabled="!selectedRows.length" @click="handleResubmitBatch">重新提交</el-button>
+          <el-select v-model="listQuery.type" placeholder="不限类型" clearable class="filter-item" style="width: 140px;">
             <el-option label="刷新URL" value="refresh_url" />
             <el-option label="刷新目录" value="refresh_dir" />
             <el-option label="预热" value="preheat" />
           </el-select>
-          <el-input v-model="listQuery.keyword" placeholder="URL模糊搜索" style="width: 200px; margin-left: 10px;" class="filter-item" @keyup.enter="handleFilter" />
-          <el-button class="filter-item" type="primary" :icon="Search" @click="handleFilter" style="margin-left: 10px;" circle plain />
+          <el-input
+            v-model="listQuery.keyword"
+            placeholder="URL或域名"
+            class="filter-item"
+            style="width: 220px;"
+            @keyup.enter="handleFilter"
+          />
+          <el-button type="primary" class="filter-item" @click="handleFilter">查询</el-button>
         </div>
 
-        <el-table :data="list" v-loading="listLoading" border style="width: 100%">
+        <el-table
+          :data="list"
+          v-loading="listLoading"
+          border
+          style="width: 100%"
+          @selection-change="handleSelectionChange"
+        >
           <el-table-column type="selection" width="55" />
-          <el-table-column prop="id" label="JobId / TaskId" width="120" />
+          <el-table-column prop="id" label="JobId / TaskId" width="130" />
           <el-table-column prop="type" label="类型" width="120">
             <template #default="{ row }">
               {{ typeMap[row.type] || row.type }}
@@ -50,25 +63,27 @@
           </el-table-column>
           <el-table-column prop="data" label="URL">
             <template #default="{ row }">
-              <div style="max-height: 100px; overflow-y: auto;">{{ row.data }}</div>
+              <div class="url-cell">{{ row.data }}</div>
             </template>
           </el-table-column>
-          <el-table-column prop="state" label="状态" width="100">
+          <el-table-column prop="state" label="状态" width="120">
             <template #default="{ row }">
-              <el-tag :type="statusTypeMap[row.state]">{{ row.state }}</el-tag>
+              <el-tag :type="statusTypeMap[row.state] || 'info'">
+                {{ statusTextMap[row.state] || row.state }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="create_at" label="创建时间" width="180">
             <template #default="{ row }">{{ formatTime(row.create_at) }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="100">
-            <template #default>
-              <el-button type="text">详情</el-button>
+          <el-table-column label="操作" width="120" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" size="normal" @click="handleResubmit(row)">重新提交</el-button>
             </template>
           </el-table-column>
         </el-table>
 
-        <div class="pagination-container" style="margin-top: 20px;">
+        <div class="pagination-container">
           <el-pagination
             v-model:current-page="listQuery.page"
             v-model:page-size="listQuery.limit"
@@ -84,22 +99,22 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import request from '@/utils/request'
-import { ElMessage } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const activeName = ref('create')
 const submitLoading = ref(false)
+const listLoading = ref(false)
+const list = ref([])
+const total = ref(0)
+const selectedRows = ref([])
 
 const form = reactive({
   type: 'refresh_url',
   urls: ''
 })
 
-const list = ref([])
-const total = ref(0)
-const listLoading = ref(false)
 const listQuery = reactive({
   page: 1,
   limit: 10,
@@ -107,37 +122,66 @@ const listQuery = reactive({
   type: ''
 })
 
+const usage = reactive({
+  limits: { refresh_url: 0, refresh_dir: 0, preheat: 0 },
+  remaining: { refresh_url: 0, refresh_dir: 0, preheat: 0 }
+})
+
 const typeMap = {
-  refresh_url: '\u5237\u65b0URL',
-  refresh_dir: '\u5237\u65b0\u76ee\u5f55',
-  preheat: '\u9884\u70ed'
+  refresh_url: '刷新URL',
+  refresh_dir: '刷新目录',
+  preheat: '预热'
 }
 
 const statusTypeMap = {
   waiting: 'info',
-  processing: 'warning',
+  running: 'warning',
   done: 'success',
   fail: 'danger'
 }
+
+const statusTextMap = {
+  waiting: '等待',
+  running: '处理中',
+  done: '完成',
+  fail: '失败'
+}
+
+const limitText = computed(() => {
+  const limit = usage.limits[form.type] || 0
+  const remaining = usage.remaining[form.type] || 0
+  return `每日限额${limit}次，今日剩余${remaining}次`
+})
 
 const formatTime = t => {
   if (!t) return ''
   return String(t).replace('T', ' ').substring(0, 19)
 }
 
+const loadUsage = () => {
+  request.get('/tasks/usage').then(res => {
+    const data = res.data || {}
+    usage.limits = data.limits || usage.limits
+    usage.remaining = data.remaining || usage.remaining
+  })
+}
+
 const onSubmit = () => {
-  if (!form.urls) {
-    ElMessage.warning('\u8bf7\u8f93\u5165URL')
+  if (!form.urls.trim()) {
+    ElMessage.warning('请输入URL')
     return
   }
   submitLoading.value = true
   request.post('/tasks', form).then(() => {
-    ElMessage.success('\u63d0\u4ea4\u6210\u529f')
+    ElMessage.success('提交成功，请到操作记录里查看进度')
     form.urls = ''
     submitLoading.value = false
     activeName.value = 'list'
+    loadUsage()
     fetchList()
-  }).catch(() => {
+  }).catch(err => {
+    const msg = err.response?.data?.msg || err.response?.data?.error || err.message || '请求失败'
+    ElMessage.error(msg)
     submitLoading.value = false
   })
 }
@@ -165,6 +209,46 @@ const handleFilter = () => {
   fetchList()
 }
 
+const handleSelectionChange = rows => {
+  selectedRows.value = rows
+}
+
+const handleResubmit = row => {
+  ElMessageBox.confirm('确认重新提交该任务?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    request.post(`/tasks/${row.id}/resubmit`).then(() => {
+      ElMessage.success('重新提交成功')
+      loadUsage()
+      fetchList()
+    }).catch(err => {
+      const msg = err.response?.data?.msg || err.response?.data?.error || err.message || '请求失败'
+      ElMessage.error(msg)
+    })
+  })
+}
+
+const handleResubmitBatch = () => {
+  if (!selectedRows.value.length) return
+  ElMessageBox.confirm('确认重新提交选中任务?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    Promise.all(selectedRows.value.map(row => request.post(`/tasks/${row.id}/resubmit`)))
+      .then(() => {
+        ElMessage.success('重新提交成功')
+        loadUsage()
+        fetchList()
+      }).catch(err => {
+        const msg = err.response?.data?.msg || err.response?.data?.error || err.message || '请求失败'
+        ElMessage.error(msg)
+      })
+  })
+}
+
 watch(activeName, val => {
   if (val === 'list') {
     fetchList()
@@ -172,6 +256,40 @@ watch(activeName, val => {
 })
 
 onMounted(() => {
-  // keep lazy loading
+  loadUsage()
 })
 </script>
+
+<style scoped>
+.purge-form {
+  margin-top: 20px;
+  max-width: 720px;
+}
+.url-textarea {
+  width: 100%;
+}
+.limit-tip {
+  color: #909399;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.filter-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.filter-item {
+  margin-left: 8px;
+}
+.url-cell {
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.pagination-container {
+  margin-top: 20px;
+  text-align: right;
+}
+</style>

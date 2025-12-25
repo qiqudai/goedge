@@ -279,6 +279,33 @@ type certDefaultSettings struct {
 	DNSAPI int    `json:"dnsapi"`
 }
 
+func isUserRequest(c *gin.Context) bool {
+	path := c.FullPath()
+	if strings.HasPrefix(path, "/api/v1/user/") {
+		return true
+	}
+	return strings.HasPrefix(c.Request.URL.Path, "/api/v1/user/")
+}
+
+func loadCertDefaultSettings(scopeType, scopeName string, scopeID int) (*certDefaultSettings, error) {
+	var sys models.SysConfig
+	query := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "cert_default_settings", scopeType, scopeName, scopeID)
+	if err := query.First(&sys).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var settings certDefaultSettings
+	if err := json.Unmarshal([]byte(sys.Value), &settings); err != nil {
+		return nil, err
+	}
+	if settings.Type == "" {
+		settings.Type = "system"
+	}
+	return &settings, nil
+}
+
 func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 	query := db.DB.Model(&models.Cert{})
 	if userID != nil && *userID != 0 {
@@ -327,24 +354,34 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 }
 
 func (ctrl *CertController) GetDefaultSettings(c *gin.Context) {
-	var sys models.SysConfig
-	if err := db.DB.Where("name = ? AND type = ?", "cert_default_settings", "system").First(&sys).Error; err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": certDefaultSettings{Type: "system", DNSAPI: 0}})
+	var targetUserID int64
+	if uidStr := strings.TrimSpace(c.Query("user_id")); uidStr != "" {
+		if uid, err := strconv.ParseInt(uidStr, 10, 64); err == nil {
+			targetUserID = uid
+		}
+	}
+	if targetUserID == 0 && isUserRequest(c) {
+		targetUserID = parseUserID(mustGet(c, "userID"))
+	}
+
+	if targetUserID != 0 {
+		if settings, err := loadCertDefaultSettings("user", "user", int(targetUserID)); err == nil && settings != nil {
+			c.JSON(http.StatusOK, gin.H{"data": settings})
+			return
+		}
+	}
+	if settings, err := loadCertDefaultSettings("system", "global", 0); err == nil && settings != nil {
+		c.JSON(http.StatusOK, gin.H{"data": settings})
 		return
 	}
-	var settings certDefaultSettings
-	if err := json.Unmarshal([]byte(sys.Value), &settings); err != nil {
-		c.JSON(http.StatusOK, gin.H{"data": certDefaultSettings{Type: "system", DNSAPI: 0}})
-		return
-	}
-	if settings.Type == "" {
-		settings.Type = "system"
-	}
-	c.JSON(http.StatusOK, gin.H{"data": settings})
+	c.JSON(http.StatusOK, gin.H{"data": certDefaultSettings{Type: "system", DNSAPI: 0}})
 }
 
 func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
-	var req certDefaultSettings
+	var req struct {
+		UserID int64 `json:"user_id"`
+		certDefaultSettings
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
@@ -352,15 +389,35 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 	if req.Type == "" {
 		req.Type = "system"
 	}
-	b, _ := json.Marshal(req)
+	targetUserID := req.UserID
+	if targetUserID == 0 && isUserRequest(c) {
+		targetUserID = parseUserID(mustGet(c, "userID"))
+	}
+
+	scopeType := "system"
+	scopeName := "global"
+	scopeID := 0
+	if targetUserID != 0 {
+		scopeType = "user"
+		scopeName = "user"
+		scopeID = int(targetUserID)
+	}
+
+	payload := certDefaultSettings{Type: req.Type, DNSAPI: req.DNSAPI}
+	b, _ := json.Marshal(payload)
 	var sys models.SysConfig
-	if err := db.DB.Where("name = ? AND type = ?", "cert_default_settings", "system").First(&sys).Error; err != nil {
+	query := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "cert_default_settings", scopeType, scopeName, scopeID)
+	if err := query.First(&sys).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Save failed"})
+			return
+		}
 		sys = models.SysConfig{
 			Name:      "cert_default_settings",
 			Value:     string(b),
-			Type:      "system",
-			ScopeID:   0,
-			ScopeName: "global",
+			Type:      scopeType,
+			ScopeID:   scopeID,
+			ScopeName: scopeName,
 			Enable:    true,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),

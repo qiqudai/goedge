@@ -1,6 +1,6 @@
 ﻿<template>
   <div class="app-container">
-    <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
+    <el-tabs v-if="!hideTabs" v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
       <el-tab-pane label="网站列表" name="list" />
       <el-tab-pane label="默认设置" name="default" />
       <el-tab-pane label="DNS API" name="dns" />
@@ -69,6 +69,13 @@
 import { ref, reactive, onMounted } from 'vue'
 import request from '@/utils/request'
 import { useRouter } from 'vue-router'
+
+const props = defineProps({
+  hideTabs: {
+    type: Boolean,
+    default: false
+  }
+})
 
 const router = useRouter()
 const activeTopTab = ref('resolve')

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type DNSAPIController struct{}
@@ -39,7 +38,6 @@ func (ctr *DNSAPIController) Create(c *gin.Context) {
 		Remark    string `json:"remark"`
 		Type      string `json:"type"`
 		Auth      string `json:"auth"`
-		IsDefault bool   `json:"is_default"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Params"})
@@ -53,23 +51,14 @@ func (ctr *DNSAPIController) Create(c *gin.Context) {
 		req.UserID = parseUserID(mustGet(c, "userID"))
 	}
 	var item models.DNSAPI
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		if req.IsDefault {
-			if err := tx.Model(&models.DNSAPI{}).Where("uid = ?", req.UserID).Update("is_default", false).Error; err != nil {
-				return err
-			}
-		}
-		item = models.DNSAPI{
-			UserID:    req.UserID,
-			Name:      req.Name,
-			Remark:    req.Remark,
-			Type:      req.Type,
-			Auth:      req.Auth,
-			IsDefault: req.IsDefault,
-		}
-		return tx.Create(&item).Error
-	})
-	if err != nil {
+	item = models.DNSAPI{
+		UserID: req.UserID,
+		Name:   req.Name,
+		Remark: req.Remark,
+		Type:   req.Type,
+		Auth:   req.Auth,
+	}
+	if err := db.DB.Create(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Create Failed"})
 		return
 	}
@@ -88,34 +77,18 @@ func (ctr *DNSAPIController) Update(c *gin.Context) {
 		Remark    string `json:"remark"`
 		Type      string `json:"type"`
 		Auth      string `json:"auth"`
-		IsDefault *bool  `json:"is_default"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Params"})
 		return
 	}
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		var existing models.DNSAPI
-		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
-			return err
-		}
-		if req.IsDefault != nil && *req.IsDefault {
-			if err := tx.Model(&models.DNSAPI{}).Where("uid = ?", existing.UserID).Update("is_default", false).Error; err != nil {
-				return err
-			}
-		}
-		updates := map[string]interface{}{
-			"name": req.Name,
-			"des":  req.Remark,
-			"type": req.Type,
-			"auth": req.Auth,
-		}
-		if req.IsDefault != nil {
-			updates["is_default"] = *req.IsDefault
-		}
-		return tx.Model(&models.DNSAPI{}).Where("id = ?", id).Updates(updates).Error
-	})
-	if err != nil {
+	updates := map[string]interface{}{
+		"name": req.Name,
+		"des":  req.Remark,
+		"type": req.Type,
+		"auth": req.Auth,
+	}
+	if err := db.DB.Model(&models.DNSAPI{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed"})
 		return
 	}

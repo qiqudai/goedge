@@ -74,10 +74,6 @@ func main() {
 		migrator.AddColumn(&models.Site{}, "CnameHostname2")
 		log.Println("Added missing column: cname_hostname2")
 	}
-	if !migrator.HasColumn(&models.DNSAPI{}, "is_default") {
-		migrator.AddColumn(&models.DNSAPI{}, "IsDefault")
-		log.Println("Added missing column: is_default")
-	}
 
 	// Drop troublesome FK constraint if exists to allow 0 value
 	if migrator.HasConstraint(&models.Site{}, "region_ibfk_4") {

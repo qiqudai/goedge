@@ -133,6 +133,8 @@ func Setup(r *gin.Engine) {
 			admin.DELETE("/users/:id", userCtr.DeleteUser)
 			admin.GET("/users/:id/node-groups", userCtr.ListUserNodeGroups)
 			admin.PUT("/users/:id/node-groups", userCtr.UpdateUserNodeGroups)
+			admin.POST("/users/:id/purge/reset", userCtr.ResetPurgeUsage)
+			admin.POST("/users/:id/impersonate", userCtr.Impersonate)
 
 			// Site/Cert Management (Admin)
 			// Site
@@ -198,6 +200,8 @@ func Setup(r *gin.Engine) {
 			taskCtr := &controllers.TaskController{}
 			admin.GET("/tasks", taskCtr.List)
 			admin.POST("/tasks", taskCtr.Create)
+			admin.GET("/tasks/usage", taskCtr.Usage)
+			admin.POST("/tasks/:id/resubmit", taskCtr.Resubmit)
 
 			// Rules Management (CC/ACL)
 			ruleCtr := &controllers.RuleController{}
@@ -265,7 +269,14 @@ func Setup(r *gin.Engine) {
 			user.POST("/certs/batch_action", certController.BatchAction)
 			user.POST("/certs/batch", certController.BatchCreate)
 			user.POST("/certs/reissue", certController.Reissue)
+			user.GET("/certs/default_settings", certController.GetDefaultSettings)
 			user.POST("/certs/default_settings", certController.UpdateDefaultSettings)
+
+			userTaskCtr := &controllers.TaskController{}
+			user.GET("/tasks", userTaskCtr.List)
+			user.POST("/tasks", userTaskCtr.Create)
+			user.GET("/tasks/usage", userTaskCtr.Usage)
+			user.POST("/tasks/:id/resubmit", userTaskCtr.Resubmit)
 		}
 
 		// 3. Node Agent Routes (Require Node Token Middleware)

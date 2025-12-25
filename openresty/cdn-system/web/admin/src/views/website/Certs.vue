@@ -181,22 +181,40 @@
 
     <el-card v-if="activeTopTab === 'default'" class="default-card">
       <el-form :model="defaultForm" label-width="90px">
-        <el-form-item label="证书类型">
-          <el-radio-group v-model="defaultForm.type">
-            <el-radio label="system">系统默认设置</el-radio>
-            <el-radio label="zerossl">ZeroSSL(推荐)</el-radio>
-            <el-radio label="letsencrypt">Let's Encrypt</el-radio>
-            <el-radio label="buypass">BuyPass</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="DNS API">
-          <el-select v-model="defaultForm.dnsapi" clearable placeholder="请选择" style="width: 320px;">
-            <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
+        <el-form-item v-if="isAdmin" label="用户">
+          <el-select
+            v-model="selectedDefaultUser"
+            filterable
+            remote
+            clearable
+            placeholder="输入ID、邮箱、用户名、手机号搜索"
+            :remote-method="loadUsers"
+            :loading="userLoading"
+            @change="handleDefaultUserChange">
+            <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="saveDefaultSettings">保存</el-button>
-        </el-form-item>
+
+        <template v-if="!isAdmin || selectedDefaultUser">
+          <el-form-item label="证书类型">
+            <el-radio-group v-model="defaultForm.type">
+              <el-radio label="system">系统默认设置</el-radio>
+              <el-radio label="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio label="letsencrypt">Let's Encrypt</el-radio>
+              <el-radio label="buypass">BuyPass</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="DNS API">
+            <el-select v-model="defaultForm.dnsapi" clearable placeholder="请选择" style="width: 320px;">
+              <el-option v-for="d in defaultDnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="saveDefaultSettings">保存</el-button>
+          </el-form-item>
+        </template>
+
+        <div v-else class="default-empty">请先选择用户</div>
       </el-form>
     </el-card>
 
@@ -274,6 +292,11 @@ const dnsapiLoading = ref(false)
 const selectedDnsapi = ref([])
 const dnsapiTypes = ref([])
 const dnsapiDialogVisible = ref(false)
+const isAdmin = ref((localStorage.getItem('role') || 'user') === 'admin')
+const userOptions = ref([])
+const userLoading = ref(false)
+const selectedDefaultUser = ref(0)
+const adminDefaultDnsapiOptions = ref([])
 const dnsapiForm = reactive({
   id: 0,
   name: '',
@@ -285,6 +308,9 @@ const defaultForm = reactive({
   type: 'system',
   dnsapi: ''
 })
+const defaultDnsapiOptions = computed(() => (
+  isAdmin.value ? adminDefaultDnsapiOptions.value : dnsapiOptions.value
+))
 
 const listQuery = reactive({
   page: 1,
@@ -570,16 +596,63 @@ const removeDnsapiBatch = () => {
   })
 }
 
-const loadDefaultSettings = () => {
-  request.get('/certs/default_settings').then(res => {
-    const data = res.data || {}
-    defaultForm.type = data.type || 'system'
-    defaultForm.dnsapi = data.dnsapi || ''
+const formatUserLabel = user => {
+  if (!user) return ''
+  const name = user.username || user.name || ''
+  return name ? `${name} (id: ${user.id})` : `id: ${user.id}`
+}
+
+const loadUsers = query => {
+  if (query !== '') {
+    userLoading.value = true
+    request.get('/users', { params: { keyword: query, pageSize: 20 } }).then(res => {
+      userOptions.value = res.data?.list || res.list || []
+      userLoading.value = false
+    }).catch(() => {
+      userLoading.value = false
+    })
+  }
+}
+
+const loadDefaultDnsapiList = (userId) => {
+  if (!userId) {
+    adminDefaultDnsapiOptions.value = []
+    return
+  }
+  request.get('/dnsapi', { params: { user_id: userId } }).then(res => {
+    adminDefaultDnsapiOptions.value = res.data?.list || res.list || []
   })
 }
 
+const loadDefaultSettings = (userId) => {
+  const params = userId ? { user_id: userId } : undefined
+  request.get('/certs/default_settings', { params }).then(res => {
+    const data = res.data || {}
+    defaultForm.type = data.type || 'system'
+    defaultForm.dnsapi = data.dnsapi || ''
+  }).catch(() => {
+    defaultForm.type = 'system'
+    defaultForm.dnsapi = ''
+  })
+}
+
+const handleDefaultUserChange = (userId) => {
+  defaultForm.type = 'system'
+  defaultForm.dnsapi = ''
+  loadDefaultSettings(userId)
+  loadDefaultDnsapiList(userId)
+}
+
 const saveDefaultSettings = () => {
-  request.post('/certs/default_settings', defaultForm).then(() => {
+  if (isAdmin.value && !selectedDefaultUser.value) {
+    ElMessage.warning('请选择用户')
+    return
+  }
+  const payload = { ...defaultForm }
+  if (isAdmin.value) {
+    payload.user_id = selectedDefaultUser.value
+  }
+  request.post('/certs/default_settings', payload).then(() => {
     ElMessage.success('保存成功')
   })
 }
@@ -588,7 +661,9 @@ onMounted(() => {
   fetchList()
   loadDnsapiList()
   loadDnsapiTypes()
-  loadDefaultSettings()
+  if (!isAdmin.value) {
+    loadDefaultSettings()
+  }
 })
 </script>
 
@@ -621,5 +696,10 @@ onMounted(() => {
   cursor: pointer;
   font-size: 12px;
   margin-left: 8px;
+}
+.default-empty {
+  color: #909399;
+  font-size: 12px;
+  padding: 4px 0 4px 90px;
 }
 </style>

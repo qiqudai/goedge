@@ -197,7 +197,6 @@ create table `dnsapi` (
     `des` varchar(255),    
     `type` varchar(255),
     `auth` varchar(255),
-    `is_default` tinyint(1) default 0,
     primary KEY `id` (`id`),
     KEY `idx_type` (`type`),
     CONSTRAINT `user_ibfk_3` FOREIGN KEY (`uid`) REFERENCES `user` (`id`)

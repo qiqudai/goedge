@@ -8,7 +8,7 @@
       </template>
       <el-form :model="form" @keyup.enter="handleLogin">
         <el-form-item>
-          <el-input v-model="form.username" placeholder="用户名" prefix-icon="User" />
+          <el-input v-model="form.username" placeholder="用户�? prefix-icon="User" />
         </el-form-item>
         <el-form-item>
           <el-input v-model="form.password" type="password" placeholder="密码" prefix-icon="Lock" show-password />
@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
@@ -66,3 +66,4 @@ const handleLogin = () => {
   text-align: center;
 }
 </style>
+

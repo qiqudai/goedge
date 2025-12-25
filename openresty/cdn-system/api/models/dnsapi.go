@@ -7,7 +7,6 @@ type DNSAPI struct {
 	Remark    string    `json:"remark" gorm:"column:des"`
 	Type      string    `json:"type"`
 	Auth      string    `json:"auth"`
-	IsDefault bool      `json:"is_default" gorm:"column:is_default"`
 }
 
 func (DNSAPI) TableName() string {

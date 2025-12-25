@@ -124,6 +124,8 @@
       />
     </div>
 
+    <ResolvePage v-if="activeTopTab === 'resolve'" :hide-tabs="true" />
+
     <div v-if="activeTopTab === 'dns'" class="dnsapi-section">
       <div class="dnsapi-toolbar">
         <el-button type="primary" @click="openDnsapiDialog">新增DNS API</el-button>
@@ -137,14 +139,6 @@
         <el-table-column prop="type" label="类型" width="140">
           <template #default="{ row }">
             {{ formatDnsType(row.type) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="默认" width="120" align="center">
-          <template #default="{ row }">
-            <el-switch
-              v-model="row.is_default"
-              @change="value => setDnsapiDefault(row, value)"
-            />
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
@@ -285,9 +279,6 @@
           <el-select v-model="dnsapiForm.type" placeholder="请选择" style="width: 100%;" @change="resetDnsapiAuth">
             <el-option v-for="t in dnsapiTypes" :key="t.type" :label="t.name" :value="t.type" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="默认DNS API">
-          <el-switch v-model="dnsapiForm.is_default" />
         </el-form-item>
         <el-form-item label="验证信息" v-if="currentDnsapiType">
           <div class="dnsapi-fields">
@@ -935,6 +926,7 @@ import { ArrowDown, CircleCheckFilled, CircleCloseFilled, Plus } from '@element-
 import request from '@/utils/request'
 import { useRouter } from 'vue-router'
 import CountrySelector from '@/components/CountrySelector.vue'
+import ResolvePage from './Resolve.vue'
 
 const router = useRouter()
 const activeTopTab = ref('list')
@@ -987,8 +979,7 @@ const dnsapiForm = reactive({
   name: '',
   remark: '',
   type: '',
-  credentials: {},
-  is_default: false
+  credentials: {}
 })
 
 const batchEditVisible = ref(false)
@@ -1228,7 +1219,6 @@ const openDnsapiDialog = () => {
   dnsapiForm.remark = ''
   dnsapiForm.type = ''
   dnsapiForm.credentials = {}
-  dnsapiForm.is_default = false
   dnsapiDialogVisible.value = true
 }
 
@@ -1238,7 +1228,6 @@ const openDnsapiEdit = row => {
   dnsapiForm.remark = row.remark || ''
   dnsapiForm.type = row.type
   dnsapiForm.credentials = row.auth ? JSON.parse(row.auth) : {}
-  dnsapiForm.is_default = !!row.is_default
   dnsapiDialogVisible.value = true
 }
 
@@ -1252,7 +1241,6 @@ const submitDnsapi = () => {
     remark: dnsapiForm.remark,
     type: dnsapiForm.type,
     auth: JSON.stringify(dnsapiForm.credentials || {}),
-    is_default: dnsapiForm.is_default
   }
   if (dnsapiForm.id) {
     request.put(`/dnsapi/${dnsapiForm.id}`, payload).then(() => {
@@ -1263,21 +1251,6 @@ const submitDnsapi = () => {
   }
   request.post('/dnsapi', payload).then(() => {
     dnsapiDialogVisible.value = false
-    loadDnsapiList()
-  })
-}
-
-const setDnsapiDefault = (row, value) => {
-  const payload = {
-    name: row.name,
-    remark: row.remark,
-    type: row.type,
-    auth: row.auth || '',
-    is_default: value
-  }
-  request.put(`/dnsapi/${row.id}`, payload).then(() => {
-    loadDnsapiList()
-  }).catch(() => {
     loadDnsapiList()
   })
 }
@@ -1310,8 +1283,6 @@ const handleTopTab = tab => {
   } else if (tab.paneName === 'dns') {
     loadDnsapiList()
     loadDnsapiTypes()
-  } else if (tab.paneName === 'resolve') {
-    router.push('/website/resolve')
   }
 }
 
@@ -1609,10 +1580,6 @@ const loadDnsProviders = () => {
     const list = res.data?.list || res.list || []
     dnsOptions.value = list
     if (!createForm.dns_provider_id) {
-      const def = list.find(item => item.is_default)
-      if (def) {
-        createForm.dns_provider_id = def.id
-      }
     }
   })
 }
