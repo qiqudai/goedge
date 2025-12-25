@@ -5,6 +5,8 @@ local edge_compute = require "lua.edge_compute"
 local waf = require "lua.waf"        -- Phase 3
 local quota = require "lua.quota"    -- Phase 3
 local balancer = require "lua.balancer" -- Phase 3
+local cc = require "lua.cc"
+local cache = require "lua.cache"
 
 -- 1. IP Blocking Check (Legacy/Fallback)
 if ip_block.is_blocked(ngx.var.remote_addr) then
@@ -42,6 +44,18 @@ local function acl_check(domain_conf, ip)
     end
 end
 
+local function ip_in_list(list, ip)
+    if not list or not ip then
+        return false
+    end
+    for _, item in ipairs(list) do
+        if item == ip then
+            return true
+        end
+    end
+    return false
+end
+
 local host = ngx.var.host
 local config = _G.cdn_config 
 local domain_conf = nil
@@ -59,6 +73,24 @@ if not domain_conf then
     ngx.log(ngx.WARN, "Unknown domain: ", host)
     ngx.exit(404)
 else
+    local client_ip = ngx.var.remote_addr
+    local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
+    if not whitelisted and ip_in_list(domain_conf.black_ips, client_ip) then
+        ngx.exit(403)
+    end
+
+    cc.check(domain_conf, client_ip, ngx.var.uri)
+
+    local bypass, ttl = cache.resolve(domain_conf, ngx.var.uri)
+    if bypass then
+        ngx.var.cache_bypass = "1"
+    else
+        ngx.var.cache_bypass = "0"
+    end
+    if ttl and tonumber(ttl) and tonumber(ttl) > 0 then
+        ngx.var.cache_ttl = tostring(ttl)
+    end
+
     -- 5. Quota & Commercial Status (Phase 3: Requirement #8)
     -- Checks if account is suspended or limits exceeded
     quota.check_quota(host)
@@ -75,7 +107,17 @@ else
         local target_addr = balancer.get_target(upstream_key, targets, policy)
         
         if target_addr then
-            ngx.var.backend_target = "http://" .. target_addr
+            local scheme = domain_conf.origin_protocol or "http"
+            scheme = string.lower(scheme)
+            local target = target_addr
+            if not string.find(target_addr, ":", 1, true) then
+                if scheme == "https" and domain_conf.origin_https_port and domain_conf.origin_https_port ~= "" then
+                    target = target_addr .. ":" .. domain_conf.origin_https_port
+                elseif scheme == "http" and domain_conf.origin_http_port and domain_conf.origin_http_port ~= "" then
+                    target = target_addr .. ":" .. domain_conf.origin_http_port
+                end
+            end
+            ngx.var.backend_target = scheme .. "://" .. target
             
              -- Add Custom Headers
             if domain_conf.headers then
@@ -90,6 +132,10 @@ else
     else
         ngx.log(ngx.ERR, "Upstream not found: ", upstream_key)
         ngx.exit(502)
+    end
+
+    if not whitelisted then
+        acl_check(domain_conf, client_ip)
     end
 end
 

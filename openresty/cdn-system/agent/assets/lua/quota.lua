@@ -1,8 +1,6 @@
 -- lua/quota.lua
 local _M = {}
 local config_loader = require "lua.config_loader"
-local redis_conn = require "lua.redis_conn"
-
 -- 1. Check Account Status (Distributed)
 function _M.check_quota(host)
     local config = config_loader.get_config()

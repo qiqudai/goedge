@@ -1,7 +1,5 @@
 -- lua/waf.lua
 local _M = {}
-local redis_conn = require "lua.redis_conn"
-
 local CACHE_TTL = 5 -- seconds
 local cache = ngx.shared.waf_cache
 
@@ -79,20 +77,8 @@ function _M.check()
             end
         end
 
-         -- 4. Cache Miss: Query Redis (Slow Path)
-         local red, err = redis_conn.get_connect()
-         if red then
-             local res, err = red:sismember("global_blacklist", ip)
-             redis_conn.close(red)
-             
-             if res == 1 then
-                 ngx.log(ngx.WARN, "WAF: IP Blocked (Redis Hit): ", ip)
-                 if cache then cache:set("ip_bl:" .. ip, 1, CACHE_TTL) end
-                 ngx.exit(403)
-             else
-                 if cache then cache:set("ip_bl:" .. ip, 0, CACHE_TTL) end
-             end
-         end
+        -- 4. Redis lookup removed; rely on local rules only.
+        if cache then cache:set("ip_bl:" .. ip, 0, CACHE_TTL) end
     end
 
     -- 5. Cdnfly Commercial WAF Engine

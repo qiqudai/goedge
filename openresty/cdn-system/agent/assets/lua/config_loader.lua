@@ -11,33 +11,7 @@ local CHECK_INTERVAL = 1 -- seconds
 local current_config = nil
 local last_version = 0
 
-local redis_conn = require "lua.redis_conn"
-
--- ... (Previous code)
-
--- New Helper: Report Config Version to Redis
-local function report_version(config, version)
-    if not config then return end
-    
-    -- Identify the node (Prefer node_id from config, else hostname/random)
-    local node_id = config.node_id or "edge-node-default"
-    
-    local red, err = redis_conn.get_connect()
-    if not red then
-        ngx.log(ngx.ERR, "Reporting: Config loaded but failed to connect to Redis: ", err)
-        return
-    end
-    
-    -- HSET cluster_config_status <node_id> <timestamp>
-    local ok, err = red:hset("cluster_config_status", node_id, version)
-    if not ok then
-        ngx.log(ngx.ERR, "Reporting: Failed to update status in Redis: ", err)
-    else
-        ngx.log(ngx.INFO, "Reporting: Config version reported to Redis. Node: ", node_id, " Ver: ", version)
-    end
-    
-    redis_conn.close(red)
-end
+-- Redis reporting removed (use API-based reporting if needed).
 
 -- Function to load config
 function _M.load_config()
@@ -92,12 +66,7 @@ function _M.load_config()
     
     ngx.log(ngx.INFO, "CDN Config Reloaded. Version: ", version)
     
-    -- 4. Phase 6: Sync Reporting
-    -- Run in pcall to avoid crashing the loader if network fails
-    local ok, err = pcall(report_version, config, version)
-    if not ok then
-        ngx.log(ngx.ERR, "Reporting Crashed: ", err)
-    end
+    -- Reporting removed; sync via API if needed.
 end
 
 -- Timer callback

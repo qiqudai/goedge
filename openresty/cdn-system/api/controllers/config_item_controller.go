@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"net/http"
 	"strconv"
 	"time"
@@ -64,6 +65,7 @@ func (ctrl *ConfigItemController) Upsert(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Save failed"})
 		return
 	}
+	services.BumpConfigVersion("config_item", []int64{})
 
 	c.JSON(http.StatusOK, gin.H{"message": "saved"})
 }
@@ -109,6 +111,7 @@ func (ctrl *ConfigItemController) UpsertUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Save failed"})
 		return
 	}
+	services.BumpConfigVersion("config_item", []int64{uid})
 
 	c.JSON(http.StatusOK, gin.H{"message": "saved"})
 }

@@ -73,7 +73,6 @@ func AuthAgent() gin.HandlerFunc {
 			// 2. Check DB Token
 			if token != "" && db.DB != nil {
 				var node models.Node
-				// Use Redis Cache for Token -> NodeID? Not implemented yet.
 				// Query DB
 				if err := db.DB.Where("token = ?", token).First(&node).Error; err == nil {
 					c.Set("nodeID", strconv.FormatInt(node.ID, 10))
@@ -83,15 +82,11 @@ func AuthAgent() gin.HandlerFunc {
 		}
 		
 		// 3. Check IP (Fallthrough or if Token failed/missing)
-		if _, ok := c.Get("nodeID"); !ok {
-			if db.Redis != nil {
-				clientIP := c.ClientIP()
-				// Handle X-Forwarded-For if behind proxy (Gin ClientIP handles it if trusted proxies set)
-				key := "CDN:NODE:IP:" + clientIP
-				if val, err := db.Redis.Get(c.Request.Context(), key).Result(); err == nil && val != "" {
-					c.Set("nodeID", val)
-					// Log that we authenticated via IP?
-				}
+		if _, ok := c.Get("nodeID"); !ok && db.DB != nil {
+			clientIP := c.ClientIP()
+			var node models.Node
+			if err := db.DB.Where("ip = ? AND enable = ?", clientIP, true).First(&node).Error; err == nil {
+				c.Set("nodeID", strconv.FormatInt(node.ID, 10))
 			}
 		}
 

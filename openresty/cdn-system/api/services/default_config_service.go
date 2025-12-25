@@ -104,10 +104,10 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	}
 
 	httpsCfg := getSubMap(site.Settings, "https")
-	setIfMissing(httpsCfg, "force", parseBool(defaults["https_listen-force_ssl_enable"]))
+	setIfMissing(httpsCfg, "force", parseBool(defaults["https_listen-force_ssl_enable"], false))
 	setIfMissing(httpsCfg, "redirect_port", defaults["https_listen-port"])
-	setIfMissing(httpsCfg, "hsts", parseBool(defaults["https_listen-hsts"]))
-	setIfMissing(httpsCfg, "http2", parseBool(defaults["https_listen-http2"]))
+	setIfMissing(httpsCfg, "hsts", parseBool(defaults["https_listen-hsts"], false))
+	setIfMissing(httpsCfg, "http2", parseBool(defaults["https_listen-http2"], false))
 	setIfMissing(httpsCfg, "ssl_protocols", defaults["https_listen-ssl_protocols"])
 	setIfMissing(httpsCfg, "ssl_ciphers", defaults["https_listen-ssl_ciphers"])
 	setIfMissing(httpsCfg, "ssl_prefer_server_ciphers", defaults["https_listen-ssl_prefer_server_ciphers"])
@@ -132,13 +132,13 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(securityCfg, "default_rule", site.CcDefaultRule)
 
 	advCfg := getSubMap(site.Settings, "advanced")
-	setIfMissing(advCfg, "gzip", parseBool(defaults["gzip_enable"]))
+	setIfMissing(advCfg, "gzip", parseBool(defaults["gzip_enable"], false))
 	setIfMissing(advCfg, "gzip_types", defaults["gzip_types"])
-	setIfMissing(advCfg, "websocket", parseBool(defaults["websocket_enable"]))
-	setIfMissing(advCfg, "range", parseBool(defaults["range"]))
+	setIfMissing(advCfg, "websocket", parseBool(defaults["websocket_enable"], false))
+	setIfMissing(advCfg, "range", parseBool(defaults["range"], false))
 	setIfMissing(advCfg, "proxy_http_version", defaults["proxy_http_version"])
 	setIfMissing(advCfg, "proxy_ssl_protocols", defaults["proxy_ssl_protocols"])
-	setIfMissing(advCfg, "ups_keepalive", parseBool(defaults["ups_keepalive"]))
+	setIfMissing(advCfg, "ups_keepalive", parseBool(defaults["ups_keepalive"], false))
 	setIfMissing(advCfg, "ups_keepalive_conn", parseInt64(defaults["ups_keepalive_conn"]))
 	setIfMissing(advCfg, "ups_keepalive_timeout", parseInt64(defaults["ups_keepalive_timeout"]))
 	setIfMissing(advCfg, "body_limit", parseInt64(defaults["post_size_limit"]))
@@ -161,7 +161,7 @@ func ApplyForwardDefaults(forward *models.Forward, defaults map[string]string) {
 	originCfg := getSubMap(forward.Settings, "origin")
 	setIfMissing(originCfg, "balance_way", defaults["balance_way"])
 	if v := defaults["proxy_protocol"]; v != "" {
-		setIfMissing(originCfg, "proxy_protocol", parseBool(v))
+		setIfMissing(originCfg, "proxy_protocol", parseBool(v, false))
 	}
 	if forward.BalanceWay == "" {
 		forward.BalanceWay = defaults["balance_way"]
@@ -172,7 +172,7 @@ func ApplyForwardDefaults(forward *models.Forward, defaults map[string]string) {
 		}
 	}
 	if v := defaults["proxy_protocol"]; v != "" {
-		forward.ProxyProtocol = parseBool(v)
+		forward.ProxyProtocol = parseBool(v, false)
 	}
 }
 
@@ -194,11 +194,6 @@ func setIfMissing(target map[string]interface{}, key string, value interface{}) 
 	if _, ok := target[key]; !ok {
 		target[key] = value
 	}
-}
-
-func parseBool(value string) bool {
-	v := strings.ToLower(strings.TrimSpace(value))
-	return v == "1" || v == "true" || v == "on" || v == "yes"
 }
 
 func parseInt64(value string) int64 {

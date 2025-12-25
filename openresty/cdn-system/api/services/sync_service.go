@@ -1,18 +1,12 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
-	"log"
 	"strconv"
-	"strings"
 	"time"
 
-	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
-
-	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -27,7 +21,7 @@ type ConfigChange struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// BumpConfigVersion increments the global config version and optionally publishes via Redis.
+// BumpConfigVersion increments the global config version.
 func BumpConfigVersion(resource string, ids []int64) int64 {
 	var cfg models.SysConfig
 	var version int64 = 1
@@ -77,17 +71,7 @@ func GetConfigVersion() int64 {
 	return v
 }
 
-// NotifyConfigChanged publishes a change event to Redis if configured.
+// NotifyConfigChanged is a no-op (sync is handled by agent pull over API).
 func NotifyConfigChanged(change ConfigChange) {
-	addr := strings.TrimSpace(config.App.RedisAddr)
-	if addr == "" {
-		return
-	}
-	rdb := redis.NewClient(&redis.Options{Addr: addr})
-	defer func() { _ = rdb.Close() }()
-
-	payload, _ := json.Marshal(change)
-	if err := rdb.Publish(context.Background(), configChangeTopic, payload).Err(); err != nil {
-		log.Printf("[sync] redis publish failed: %v", err)
-	}
+	_, _ = json.Marshal(change)
 }

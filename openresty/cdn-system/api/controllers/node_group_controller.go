@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"net/http"
 	"strconv"
 	"time"
@@ -51,6 +52,7 @@ func (ctr *NodeGroupController) CreateNodeGroup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Create Failed"})
 		return
 	}
+	services.BumpConfigVersion("node_group", []int64{req.ID})
 }
 
 // UpdateNodeGroup
@@ -85,6 +87,7 @@ func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Update Failed"})
 		return
 	}
+	services.BumpConfigVersion("node_group", []int64{id})
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -101,6 +104,7 @@ func (ctr *NodeGroupController) DeleteNodeGroup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Delete Failed"})
 		return
 	}
+	services.BumpConfigVersion("node_group", []int64{id})
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"msg":  "Deleted",

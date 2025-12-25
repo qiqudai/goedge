@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"net/http"
 	"strconv"
 	"time"
@@ -51,6 +52,7 @@ func (ctrl *ForwardGroupController) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Failed to create group"})
 		return
 	}
+	services.BumpConfigVersion("forward_group", []int64{group.ID})
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": group})
 }
 
@@ -73,6 +75,7 @@ func (ctrl *ForwardGroupController) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Failed to update group"})
 		return
 	}
+	services.BumpConfigVersion("forward_group", []int64{req.ID})
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "updated"})
 }
 
@@ -88,5 +91,6 @@ func (ctrl *ForwardGroupController) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Failed to delete group"})
 		return
 	}
+	services.BumpConfigVersion("forward_group", []int64{req.ID})
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "deleted"})
 }

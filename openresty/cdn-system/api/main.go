@@ -10,6 +10,7 @@ import (
 	"cdn-api/routers"
 	"cdn-api/utils"
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,8 +19,7 @@ func main() {
 	// 1. Load Config (Env or File)
 	config.Load()
 
-	// 2. Connect Database (MySQL) & Cache (Redis)
-	// 2. Connect Database (MySQL) & Cache (Redis)
+	// 2. Connect Database (MySQL)
 	db.Init()
 	// Auto Migrate
 	db.DB.AutoMigrate(
@@ -54,6 +54,36 @@ func main() {
 		&models.MessageSub{},
 	)
 
+	// Custom Migration Fixes
+	migrator := db.DB.Migrator()
+	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
+		migrator.AddColumn(&models.Site{}, "DNSProviderID")
+		log.Println("Added missing column: dns_provider_id")
+	}
+	// Note: HasColumn checks against DB column name usually, but GORM maps field names too.
+	// Use explicit DB names for check, Struct field names for Add.
+	if !migrator.HasColumn(&models.Site{}, "settings") {
+		err := migrator.AddColumn(&models.Site{}, "SettingsRaw")
+		if err != nil {
+			log.Printf("Error adding settings column: %v", err)
+		} else {
+			log.Println("Added missing column: settings")
+		}
+	}
+	if !migrator.HasColumn(&models.Site{}, "cname_hostname2") {
+		migrator.AddColumn(&models.Site{}, "CnameHostname2")
+		log.Println("Added missing column: cname_hostname2")
+	}
+
+	// Drop troublesome FK constraint if exists to allow 0 value
+	if migrator.HasConstraint(&models.Site{}, "region_ibfk_4") {
+		if err := migrator.DropConstraint(&models.Site{}, "region_ibfk_4"); err == nil {
+			log.Println("Dropped constraint: region_ibfk_4")
+		} else {
+			log.Printf("Failed to drop constraint region_ibfk_4: %v", err)
+		}
+	}
+
 	// Ensure Admin Role / User Exists
 	go func() {
 		var u models.User
@@ -82,6 +112,52 @@ func main() {
 			if shouldSave {
 				db.DB.Save(&u)
 				log.Println("Fixed Admin Type/Enable Status")
+			}
+		}
+
+		// Seed Default Package
+		var pkgCount int64
+		db.DB.Model(&models.Package{}).Count(&pkgCount)
+		if pkgCount == 0 {
+			defaultPkg := models.Package{
+				Name:         "Free Plan",
+				Description:  "Default free plan",
+				MonthPrice:   0,
+				QuarterPrice: 0,
+				YearPrice:    0,
+				Bandwidth:    "10M",
+				Traffic:      100,
+				DomainLimit:  10,
+				Enable:       true,
+				Sort:         0,
+				CreatedAt:    time.Now(),
+				UpdatedAt:    time.Now(),
+			}
+			if err := db.DB.Create(&defaultPkg).Error; err == nil {
+				log.Println("Created Default Package: Free Plan")
+			}
+		}
+
+		// Ensure Admin has a UserPackage
+		var userPkg models.UserPackage
+		if err := db.DB.Where("uid = ?", u.ID).First(&userPkg).Error; err != nil {
+			var pkg models.Package
+			if err := db.DB.Order("id asc").First(&pkg).Error; err == nil {
+				userPkg = models.UserPackage{
+					UserID:      u.ID,
+					Name:        pkg.Name + " (Admin)",
+					PackageID:   pkg.ID,
+					Bandwidth:   pkg.Bandwidth,
+					Traffic:     pkg.Traffic,
+					Connection:  1000,
+					DomainLimit: pkg.DomainLimit,
+					StartAt:     time.Now(),
+					EndAt:       time.Now().AddDate(10, 0, 0),
+					CreatedAt:   time.Now(),
+				}
+				if err := db.DB.Create(&userPkg).Error; err == nil {
+					log.Println("Assigned Default Package to Admin")
+				}
 			}
 		}
 

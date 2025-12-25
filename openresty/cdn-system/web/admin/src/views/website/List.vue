@@ -151,16 +151,33 @@
               <el-icon><ArrowDown /></el-icon>
             </div>
             <div v-if="createMore" class="extra-fields">
+              <el-form-item label="所属用户">
+                <el-select
+                  v-model.number="createForm.user_id"
+                  filterable
+                  remote
+                  clearable
+                  placeholder="搜索用户 (默认管理员)"
+                  :remote-method="loadUsers"
+                  :loading="userLoading">
+                  <el-option v-for="u in userOptions" :key="u.id" :label="u.username" :value="u.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="网站套餐">
+                <el-select v-model.number="createForm.user_package_id" clearable placeholder="选择套餐 (可选)" style="width: 100%;">
+                  <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+              </el-form-item>
               <el-form-item label="所属分组">
                 <div style="display: flex; gap: 8px; width: 100%;">
-                  <el-select v-model="createForm.group_id" clearable placeholder="网站分组, 可不选" style="flex: 1;">
+                  <el-select v-model.number="createForm.group_id" clearable placeholder="网站分组, 可不选" style="flex: 1;">
                     <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
                   </el-select>
                   <el-button :icon="Plus" circle @click="openCreateGroupDialog" />
                 </div>
               </el-form-item>
               <el-form-item label="DNS API">
-                <el-select v-model="createForm.dns_provider_id" clearable placeholder="自动添加记录, 可不选" style="width: 100%;">
+                <el-select v-model.number="createForm.dns_provider_id" clearable placeholder="自动添加记录, 可不选" style="width: 100%;">
                   <el-option v-for="d in dnsOptions" :key="d.id" :label="d.name" :value="d.id" />
                 </el-select>
               </el-form-item>
@@ -872,6 +889,8 @@ const createTab = ref('single')
 const createMore = ref(false)
 const batchMore = ref(false)
 const createForm = reactive({
+  user_id: undefined,
+  user_package_id: undefined,
   group_id: undefined,
   dns_provider_id: undefined,
   domains_input: '',
@@ -1005,6 +1024,29 @@ const batchEditChecks = reactive({
 
 const groupOptions = ref([])
 const dnsOptions = ref([])
+const userOptions = ref([])
+const packageOptions = ref([])
+const userLoading = ref(false)
+
+const loadUsers = (query) => {
+  if (query !== '') {
+    userLoading.value = true
+    request.get('/users/list', { params: { keyword: query, pageSize: 20 } }).then(res => {
+      userOptions.value = res.data?.list || res.list || []
+      userLoading.value = false
+    }).catch(() => {
+      userLoading.value = false
+    })
+  } else {
+    userOptions.value = []
+  }
+}
+
+const loadPackages = () => {
+  request.get('/user_packages').then(res => {
+    packageOptions.value = res.data?.list || res.list || []
+  })
+}
 
 const cachePresets = [
   { label: '首页缓存', value: 'home' },
@@ -1094,15 +1136,23 @@ const openBatchEdit = () => {
 
 const handleCreateSubmit = () => {
   if (createTab.value === 'single') {
-    request.post('/sites', {
-      group_id: createForm.group_id,
-      dns_provider_id: createForm.dns_provider_id,
+    const payload = {
+      user_id: createForm.user_id || undefined,
+      user_package_id: createForm.user_package_id || undefined,
+      group_id: createForm.group_id || undefined,
+      dns_provider_id: createForm.dns_provider_id || undefined,
       domains_input: createForm.domains_input,
       backends_input: createForm.backends_input
-    }).then(() => {
+    }
+    console.log('[DEBUG] Create Site Payload:', payload)
+    request.post('/sites', payload).then(() => {
       ElMessage.success('创建成功')
       createVisible.value = false
       fetchList()
+    }).catch(err => {
+      console.error('[DEBUG] Create Error:', err)
+      const msg = err.response?.data?.error || err.message || '请求失败'
+      ElMessageBox.alert(msg, '错误提示', { type: 'error' })
     })
   } else {
     request.post('/sites/batch', batchForm).then(res => {
@@ -1433,6 +1483,9 @@ onMounted(() => {
   fetchList()
   loadGroups()
   loadDnsProviders()
+  loadPackages()
+  // Pre-load some users or wait for search
+  // loadUsers('') 
 })
 
 const createGroupVisible = ref(false)

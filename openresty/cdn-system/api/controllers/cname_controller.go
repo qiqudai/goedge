@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,8 +32,14 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 		return
 	}
 
+	domain := normalizeDomainInput(input.Domain)
+	if domain == "" || !isValidDomain(domain) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid domain"})
+		return
+	}
+
 	model := models.CnameDomain{
-		Domain:    input.Domain,
+		Domain:    domain,
 		Note:      input.Note,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -52,4 +59,54 @@ func (c *CnameController) DeleteDomain(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
+}
+
+func normalizeDomainInput(input string) string {
+	domain := strings.TrimSpace(strings.ToLower(input))
+	if strings.HasPrefix(domain, "http://") {
+		domain = strings.TrimPrefix(domain, "http://")
+	} else if strings.HasPrefix(domain, "https://") {
+		domain = strings.TrimPrefix(domain, "https://")
+	}
+	if idx := strings.Index(domain, "/"); idx != -1 {
+		domain = domain[:idx]
+	}
+	if idx := strings.Index(domain, "#"); idx != -1 {
+		domain = domain[:idx]
+	}
+	if idx := strings.Index(domain, "?"); idx != -1 {
+		domain = domain[:idx]
+	}
+	if idx := strings.Index(domain, ":"); idx != -1 {
+		domain = domain[:idx]
+	}
+	domain = strings.TrimRight(domain, ".")
+	return domain
+}
+
+func isValidDomain(domain string) bool {
+	if domain == "" || len(domain) > 253 {
+		return false
+	}
+	parts := strings.Split(domain, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || len(part) > 63 {
+			return false
+		}
+		if strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
+			return false
+		}
+		for i := 0; i < len(part); i++ {
+			ch := part[i]
+			isLower := ch >= 'a' && ch <= 'z'
+			isDigit := ch >= '0' && ch <= '9'
+			if !(isLower || isDigit || ch == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }

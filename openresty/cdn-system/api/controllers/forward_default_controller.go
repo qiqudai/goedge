@@ -3,6 +3,7 @@
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -65,6 +66,7 @@ func (ctrl *ForwardDefaultController) Create(c *gin.Context) {
     c.JSON(http.StatusInternalServerError, gin.H{"error": "save failed"})
     return
   }
+  services.BumpConfigVersion("forward_default", []int64{})
   c.JSON(http.StatusOK, gin.H{"message": "created"})
 }
 
@@ -87,6 +89,7 @@ func (ctrl *ForwardDefaultController) Delete(c *gin.Context) {
     c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed"})
     return
   }
+  services.BumpConfigVersion("forward_default", []int64{})
   c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 

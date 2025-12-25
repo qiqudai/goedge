@@ -4,12 +4,15 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/utils"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type LoginRequest struct {
@@ -36,16 +39,24 @@ func writeLoginLog(c *gin.Context, userID int64, success bool, postContent strin
 func (ctr *AuthController) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("[DEBUG] Login Bind Error: %v\n", err)
 		writeLoginLog(c, 0, false, "invalid request")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+	fmt.Printf("[DEBUG] Login Request: Username=%s, PasswordLen=%d\n", req.Username, len(req.Password))
 
 	var user models.User
 	// Support login by Name or Email
 	if err := db.DB.Where("name = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
-		writeLoginLog(c, 0, false, "user not found")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials (user not found)"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeLoginLog(c, 0, false, "user not found")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials (user not found)"})
+		} else {
+			fmt.Printf("[Error] DB Query Failed: %v\n", err)
+			writeLoginLog(c, 0, false, "db error: "+err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + err.Error()})
+		}
 		return
 	}
 

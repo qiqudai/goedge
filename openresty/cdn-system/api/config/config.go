@@ -11,22 +11,17 @@ import (
 var App = &AppConfig{
 	Port:      "8080",
 	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
-	RedisAddr: "127.0.0.1:6379",
 }
 
 type AppConfig struct {
-	Port          string `yaml:"port"`
-	DBDSN         string `yaml:"db_dsn"`
-	RedisAddr     string `yaml:"redis_addr"`
-	RedisPassword string `yaml:"redis_password"`
+	Port  string `yaml:"port"`
+	DBDSN string `yaml:"db_dsn"`
 }
 
 var (
 	configFile = flag.String("config", "config.yaml", "Path to configuration file")
 	port       = flag.String("port", "", "Server port")
 	dbDSN      = flag.String("db", "", "Database DSN (e.g. root:pass@tcp(127.0.0.1:3306)/dbname)")
-	redisAddr  = flag.String("redis", "", "Redis address (e.g. 127.0.0.1:6379)")
-	redisPass  = flag.String("redis-pass", "", "Redis password")
 )
 
 func Load() {
@@ -50,11 +45,5 @@ func Load() {
 	}
 	if *dbDSN != "" {
 		App.DBDSN = *dbDSN
-	}
-	if *redisAddr != "" {
-		App.RedisAddr = *redisAddr
-	}
-	if *redisPass != "" {
-		App.RedisPassword = *redisPass
 	}
 }

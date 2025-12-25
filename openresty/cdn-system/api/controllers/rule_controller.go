@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -111,6 +112,7 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule group"})
 		return
 	}
+	services.BumpConfigVersion("cc_rule", []int64{ccRule.ID})
 
 	ctx.JSON(http.StatusOK, gin.H{"code": 0})
 }
@@ -156,6 +158,7 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
 		return
 	}
+	services.BumpConfigVersion("cc_rule", []int64{ccRule.ID})
 
 	ctx.JSON(http.StatusOK, gin.H{"code": 0})
 }
@@ -240,6 +243,7 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create matcher"})
 		return
 	}
+	services.BumpConfigVersion("cc_match", []int64{matcher.ID})
 
 	ctx.JSON(http.StatusOK, gin.H{"code": 0})
 }
@@ -287,6 +291,7 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update matcher"})
 		return
 	}
+	services.BumpConfigVersion("cc_match", []int64{matcher.ID})
 
 	ctx.JSON(http.StatusOK, gin.H{"code": 0})
 }

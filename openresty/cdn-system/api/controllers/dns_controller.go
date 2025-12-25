@@ -41,9 +41,13 @@ func (ctr *DnsController) ListProviders(c *gin.Context) {
 // GetProviderTypes
 func (ctr *DnsController) GetProviderTypes(c *gin.Context) {
 	types := []gin.H{
-		{"type": "cloudflare", "name": "Cloudflare", "fields": []string{"email", "api_key"}},
 		{"type": "aliyun", "name": "Aliyun", "fields": []string{"access_key_id", "access_key_secret"}},
+		{"type": "huawei", "name": "Huawei", "fields": []string{"id", "secret"}},
+		{"type": "dnsla", "name": "DNSLA", "fields": []string{"id", "secret"}},
 		{"type": "dnspod", "name": "DNSPod", "fields": []string{"id", "token"}},
+		{"type": "dnspod_intl", "name": "DNSPod Intl", "fields": []string{"id", "token"}},
+		{"type": "51dns", "name": "51DNS", "fields": []string{"id", "secret"}},
+		{"type": "cloudflare", "name": "Cloudflare", "fields": []string{"email", "api_key"}},
 		{"type": "godaddy", "name": "GoDaddy", "fields": []string{"key", "secret"}},
 	}
 	c.JSON(http.StatusOK, gin.H{

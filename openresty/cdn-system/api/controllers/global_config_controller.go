@@ -233,7 +233,7 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 
 func notifyNodes(version int64) {
 	// Logic to notify edge nodes
-	// In a real system, this might push a message via gRPC, Redis PubSub, or update a generic 'version' key
+	// In a real system, this might push a message via gRPC or update a generic 'version' key
 	log.Printf("[Sync] Global Config updated to version %d. Notifying all connected nodes...", version)
 	// mock notification delay
 	time.Sleep(100 * time.Millisecond)

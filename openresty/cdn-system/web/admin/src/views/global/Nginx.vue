@@ -59,34 +59,164 @@ import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
-const config = ref({})
+const config = ref(defaultForm())
+const rawNginxConfig = ref({})
+
+function defaultForm() {
+  return {
+    nginx: {
+      worker_processes: 'auto',
+      worker_connections: 51200,
+      worker_rlimit_nofile: 51200,
+      worker_shutdown_timeout: '60s',
+      log_directory: '',
+      keepalive_timeout: 60,
+      gzip: true,
+      custom_snippet: ''
+    }
+  }
+}
+
+function parseKeepaliveTimeout(value, fallback = 60) {
+  if (value === undefined || value === null || value === '') {
+    return fallback
+  }
+  if (typeof value === 'number') {
+    return value
+  }
+  const raw = String(value).trim()
+  if (raw === '') {
+    return fallback
+  }
+  const match = raw.match(/^(\d+)/)
+  if (!match) {
+    return fallback
+  }
+  return Number.parseInt(match[1], 10)
+}
+
+function formatKeepaliveTimeout(value) {
+  if (value === undefined || value === null || value === '') {
+    return ''
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `${value}s`
+  }
+  const raw = String(value).trim()
+  if (raw === '') {
+    return ''
+  }
+  if (/^\d+$/.test(raw)) {
+    return `${raw}s`
+  }
+  return raw
+}
+
+function parseBool(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (value === undefined || value === null) {
+    return fallback
+  }
+  const raw = String(value).toLowerCase()
+  if (raw === 'on' || raw === 'true' || raw === '1') {
+    return true
+  }
+  if (raw === 'off' || raw === 'false' || raw === '0') {
+    return false
+  }
+  return fallback
+}
+
+function mergeFormFromRaw(raw) {
+  const http = raw.http || {}
+  config.value = {
+    nginx: {
+      worker_processes: raw.worker_processes || 'auto',
+      worker_connections: raw.worker_connections || 0,
+      worker_rlimit_nofile: raw.worker_rlimit_nofile || 0,
+      worker_shutdown_timeout: raw.worker_shutdown_timeout || '',
+      log_directory: raw.logs_dir || '',
+      keepalive_timeout: parseKeepaliveTimeout(http.keepalive_timeout, 60),
+      gzip: parseBool(http.gzip, true),
+      custom_snippet: http.custom_snippet || ''
+    }
+  }
+}
 
 const loadConfig = () => {
-    loading.value = true
-    request.get('/global_config').then(res => {
-        if (res.code === 0) {
-            config.value = res.data
+  loading.value = true
+  request
+    .get('/config_items', {
+      params: { type: 'nginx_config', scope_name: 'global', scope_id: 0 }
+    })
+    .then(res => {
+      const list = res.list || res.data?.list || []
+      const item = list.find(entry => entry.name === 'nginx-config-file')
+      if (item && item.value) {
+        try {
+          const parsed = JSON.parse(item.value)
+          rawNginxConfig.value = parsed || {}
+          mergeFormFromRaw(rawNginxConfig.value)
+          return
+        } catch (e) {
+          rawNginxConfig.value = {}
         }
-    }).finally(() => {
-        loading.value = false
+      }
+      rawNginxConfig.value = {}
+      config.value = defaultForm()
+    })
+    .finally(() => {
+      loading.value = false
     })
 }
 
 const saveConfig = () => {
-    loading.value = true
-    request.post('/global_config', config.value).then(res => {
-        if (res.code === 0) {
-            ElMessage.success('Nginx 配置已保存')
-        }
-    }).finally(() => {
-        loading.value = false
+  loading.value = true
+  const updated = {
+    ...rawNginxConfig.value
+  }
+  updated.http = {
+    ...(rawNginxConfig.value.http || {})
+  }
+  updated.worker_processes = config.value.nginx.worker_processes
+  updated.worker_connections = config.value.nginx.worker_connections
+  updated.worker_rlimit_nofile = config.value.nginx.worker_rlimit_nofile
+  updated.worker_shutdown_timeout = config.value.nginx.worker_shutdown_timeout
+  updated.logs_dir = config.value.nginx.log_directory
+  updated.http.keepalive_timeout = formatKeepaliveTimeout(config.value.nginx.keepalive_timeout)
+  updated.http.gzip = config.value.nginx.gzip ? 'on' : 'off'
+  updated.http.custom_snippet = config.value.nginx.custom_snippet || ''
+
+  const payload = {
+    type: 'nginx_config',
+    scope_name: 'global',
+    scope_id: 0,
+    items: [
+      {
+        name: 'nginx-config-file',
+        value: JSON.stringify(updated),
+        enable: true
+      }
+    ]
+  }
+
+  request
+    .post('/config_items', payload)
+    .then(() => {
+      ElMessage.success('Nginx config saved')
+    })
+    .finally(() => {
+      loading.value = false
     })
 }
 
 onMounted(() => {
-    loadConfig()
+  loadConfig()
 })
 </script>
+
 
 <style scoped>
 .card-header {

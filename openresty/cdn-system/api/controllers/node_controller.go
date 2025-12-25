@@ -116,7 +116,7 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 		return
 	}
 
-	// Sync to Redis
+	// Sync node metadata (no-op if no cache layer)
 	if ctr.NodeService != nil {
 		// We should re-fetch full node with SubIPs or just assume replaceSubIPs did DB work.
 		// For simplicity, let's sync what we have, but SubIPs in req might need to be refreshed if we want logic inside Sync.
@@ -208,7 +208,7 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 	}
 
 	if ctr.NodeService != nil {
-		// Update Redis
+	// Update cached node metadata if used
 		var fullNode models.Node
 		db.DB.First(&fullNode, id)
 		ctr.NodeService.SyncNodeToRedis(&fullNode)

@@ -1,7 +1,4 @@
 {
     "api": "http://127.0.0.1:8080",
-    "token": "YOUR_TOKEN_HERE",
-    "redis_host": "127.0.0.1",
-    "redis_port": "6379",
-    "redis_password": ""
+    "token": "YOUR_TOKEN_HERE"
 }

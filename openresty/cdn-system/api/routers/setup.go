@@ -275,6 +275,8 @@ func Setup(r *gin.Engine) {
 			agentCtr := controllers.NewAgentController()
 			agentGroup.POST("/heartbeat", agentCtr.Heartbeat)
 			agentGroup.GET("/config", agentCtr.GetConfig)
+			agentGroup.GET("/tasks", agentCtr.GetTasks)
+			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
 		}
 
 	}
