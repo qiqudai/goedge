@@ -16,7 +16,7 @@ import (
 
 type TaskController struct{}
 
-type taskMeta struct {
+type purgeTaskMeta struct {
 	UserID int64 `json:"user_id"`
 }
 
@@ -62,7 +62,7 @@ func (c *TaskController) Create(ctx *gin.Context) {
 
 	userID := input.UserID
 	if userID == 0 || isTaskUserRequest(ctx) {
-		userID = parseTaskUserID(taskMustGet(ctx, "userID"))
+		userID = parseTaskUserIDAny(taskMustGet(ctx, "userID"))
 	}
 	if userID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "user_id is required"})
@@ -74,7 +74,7 @@ func (c *TaskController) Create(ctx *gin.Context) {
 		return
 	}
 
-	meta := taskMeta{UserID: userID}
+	meta := purgeTaskMeta{UserID: userID}
 	metaRaw, _ := json.Marshal(meta)
 
 	task := models.Task{
@@ -103,7 +103,7 @@ func (c *TaskController) Usage(ctx *gin.Context) {
 		}
 	}
 	if userID == 0 || isTaskUserRequest(ctx) {
-		userID = parseTaskUserID(taskMustGet(ctx, "userID"))
+		userID = parseTaskUserIDAny(taskMustGet(ctx, "userID"))
 	}
 	if userID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "user_id is required"})
@@ -151,7 +151,7 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 	meta := parseTaskMeta(task.Res)
 	userID := meta.UserID
 	if isTaskUserRequest(ctx) {
-		userID = parseTaskUserID(taskMustGet(ctx, "userID"))
+		userID = parseTaskUserIDAny(taskMustGet(ctx, "userID"))
 	}
 	if userID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "user_id is required"})
@@ -171,7 +171,7 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": err.Error()})
 		return
 	}
-	meta = taskMeta{UserID: userID}
+	meta = purgeTaskMeta{UserID: userID}
 	metaRaw, _ := json.Marshal(meta)
 
 	newTask := models.Task{
@@ -203,7 +203,7 @@ func (c *TaskController) List(ctx *gin.Context) {
 		}
 	}
 	if isTaskUserRequest(ctx) {
-		userID = parseTaskUserID(taskMustGet(ctx, "userID"))
+		userID = parseTaskUserIDAny(taskMustGet(ctx, "userID"))
 	}
 
 	query := db.DB.Model(&models.Task{})
@@ -247,11 +247,11 @@ func isTaskUserRequest(ctx *gin.Context) bool {
 	return strings.HasPrefix(ctx.Request.URL.Path, "/api/v1/user/")
 }
 
-func parseTaskMeta(raw string) taskMeta {
+func parseTaskMeta(raw string) purgeTaskMeta {
 	if raw == "" {
-		return taskMeta{}
+		return purgeTaskMeta{}
 	}
-	var meta taskMeta
+	var meta purgeTaskMeta
 	_ = json.Unmarshal([]byte(raw), &meta)
 	return meta
 }
@@ -417,7 +417,7 @@ func today() string {
 	return time.Now().Format("2006-01-02")
 }
 
-func parseTaskUserID(value interface{}) int64 {
+func parseTaskUserIDAny(value interface{}) int64 {
 	switch v := value.(type) {
 	case float64:
 		return int64(v)
@@ -439,5 +439,3 @@ func taskMustGet(ctx *gin.Context, key string) interface{} {
 	}
 	return nil
 }
-
-

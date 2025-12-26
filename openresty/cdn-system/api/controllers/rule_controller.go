@@ -21,6 +21,12 @@ type RuleController struct{}
 // GET /api/v1/admin/rules/cc/groups
 func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 	query := db.DB.Model(&models.CCRule{})
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID != 0 {
+			query = query.Where("uid = ? OR uid = 0", userID)
+		}
+	}
 	if name := strings.TrimSpace(ctx.Query("name")); name != "" {
 		query = query.Where("name LIKE ?", "%"+name+"%")
 	}
@@ -80,6 +86,15 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+	userID := int64(0)
+	if isUserRequest(ctx) {
+		userID = parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		req.Type = "user"
+	}
 
 	// Prepare JSON data for 'data' column
 	dataMap := map[string]interface{}{
@@ -88,6 +103,7 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 	dataBytes, _ := json.Marshal(dataMap)
 
 	ccRule := models.CCRule{
+		UserID:      userID,
 		Name:        req.Name,
 		Description: req.Remark,
 		Data:        string(dataBytes),
@@ -142,6 +158,14 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule group not found"})
 		return
 	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || ccRule.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		req.Type = "user"
+	}
 
 	dataMap := map[string]interface{}{
 		"rules": req.Rules,
@@ -167,6 +191,12 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 // GET /api/v1/admin/rules/cc/matchers
 func (c *RuleController) ListMatchers(ctx *gin.Context) {
 	query := db.DB.Model(&models.CCMatch{})
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID != 0 {
+			query = query.Where("uid = ? OR uid = 0", userID)
+		}
+	}
 	if name := strings.TrimSpace(ctx.Query("name")); name != "" {
 		query = query.Where("name LIKE ?", "%"+name+"%")
 	}
@@ -223,6 +253,15 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+	userID := int64(0)
+	if isUserRequest(ctx) {
+		userID = parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		req.Type = "user"
+	}
 
 	dataMap := map[string]interface{}{
 		"rules": req.Rules,
@@ -230,6 +269,7 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 	dataBytes, _ := json.Marshal(dataMap)
 
 	matcher := models.CCMatch{
+		UserID:      userID,
 		Name:        req.Name,
 		Description: req.Remark,
 		Data:        string(dataBytes),
@@ -274,6 +314,14 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "matcher not found"})
 		return
 	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || matcher.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		req.Type = "user"
+	}
 
 	dataMap := map[string]interface{}{
 		"rules": req.Rules,
@@ -309,6 +357,13 @@ func (c *RuleController) GetMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "matcher not found"})
 		return
 	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || (matcher.UserID != 0 && matcher.UserID != userID) {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
 
 	rules := []gin.H{}
 	if matcher.Data != "" {
@@ -341,6 +396,12 @@ func (c *RuleController) GetMatcher(ctx *gin.Context) {
 // GET /api/v1/admin/rules/cc/filters
 func (c *RuleController) ListFilters(ctx *gin.Context) {
 	query := db.DB.Model(&models.CCFilter{})
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID != 0 {
+			query = query.Where("uid = ? OR uid = 0", userID)
+		}
+	}
 	if name := strings.TrimSpace(ctx.Query("name")); name != "" {
 		query = query.Where("name LIKE ?", "%"+name+"%")
 	}
@@ -383,6 +444,220 @@ func (c *RuleController) ListFilters(ctx *gin.Context) {
 	})
 }
 
+// CreateFilter Creates a new filter
+// POST /api/v1/admin/rules/cc/filters
+func (c *RuleController) CreateFilter(ctx *gin.Context) {
+	var req struct {
+		Type         string                 `json:"type"`
+		Name         string                 `json:"name"`
+		Remark       string                 `json:"remark"`
+		Enable       bool                   `json:"enable"`
+		Action       string                 `json:"action"`
+		MatchMode    string                 `json:"match_mode"`
+		Blacklist    bool                   `json:"blacklist"`
+		WithinSecond int                    `json:"within_second"`
+		MaxReq       int                    `json:"max_req"`
+		MaxReqPerURI int                    `json:"max_req_per_uri"`
+		Auth         map[string]interface{} `json:"auth"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+	userID := int64(0)
+	if isUserRequest(ctx) {
+		userID = parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		req.Type = "user"
+	}
+
+	extra := map[string]interface{}{
+		"match_mode": req.MatchMode,
+		"blacklist":  req.Blacklist,
+	}
+	if len(req.Auth) > 0 {
+		extra["auth"] = req.Auth
+	}
+	extraBytes, _ := json.Marshal(extra)
+
+	filter := models.CCFilter{
+		UserID:        userID,
+		Name:          req.Name,
+		Description:   req.Remark,
+		Type:          req.Action,
+		WithinSecond:  req.WithinSecond,
+		MaxReq:        req.MaxReq,
+		MaxReqPerUri:  req.MaxReqPerURI,
+		Extra:         string(extraBytes),
+		Internal:      req.Type == "system",
+		Enable:        req.Enable,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	if req.Type == "user" {
+		filter.Internal = false
+	}
+
+	if err := db.DB.Create(&filter).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create filter"})
+		return
+	}
+	services.BumpConfigVersion("cc_filter", []int64{filter.ID})
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
+// UpdateFilter Updates an existing filter
+// PUT /api/v1/admin/rules/cc/filters/:id
+func (c *RuleController) UpdateFilter(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var req struct {
+		Type         string                 `json:"type"`
+		Name         string                 `json:"name"`
+		Remark       string                 `json:"remark"`
+		Enable       bool                   `json:"enable"`
+		Action       string                 `json:"action"`
+		MatchMode    string                 `json:"match_mode"`
+		Blacklist    bool                   `json:"blacklist"`
+		WithinSecond int                    `json:"within_second"`
+		MaxReq       int                    `json:"max_req"`
+		MaxReqPerURI int                    `json:"max_req_per_uri"`
+		Auth         map[string]interface{} `json:"auth"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	var filter models.CCFilter
+	if err := db.DB.Where("id = ?", id).First(&filter).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "filter not found"})
+		return
+	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || filter.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		req.Type = "user"
+	}
+
+	extra := map[string]interface{}{
+		"match_mode": req.MatchMode,
+		"blacklist":  req.Blacklist,
+	}
+	if len(req.Auth) > 0 {
+		extra["auth"] = req.Auth
+	}
+	extraBytes, _ := json.Marshal(extra)
+
+	filter.Name = req.Name
+	filter.Description = req.Remark
+	filter.Type = req.Action
+	filter.WithinSecond = req.WithinSecond
+	filter.MaxReq = req.MaxReq
+	filter.MaxReqPerUri = req.MaxReqPerURI
+	filter.Extra = string(extraBytes)
+	filter.Enable = req.Enable
+	filter.Internal = req.Type == "system"
+	if req.Type == "user" {
+		filter.Internal = false
+	}
+	filter.UpdatedAt = time.Now()
+
+	if err := db.DB.Save(&filter).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update filter"})
+		return
+	}
+	services.BumpConfigVersion("cc_filter", []int64{filter.ID})
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
+// GetFilter Retrieves details of a filter
+// GET /api/v1/admin/rules/cc/filters/:id
+func (c *RuleController) GetFilter(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var filter models.CCFilter
+	if err := db.DB.Where("id = ?", id).First(&filter).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "filter not found"})
+		return
+	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || (filter.UserID != 0 && filter.UserID != userID) {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
+	extra := map[string]interface{}{}
+	if filter.Extra != "" {
+		_ = json.Unmarshal([]byte(filter.Extra), &extra)
+	}
+	auth, _ := extra["auth"].(map[string]interface{})
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"id":             filter.ID,
+			"type":           mapRuleType(filter.UserID, filter.Internal),
+			"name":           filter.Name,
+			"remark":         filter.Description,
+			"enable":         filter.Enable,
+			"action":         filter.Type,
+			"match_mode":     extra["match_mode"],
+			"blacklist":      extra["blacklist"],
+			"within_second":  filter.WithinSecond,
+			"max_req":        filter.MaxReq,
+			"max_req_per_uri": filter.MaxReqPerUri,
+			"auth":           auth,
+		},
+	})
+}
+
+// DeleteFilter Deletes a filter
+// DELETE /api/v1/admin/rules/cc/filters/:id
+func (c *RuleController) DeleteFilter(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var filter models.CCFilter
+	if err := db.DB.Where("id = ?", id).First(&filter).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "filter not found"})
+		return
+	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || filter.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
+	if err := db.DB.Delete(&filter).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete filter"})
+		return
+	}
+	services.BumpConfigVersion("cc_filter", []int64{id})
+
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
 // GetRuleGroup Retrieves details of a rule group
 // GET /api/v1/admin/rules/cc/groups/:id
 func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
@@ -395,6 +670,13 @@ func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
 	if err := db.DB.Where("id = ?", id).First(&rule).Error; err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
 		return
+	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || (rule.UserID != 0 && rule.UserID != userID) {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 
 	rules := []gin.H{}

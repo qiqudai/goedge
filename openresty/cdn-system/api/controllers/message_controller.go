@@ -1,4 +1,4 @@
-package controllers
+﻿package controllers
 
 import (
 	"cdn-api/db"
@@ -21,6 +21,9 @@ var defaultMsgTypes = []string{
 	"bandwidth-exceed",
 	"cc-switch",
 	"cert-expire",
+	"refresh_url",
+	"refresh_dir",
+	"preheat",
 }
 
 type messageRow struct {
@@ -38,19 +41,25 @@ type messageRow struct {
 func typeLabel(t string) string {
 	switch t {
 	case "package-expire":
-		return "????"
+		return "套餐到期"
 	case "traffic-exceed":
-		return "????"
+		return "流量超限"
 	case "connection-exceed":
-		return "?????"
+		return "连接数超限"
 	case "bandwidth-exceed":
-		return "????"
+		return "带宽超限"
 	case "cc-switch":
-		return "??????"
+		return "防护规则切换"
 	case "cert-expire":
-		return "????"
+		return "证书到期"
+	case "refresh_url":
+		return "刷新URL"
+	case "refresh_dir":
+		return "刷新目录"
+	case "preheat":
+		return "预热"
 	default:
-		return "??"
+		return "其他"
 	}
 }
 
@@ -282,3 +291,4 @@ func (ctr *MessageController) UpdateSubscriptions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Updated"})
 }
+

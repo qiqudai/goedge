@@ -19,7 +19,12 @@ type DnsController struct{}
 func (ctr *DnsController) ListProviders(c *gin.Context) {
 	var list []models.DNSAPI
 	query := db.DB.Model(&models.DNSAPI{})
-	if uidStr := strings.TrimSpace(c.Query("user_id")); uidStr != "" {
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	} else if uidStr := strings.TrimSpace(c.Query("user_id")); uidStr != "" {
 		if uid, err := strconv.ParseInt(uidStr, 10, 64); err == nil {
 			query = query.Where("uid = ?", uid)
 		}

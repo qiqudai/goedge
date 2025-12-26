@@ -124,6 +124,38 @@
       />
     </div>
 
+    <div v-if="activeTopTab === 'default'" class="default-section">
+      <el-card>
+        <div class="default-toolbar">
+          <el-button type="primary" size="normal" @click="openDefaultDialog">新增设置</el-button>
+          <el-button size="normal" :disabled="!selectedDefaults.length" @click="removeDefaultBatch">删除</el-button>
+        </div>
+        <el-table
+          :data="defaultRows"
+          v-loading="defaultLoading"
+          border
+          style="width: 100%;"
+          @selection-change="handleDefaultSelection">
+          <el-table-column type="selection" width="55" align="center" />
+          <el-table-column prop="id" label="ID" width="80" />
+          <el-table-column v-if="isAdmin" prop="user_name" label="用户" min-width="140" />
+          <el-table-column prop="label" label="设置项" min-width="220" />
+          <el-table-column prop="value" label="设置值" min-width="220" />
+          <el-table-column label="生效范围" width="120">
+            <template #default="{ row }">
+              {{ row.scopeLabel }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="160" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" size="normal" @click="openDefaultDialog(row)">编辑</el-button>
+              <el-button link type="danger" size="normal" @click="removeDefault(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+    </div>
+
     <ResolvePage v-if="activeTopTab === 'resolve'" :hide-tabs="true" />
 
     <div v-if="activeTopTab === 'dns'" class="dnsapi-section">
@@ -157,6 +189,9 @@
         <el-form-item label="名称">
           <el-input v-model="createGroupForm.name" placeholder="请输入分组名称" @keyup.enter="submitCreateGroup" />
         </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="createGroupForm.remark" placeholder="请输入备注" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createGroupVisible = false">取消</el-button>
@@ -168,6 +203,23 @@
       <el-tabs v-model="createTab" type="card">
         <el-tab-pane label="单个" name="single">
           <el-form :model="createForm" label-width="90px">
+            <el-form-item v-if="isAdmin" label="所属用户">
+              <el-select
+                v-model.number="createForm.user_id"
+                filterable
+                remote
+                clearable
+                placeholder="搜索用户 (默认管理员)"
+                :remote-method="loadUsers"
+                :loading="userLoading">
+                <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="网站套餐">
+              <el-select v-model.number="createForm.user_package_id" clearable placeholder="选择套餐 (可选)" style="width: 100%;">
+                <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="网站域名">
               <el-input v-model="createForm.domains_input" placeholder="www.abc.com www.abc.com:8080 abc.com:80" />
             </el-form-item>
@@ -187,23 +239,6 @@
               <el-icon><ArrowDown /></el-icon>
             </div>
             <div v-if="createMore" class="extra-fields">
-              <el-form-item label="所属用户">
-                <el-select
-                  v-model.number="createForm.user_id"
-                  filterable
-                  remote
-                  clearable
-                  placeholder="搜索用户 (默认管理员)"
-                  :remote-method="loadUsers"
-                  :loading="userLoading">
-                  <el-option v-for="u in userOptions" :key="u.id" :label="u.username" :value="u.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="网站套餐">
-                <el-select v-model.number="createForm.user_package_id" clearable placeholder="选择套餐 (可选)" style="width: 100%;">
-                  <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
-                </el-select>
-              </el-form-item>
               <el-form-item label="所属分组">
                 <div style="display: flex; gap: 8px; width: 100%;">
                   <el-select v-model.number="createForm.group_id" clearable placeholder="网站分组, 可不选" style="flex: 1;">
@@ -223,6 +258,23 @@
 
         <el-tab-pane label="批量" name="batch">
           <el-form :model="batchForm" label-width="90px">
+            <el-form-item v-if="isAdmin" label="所属用户">
+              <el-select
+                v-model.number="batchForm.user_id"
+                filterable
+                remote
+                clearable
+                placeholder="搜索用户 (默认管理员)"
+                :remote-method="loadUsers"
+                :loading="userLoading">
+                <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="网站套餐">
+              <el-select v-model.number="batchForm.user_package_id" clearable placeholder="选择套餐 (可选)" style="width: 100%;">
+                <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="网站数据">
               <el-input
                 v-model="batchForm.data"
@@ -292,6 +344,111 @@
       <template #footer>
         <el-button @click="dnsapiDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="submitDnsapi">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="defaultDialogVisible" :title="defaultDialogTitle" width="520px">
+      <el-form :model="defaultForm" label-width="90px">
+        <el-form-item v-if="isAdmin" label="用户">
+          <el-select
+            v-model.number="defaultForm.user_id"
+            filterable
+            remote
+            clearable
+            placeholder="输入ID、邮箱、用户名、手机号搜索"
+            :remote-method="loadUsers"
+            :loading="userLoading">
+            <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="设置项">
+          <el-select
+            v-model="defaultForm.name"
+            placeholder="请选择"
+            :disabled="defaultDialogMode === 'edit' || (isAdmin && !defaultForm.user_id)"
+            style="width: 100%;">
+            <el-option v-for="opt in defaultOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="设置值">
+          <el-input-number
+            v-if="defaultOptionType === 'number'"
+            v-model="defaultForm.value"
+            :min="0"
+            controls-position="right"
+            style="width: 100%;"
+          />
+          <el-switch
+            v-else-if="defaultOptionType === 'bool'"
+            v-model="defaultForm.boolValue"
+          />
+          <el-select
+            v-else-if="defaultOptionType === 'select'"
+            v-model="defaultForm.selectValue"
+            placeholder="请选择"
+            style="width: 100%;">
+            <el-option v-for="opt in defaultOptionChoices" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <el-select
+            v-else-if="defaultOptionType === 'multi'"
+            v-model="defaultForm.multiValue"
+            multiple
+            collapse-tags
+            placeholder="请选择"
+            style="width: 100%;">
+            <el-option v-for="opt in defaultOptionChoices" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <el-input
+            v-else-if="defaultOptionType === 'text'"
+            v-model="defaultForm.textValue"
+            placeholder="请输入设置值"
+          />
+          <el-input
+            v-else-if="defaultOptionType === 'lines'"
+            v-model="defaultForm.textValue"
+            type="textarea"
+            rows="4"
+            placeholder="一行一个"
+          />
+          <div v-else-if="defaultOptionType === 'headers'" class="header-list">
+            <el-button type="primary" size="normal" @click="addDefaultHeader">新增请求头</el-button>
+            <el-table :data="defaultForm.headers" border size="small" style="margin-top: 8px;">
+              <el-table-column label="名称" min-width="160">
+                <template #default="{ row }">
+                  <el-input v-model="row.name" placeholder="Header 名称" />
+                </template>
+              </el-table-column>
+              <el-table-column label="值" min-width="200">
+                <template #default="{ row }">
+                  <el-input v-model="row.value" placeholder="Header 值" />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="100">
+                <template #default="{ $index }">
+                  <el-button link type="danger" size="normal" @click="removeDefaultHeader($index)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div v-else-if="defaultOptionType === 'region'" class="region-setting">
+            <el-radio-group v-model="defaultForm.region_mode">
+              <el-radio label="none">不设置</el-radio>
+              <el-radio label="custom">自定义</el-radio>
+            </el-radio-group>
+            <CountrySelector
+              v-if="defaultForm.region_mode === 'custom'"
+              v-model="defaultForm.region_custom"
+              style="margin-top: 8px;"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="defaultForm.enable" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="normal" @click="defaultDialogVisible = false">取消</el-button>
+        <el-button type="primary" size="normal" @click="submitDefault">确定</el-button>
       </template>
     </el-dialog>
 
@@ -432,14 +589,46 @@
                 <el-button size="small" type="primary" @click="addConditionOrigin">新增条件源站</el-button>
               </div>
               <el-table v-if="batchEditForm.origin_conditions.length" :data="batchEditForm.origin_conditions" border size="small">
-                <el-table-column label="条件">
+                <el-table-column label="条件" min-width="360">
                   <template #default="{ row }">
-                    <el-input v-model="row.condition" placeholder="匹配条件" />
+                    <div class="condition-origin-row">
+                      <el-select v-model="row.item" placeholder="请选择" size="small" style="width: 160px;" @change="handleOriginConditionChange(row)">
+                        <el-option v-for="opt in originConditionItems" :key="opt.value" :label="opt.label" :value="opt.value" />
+                      </el-select>
+                      <el-input
+                        v-if="isOriginHeaderItem(row.item)"
+                        v-model="row.header"
+                        placeholder="请求头名称，如: user-agent"
+                        size="small"
+                        style="width: 180px;"
+                      />
+                      <el-input
+                        v-else-if="isOriginStatItem(row.item)"
+                        v-model="row.seconds"
+                        placeholder="统计秒数"
+                        size="small"
+                        style="width: 120px;"
+                      />
+                      <el-select v-if="!isOriginStatItem(row.item)" v-model="row.operator" placeholder="请选择" size="small" style="width: 150px;">
+                        <el-option v-for="opt in originConditionOperators" :key="opt.value" :label="opt.label" :value="opt.value" />
+                      </el-select>
+                      <el-select v-else v-model="row.operator" size="small" disabled style="width: 120px;">
+                        <el-option label="大于" value="gt" />
+                      </el-select>
+                      <el-input
+                        v-model="row.value"
+                        :placeholder="getOriginConditionPlaceholder(row)"
+                        type="textarea"
+                        :rows="1"
+                        size="small"
+                        style="min-width: 220px;"
+                      />
+                    </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="源站">
+                <el-table-column label="源站" min-width="220">
                   <template #default="{ row }">
-                    <el-input v-model="row.origin" placeholder="源站" />
+                    <el-input v-model="row.origin" placeholder="源站地址，多个用|分隔" />
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" width="100">
@@ -533,12 +722,24 @@
                 <el-button size="small" type="primary" @click="addCacheRule">新增规则</el-button>
               </div>
               <el-table v-if="batchEditForm.cache_rules.length" :data="batchEditForm.cache_rules" border size="small">
-                <el-table-column label="规则">
+                <el-table-column label="类型" width="160">
                   <template #default="{ row }">
-                    <el-input v-model="row.rule" placeholder="匹配规则" />
+                    <el-select v-model="row.type" placeholder="请选择" style="width: 100%;">
+                      <el-option v-for="opt in cacheRuleTypes" :key="opt.value" :label="opt.label" :value="opt.value" />
+                    </el-select>
                   </template>
                 </el-table-column>
-                <el-table-column label="有效期" width="120">
+                <el-table-column label="内容">
+                  <template #default="{ row }">
+                    <el-input
+                      v-if="cacheRuleNeedsValue(row.type)"
+                      v-model="row.value"
+                      :placeholder="cacheRulePlaceholder(row.type)"
+                    />
+                    <span v-else class="help-text">无需填写</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="有效期" width="140">
                   <template #default="{ row }">
                     <el-input v-model="row.ttl" placeholder="秒" />
                   </template>
@@ -920,7 +1121,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, CircleCheckFilled, CircleCloseFilled, Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
@@ -929,6 +1130,7 @@ import CountrySelector from '@/components/CountrySelector.vue'
 import ResolvePage from './Resolve.vue'
 
 const router = useRouter()
+const isAdmin = ref((localStorage.getItem('role') || 'user') === 'admin')
 const activeTopTab = ref('list')
 const list = ref([])
 const total = ref(0)
@@ -963,6 +1165,8 @@ const createForm = reactive({
   backends_input: ''
 })
 const batchForm = reactive({
+  user_id: undefined,
+  user_package_id: undefined,
   group_id: undefined,
   dns_provider_id: undefined,
   data: '',
@@ -980,6 +1184,25 @@ const dnsapiForm = reactive({
   remark: '',
   type: '',
   credentials: {}
+})
+
+const defaultList = ref([])
+const defaultLoading = ref(false)
+const selectedDefaults = ref([])
+const defaultDialogVisible = ref(false)
+const defaultDialogMode = ref('create')
+const defaultForm = reactive({
+  user_id: undefined,
+  name: '',
+  value: 0,
+  boolValue: false,
+  selectValue: '',
+  multiValue: [],
+  textValue: '',
+  headers: [],
+  region_mode: 'none',
+  region_custom: [],
+  enable: true
 })
 
 const batchEditVisible = ref(false)
@@ -1107,23 +1330,40 @@ const userOptions = ref([])
 const packageOptions = ref([])
 const userLoading = ref(false)
 
-const loadUsers = (query) => {
-  if (query !== '') {
-    userLoading.value = true
-    request.get('/users/list', { params: { keyword: query, pageSize: 20 } }).then(res => {
-      userOptions.value = res.data?.list || res.list || []
+  const loadUsers = (query) => {
+    if (query !== '') {
+      userLoading.value = true
+      request.get('/users', { params: { keyword: query, pageSize: 20 } }).then(res => {
+        userOptions.value = res.data?.list || res.list || []
       userLoading.value = false
     }).catch(() => {
       userLoading.value = false
     })
-  } else {
-    userOptions.value = []
+    } else {
+      userOptions.value = []
+    }
   }
-}
 
-const loadPackages = () => {
-  request.get('/user_packages').then(res => {
+  const ensureUserOption = (userId, userName) => {
+    if (!userId) return
+    const exists = userOptions.value.some(item => item.id === userId)
+    if (!exists) {
+      userOptions.value = [{ id: userId, name: userName || String(userId) }, ...userOptions.value]
+    }
+  }
+
+const loadPackages = (userId) => {
+  const params = {}
+  if (userId) params.user_id = userId
+  request.get('/user_packages', { params }).then(res => {
     packageOptions.value = res.data?.list || res.list || []
+    const first = packageOptions.value[0]
+    if (first && !createForm.user_package_id) {
+      createForm.user_package_id = first.id
+    }
+    if (first && !batchForm.user_package_id) {
+      batchForm.user_package_id = first.id
+    }
   })
 }
 
@@ -1134,6 +1374,114 @@ const cachePresets = [
   { label: '视频文件缓存', value: 'video' },
   { label: 'Wordpress缓存', value: 'wordpress' }
 ]
+
+const cacheRuleTypes = [
+  { label: '首页', value: 'home' },
+  { label: '全站', value: 'all' },
+  { label: '目录', value: 'dir' },
+  { label: '后缀', value: 'suffix' },
+  { label: '单个路径', value: 'path' }
+]
+
+const cacheRuleNeedsValue = (type) => ['dir', 'suffix', 'path'].includes(type)
+
+const cacheRulePlaceholder = (type) => {
+  switch (type) {
+    case 'dir':
+      return '例如: /images/'
+    case 'suffix':
+      return '例如: .jpg .png'
+    case 'path':
+      return '例如: /index.html'
+    default:
+      return ''
+  }
+}
+
+const originConditionItems = [
+  { label: '请求URI', value: 'uri' },
+  { label: '请求URI(不带参数)', value: 'uri_no_args' },
+  { label: '节点国家代码', value: 'node_country' },
+  { label: '节点运营商', value: 'node_isp' },
+  { label: '节点省份', value: 'node_province' },
+  { label: '节点城市', value: 'node_city' },
+  { label: '客户端国家代码', value: 'client_country' },
+  { label: '客户端运营商', value: 'client_isp' },
+  { label: '客户端省份', value: 'client_province' },
+  { label: '客户端城市', value: 'client_city' },
+  { label: '用户IP', value: 'client_ip' },
+  { label: '域名', value: 'domain' },
+  { label: '请求头', value: 'header' },
+  { label: '请求方法', value: 'method' },
+  { label: 'HTTP版本', value: 'http_version' },
+  { label: '独立UA数量', value: 'ua_count' },
+  { label: '404状态码数量', value: 'status_404' }
+]
+
+const originConditionOperators = [
+  { label: '等于', value: 'eq' },
+  { label: '不等于', value: 'neq' },
+  { label: '包含', value: 'contains' },
+  { label: '不包含', value: 'not_contains' },
+  { label: '前缀匹配', value: 'prefix' },
+  { label: '后缀匹配', value: 'suffix' },
+  { label: '正则匹配', value: 'regex' },
+  { label: '正则不匹配', value: 'not_regex' },
+  { label: '存在', value: 'exists' },
+  { label: '不存在', value: 'not_exists' },
+  { label: '在IP段', value: 'in_ip' },
+  { label: '不在IP段', value: 'not_in_ip' }
+]
+
+const isOriginHeaderItem = item => item === 'header'
+const isOriginStatItem = item => item === 'ua_count' || item === 'status_404'
+
+const getOriginConditionPlaceholder = row => {
+  switch (row.item) {
+    case 'http_version':
+      return '输入匹配值,一行一个,如:\nHTTP/1.0\nHTTP/1.1\nHTTP/2.0'
+    case 'method':
+      return '输入匹配值,一行一个,如:\nGET\nPOST'
+    case 'client_ip':
+      return '输入匹配值,一行一个,如:\n1.1.1.1\n2.2.2.2'
+    case 'domain':
+      return '输入匹配值,一行一个,如:\nexample.com\nwww.example.com'
+    case 'uri':
+    case 'uri_no_args':
+      return '输入匹配值,一行一个,如:\n/index.html\n/api/v1/'
+    case 'node_country':
+    case 'client_country':
+      return '输入匹配值,一行一个,如:\nCN\nUS'
+    case 'node_isp':
+    case 'client_isp':
+      return '输入匹配值,一行一个,如:\n电信\n联通'
+    case 'node_province':
+    case 'client_province':
+      return '输入匹配值,一行一个,如:\n广东\n浙江'
+    case 'node_city':
+    case 'client_city':
+      return '输入匹配值,一行一个,如:\n深圳\n杭州'
+    case 'ua_count':
+    case 'status_404':
+      return '输入次数'
+    case 'header':
+      return '输入匹配值,一行一个'
+    default:
+      return '输入匹配值,一行一个'
+  }
+}
+
+const handleOriginConditionChange = (row) => {
+  if (isOriginStatItem(row.item)) {
+    row.operator = 'gt'
+    row.seconds = row.seconds || '10'
+  } else if (!row.operator) {
+    row.operator = 'eq'
+  }
+  if (isOriginHeaderItem(row.item) && !row.header) {
+    row.header = ''
+  }
+}
 
 const securityRules = [
   { label: '不设置', value: 0 },
@@ -1161,6 +1509,94 @@ const activeTags = computed(() => {
 const selectedIdsText = computed(() => selectedRows.value.map(row => row.id).join(','))
 
 const currentDnsapiType = computed(() => dnsapiTypes.value.find(t => t.type === dnsapiForm.type))
+
+const defaultDialogTitle = computed(() => (defaultDialogMode.value === 'edit' ? '编辑设置' : '新增设置'))
+const defaultOption = computed(() => defaultOptions.find(opt => opt.value === defaultForm.name))
+const defaultOptionType = computed(() => defaultOption.value?.type || 'number')
+const ccRuleOptions = ref([{ label: '不设置', value: '0' }])
+const getDefaultOptionChoices = (option) => {
+  if (!option) return []
+  if (option.choicesKey === 'cc_rules') return ccRuleOptions.value
+  if (option.choicesKey === 'dns_providers') {
+    return dnsOptions.value.map(item => ({ label: item.name, value: String(item.id) }))
+  }
+  return option.choices || []
+}
+const defaultOptionChoices = computed(() => getDefaultOptionChoices(defaultOption.value))
+
+const defaultOptions = [
+  { label: '默认CC规则', value: 'cc_default_rule', type: 'select', choicesKey: 'cc_rules' },
+  { label: '黑名单时间', value: 'security_black_time', type: 'number' },
+  { label: '白名单时间', value: 'security_white_time', type: 'number' },
+  { label: '搜索引擎爬虫', value: 'security_bot', type: 'select', choices: [
+    { label: '不设置', value: 'none' },
+    { label: '放行', value: 'allow' },
+    { label: '拦截', value: 'deny' }
+  ] },
+  { label: '黑名单IP', value: 'black_ip', type: 'lines' },
+  { label: '白名单IP', value: 'white_ip', type: 'lines' },
+  { label: '屏蔽透明代理', value: 'security_shield_proxy', type: 'bool' },
+  { label: '区域屏蔽', value: 'block_region', type: 'region' },
+  { label: 'DNS API(解析)', value: 'dns_provider_id', type: 'select', choicesKey: 'dns_providers' },
+  { label: 'HTTP监听端口', value: 'http_listen-port', type: 'number' },
+  { label: 'HTTPS监听端口', value: 'https_listen-port', type: 'number' },
+  { label: '强制HTTPS', value: 'https_listen-force_ssl_enable', type: 'bool' },
+  { label: '开启HSTS', value: 'https_listen-hsts', type: 'bool' },
+  { label: '开启HTTP2', value: 'https_listen-http2', type: 'bool' },
+  { label: '开启HTTP3', value: 'https_listen-http3', type: 'bool' },
+  { label: 'ssl_protocols', value: 'https_listen-ssl_protocols', type: 'multi', choices: [
+    { label: 'SSLv2', value: 'SSLv2' },
+    { label: 'SSLv3', value: 'SSLv3' },
+    { label: 'TLSv1', value: 'TLSv1' },
+    { label: 'TLSv1.1', value: 'TLSv1.1' },
+    { label: 'TLSv1.2', value: 'TLSv1.2' },
+    { label: 'TLSv1.3', value: 'TLSv1.3' }
+  ] },
+  { label: 'ssl_ciphers', value: 'https_listen-ssl_ciphers', type: 'text' },
+  { label: 'ssl_prefer_server_ciphers', value: 'https_listen-ssl_prefer_server_ciphers', type: 'select', choices: [
+    { label: 'On', value: 'on' },
+    { label: 'Off', value: 'off' }
+  ] },
+  { label: 'ocsp_stapling', value: 'https_listen-ocsp_stapling', type: 'bool' },
+  { label: '回源协议', value: 'backend_protocol', type: 'select', choices: [
+    { label: 'HTTP', value: 'http' },
+    { label: 'HTTPS', value: 'https' },
+    { label: '跟随协议', value: 'follow' }
+  ] },
+  { label: '回源HTTP端口', value: 'backend_http_port', type: 'number' },
+  { label: '回源HTTPS端口', value: 'backend_https_port', type: 'number' },
+  { label: '回源超时', value: 'proxy_timeout', type: 'number' },
+  { label: '开启IPv6', value: 'ipv6_enable', type: 'bool' },
+  { label: '开启Gzip', value: 'gzip_enable', type: 'bool' },
+  { label: '开启Websocket', value: 'websocket_enable', type: 'bool' },
+  { label: '上传文件大小限制', value: 'post_size_limit', type: 'number' },
+  { label: '数据实时发送', value: 'realtime_send', type: 'bool' },
+  { label: '数据实时返回', value: 'realtime_return', type: 'bool' },
+  { label: '源站请求头', value: 'origin_headers', type: 'headers' },
+  { label: '回源负载方式', value: 'balance_way', type: 'select', choices: [
+    { label: '轮询', value: 'rr' },
+    { label: '定源', value: 'hash' }
+  ] }
+]
+
+const defaultRows = computed(() => defaultList.value
+  .filter(item => defaultOptions.find(opt => opt.value === item.name))
+  .map((item, index) => {
+  const option = defaultOptions.find(opt => opt.value === item.name)
+  const label = option ? option.label : item.name
+  const scopeLabel = item.scope_name === 'user' ? '用户' : '全局'
+  return {
+    id: index + 1,
+    name: item.name,
+    label,
+    value: formatDefaultValue(item.name, item.value),
+    rawValue: item.value,
+    enable: item.enable,
+    scopeLabel,
+    user_id: item.user_id,
+    user_name: item.user_name || ''
+  }
+}))
 
 const dnsapiFieldLabel = (type, field) => {
   const mapping = {
@@ -1206,6 +1642,18 @@ const loadDnsapiList = () => {
 const loadDnsapiTypes = () => {
   request.get('/dnsapi/types').then(res => {
     dnsapiTypes.value = res.data?.types || res.list || []
+  })
+}
+
+const loadCcRuleOptions = () => {
+  const params = { page: 1, pageSize: 200, name: '', status: '' }
+  request.get('/rules/cc/groups', { params }).then(res => {
+    const list = res.data?.list || res.list || []
+    ccRuleOptions.value = [{ label: '不设置', value: '0' }]
+      .concat(list.map(item => ({
+        label: item.name || `规则${item.id}`,
+        value: String(item.id)
+      })))
   })
 }
 
@@ -1277,13 +1725,223 @@ const removeDnsapiBatch = () => {
   })
 }
 
+const loadSiteDefaults = (userId) => {
+  defaultLoading.value = true
+  const params = {}
+  if (userId) params.user_id = userId
+  request.get('/site_defaults', { params }).then(res => {
+    defaultList.value = res.data?.list || res.list || []
+  }).finally(() => {
+    defaultLoading.value = false
+  })
+}
+
+const openDefaultDialog = (row) => {
+  if (row) {
+    defaultDialogMode.value = 'edit'
+    defaultForm.user_id = isAdmin.value ? row.user_id : undefined
+    if (isAdmin.value) {
+      ensureUserOption(row.user_id, row.user_name)
+    }
+    defaultForm.name = row.name
+    hydrateDefaultForm(row.name, row.rawValue)
+    defaultForm.enable = !!row.enable
+  } else {
+    defaultDialogMode.value = 'create'
+    defaultForm.user_id = isAdmin.value ? undefined : undefined
+    resetDefaultForm()
+  }
+  defaultDialogVisible.value = true
+}
+
+const submitDefault = () => {
+  if (!defaultForm.name) {
+    ElMessage.warning('请输入设置项')
+    return
+  }
+  if (isAdmin.value && !defaultForm.user_id) {
+    ElMessage.warning('请选择用户')
+    return
+  }
+  const finalValue = buildDefaultValue()
+  const payload = {
+    name: defaultForm.name,
+    value: finalValue,
+    enable: defaultForm.enable
+  }
+  if (isAdmin.value) payload.user_id = defaultForm.user_id
+  const requestCall = defaultDialogMode.value === 'edit'
+    ? request.put(`/site_defaults/${encodeURIComponent(defaultForm.name)}`, payload)
+    : request.post('/site_defaults', payload)
+  requestCall.then(() => {
+    defaultDialogVisible.value = false
+    loadSiteDefaults()
+  })
+}
+
+const removeDefault = (row) => {
+  confirmRemove('确认删除该默认设置?', () => {
+    const params = {}
+    if (isAdmin.value && row.user_id) {
+      params.user_id = row.user_id
+    }
+    request.delete(`/site_defaults/${encodeURIComponent(row.name)}`, { params }).then(() => {
+      loadSiteDefaults()
+    })
+  })
+}
+
+const handleDefaultSelection = rows => {
+  selectedDefaults.value = rows
+}
+
+const removeDefaultBatch = () => {
+  if (!selectedDefaults.value.length) return
+  confirmRemove('确认删除选中的默认设置?', () => {
+    const tasks = selectedDefaults.value.map(row => {
+      const params = {}
+      if (isAdmin.value && row.user_id) params.user_id = row.user_id
+      return request.delete(`/site_defaults/${encodeURIComponent(row.name)}`, { params })
+    })
+    Promise.all(tasks).then(() => {
+      selectedDefaults.value = []
+      loadSiteDefaults()
+    })
+  })
+}
+
+const resetDefaultForm = () => {
+  defaultForm.name = ''
+  defaultForm.value = 0
+  defaultForm.boolValue = false
+  defaultForm.selectValue = ''
+  defaultForm.multiValue = []
+  defaultForm.textValue = ''
+  defaultForm.headers = []
+  defaultForm.region_mode = 'none'
+  defaultForm.region_custom = []
+  defaultForm.enable = true
+}
+
+const hydrateDefaultForm = (name, value) => {
+  resetDefaultForm()
+  defaultForm.name = name
+  const option = defaultOptions.find(opt => opt.value === name)
+  const type = option?.type || 'number'
+  if (type === 'number') {
+    defaultForm.value = Number(value) || 0
+  } else if (type === 'bool') {
+    defaultForm.boolValue = value === '1' || value === 'true' || value === 'on'
+  } else if (type === 'select') {
+    defaultForm.selectValue = value !== undefined && value !== null ? String(value) : ''
+  } else if (type === 'multi') {
+    defaultForm.multiValue = (value || '').split(/\s+/).filter(Boolean)
+  } else if (type === 'lines') {
+    defaultForm.textValue = value || ''
+  } else if (type === 'headers') {
+    try {
+      defaultForm.headers = JSON.parse(value || '[]')
+    } catch (e) {
+      defaultForm.headers = []
+    }
+  } else if (type === 'region') {
+    const raw = String(value || '')
+    if (!raw || raw === 'none') {
+      defaultForm.region_mode = 'none'
+      defaultForm.region_custom = []
+    } else {
+      defaultForm.region_mode = 'custom'
+      defaultForm.region_custom = raw.split(',').map(item => item.trim()).filter(Boolean)
+    }
+  } else {
+    defaultForm.textValue = value || ''
+  }
+}
+
+const buildDefaultValue = () => {
+  const option = defaultOptions.find(opt => opt.value === defaultForm.name)
+  const type = option?.type || 'number'
+  if (type === 'number') {
+    return String(defaultForm.value ?? 0)
+  }
+  if (type === 'bool') {
+    return defaultForm.boolValue ? '1' : '0'
+  }
+  if (type === 'select') {
+    return String(defaultForm.selectValue || '')
+  }
+  if (type === 'multi') {
+    return (defaultForm.multiValue || []).join(' ')
+  }
+  if (type === 'lines') {
+    return String(defaultForm.textValue || '')
+  }
+  if (type === 'headers') {
+    return JSON.stringify((defaultForm.headers || []).filter(item => item.name))
+  }
+  if (type === 'region') {
+    return defaultForm.region_mode === 'custom'
+      ? (defaultForm.region_custom || []).join(',')
+      : 'none'
+  }
+  return String(defaultForm.textValue || '')
+}
+
+const formatDefaultValue = (name, value) => {
+  const option = defaultOptions.find(opt => opt.value === name)
+  const type = option?.type || 'number'
+  if (type === 'bool') {
+    return value === '1' || value === 'true' || value === 'on' ? '是' : '否'
+  }
+  if (type === 'select') {
+    const val = value !== undefined && value !== null ? String(value) : ''
+    const choices = getDefaultOptionChoices(option)
+    const match = choices.find(opt => String(opt.value) === val)
+    return match ? match.label : val
+  }
+  if (type === 'multi') {
+    return value || ''
+  }
+  if (type === 'lines') {
+    return value || ''
+  }
+  if (type === 'headers') {
+    try {
+      const items = JSON.parse(value || '[]')
+      return items.map(item => `${item.name}: ${item.value}`).join('; ')
+    } catch (e) {
+      return value
+    }
+  }
+  if (type === 'region') {
+    const raw = String(value || '')
+    if (!raw || raw === 'none') return '不设置'
+    return raw
+  }
+  return value
+}
+
+const addDefaultHeader = () => {
+  defaultForm.headers.push({ name: '', value: '' })
+}
+
+const removeDefaultHeader = (index) => {
+  defaultForm.headers.splice(index, 1)
+}
+
 const handleTopTab = tab => {
   if (tab.paneName === 'default') {
-    router.push('/global/default')
+    loadSiteDefaults()
   } else if (tab.paneName === 'dns') {
     loadDnsapiList()
     loadDnsapiTypes()
   }
+}
+
+const formatUserLabel = (user) => {
+  if (!user) return ''
+  const name = user.name || user.email || user.phone || '用户'
+  return `${name} (id: ${user.id})`
 }
 
 const fetchList = () => {
@@ -1396,7 +2054,7 @@ const buildSettingsPayload = () => {
     settings.cache = {
       enable: batchEditForm.cache_enable,
       preset: batchEditForm.cache_preset,
-      rules: batchEditForm.cache_rules
+      rules: batchEditForm.cache_rules.map(normalizeCacheRule)
     }
   }
   if (batchEditChecks.security_default_rule || batchEditChecks.security_auto_switch || batchEditChecks.security_custom_rules ||
@@ -1609,7 +2267,14 @@ const removeOrigin = index => {
 }
 
 const addConditionOrigin = () => {
-  batchEditForm.origin_conditions.push({ condition: '', origin: '' })
+  batchEditForm.origin_conditions.push({
+    item: 'uri_no_args',
+    operator: 'eq',
+    value: '',
+    header: '',
+    seconds: '',
+    origin: ''
+  })
 }
 
 const removeConditionOrigin = index => {
@@ -1619,13 +2284,71 @@ const removeConditionOrigin = index => {
 }
 
 const addCacheRule = () => {
-  batchEditForm.cache_rules.push({ rule: '', ttl: '', ignore_args: false, force_cache: false })
+  batchEditForm.cache_rules.push({
+    type: 'home',
+    value: '',
+    ttl: '',
+    ignore_args: false,
+    force_cache: false
+  })
 }
 
 const removeCacheRule = index => {
   confirmRemove('确认删除该缓存规则?', () => {
     batchEditForm.cache_rules.splice(index, 1)
   })
+}
+
+const normalizeCacheRule = (rule) => {
+  let type = rule.type
+  let value = rule.value || ''
+  if (!type) {
+    const raw = (rule.rule || '').trim()
+    if (raw === 'home' || raw === 'all') {
+      type = raw
+    } else if (raw.startsWith('dir:')) {
+      type = 'dir'
+      value = raw.slice(4)
+    } else if (raw.startsWith('suffix:')) {
+      type = 'suffix'
+      value = raw.slice(7)
+    } else if (raw.startsWith('path:')) {
+      type = 'path'
+      value = raw.slice(5)
+    } else if (raw !== '') {
+      type = 'path'
+      value = raw
+    } else {
+      type = 'home'
+    }
+  }
+  let ruleText = ''
+  switch (type) {
+    case 'dir':
+      ruleText = `dir:${value}`
+      break
+    case 'suffix':
+      ruleText = `suffix:${value}`
+      break
+    case 'path':
+      ruleText = `path:${value}`
+      break
+    case 'home':
+    case 'all':
+      ruleText = type
+      break
+    default:
+      ruleText = type
+      break
+  }
+  return {
+    rule: ruleText,
+    type,
+    value,
+    ttl: rule.ttl,
+    ignore_args: rule.ignore_args,
+    force_cache: rule.force_cache
+  }
 }
 
 const addSecurityRule = () => {
@@ -1694,20 +2417,44 @@ const labelForSearchField = value => {
   return mapping[value] || '搜索'
 }
 
+watch(
+  () => createForm.user_id,
+  (val) => {
+    if (!isAdmin.value) return
+    createForm.user_package_id = undefined
+    packageOptions.value = []
+    if (val) loadPackages(val)
+  }
+)
+
+watch(
+  () => batchForm.user_id,
+  (val) => {
+    if (!isAdmin.value) return
+    batchForm.user_package_id = undefined
+    packageOptions.value = []
+    if (val) loadPackages(val)
+  }
+)
+
 onMounted(() => {
   fetchList()
   loadGroups()
   loadDnsProviders()
-  loadPackages()
+  loadCcRuleOptions()
+  if (!isAdmin.value) {
+    loadPackages()
+  }
   // Pre-load some users or wait for search
-  // loadUsers('') 
+  // loadUsers('')
 })
 
 const createGroupVisible = ref(false)
-const createGroupForm = reactive({ name: '' })
+const createGroupForm = reactive({ name: '', remark: '' })
 
 const openCreateGroupDialog = () => {
   createGroupForm.name = ''
+  createGroupForm.remark = ''
   createGroupVisible.value = true
 }
 
@@ -1716,7 +2463,7 @@ const submitCreateGroup = () => {
     ElMessage.warning('请输入分组名称')
     return
   }
-  request.post('/site_groups', { name: createGroupForm.name }).then(() => {
+  request.post('/site_groups', { name: createGroupForm.name, remark: createGroupForm.remark }).then(() => {
     ElMessage.success('创建成功')
     createGroupVisible.value = false
     loadGroups()
@@ -1731,6 +2478,12 @@ const submitCreateGroup = () => {
   gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+.condition-origin-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 .filter-left,
 .filter-right {
@@ -1755,6 +2508,22 @@ const submitCreateGroup = () => {
   margin-bottom: 12px;
   display: flex;
   gap: 8px;
+}
+.default-section {
+  margin-top: 16px;
+}
+.default-toolbar {
+  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+}
+.default-empty {
+  color: #909399;
+  text-align: center;
+  padding: 20px 0;
+}
+.header-list {
+  width: 100%;
 }
 .dnsapi-fields {
   display: flex;

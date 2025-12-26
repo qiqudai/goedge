@@ -154,6 +154,12 @@ func Setup(r *gin.Engine) {
 			admin.PUT("/site_groups/:id", siteGroupCtr.Update)
 			admin.DELETE("/site_groups/:id", siteGroupCtr.Delete)
 
+			siteDefaultCtr := &controllers.SiteDefaultController{}
+			admin.GET("/site_defaults", siteDefaultCtr.List)
+			admin.POST("/site_defaults", siteDefaultCtr.Create)
+			admin.PUT("/site_defaults/:name", siteDefaultCtr.Update)
+			admin.DELETE("/site_defaults/:name", siteDefaultCtr.Delete)
+
 			userPackageCtr := &controllers.UserPackageController{}
 			admin.GET("/user_packages", userPackageCtr.ListUserPackages)
 
@@ -214,6 +220,10 @@ func Setup(r *gin.Engine) {
 			admin.POST("/rules/cc/matchers", ruleCtr.CreateMatcher)
 			admin.PUT("/rules/cc/matchers/:id", ruleCtr.UpdateMatcher)
 			admin.GET("/rules/cc/filters", ruleCtr.ListFilters)
+			admin.GET("/rules/cc/filters/:id", ruleCtr.GetFilter)
+			admin.POST("/rules/cc/filters", ruleCtr.CreateFilter)
+			admin.PUT("/rules/cc/filters/:id", ruleCtr.UpdateFilter)
+			admin.DELETE("/rules/cc/filters/:id", ruleCtr.DeleteFilter)
 
 			aclCtr := &controllers.ACLController{}
 			admin.GET("/rules/acl", aclCtr.List)
@@ -277,6 +287,90 @@ func Setup(r *gin.Engine) {
 			user.POST("/tasks", userTaskCtr.Create)
 			user.GET("/tasks/usage", userTaskCtr.Usage)
 			user.POST("/tasks/:id/resubmit", userTaskCtr.Resubmit)
+
+			userPlanCtr := &controllers.PlanController{}
+			user.GET("/plans", userPlanCtr.ListPlans)
+
+			userPackageCtr := &controllers.UserPackageController{}
+			user.GET("/user_packages", userPackageCtr.ListUserPackages)
+			user.PUT("/user_packages/:id", userPackageCtr.UpdateUserPackage)
+			user.POST("/user_packages/:id/renew", userPackageCtr.RenewUserPackage)
+			user.POST("/user_packages/:id/switch", userPackageCtr.SwitchUserPackage)
+
+			userSiteGroupCtr := &controllers.SiteGroupController{}
+			user.GET("/site_groups", userSiteGroupCtr.List)
+			user.POST("/site_groups", userSiteGroupCtr.Create)
+			user.PUT("/site_groups/:id", userSiteGroupCtr.Update)
+			user.DELETE("/site_groups/:id", userSiteGroupCtr.Delete)
+
+			userSiteDefaultCtr := &controllers.SiteDefaultController{}
+			user.GET("/site_defaults", userSiteDefaultCtr.List)
+			user.POST("/site_defaults", userSiteDefaultCtr.Create)
+			user.PUT("/site_defaults/:name", userSiteDefaultCtr.Update)
+			user.DELETE("/site_defaults/:name", userSiteDefaultCtr.Delete)
+
+			userDnsCtr := &controllers.DnsController{}
+			user.GET("/dns/providers", userDnsCtr.ListProviders)
+			user.GET("/dns/providers/types", userDnsCtr.GetProviderTypes)
+
+			userDnsapiCtr := &controllers.DNSAPIController{}
+			user.GET("/dnsapi", userDnsapiCtr.List)
+			user.GET("/dnsapi/types", userDnsapiCtr.Types)
+
+			userRuleCtr := &controllers.RuleController{}
+			user.GET("/rules/cc/groups", userRuleCtr.ListCCRuleGroups)
+			user.POST("/rules/cc/groups", userRuleCtr.CreateCCRuleGroup)
+			user.PUT("/rules/cc/groups/:id", userRuleCtr.UpdateCCRuleGroup)
+			user.GET("/rules/cc/groups/:id", userRuleCtr.GetRuleGroup)
+			user.GET("/rules/cc/matchers", userRuleCtr.ListMatchers)
+			user.GET("/rules/cc/matchers/:id", userRuleCtr.GetMatcher)
+			user.POST("/rules/cc/matchers", userRuleCtr.CreateMatcher)
+			user.PUT("/rules/cc/matchers/:id", userRuleCtr.UpdateMatcher)
+			user.GET("/rules/cc/filters", userRuleCtr.ListFilters)
+			user.GET("/rules/cc/filters/:id", userRuleCtr.GetFilter)
+			user.POST("/rules/cc/filters", userRuleCtr.CreateFilter)
+			user.PUT("/rules/cc/filters/:id", userRuleCtr.UpdateFilter)
+			user.DELETE("/rules/cc/filters/:id", userRuleCtr.DeleteFilter)
+
+			userAclCtr := &controllers.ACLController{}
+			user.GET("/rules/acl", userAclCtr.List)
+			user.GET("/rules/acl/:id", userAclCtr.Get)
+			user.POST("/rules/acl", userAclCtr.Create)
+			user.PUT("/rules/acl/:id", userAclCtr.Update)
+			user.DELETE("/rules/acl/:id", userAclCtr.Delete)
+
+			userLogCtr := &controllers.LogController{}
+			user.GET("/logs/access", userLogCtr.ListAccessLogs)
+
+			userBlockLogCtr := &controllers.BlockLogController{}
+			user.GET("/logs/block/current", userBlockLogCtr.ListCurrent)
+			user.GET("/logs/block/stats", userBlockLogCtr.ListStats)
+			user.GET("/logs/block/history", userBlockLogCtr.ListHistory)
+
+			userStatCtr := &controllers.StatController{}
+			user.GET("/stats/basic", userStatCtr.ListBasic)
+			user.GET("/stats/quality", userStatCtr.ListQuality)
+			user.GET("/stats/origin", userStatCtr.ListOrigin)
+			user.GET("/stats/ranking", userStatCtr.ListRanking)
+			user.GET("/usage", userStatCtr.ListUsage)
+
+			userForwardCtr := &controllers.ForwardController{}
+			user.GET("/forwards", userForwardCtr.AdminList)
+			user.POST("/forwards", userForwardCtr.AdminCreate)
+			user.POST("/forwards/batch", userForwardCtr.AdminBatchCreate)
+			user.POST("/forwards/batch_update", userForwardCtr.AdminBatchUpdate)
+			user.POST("/forwards/batch_action", userForwardCtr.AdminBatchAction)
+
+			userForwardGroupCtr := &controllers.ForwardGroupController{}
+			user.GET("/forward_groups", userForwardGroupCtr.List)
+			user.POST("/forward_groups", userForwardGroupCtr.Create)
+			user.PUT("/forward_groups", userForwardGroupCtr.Update)
+			user.DELETE("/forward_groups", userForwardGroupCtr.Delete)
+
+			userForwardDefaultCtr := &controllers.ForwardDefaultController{}
+			user.GET("/forward_defaults", userForwardDefaultCtr.List)
+			user.POST("/forward_defaults", userForwardDefaultCtr.Create)
+			user.DELETE("/forward_defaults", userForwardDefaultCtr.Delete)
 		}
 
 		// 3. Node Agent Routes (Require Node Token Middleware)

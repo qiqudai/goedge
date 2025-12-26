@@ -85,7 +85,7 @@
 
           <el-tab-pane label="过滤器" name="filters">
             <div class="filter-container">
-              <el-button type="primary" class="filter-item">新增过滤器</el-button>
+              <el-button type="primary" class="filter-item" @click="handleCreateFilter">新增过滤器</el-button>
               <el-select v-model="filterListQuery.status" placeholder="状态" class="filter-item" style="width: 120px; margin-left:10px;">
                 <el-option label="启用" value="on" />
                 <el-option label="禁用" value="off" />
@@ -115,7 +115,8 @@
               <el-table-column prop="create_time" label="创建时间" width="160" />
               <el-table-column label="操作" width="150" align="center">
                 <template #default="{row}">
-                  <el-button type="primary" link size="small">编辑</el-button>
+                  <el-button type="primary" link size="normal" @click="handleEditFilter(row)">编辑</el-button>
+                  <el-button type="danger" link size="normal" @click="deleteFilter(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -246,25 +247,43 @@
             <div v-for="(rule, index) in tempMatcher.rules" :key="index" style="margin-bottom: 10px;">
               <el-row :gutter="10">
                 <el-col :span="6">
-                  <el-select v-model="rule.item" placeholder="请选择" size="small">
-                    <el-option label="IP地址" value="ip" />
-                    <el-option label="URL" value="url" />
-                    <el-option label="User-Agent" value="ua" />
-                    <el-option label="Referer" value="referer" />
+                  <el-select v-model="rule.item" placeholder="请选择" size="small" @change="handleMatcherItemChange(rule)">
+                    <el-option v-for="opt in matcherItemOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
                   </el-select>
+                  <el-input
+                    v-if="isHeaderItem(rule.item)"
+                    v-model="rule.header"
+                    placeholder="请求头名称，如: user-agent"
+                    size="small"
+                    style="margin-top: 6px;"
+                  />
+                  <el-input
+                    v-else-if="isStatItem(rule.item)"
+                    v-model="rule.seconds"
+                    placeholder="统计秒数"
+                    size="small"
+                    style="margin-top: 6px;"
+                  />
                 </el-col>
                 <el-col :span="4">
-                  <el-select v-model="rule.operator" placeholder="请选择" size="small">
-                    <el-option label="等于" value="eq" />
-                    <el-option label="包含" value="contains" />
-                    <el-option label="正则匹配" value="regex" />
+                  <el-select v-if="!isStatItem(rule.item)" v-model="rule.operator" placeholder="请选择" size="small">
+                    <el-option v-for="opt in getMatcherOperatorOptions(rule.item)" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  </el-select>
+                  <el-select v-else v-model="rule.operator" size="small" disabled>
+                    <el-option label="大于" value="gt" />
                   </el-select>
                 </el-col>
                 <el-col :span="10">
-                  <el-input v-model="rule.value" placeholder="请输入匹配值" type="textarea" :rows="1" size="small" />
+                  <el-input
+                    v-model="rule.value"
+                    :placeholder="getMatcherValuePlaceholder(rule)"
+                    type="textarea"
+                    :rows="1"
+                    size="small"
+                  />
                 </el-col>
                 <el-col :span="4">
-                  <el-button type="primary" link @click="addMatcherRule">确定</el-button>
+                  <el-button type="primary" link @click="addMatcherRule">新增</el-button>
                   <el-button type="danger" link @click="removeMatcherRule(index)" v-if="tempMatcher.rules.length > 1">删除</el-button>
                 </el-col>
               </el-row>
@@ -283,6 +302,86 @@
           <el-button @click="matcherDialogVisible = false">取消</el-button>
           <el-button type="primary" @click="saveMatcher">确定</el-button>
         </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="filterDialogVisible" :title="filterDialogTitle" width="820px">
+      <el-form :model="tempFilter" label-width="100px">
+        <el-form-item label="类型">
+          <el-radio-group v-model="tempFilter.type">
+            <el-radio label="system">系统</el-radio>
+            <el-radio label="user">用户</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="tempFilter.name" placeholder="请输入名称" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="tempFilter.remark" placeholder="请输入备注" />
+        </el-form-item>
+        <el-form-item label="执行过滤">
+          <el-radio-group v-model="tempFilter.action">
+            <el-radio v-for="opt in filterActionOptions" :key="opt.value" :label="opt.value">{{ opt.label }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="showMatchMode" label="匹配模式">
+          <el-radio-group v-model="tempFilter.match_mode">
+            <el-radio label="continue">继续下一条规则</el-radio>
+            <el-radio label="stop">停止匹配</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="showBlacklist" label="是否拉黑">
+          <el-radio-group v-model="tempFilter.blacklist">
+            <el-radio :label="true">拉黑</el-radio>
+            <el-radio :label="false">不拉黑</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'rate'" label="请求频率">
+          <div class="rate-fields">
+            <el-input v-model="tempFilter.within_second" placeholder="在" style="width: 220px;">
+              <template #append>秒内</template>
+            </el-input>
+            <el-input v-model="tempFilter.max_req" placeholder="限制总请求" style="margin-top: 8px;">
+              <template #append>次</template>
+            </el-input>
+            <el-input v-model="tempFilter.max_req_per_uri" placeholder="限制同URL最大请求" style="margin-top: 8px;">
+              <template #append>次</template>
+            </el-input>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="鉴权方式">
+          <el-select v-model="tempFilter.auth_method" placeholder="鉴权方式" style="width: 100%;">
+            <el-option label="鉴权方式A" value="a" />
+            <el-option label="鉴权方式B" value="b" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="IP鉴权">
+          <el-switch v-model="tempFilter.ip_auth" />
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="密钥(16-32位)">
+          <el-input v-model="tempFilter.auth_secret" placeholder="密钥" />
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="签名参数名">
+          <el-input v-model="tempFilter.auth_param_sign" placeholder="sign" />
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="时间戳参数名">
+          <el-input v-model="tempFilter.auth_param_time" placeholder="t" />
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="最大允许时间偏差">
+          <el-input v-model="tempFilter.auth_time_diff" placeholder="180">
+            <template #append>秒</template>
+          </el-input>
+        </el-form-item>
+        <el-form-item v-if="tempFilter.action === 'url_auth'" label="签名使用次数(0不限制)">
+          <el-input v-model="tempFilter.auth_use_limit" placeholder="10" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="tempFilter.enable" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="filterDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveFilter">确定</el-button>
       </template>
     </el-dialog>
 
@@ -396,9 +495,129 @@ const tempMatcher = reactive({
   remark: '',
   is_on: true,
   rules: [
-    { item: 'ip', operator: 'eq', value: '' }
+    { item: 'ip', operator: 'eq', value: '', header: '', seconds: '' }
   ]
 })
+
+const matcherItemOptions = [
+  { label: '匹配所有请求', value: 'all' },
+  { label: 'IP地址', value: 'ip' },
+  { label: '域名', value: 'domain' },
+  { label: '请求URI', value: 'uri' },
+  { label: '请求URI(不带参数)', value: 'uri_no_args' },
+  { label: '请求头', value: 'header' },
+  { label: '独立UA数量', value: 'ua_count' },
+  { label: '404状态码数量', value: 'status_404' },
+  { label: '请求方法', value: 'method' },
+  { label: '浏览器UA', value: 'ua' },
+  { label: '请求来源', value: 'referer' },
+  { label: '国家代码', value: 'country' },
+  { label: 'AS号码', value: 'asn' },
+  { label: '省份', value: 'province' },
+  { label: '城市', value: 'city' },
+  { label: '运营商', value: 'isp' },
+  { label: 'HTTP版本', value: 'http_version' },
+  { label: '请求头accept_language', value: 'accept_language' }
+]
+
+const matcherOperatorOptions = [
+  { label: '等于', value: 'eq' },
+  { label: '不等于', value: 'neq' },
+  { label: '包含', value: 'contains' },
+  { label: '不包含', value: 'not_contains' },
+  { label: '前缀匹配', value: 'prefix' },
+  { label: '后缀匹配', value: 'suffix' },
+  { label: '正则匹配', value: 'regex' },
+  { label: '正则不匹配', value: 'not_regex' },
+  { label: '存在', value: 'exists' },
+  { label: '不存在', value: 'not_exists' },
+  { label: '在IP段', value: 'in_ip' },
+  { label: '不在IP段', value: 'not_in_ip' }
+]
+
+const isHeaderItem = item => item === 'header'
+const isStatItem = item => item === 'ua_count' || item === 'status_404'
+
+const getMatcherOperatorOptions = () => matcherOperatorOptions
+
+const getMatcherValuePlaceholder = rule => {
+  switch (rule.item) {
+    case 'http_version':
+      return '输入匹配值,一行一个,如:\nHTTP/1.0\nHTTP/1.1\nHTTP/2.0'
+    case 'ip':
+      return '输入匹配值,一行一个,如:\n1.1.1.1\n2.2.2.2'
+    case 'domain':
+      return '输入匹配值,一行一个,如:\nexample.com\nwww.example.com'
+    case 'uri':
+      return '输入匹配值,一行一个,如:\n/index.html\n/api/v1/'
+    case 'uri_no_args':
+      return '输入匹配值,一行一个,如:\n/index.html\n/api/v1/'
+    case 'method':
+      return '输入匹配值,一行一个,如:\nGET\nPOST'
+    case 'accept_language':
+      return '输入匹配值,一行一个,如:\nzh-CN\nen-US'
+    case 'ua_count':
+      return '输入次数'
+    case 'status_404':
+      return '输入次数'
+    case 'header':
+      return '输入匹配值,一行一个'
+    default:
+      return '输入匹配值,一行一个'
+  }
+}
+
+const handleMatcherItemChange = (rule) => {
+  if (isStatItem(rule.item)) {
+    rule.operator = 'gt'
+    rule.seconds = rule.seconds || '10'
+  } else if (!rule.operator) {
+    rule.operator = 'eq'
+  }
+  if (isHeaderItem(rule.item) && !rule.header) {
+    rule.header = ''
+  }
+}
+
+const filterDialogVisible = ref(false)
+const tempFilter = reactive({
+  id: 0,
+  type: 'system',
+  name: '',
+  remark: '',
+  enable: true,
+  action: 'allow',
+  match_mode: 'continue',
+  blacklist: false,
+  within_second: '',
+  max_req: '',
+  max_req_per_uri: '',
+  auth_method: 'a',
+  ip_auth: false,
+  auth_secret: '',
+  auth_param_sign: 'sign',
+  auth_param_time: 't',
+  auth_time_diff: '180',
+  auth_use_limit: '10'
+})
+const filterDialogTitle = computed(() => (tempFilter.id ? '编辑过滤器' : '新增过滤器'))
+const filterActionOptions = [
+  { label: '放行', value: 'allow' },
+  { label: '拉黑', value: 'block' },
+  { label: '请求频率', value: 'rate' },
+  { label: '无感验证', value: 'silent' },
+  { label: '5秒盾', value: 'shield_5s' },
+  { label: '点击验证', value: 'click' },
+  { label: '点击(简单)', value: 'click_simple' },
+  { label: '滑动验证', value: 'slide' },
+  { label: '滑动(简单)', value: 'slide_simple' },
+  { label: '验证码', value: 'captcha' },
+  { label: '旋转图片', value: 'rotate' },
+  { label: '302跳转', value: 'redirect_302' },
+  { label: 'URL鉴权', value: 'url_auth' }
+]
+const showMatchMode = computed(() => !['allow', 'block'].includes(tempFilter.action))
+const showBlacklist = computed(() => !['allow', 'block', 'rate'].includes(tempFilter.action))
 
 const aclDialogVisible = ref(false)
 const aclForm = reactive({
@@ -502,7 +721,7 @@ const handleCreateMatcher = () => {
     name: '',
     remark: '',
     is_on: true,
-    rules: [{ item: 'ip', operator: 'eq', value: '' }]
+    rules: [{ item: 'ip', operator: 'eq', value: '', header: '', seconds: '' }]
   })
 }
 
@@ -510,18 +729,25 @@ const handleEditMatcher = async (row) => {
   matcherDialogVisible.value = true
   const { data } = await request.get(`/rules/cc/matchers/${row.id}`)
   
+  const normalizedRules = (data.rules || []).map(rule => ({
+    item: rule.item || 'ip',
+    operator: rule.operator || (isStatItem(rule.item) ? 'gt' : 'eq'),
+    value: rule.value || '',
+    header: rule.header || '',
+    seconds: rule.seconds || ''
+  }))
   Object.assign(tempMatcher, {
     id: data.id,
     type: data.type,
     name: data.name,
     remark: data.remark || '',
     is_on: !!data.is_on,
-    rules: data.rules || []
+    rules: normalizedRules.length ? normalizedRules : [{ item: 'ip', operator: 'eq', value: '', header: '', seconds: '' }]
   })
 }
 
 const addMatcherRule = () => {
-  tempMatcher.rules.push({ item: 'ip', operator: 'eq', value: '' })
+  tempMatcher.rules.push({ item: 'ip', operator: 'eq', value: '', header: '', seconds: '' })
 }
 
 const removeMatcherRule = index => {
@@ -543,6 +769,103 @@ const saveMatcher = async () => {
   } catch (error) {
     // console.error(error)
   }
+}
+
+const handleCreateFilter = () => {
+  filterDialogVisible.value = true
+  Object.assign(tempFilter, {
+    id: 0,
+    type: 'system',
+    name: '',
+    remark: '',
+    enable: true,
+    action: 'allow',
+    match_mode: 'continue',
+    blacklist: false,
+    within_second: '',
+    max_req: '',
+    max_req_per_uri: '',
+    auth_method: 'a',
+    ip_auth: false,
+    auth_secret: '',
+    auth_param_sign: 'sign',
+    auth_param_time: 't',
+    auth_time_diff: '180',
+    auth_use_limit: '10'
+  })
+}
+
+const handleEditFilter = async (row) => {
+  const { data } = await request.get(`/rules/cc/filters/${row.id}`)
+  Object.assign(tempFilter, {
+    id: data.id,
+    type: data.type,
+    name: data.name,
+    remark: data.remark || '',
+    enable: !!data.enable,
+    action: data.action || 'allow',
+    match_mode: data.match_mode || 'continue',
+    blacklist: !!data.blacklist,
+    within_second: data.within_second || '',
+    max_req: data.max_req || '',
+    max_req_per_uri: data.max_req_per_uri || '',
+    auth_method: data.auth?.method || 'a',
+    ip_auth: !!data.auth?.ip_auth,
+    auth_secret: data.auth?.secret || '',
+    auth_param_sign: data.auth?.param_sign || 'sign',
+    auth_param_time: data.auth?.param_time || 't',
+    auth_time_diff: data.auth?.time_diff || '180',
+    auth_use_limit: data.auth?.use_limit || '10'
+  })
+  filterDialogVisible.value = true
+}
+
+const saveFilter = async () => {
+  const withinSecond = parseInt(tempFilter.within_second || '0', 10)
+  const maxReq = parseInt(tempFilter.max_req || '0', 10)
+  const maxReqPerURI = parseInt(tempFilter.max_req_per_uri || '0', 10)
+  const payload = {
+    type: tempFilter.type,
+    name: tempFilter.name,
+    remark: tempFilter.remark,
+    enable: tempFilter.enable,
+    action: tempFilter.action,
+    match_mode: tempFilter.match_mode,
+    blacklist: tempFilter.blacklist,
+    within_second: withinSecond,
+    max_req: maxReq,
+    max_req_per_uri: maxReqPerURI,
+    auth: {
+      method: tempFilter.auth_method,
+      ip_auth: tempFilter.ip_auth,
+      secret: tempFilter.auth_secret,
+      param_sign: tempFilter.auth_param_sign,
+      param_time: tempFilter.auth_param_time,
+      time_diff: tempFilter.auth_time_diff,
+      use_limit: tempFilter.auth_use_limit
+    }
+  }
+  if (tempFilter.id) {
+    await request.put(`/rules/cc/filters/${tempFilter.id}`, payload)
+  } else {
+    await request.post('/rules/cc/filters', payload)
+  }
+  ElMessage.success('保存成功')
+  filterDialogVisible.value = false
+  fetchFilters()
+}
+
+const deleteFilter = row => {
+  ElMessageBox.confirm('确定删除过滤器?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    request.delete(`/rules/cc/filters/${row.id}`).then(() => {
+      ElMessage.success('删除成功')
+      fetchFilters()
+    })
+  })
 }
 
 const openAclDialog = async row => {
@@ -615,5 +938,8 @@ onMounted(() => {
 <style scoped>
 .filter-container {
   padding-bottom: 20px;
+}
+.rate-fields .el-input {
+  width: 100%;
 }
 </style>

@@ -5,11 +5,14 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type AgentController struct {
@@ -152,7 +155,110 @@ func (ctr *AgentController) FinishTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update task"})
 		return
 	}
+	if nextState, ok := updates["state"].(string); ok {
+		if nextState != task.State && (nextState == "done" || nextState == "fail") {
+			notifyTaskCompletion(task, nextState, req.Ret)
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+type taskMeta struct {
+	UserID int64 `json:"user_id"`
+}
+
+func notifyTaskCompletion(task models.Task, state string, ret string) {
+	userID := parseTaskUserID(task.Res)
+	if userID == 0 {
+		return
+	}
+	phone, email, ok := lookupMessageSubscription(userID, task.Type)
+	if !ok {
+		return
+	}
+	title := buildTaskTitle(task.Type, state)
+	content := buildTaskContent(task.Type, state, task.Data, ret)
+
+	msg := models.Message{
+		Type:          task.Type,
+		Receive:       userID,
+		Title:         title,
+		Content:       content,
+		PhoneContent:  content,
+		IsShow:        true,
+		EmailNeedSend: email,
+		PhoneNeedSend: phone,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	_ = db.DB.Create(&msg).Error
+}
+
+func parseTaskUserID(raw string) int64 {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	var meta taskMeta
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return 0
+	}
+	return meta.UserID
+}
+
+func lookupMessageSubscription(userID int64, msgType string) (bool, bool, bool) {
+	if userID == 0 || msgType == "" {
+		return false, false, false
+	}
+	var sub models.MessageSub
+	err := db.DB.Where("uid = ? AND msg_type = ?", userID, msgType).First(&sub).Error
+	if err == nil {
+		return sub.Phone, sub.Email, true
+	}
+	if !errorsIsRecordNotFound(err) {
+		return false, false, false
+	}
+	var count int64
+	if err := db.DB.Model(&models.MessageSub{}).Where("uid = ?", userID).Count(&count).Error; err != nil {
+		return false, false, false
+	}
+	if count == 0 {
+		return true, true, true
+	}
+	return false, false, false
+}
+
+func errorsIsRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func buildTaskTitle(taskType string, state string) string {
+	label := taskType
+	switch taskType {
+	case "refresh_url":
+		label = "刷新URL"
+	case "refresh_dir":
+		label = "刷新目录"
+	case "preheat":
+		label = "预热"
+	}
+	if state == "fail" {
+		return label + "任务失败"
+	}
+	return label + "任务完成"
+}
+
+func buildTaskContent(taskType string, state string, data string, ret string) string {
+	result := "执行成功"
+	if state == "fail" {
+		result = "执行失败"
+	}
+	if strings.TrimSpace(ret) != "" {
+		result = result + "，原因：" + ret
+	}
+	if strings.TrimSpace(data) == "" {
+		return result
+	}
+	return result + "，URL：" + data
 }
 
 func taskProgressHasNode(raw string, nodeID string) bool {

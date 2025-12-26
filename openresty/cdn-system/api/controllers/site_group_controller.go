@@ -28,6 +28,13 @@ func (ctr *SiteGroupController) List(c *gin.Context) {
 	var total int64
 	query := db.DB.Model(&models.SiteGroup{})
 
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	}
+
 	if keyword != "" {
 		query = query.Where("name LIKE ?", "%"+keyword+"%")
 	}
@@ -85,7 +92,16 @@ func (ctr *SiteGroupController) Update(c *gin.Context) {
 		return
 	}
 	req.UpdatedAt = time.Now()
-	if err := db.DB.Model(&models.SiteGroup{}).Where("id = ?", id).Updates(map[string]interface{}{
+	query := db.DB.Model(&models.SiteGroup{}).Where("id = ?", id)
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "Forbidden"})
+			return
+		}
+		query = query.Where("uid = ?", uid)
+	}
+	if err := query.Updates(map[string]interface{}{
 		"name":      req.Name,
 		"des":       req.Remark,
 		"update_at": req.UpdatedAt,
@@ -99,6 +115,18 @@ func (ctr *SiteGroupController) Update(c *gin.Context) {
 func (ctr *SiteGroupController) Delete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "Forbidden"})
+			return
+		}
+		var group models.SiteGroup
+		if err := db.DB.Where("id = ? AND uid = ?", id, uid).First(&group).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "Not Found"})
+			return
+		}
+	}
 	if err := db.DB.Where("group_id = ?", id).Delete(&models.SiteGroupRelation{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Delete Failed"})
 		return

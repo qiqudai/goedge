@@ -16,7 +16,12 @@ type ForwardGroupController struct{}
 func (ctrl *ForwardGroupController) List(c *gin.Context) {
 	var groups []models.ForwardGroup
 	query := db.DB.Order("id desc")
-	if uidStr := c.Query("user_id"); uidStr != "" {
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	} else if uidStr := c.Query("user_id"); uidStr != "" {
 		if uid, err := strconv.ParseInt(uidStr, 10, 64); err == nil {
 			query = query.Where("uid = ?", uid)
 		}
@@ -71,7 +76,14 @@ func (ctrl *ForwardGroupController) Update(c *gin.Context) {
 		updates["name"] = req.Name
 	}
 	updates["des"] = req.Remark
-	if err := db.DB.Model(&models.ForwardGroup{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
+	query := db.DB.Model(&models.ForwardGroup{}).Where("id = ?", req.ID)
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	}
+	if err := query.Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Failed to update group"})
 		return
 	}
@@ -87,7 +99,14 @@ func (ctrl *ForwardGroupController) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "id is required"})
 		return
 	}
-	if err := db.DB.Where("id = ?", req.ID).Delete(&models.ForwardGroup{}).Error; err != nil {
+	query := db.DB.Where("id = ?", req.ID)
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	}
+	if err := query.Delete(&models.ForwardGroup{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Failed to delete group"})
 		return
 	}

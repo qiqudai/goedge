@@ -35,8 +35,11 @@ func (ctr *UserController) ListUsers(c *gin.Context) {
 	query := db.DB.Model(&models.User{})
 	if keyword != "" {
 		keywordLike := "%" + strings.ToLower(keyword) + "%"
-		// Updated to use Name column instead of Username
-		query = query.Where("lower(name) LIKE ? OR email LIKE ? OR phone LIKE ?", keywordLike, keywordLike, keywordLike)
+		query = query.Where("lower(name) LIKE ? OR email LIKE ? OR phone LIKE ? OR qq LIKE ? OR des LIKE ?",
+			keywordLike, keywordLike, keywordLike, keywordLike, keywordLike)
+		if id, err := strconv.ParseInt(strings.TrimSpace(keyword), 10, 64); err == nil {
+			query = query.Or("id = ?", id)
+		}
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

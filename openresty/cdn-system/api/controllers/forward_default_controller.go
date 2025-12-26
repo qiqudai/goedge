@@ -44,6 +44,10 @@ func (ctrl *ForwardDefaultController) List(c *gin.Context) {
 }
 
 func (ctrl *ForwardDefaultController) Create(c *gin.Context) {
+  if isUserRequest(c) {
+    c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+    return
+  }
   var req struct {
     Key     string      `json:"key"`
     Value   interface{} `json:"value"`
@@ -71,6 +75,10 @@ func (ctrl *ForwardDefaultController) Create(c *gin.Context) {
 }
 
 func (ctrl *ForwardDefaultController) Delete(c *gin.Context) {
+  if isUserRequest(c) {
+    c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+    return
+  }
   var req struct {
     ID int64 `json:"id"`
   }

@@ -57,7 +57,11 @@ func (ctrl *ForwardController) AdminList(c *gin.Context) {
 }
 
 func (ctrl *ForwardController) AdminCreate(c *gin.Context) {
-	forward, groupID, err := parseForwardCreateRequest(c, true)
+	adminMode := true
+	if isUserRequest(c) {
+		adminMode = false
+	}
+	forward, groupID, err := parseForwardCreateRequest(c, adminMode)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -86,7 +90,9 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
-	if req.UserID == 0 {
+	if isUserRequest(c) {
+		req.UserID = parseInt64(mustGet(c, "userID"))
+	} else if req.UserID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
 		return
 	}
@@ -162,6 +168,23 @@ func (ctrl *ForwardController) AdminBatchUpdate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ids is required"})
 		return
 	}
+	if isUserRequest(c) {
+		userID := parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		allowed, err := filterForwardIDsForUser(req.IDs, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load forwards"})
+			return
+		}
+		if len(allowed) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no forwards available"})
+			return
+		}
+		req.IDs = allowed
+	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
@@ -230,6 +253,23 @@ func (ctrl *ForwardController) AdminBatchAction(c *gin.Context) {
 	if len(req.IDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ids is required"})
 		return
+	}
+	if isUserRequest(c) {
+		userID := parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		allowed, err := filterForwardIDsForUser(req.IDs, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load forwards"})
+			return
+		}
+		if len(allowed) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no forwards available"})
+			return
+		}
+		req.IDs = allowed
 	}
 
 	switch strings.ToLower(req.Action) {
@@ -348,6 +388,12 @@ func createForwardWithGroup(forward *models.Forward, groupID int64) error {
 
 func queryForwards(c *gin.Context) (*forwardQueryResult, error) {
 	query := db.DB.Model(&models.Forward{})
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	}
 
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	searchField := strings.TrimSpace(c.DefaultQuery("search_field", "all"))
@@ -412,9 +458,11 @@ func queryForwards(c *gin.Context) (*forwardQueryResult, error) {
 		}
 	}
 
-	if uidStr := c.Query("user_id"); uidStr != "" {
-		if uid, err := strconv.Atoi(uidStr); err == nil {
-			query = query.Where("uid = ?", uid)
+	if !isUserRequest(c) {
+		if uidStr := c.Query("user_id"); uidStr != "" {
+			if uid, err := strconv.Atoi(uidStr); err == nil {
+				query = query.Where("uid = ?", uid)
+			}
 		}
 	}
 	if pkgStr := c.Query("user_package_id"); pkgStr != "" {
@@ -455,6 +503,17 @@ func queryForwards(c *gin.Context) (*forwardQueryResult, error) {
 	}
 
 	return &forwardQueryResult{Forwards: forwards, Total: total}, nil
+}
+
+func filterForwardIDsForUser(ids []int64, userID int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return []int64{}, nil
+	}
+	var allowed []int64
+	if err := db.DB.Model(&models.Forward{}).Where("uid = ? AND id IN ?", userID, ids).Pluck("id", &allowed).Error; err != nil {
+		return nil, err
+	}
+	return allowed, nil
 }
 
 func buildForwardListItems(forwards []models.Forward) ([]forwardListItem, error) {

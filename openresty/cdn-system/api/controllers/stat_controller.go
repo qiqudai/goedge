@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -108,6 +110,104 @@ func generateTimeSeries(count int, base float64, variance float64) ([]string, []
 		values[i] = float64(int(val*100)) / 100 // Round to 2 decimals
 	}
 	return times, values
+}
+
+type usagePoint struct {
+	Time  string  `json:"time"`
+	Value float64 `json:"value"`
+}
+
+func generateUsageSeries(start time.Time, count int, step time.Duration, labelFormat string, base float64, variance float64) ([]string, []float64, []usagePoint) {
+	times := make([]string, 0, count)
+	values := make([]float64, 0, count)
+	points := make([]usagePoint, 0, count)
+
+	for i := 0; i < count; i++ {
+		timestamp := start.Add(time.Duration(i) * step)
+		label := timestamp.Format(labelFormat)
+		val := base + (rand.Float64()-0.5)*variance
+		if val < 0 {
+			val = 0
+		}
+		val = float64(int(val*100)) / 100
+		times = append(times, label)
+		values = append(values, val)
+		points = append(points, usagePoint{Time: label, Value: val})
+	}
+	return times, values, points
+}
+
+// ListUsage Retrieves usage series for plans
+// GET /api/v1/user/usage?range=today|yesterday|7days|30days
+func (c *StatController) ListUsage(ctx *gin.Context) {
+	rangeKey := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("range", "today")))
+	now := time.Now()
+
+	var start time.Time
+	var count int
+	var step time.Duration
+	var labelFormat string
+	var base float64
+	var variance float64
+
+	switch rangeKey {
+	case "yesterday":
+		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -1)
+		count = 24
+		step = time.Hour
+		labelFormat = "15:00"
+		base = 32
+		variance = 18
+	case "7days":
+		start = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location()).Add(-6 * 24 * time.Hour)
+		count = 7 * 24
+		step = time.Hour
+		labelFormat = "01-02 15:00"
+		base = 28
+		variance = 20
+	case "30days":
+		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -29)
+		count = 30
+		step = 24 * time.Hour
+		labelFormat = "2006-01-02"
+		base = 220
+		variance = 120
+	default:
+		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		count = 24
+		step = time.Hour
+		labelFormat = "15:00"
+		base = 35
+		variance = 20
+	}
+
+	xAxis, values, list := generateUsageSeries(start, count, step, labelFormat, base, variance)
+
+	var total float64
+	var peak float64
+	for _, v := range values {
+		total += v
+		if v > peak {
+			peak = v
+		}
+	}
+	avg := 0.0
+	if len(values) > 0 {
+		avg = float64(int((total/float64(len(values)))*100)) / 100
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"x_axis": xAxis,
+			"values": values,
+			"list":   list,
+			"total":  float64(int(total*100)) / 100,
+			"avg":    avg,
+			"peak":   float64(int(peak*100)) / 100,
+			"unit":   "MB",
+		},
+	})
 }
 
 // ListBasic Retrieves basic statistics (Bandwidth, Traffic, QPS)

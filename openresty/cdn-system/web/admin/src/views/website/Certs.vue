@@ -136,8 +136,7 @@
               <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
               </el-select>
               <div class="help-text">
-                不选择DNS API时, 需要域名解析到CNAME地址, 这种方式无法申请通配符域名;
-                选择DNS API时, 可以申请所有类型的域名, 包括通配符, 申请成功率比较高。
+                ??? DNS API ????????DNS ??????? CNAME ?????
               </div>
             </el-form-item>
             <el-form-item label="自动续签">
@@ -163,8 +162,7 @@
               <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
               </el-select>
               <div class="help-text">
-                不选择DNS API时, 需要域名解析到CNAME地址, 这种方式无法申请通配符域名;
-                选择DNS API时, 可以申请所有类型的域名, 包括通配符, 申请成功率比较高。
+                ??? DNS API ????????DNS ??????? CNAME ?????
               </div>
             </el-form-item>
             <el-form-item label="自动续签">
@@ -208,6 +206,9 @@
             <el-select v-model="defaultForm.dnsapi" clearable placeholder="请选择" style="width: 320px;">
               <el-option v-for="d in defaultDnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
             </el-select>
+            <div class="help-text">
+              这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
+            </div>
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="saveDefaultSettings">保存</el-button>

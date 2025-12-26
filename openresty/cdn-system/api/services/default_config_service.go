@@ -98,6 +98,21 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 			site.CcDefaultRule = parseInt64(v)
 		}
 	}
+	if site.DNSProviderID == 0 {
+		if v := defaults["dns_provider_id"]; v != "" {
+			site.DNSProviderID = parseInt64(v)
+		}
+	}
+	if site.BlackIPRaw == "" {
+		if v := defaults["black_ip"]; v != "" {
+			site.BlackIPRaw = v
+		}
+	}
+	if site.WhiteIPRaw == "" {
+		if v := defaults["white_ip"]; v != "" {
+			site.WhiteIPRaw = v
+		}
+	}
 
 	if site.Settings == nil {
 		site.Settings = map[string]interface{}{}
@@ -108,6 +123,8 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(httpsCfg, "redirect_port", defaults["https_listen-port"])
 	setIfMissing(httpsCfg, "hsts", parseBool(defaults["https_listen-hsts"], false))
 	setIfMissing(httpsCfg, "http2", parseBool(defaults["https_listen-http2"], false))
+	setIfMissing(httpsCfg, "http3", parseBool(defaults["https_listen-http3"], false))
+	setIfMissing(httpsCfg, "ocsp_stapling", parseBool(defaults["https_listen-ocsp_stapling"], false))
 	setIfMissing(httpsCfg, "ssl_protocols", defaults["https_listen-ssl_protocols"])
 	setIfMissing(httpsCfg, "ssl_ciphers", defaults["https_listen-ssl_ciphers"])
 	setIfMissing(httpsCfg, "ssl_prefer_server_ciphers", defaults["https_listen-ssl_prefer_server_ciphers"])
@@ -130,11 +147,46 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 
 	securityCfg := getSubMap(site.Settings, "security")
 	setIfMissing(securityCfg, "default_rule", site.CcDefaultRule)
+	if v := defaults["security_bot"]; v != "" {
+		setIfMissing(securityCfg, "bot", v)
+	}
+	if v := defaults["black_ip"]; v != "" {
+		setIfMissing(securityCfg, "blacklist", splitFields(v))
+	}
+	if v := defaults["white_ip"]; v != "" {
+		setIfMissing(securityCfg, "whitelist", splitFields(v))
+	}
+	if v := defaults["security_black_time"]; v != "" {
+		setIfMissing(securityCfg, "black_time_mode", "custom")
+		setIfMissing(securityCfg, "black_time_custom", parseInt64(v))
+	}
+	if v := defaults["security_white_time"]; v != "" {
+		setIfMissing(securityCfg, "white_time_mode", "custom")
+		setIfMissing(securityCfg, "white_time_custom", parseInt64(v))
+	}
+	if v := defaults["security_shield_proxy"]; v != "" {
+		setIfMissing(securityCfg, "shield_proxy", parseBool(v, false))
+	}
+	if v := defaults["block_region"]; v != "" {
+		if site.BlockRegionRaw == "" {
+			site.BlockRegionRaw = v
+		}
+		if _, ok := securityCfg["region_mode"]; !ok {
+			if v == "none" {
+				securityCfg["region_mode"] = "none"
+				securityCfg["region_custom"] = []string{}
+			} else {
+				securityCfg["region_mode"] = "custom"
+				securityCfg["region_custom"] = splitCommaList(v)
+			}
+		}
+	}
 
 	advCfg := getSubMap(site.Settings, "advanced")
 	setIfMissing(advCfg, "gzip", parseBool(defaults["gzip_enable"], false))
 	setIfMissing(advCfg, "gzip_types", defaults["gzip_types"])
 	setIfMissing(advCfg, "websocket", parseBool(defaults["websocket_enable"], false))
+	setIfMissing(advCfg, "ipv6", parseBool(defaults["ipv6_enable"], false))
 	setIfMissing(advCfg, "range", parseBool(defaults["range"], false))
 	setIfMissing(advCfg, "proxy_http_version", defaults["proxy_http_version"])
 	setIfMissing(advCfg, "proxy_ssl_protocols", defaults["proxy_ssl_protocols"])
@@ -142,6 +194,11 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(advCfg, "ups_keepalive_conn", parseInt64(defaults["ups_keepalive_conn"]))
 	setIfMissing(advCfg, "ups_keepalive_timeout", parseInt64(defaults["ups_keepalive_timeout"]))
 	setIfMissing(advCfg, "body_limit", parseInt64(defaults["post_size_limit"]))
+	setIfMissing(advCfg, "realtime_send", parseBool(defaults["realtime_send"], false))
+	setIfMissing(advCfg, "realtime_return", parseBool(defaults["realtime_return"], false))
+	if v := defaults["origin_headers"]; v != "" {
+		setIfMissing(advCfg, "origin_headers", parseHeaderList(v))
+	}
 }
 
 func ApplyForwardDefaults(forward *models.Forward, defaults map[string]string) {
@@ -225,4 +282,32 @@ func parseCacheRules(raw string) []map[string]interface{} {
 		return rules
 	}
 	return []map[string]interface{}{}
+}
+
+func parseHeaderList(raw string) []map[string]string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []map[string]string{}
+	}
+	var headers []map[string]string
+	if err := json.Unmarshal([]byte(raw), &headers); err == nil {
+		return headers
+	}
+	return []map[string]string{}
+}
+
+func splitCommaList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" && p != "none" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

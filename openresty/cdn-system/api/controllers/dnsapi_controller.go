@@ -15,7 +15,12 @@ type DNSAPIController struct{}
 func (ctr *DNSAPIController) List(c *gin.Context) {
 	var items []models.DNSAPI
 	query := db.DB.Model(&models.DNSAPI{})
-	if uidStr := c.Query("user_id"); uidStr != "" {
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	} else if uidStr := c.Query("user_id"); uidStr != "" {
 		if uid, err := strconv.Atoi(uidStr); err == nil {
 			query = query.Where("uid = ?", uid)
 		}

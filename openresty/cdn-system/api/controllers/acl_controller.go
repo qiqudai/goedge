@@ -30,6 +30,12 @@ type aclPayload struct {
 
 func (ctr *ACLController) List(c *gin.Context) {
 	query := db.DB.Model(&models.ACL{})
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid != 0 {
+			query = query.Where("uid = ?", uid)
+		}
+	}
 	if name := strings.TrimSpace(c.Query("name")); name != "" {
 		query = query.Where("name LIKE ?", "%"+name+"%")
 	}
@@ -80,6 +86,13 @@ func (ctr *ACLController) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "acl not found"})
 		return
 	}
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid == 0 || item.UserID != uid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
 
 	rules := parseACLRuleItems(item.Data)
 	c.JSON(http.StatusOK, gin.H{
@@ -97,6 +110,10 @@ func (ctr *ACLController) Get(c *gin.Context) {
 
 func (ctr *ACLController) Create(c *gin.Context) {
 	uid := parseInt64(mustGet(c, "userID"))
+	if isUserRequest(c) && uid == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
 	var req aclPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -136,6 +153,22 @@ func (ctr *ACLController) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		var item models.ACL
+		if err := db.DB.Where("id = ?", id).First(&item).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "acl not found"})
+			return
+		}
+		if item.UserID != uid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
 	var req aclPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -168,6 +201,22 @@ func (ctr *ACLController) Delete(c *gin.Context) {
 	if id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
+	}
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
+		var item models.ACL
+		if err := db.DB.Where("id = ?", id).First(&item).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "acl not found"})
+			return
+		}
+		if item.UserID != uid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 	if err := db.DB.Delete(&models.ACL{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete"})
