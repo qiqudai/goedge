@@ -37,7 +37,7 @@ func main() {
 		// &models.DomainOrigin{}, // Deprecated
 		// &models.NodeIP{}, // Deprecated
 		&models.NodeGroup{},
-		// &models.UserNodeGroup{}, // Deprecated
+		&models.UserNodeGroup{},
 		&models.DNSAPI{},
 		&models.DNSProvider{}, // Check if exists
 		&models.UserLoginLog{},
@@ -73,6 +73,13 @@ func main() {
 	if !migrator.HasColumn(&models.Site{}, "cname_hostname2") {
 		migrator.AddColumn(&models.Site{}, "CnameHostname2")
 		log.Println("Added missing column: cname_hostname2")
+	}
+	if !migrator.HasColumn(&models.UserNodeGroup{}, "is_default") {
+		if err := migrator.AddColumn(&models.UserNodeGroup{}, "IsDefault"); err == nil {
+			log.Println("Added missing column: is_default")
+		} else {
+			log.Printf("Error adding is_default column: %v", err)
+		}
 	}
 
 	// Drop troublesome FK constraint if exists to allow 0 value

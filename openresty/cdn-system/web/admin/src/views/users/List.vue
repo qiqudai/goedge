@@ -90,6 +90,44 @@
       </el-table-column>
     </el-table>
   </div>
+
+  <el-dialog v-model="editVisible" title="编辑用户" width="520px">
+    <el-form :model="editForm" label-width="100px">
+      <el-form-item label="用户">
+        <el-input v-model="editForm.name" disabled />
+      </el-form-item>
+      <el-form-item label="线路组">
+        <el-select
+          v-model="editForm.node_group_ids"
+          multiple
+          filterable
+          placeholder="请选择线路组"
+          style="width: 100%;"
+          :loading="nodeGroupLoading">
+          <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="默认线路组">
+        <el-select
+          v-model="editForm.default_node_group_id"
+          clearable
+          placeholder="请选择默认线路组"
+          style="width: 100%;"
+          :disabled="editForm.node_group_ids.length === 0">
+          <el-option
+            v-for="g in nodeGroupOptions"
+            :key="g.id"
+            :label="g.name"
+            :value="g.id"
+            :disabled="!editForm.node_group_ids.includes(g.id)" />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button size="normal" @click="editVisible = false">取消</el-button>
+      <el-button size="normal" type="primary" :loading="editSaving" @click="handleEditSave">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -125,12 +163,24 @@ const t = {
   warning: '\u8b66\u544a',
   confirm: '\u786e\u5b9a',
   cancel: '\u53d6\u6d88',
-  deleteSuccess: '\u5220\u9664\u6210\u529f'
+  deleteSuccess: '\u5220\u9664\u6210\u529f',
+  nodeGroupRequired: '\u8bf7\u9009\u62e9\u7ebf\u8def\u7ec4',
+  defaultNodeGroupRequired: '\u8bf7\u9009\u62e9\u9ed8\u8ba4\u7ebf\u8def\u7ec4'
 }
 
 const list = ref([])
 const listLoading = ref(true)
 const initSwitchLock = ref(true)
+const editVisible = ref(false)
+const editSaving = ref(false)
+const nodeGroupOptions = ref([])
+const nodeGroupLoading = ref(false)
+const editForm = reactive({
+  id: null,
+  name: '',
+  node_group_ids: [],
+  default_node_group_id: null
+})
 const listQuery = reactive({
   page: 1,
   pageSize: 20,
@@ -171,7 +221,13 @@ const handleCreate = () => {
 }
 
 const handleUpdate = row => {
-  ElMessage.info(t.editUserTip + (row.name || row.username || row.id))
+  editForm.id = row.id
+  editForm.name = row.name || row.username || ''
+  editForm.node_group_ids = []
+  editForm.default_node_group_id = null
+  editVisible.value = true
+  loadNodeGroups()
+  loadUserNodeGroups(row.id)
 }
 
 const handleStatusChange = row => {
@@ -237,6 +293,46 @@ const handleImpersonate = row => {
       window.open(`/login?${params.toString()}`, '_blank')
       ElMessage.success(t.impersonateSuccess)
     })
+  })
+}
+
+const loadNodeGroups = () => {
+  nodeGroupLoading.value = true
+  request.get('/node-groups').then(res => {
+    nodeGroupOptions.value = res.data?.list || res.list || []
+  }).finally(() => {
+    nodeGroupLoading.value = false
+  })
+}
+
+const loadUserNodeGroups = (userId) => {
+  if (!userId) return
+  request.get(`/users/${userId}/node-groups`).then(res => {
+    const data = res.data || {}
+    const list = data.list || []
+    editForm.node_group_ids = list.map(item => item.id)
+    editForm.default_node_group_id = data.default_node_group_id || null
+  })
+}
+
+const handleEditSave = () => {
+  if (editForm.node_group_ids.length === 0) {
+    ElMessage.error(t.nodeGroupRequired)
+    return
+  }
+  if (!editForm.default_node_group_id) {
+    ElMessage.error(t.defaultNodeGroupRequired)
+    return
+  }
+  editSaving.value = true
+  request.put(`/users/${editForm.id}/node-groups`, {
+    node_group_ids: editForm.node_group_ids,
+    default_node_group_id: editForm.default_node_group_id
+  }).then(() => {
+    ElMessage.success('保存成功')
+    editVisible.value = false
+  }).finally(() => {
+    editSaving.value = false
   })
 }
 

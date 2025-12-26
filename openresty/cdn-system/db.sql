@@ -145,6 +145,19 @@ create table `node_group` (
     primary KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+create table `user_node_groups` (
+    `user_id` int(11) not null,
+    `node_group_id` int(11) not null,
+    `is_default` boolean,
+    `create_at` datetime,
+    primary KEY (`user_id`, `node_group_id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_node_group_id` (`node_group_id`),
+    KEY `idx_is_default` (`is_default`),
+    CONSTRAINT `user_node_group_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`),
+    CONSTRAINT `user_node_group_ibfk_2` FOREIGN KEY (`node_group_id`) REFERENCES `node_group` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 create table `line` (
     `id` int(11) not null AUTO_INCREMENT,
     `node_group_id` int(11),

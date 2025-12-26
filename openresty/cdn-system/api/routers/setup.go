@@ -317,6 +317,9 @@ func Setup(r *gin.Engine) {
 			user.GET("/dnsapi", userDnsapiCtr.List)
 			user.GET("/dnsapi/types", userDnsapiCtr.Types)
 
+			userCtr := &controllers.UserController{}
+			user.GET("/node-groups", userCtr.GetUserNodeGroups)
+
 			userRuleCtr := &controllers.RuleController{}
 			user.GET("/rules/cc/groups", userRuleCtr.ListCCRuleGroups)
 			user.POST("/rules/cc/groups", userRuleCtr.CreateCCRuleGroup)

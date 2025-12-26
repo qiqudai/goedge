@@ -73,6 +73,11 @@
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column v-if="isAdmin" label="用户" width="140">
+        <template #default="{ row }">
+          {{ row.user_name ? `${row.user_name}(${row.user_id})` : row.user_id }}
+        </template>
+      </el-table-column>
       <el-table-column prop="domain_display" label="域名" min-width="220" show-overflow-tooltip />
       <el-table-column prop="listen_ports" label="监听端口" width="110" />
       <el-table-column prop="origin_display" label="源站" min-width="200" show-overflow-tooltip />
@@ -220,6 +225,17 @@
                 <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
+            <el-form-item label="线路组">
+              <el-select
+                v-model.number="createForm.node_group_id"
+                clearable
+                placeholder="请选择线路组"
+                style="width: 100%;"
+                :loading="nodeGroupLoading"
+                :disabled="isAdmin && !createForm.user_id">
+                <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="网站域名">
               <el-input v-model="createForm.domains_input" placeholder="www.abc.com www.abc.com:8080 abc.com:80" />
             </el-form-item>
@@ -273,6 +289,17 @@
             <el-form-item label="网站套餐">
               <el-select v-model.number="batchForm.user_package_id" clearable placeholder="选择套餐 (可选)" style="width: 100%;">
                 <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="线路组">
+              <el-select
+                v-model.number="batchForm.node_group_id"
+                clearable
+                placeholder="请选择线路组"
+                style="width: 100%;"
+                :loading="nodeGroupLoading"
+                :disabled="isAdmin && !batchForm.user_id">
+                <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
               </el-select>
             </el-form-item>
             <el-form-item label="网站数据">
@@ -1170,6 +1197,7 @@ const batchMore = ref(false)
 const createForm = reactive({
   user_id: undefined,
   user_package_id: undefined,
+  node_group_id: undefined,
   group_id: undefined,
   dns_provider_id: undefined,
   site_type: 'website',
@@ -1179,6 +1207,7 @@ const createForm = reactive({
 const batchForm = reactive({
   user_id: undefined,
   user_package_id: undefined,
+  node_group_id: undefined,
   group_id: undefined,
   dns_provider_id: undefined,
   data: '',
@@ -1342,9 +1371,11 @@ const batchEditChecks = reactive({
 
 const groupOptions = ref([])
 const dnsOptions = ref([])
+const nodeGroupOptions = ref([])
 const userOptions = ref([])
 const packageOptions = ref([])
 const userLoading = ref(false)
+const nodeGroupLoading = ref(false)
 
   const loadUsers = (query) => {
     if (query !== '') {
@@ -1380,6 +1411,33 @@ const loadPackages = (userId) => {
     if (first && !batchForm.user_package_id) {
       batchForm.user_package_id = first.id
     }
+  })
+}
+
+const applyNodeGroupDefaults = (defaultId) => {
+  if (defaultId && nodeGroupOptions.value.some(item => item.id === defaultId)) {
+    createForm.node_group_id = defaultId
+    batchForm.node_group_id = defaultId
+  } else {
+    createForm.node_group_id = undefined
+    batchForm.node_group_id = undefined
+  }
+}
+
+const loadUserNodeGroups = (userId) => {
+  if (isAdmin.value && !userId) {
+    nodeGroupOptions.value = []
+    applyNodeGroupDefaults(null)
+    return
+  }
+  nodeGroupLoading.value = true
+  const url = isAdmin.value ? `/users/${userId}/node-groups` : '/node-groups'
+  request.get(url).then(res => {
+    const data = res.data || {}
+    nodeGroupOptions.value = data.list || []
+    applyNodeGroupDefaults(data.default_node_group_id || null)
+  }).finally(() => {
+    nodeGroupLoading.value = false
   })
 }
 
@@ -2032,9 +2090,14 @@ const openBatchEdit = () => {
 
 const handleCreateSubmit = () => {
   if (createTab.value === 'single') {
+    if (!createForm.node_group_id) {
+      ElMessage.warning('请选择线路组')
+      return
+    }
     const payload = {
       user_id: createForm.user_id || undefined,
       user_package_id: createForm.user_package_id || undefined,
+      node_group_id: createForm.node_group_id || undefined,
       group_id: createForm.group_id || undefined,
       dns_provider_id: createForm.dns_provider_id || undefined,
       site_type: createForm.site_type,
@@ -2052,6 +2115,10 @@ const handleCreateSubmit = () => {
       ElMessageBox.alert(msg, '错误提示', { type: 'error' })
     })
   } else {
+    if (!batchForm.node_group_id) {
+      ElMessage.warning('请选择线路组')
+      return
+    }
     request.post('/sites/batch', batchForm).then(res => {
       ElMessage.success(res.message || '批量创建完成')
       createVisible.value = false
@@ -2471,6 +2538,9 @@ watch(
     if (val) {
       loadPackages(val)
       loadGroups(val)
+      loadUserNodeGroups(val)
+    } else {
+      loadUserNodeGroups()
     }
   }
 )
@@ -2484,6 +2554,9 @@ watch(
     if (val) {
       loadPackages(val)
       loadGroups(val)
+      loadUserNodeGroups(val)
+    } else {
+      loadUserNodeGroups()
     }
   }
 )
@@ -2504,6 +2577,7 @@ onMounted(() => {
   loadCcRuleOptions()
   if (!isAdmin.value) {
     loadPackages()
+    loadUserNodeGroups()
   }
   // Pre-load some users or wait for search
   // loadUsers('')

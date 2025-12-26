@@ -102,16 +102,23 @@ func (ctr *UserController) ListUserNodeGroups(c *gin.Context) {
 	userID, _ := strconv.ParseInt(idStr, 10, 64)
 
 	var groups []models.NodeGroup
-	if err := db.DB.Table("node_groups").
-		Select("node_groups.*").
-		Joins("JOIN user_node_groups ON user_node_groups.node_group_id = node_groups.id").
+	if err := db.DB.Table("node_group").
+		Select("node_group.*").
+		Joins("JOIN user_node_groups ON user_node_groups.node_group_id = node_group.id").
 		Where("user_node_groups.user_id = ?", userID).
 		Find(&groups).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups}})
+	var defaultID int64
+	db.DB.Model(&models.UserNodeGroup{}).
+		Select("node_group_id").
+		Where("user_id = ? AND is_default = ?", userID, true).
+		Limit(1).
+		Scan(&defaultID)
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups, "default_node_group_id": defaultID}})
 }
 
 // UpdateUserNodeGroups assigns node groups to a user
@@ -121,10 +128,19 @@ func (ctr *UserController) UpdateUserNodeGroups(c *gin.Context) {
 	userID, _ := strconv.ParseInt(idStr, 10, 64)
 
 	var req struct {
-		NodeGroupIDs []int64 `json:"node_group_ids"`
+		NodeGroupIDs       []int64 `json:"node_group_ids"`
+		DefaultNodeGroupID int64   `json:"default_node_group_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "Invalid Params"})
+		return
+	}
+	if req.DefaultNodeGroupID != 0 && !containsInt64(req.NodeGroupIDs, req.DefaultNodeGroupID) {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "Default node group must be in assigned list"})
+		return
+	}
+	if len(req.NodeGroupIDs) > 0 && req.DefaultNodeGroupID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "Default node group is required"})
 		return
 	}
 
@@ -140,6 +156,7 @@ func (ctr *UserController) UpdateUserNodeGroups(c *gin.Context) {
 			mappings = append(mappings, models.UserNodeGroup{
 				UserID:      userID,
 				NodeGroupID: gid,
+				IsDefault:   req.DefaultNodeGroupID != 0 && gid == req.DefaultNodeGroupID,
 				CreatedAt:   time.Now(),
 			})
 		}
@@ -151,6 +168,62 @@ func (ctr *UserController) UpdateUserNodeGroups(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "User node groups updated"})
+}
+
+// GetUserNodeGroups returns node groups assigned to current user
+// GET /api/v1/user/node-groups
+func (ctr *UserController) GetUserNodeGroups(c *gin.Context) {
+	userID := getContextUserID(c)
+	if userID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": "Invalid user id"})
+		return
+	}
+
+	var groups []models.NodeGroup
+	if err := db.DB.Table("node_group").
+		Select("node_group.*").
+		Joins("JOIN user_node_groups ON user_node_groups.node_group_id = node_group.id").
+		Where("user_node_groups.user_id = ?", userID).
+		Find(&groups).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error"})
+		return
+	}
+
+	var defaultID int64
+	db.DB.Model(&models.UserNodeGroup{}).
+		Select("node_group_id").
+		Where("user_id = ? AND is_default = ?", userID, true).
+		Limit(1).
+		Scan(&defaultID)
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups, "default_node_group_id": defaultID}})
+}
+
+func containsInt64(items []int64, target int64) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func getContextUserID(c *gin.Context) int64 {
+	if val, ok := c.Get("userID"); ok {
+		switch t := val.(type) {
+		case float64:
+			return int64(t)
+		case int:
+			return int64(t)
+		case int64:
+			return t
+		case string:
+			if i, err := strconv.ParseInt(t, 10, 64); err == nil {
+				return i
+			}
+		}
+	}
+	return 0
 }
 
 // ResetPurgeUsage resets purge/preheat usage for a user

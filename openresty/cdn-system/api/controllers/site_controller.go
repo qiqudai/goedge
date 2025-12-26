@@ -92,7 +92,7 @@ func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 	}
 
 	if err := createSiteWithGroup(site, groupID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create site"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -111,7 +111,7 @@ func (ctrl *SiteController) Create(c *gin.Context) {
 	}
 
 	if err := createSiteWithGroup(site, groupID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create site"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -128,6 +128,7 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		UserPackageID int64  `json:"user_package_id"`
 		GroupID       int64  `json:"group_id"`
 		DNSProviderID int64  `json:"dns_provider_id"`
+		NodeGroupID   int64  `json:"node_group_id"`
 		Data          string `json:"data"`
 		IgnoreError   bool   `json:"ignore_error"`
 	}
@@ -155,6 +156,12 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		return
 	}
 
+	nodeGroupID, err := resolveUserNodeGroup(req.UserID, req.NodeGroupID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	defaults, err := services.GetSiteDefaultMapWithGroup(req.UserID, req.GroupID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load defaults"})
@@ -178,6 +185,7 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 				UserID:        req.UserID,
 				UserPackageID: req.UserPackageID,
 				DNSProviderID: req.DNSProviderID,
+				NodeGroupID:   nodeGroupID,
 				Domains:       []string{domain},
 				Backends:      item.Backends,
 				HttpListen:    []string{"80"},
@@ -192,7 +200,7 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 				if req.IgnoreError {
 					continue
 				}
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create site"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 			created++
@@ -238,7 +246,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		if req.UserPackageID != nil {
 			updates["user_package"] = *req.UserPackageID
 		}
-		if req.DNSProviderID != nil {
+		if req.DNSProviderID != nil && tx.Migrator().HasColumn(&models.Site{}, "dns_provider_id") {
 			updates["dns_provider_id"] = *req.DNSProviderID
 		}
 		if req.HttpListen != nil {
@@ -487,6 +495,7 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		UserPackageID int64    `json:"user_package_id"`
 		DNSProviderID int64    `json:"dns_provider_id"`
 		GroupID       int64    `json:"group_id"`
+		NodeGroupID   int64    `json:"node_group_id"`
 		Domains       []string `json:"domains"`
 		DomainsInput  string   `json:"domains_input"`
 		Backends      []string `json:"backends"`
@@ -535,10 +544,16 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		backends = splitFields(req.BackendsInput)
 	}
 
+	nodeGroupID, err := resolveUserNodeGroup(userID, req.NodeGroupID)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	site := &models.Site{
 		UserID:        userID,
 		UserPackageID: req.UserPackageID,
 		DNSProviderID: req.DNSProviderID,
+		NodeGroupID:   nodeGroupID,
 		Domains:       domains,
 		Backends:      backends,
 		HttpListen:    []string{"80"},
@@ -560,6 +575,56 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 	return site, req.GroupID, nil
 }
 
+func resolveUserNodeGroup(userID int64, requestedID int64) (int64, error) {
+	if userID == 0 {
+		return 0, errors.New("user_id is required")
+	}
+	if requestedID != 0 {
+		ok, err := userHasNodeGroup(userID, requestedID)
+		if err != nil {
+			return 0, err
+		}
+		if !ok {
+			return 0, errors.New("node_group_id is not authorized for user")
+		}
+		return requestedID, nil
+	}
+	defaultID, err := loadDefaultUserNodeGroup(userID)
+	if err != nil {
+		return 0, err
+	}
+	if defaultID == 0 {
+		return 0, errors.New("user has no default node group")
+	}
+	return defaultID, nil
+}
+
+func loadDefaultUserNodeGroup(userID int64) (int64, error) {
+	var id int64
+	if err := db.DB.Model(&models.UserNodeGroup{}).
+		Where("user_id = ? AND is_default = ?", userID, true).
+		Pluck("node_group_id", &id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
+}
+
+func userHasNodeGroup(userID int64, nodeGroupID int64) (bool, error) {
+	if nodeGroupID == 0 {
+		return false, nil
+	}
+	var count int64
+	if err := db.DB.Model(&models.UserNodeGroup{}).
+		Where("user_id = ? AND node_group_id = ?", userID, nodeGroupID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func createSiteWithGroup(site *models.Site, groupID int64) error {
 	return db.DB.Transaction(func(tx *gorm.DB) error {
 		var count int64
@@ -570,7 +635,21 @@ func createSiteWithGroup(site *models.Site, groupID int64) error {
 		if count > 0 {
 			return errors.New("domain already exists")
 		}
-		if err := tx.Create(site).Error; err != nil {
+		omitColumns := siteMissingColumns(tx)
+		dbTx := tx
+		if len(omitColumns) > 0 {
+			dbTx = dbTx.Omit(omitColumns...)
+		}
+		if site.RegionID == 0 {
+			dbTx = dbTx.Omit("region_id")
+		}
+		if site.NodeGroupID == 0 {
+			dbTx = dbTx.Omit("node_group_id")
+		}
+		if !site.EnableBackupGroup || site.BackupNodeGroupID == 0 {
+			dbTx = dbTx.Omit("backup_node_group")
+		}
+		if err := dbTx.Create(site).Error; err != nil {
 			return err
 		}
 		if groupID != 0 {
@@ -581,6 +660,21 @@ func createSiteWithGroup(site *models.Site, groupID int64) error {
 		}
 		return nil
 	})
+}
+
+func siteMissingColumns(tx *gorm.DB) []string {
+	migrator := tx.Migrator()
+	missing := make([]string, 0, 3)
+	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
+		missing = append(missing, "dns_provider_id")
+	}
+	if !migrator.HasColumn(&models.Site{}, "settings") {
+		missing = append(missing, "settings")
+	}
+	if !migrator.HasColumn(&models.Site{}, "cname_hostname2") {
+		missing = append(missing, "cname_hostname2")
+	}
+	return missing
 }
 
 func ensureDNSRecords(site *models.Site) error {
