@@ -39,18 +39,34 @@ func MergeConfigMap(global map[string]string, user map[string]string) map[string
 }
 
 func GetSiteDefaultMap(userID int64) (map[string]string, error) {
+	return GetSiteDefaultMapWithGroup(userID, 0)
+}
+
+func GetSiteDefaultMapWithGroup(userID, groupID int64) (map[string]string, error) {
 	global, err := LoadConfigMap("site_default_config", "global", 0)
 	if err != nil {
 		return nil, err
 	}
-	user, err := LoadConfigMap("site_default_config", "user", userID)
+	legacyUser, err := LoadConfigMap("site_default_config", "user", userID)
 	if err != nil {
 		return global, nil
 	}
-	if len(user) == 0 {
+	userGlobal, err := LoadConfigMap("site_default_config", "global", userID)
+	if err != nil {
+		return MergeConfigMap(global, legacyUser), nil
+	}
+	if len(legacyUser) == 0 && len(userGlobal) == 0 {
 		return global, nil
 	}
-	return MergeConfigMap(global, user), nil
+	merged := MergeConfigMap(global, legacyUser)
+	merged = MergeConfigMap(merged, userGlobal)
+	if groupID != 0 {
+		groupDefaults, err := LoadConfigMap("site_default_config", "group", groupID)
+		if err == nil && len(groupDefaults) > 0 {
+			merged = MergeConfigMap(merged, groupDefaults)
+		}
+	}
+	return merged, nil
 }
 
 func GetStreamDefaultMap(userID int64) (map[string]string, error) {

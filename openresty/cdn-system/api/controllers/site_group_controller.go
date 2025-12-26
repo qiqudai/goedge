@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,13 @@ func (ctr *SiteGroupController) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	keyword := c.Query("keyword")
+	userIDStr := strings.TrimSpace(c.Query("user_id"))
+	userID := int64(0)
+	if userIDStr != "" {
+		if id, err := strconv.ParseInt(userIDStr, 10, 64); err == nil {
+			userID = id
+		}
+	}
 
 	if page < 1 {
 		page = 1
@@ -33,6 +41,8 @@ func (ctr *SiteGroupController) List(c *gin.Context) {
 		if uid != 0 {
 			query = query.Where("uid = ?", uid)
 		}
+	} else if userID != 0 {
+		query = query.Where("uid = ?", userID)
 	}
 
 	if keyword != "" {

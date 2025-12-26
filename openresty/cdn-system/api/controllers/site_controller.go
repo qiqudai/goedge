@@ -155,7 +155,7 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		return
 	}
 
-	defaults, err := services.GetSiteDefaultMap(req.UserID)
+	defaults, err := services.GetSiteDefaultMapWithGroup(req.UserID, req.GroupID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load defaults"})
 		return
@@ -551,7 +551,7 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		site.CnameHostname = domains[0] + ".cdn.node.com"
 	}
 
-	defaults, err := services.GetSiteDefaultMap(userID)
+	defaults, err := services.GetSiteDefaultMapWithGroup(userID, req.GroupID)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -127,7 +127,7 @@
     <div v-if="activeTopTab === 'default'" class="default-section">
       <el-card>
         <div class="default-toolbar">
-          <el-button type="primary" size="normal" @click="openDefaultDialog">新增设置</el-button>
+          <el-button type="primary" size="normal" @click="openDefaultDialog()">新增设置</el-button>
           <el-button size="normal" :disabled="!selectedDefaults.length" @click="removeDefaultBatch">删除</el-button>
         </div>
         <el-table
@@ -365,7 +365,7 @@
           <el-select
             v-model="defaultForm.name"
             placeholder="请选择"
-            :disabled="defaultDialogMode === 'edit' || (isAdmin && !defaultForm.user_id)"
+            :disabled="isAdmin && !defaultForm.user_id"
             style="width: 100%;">
             <el-option v-for="opt in defaultOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
@@ -442,8 +442,20 @@
             />
           </div>
         </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="defaultForm.enable" />
+        <el-form-item label="生效范围">
+          <el-radio-group v-model="defaultForm.scope">
+            <el-radio label="global">全局</el-radio>
+            <el-radio label="group">网站分组</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="defaultForm.scope === 'group'" label="网站分组">
+          <el-select
+            v-model.number="defaultForm.group_id"
+            placeholder="请选择分组"
+            :disabled="isAdmin && !defaultForm.user_id"
+            style="width: 100%;">
+            <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1191,6 +1203,9 @@ const defaultLoading = ref(false)
 const selectedDefaults = ref([])
 const defaultDialogVisible = ref(false)
 const defaultDialogMode = ref('create')
+const defaultEditName = ref('')
+const defaultEditScopeName = ref('')
+const defaultEditScopeID = ref(0)
 const defaultForm = reactive({
   user_id: undefined,
   name: '',
@@ -1202,7 +1217,8 @@ const defaultForm = reactive({
   headers: [],
   region_mode: 'none',
   region_custom: [],
-  enable: true
+  scope: 'global',
+  group_id: 0
 })
 
 const batchEditVisible = ref(false)
@@ -1579,12 +1595,13 @@ const defaultOptions = [
   ] }
 ]
 
-const defaultRows = computed(() => defaultList.value
-  .filter(item => defaultOptions.find(opt => opt.value === item.name))
-  .map((item, index) => {
+const defaultRows = computed(() => defaultList.value.map((item, index) => {
   const option = defaultOptions.find(opt => opt.value === item.name)
   const label = option ? option.label : item.name
-  const scopeLabel = item.scope_name === 'user' ? '用户' : '全局'
+  let scopeLabel = item.scope_name === 'group' ? '分组' : '全局'
+  if (item.scope_name === 'group' && item.group_name) {
+    scopeLabel = `分组(${item.group_name})`
+  }
   return {
     id: index + 1,
     name: item.name,
@@ -1593,8 +1610,11 @@ const defaultRows = computed(() => defaultList.value
     rawValue: item.value,
     enable: item.enable,
     scopeLabel,
-    user_id: item.user_id,
-    user_name: item.user_name || ''
+      user_id: item.user_id,
+      user_name: item.user_name || '',
+      scope_name: item.scope_name,
+      scope_id: item.scope_id,
+      group_name: item.group_name || ''
   }
 }))
 
@@ -1737,17 +1757,25 @@ const loadSiteDefaults = (userId) => {
 }
 
 const openDefaultDialog = (row) => {
-  if (row) {
+  const hasRow = row && typeof row === 'object' && Object.prototype.hasOwnProperty.call(row, 'name')
+  if (hasRow) {
     defaultDialogMode.value = 'edit'
+    defaultEditName.value = row.name
+    defaultEditScopeName.value = row.scope_name || 'global'
+    defaultEditScopeID.value = Number(row.scope_id || 0)
     defaultForm.user_id = isAdmin.value ? row.user_id : undefined
     if (isAdmin.value) {
       ensureUserOption(row.user_id, row.user_name)
     }
     defaultForm.name = row.name
     hydrateDefaultForm(row.name, row.rawValue)
-    defaultForm.enable = !!row.enable
+    defaultForm.scope = row.scope_name === 'group' ? 'group' : 'global'
+    defaultForm.group_id = row.scope_name === 'group' ? Number(row.scope_id || 0) : 0
   } else {
     defaultDialogMode.value = 'create'
+    defaultEditName.value = ''
+    defaultEditScopeName.value = ''
+    defaultEditScopeID.value = 0
     defaultForm.user_id = isAdmin.value ? undefined : undefined
     resetDefaultForm()
   }
@@ -1763,15 +1791,31 @@ const submitDefault = () => {
     ElMessage.warning('请选择用户')
     return
   }
+  if (defaultForm.scope === 'group' && !defaultForm.group_id) {
+    ElMessage.warning('请选择网站分组')
+    return
+  }
   const finalValue = buildDefaultValue()
   const payload = {
     name: defaultForm.name,
     value: finalValue,
-    enable: defaultForm.enable
+    scope_name: defaultForm.scope
+  }
+  if (defaultForm.scope === 'group') {
+    payload.scope_id = defaultForm.group_id
+  } else {
+    payload.scope_id = defaultForm.user_id
+  }
+  if (defaultDialogMode.value === 'edit') {
+    payload.old_scope_name = defaultEditScopeName.value
+    payload.old_scope_id = defaultEditScopeID.value
   }
   if (isAdmin.value) payload.user_id = defaultForm.user_id
+  const targetName = defaultDialogMode.value === 'edit'
+    ? (defaultEditName.value || defaultForm.name)
+    : defaultForm.name
   const requestCall = defaultDialogMode.value === 'edit'
-    ? request.put(`/site_defaults/${encodeURIComponent(defaultForm.name)}`, payload)
+    ? request.put(`/site_defaults/${encodeURIComponent(targetName)}`, payload)
     : request.post('/site_defaults', payload)
   requestCall.then(() => {
     defaultDialogVisible.value = false
@@ -1781,15 +1825,13 @@ const submitDefault = () => {
 
 const removeDefault = (row) => {
   confirmRemove('确认删除该默认设置?', () => {
-    const params = {}
-    if (isAdmin.value && row.user_id) {
-      params.user_id = row.user_id
-    }
-    request.delete(`/site_defaults/${encodeURIComponent(row.name)}`, { params }).then(() => {
-      loadSiteDefaults()
+      const params = { scope_name: row.scope_name, scope_id: row.scope_id }
+      if (isAdmin.value && row.user_id) params.user_id = row.user_id
+      request.delete(`/site_defaults/${encodeURIComponent(row.name)}`, { params }).then(() => {
+        loadSiteDefaults()
+      })
     })
-  })
-}
+  }
 
 const handleDefaultSelection = rows => {
   selectedDefaults.value = rows
@@ -1798,17 +1840,17 @@ const handleDefaultSelection = rows => {
 const removeDefaultBatch = () => {
   if (!selectedDefaults.value.length) return
   confirmRemove('确认删除选中的默认设置?', () => {
-    const tasks = selectedDefaults.value.map(row => {
-      const params = {}
-      if (isAdmin.value && row.user_id) params.user_id = row.user_id
-      return request.delete(`/site_defaults/${encodeURIComponent(row.name)}`, { params })
+      const tasks = selectedDefaults.value.map(row => {
+        const params = { scope_name: row.scope_name, scope_id: row.scope_id }
+        if (isAdmin.value && row.user_id) params.user_id = row.user_id
+        return request.delete(`/site_defaults/${encodeURIComponent(row.name)}`, { params })
+      })
+      Promise.all(tasks).then(() => {
+        selectedDefaults.value = []
+        loadSiteDefaults()
+      })
     })
-    Promise.all(tasks).then(() => {
-      selectedDefaults.value = []
-      loadSiteDefaults()
-    })
-  })
-}
+  }
 
 const resetDefaultForm = () => {
   defaultForm.name = ''
@@ -1820,7 +1862,8 @@ const resetDefaultForm = () => {
   defaultForm.headers = []
   defaultForm.region_mode = 'none'
   defaultForm.region_custom = []
-  defaultForm.enable = true
+  defaultForm.scope = 'global'
+  defaultForm.group_id = 0
 }
 
 const hydrateDefaultForm = (name, value) => {
@@ -2227,8 +2270,10 @@ const clearFilters = () => {
   handleFilter()
 }
 
-const loadGroups = () => {
-  request.get('/site_groups').then(res => {
+const loadGroups = (userId) => {
+  const params = { page: 1, pageSize: 200 }
+  if (userId) params.user_id = userId
+  request.get('/site_groups', { params }).then(res => {
     groupOptions.value = res.data?.list || res.list || []
   })
 }
@@ -2423,7 +2468,10 @@ watch(
     if (!isAdmin.value) return
     createForm.user_package_id = undefined
     packageOptions.value = []
-    if (val) loadPackages(val)
+    if (val) {
+      loadPackages(val)
+      loadGroups(val)
+    }
   }
 )
 
@@ -2433,7 +2481,19 @@ watch(
     if (!isAdmin.value) return
     batchForm.user_package_id = undefined
     packageOptions.value = []
-    if (val) loadPackages(val)
+    if (val) {
+      loadPackages(val)
+      loadGroups(val)
+    }
+  }
+)
+
+watch(
+  () => defaultForm.user_id,
+  (val) => {
+    if (!isAdmin.value) return
+    defaultForm.group_id = 0
+    if (val) loadGroups(val)
   }
 )
 
