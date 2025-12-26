@@ -6,6 +6,7 @@ import (
 	"cdn-api/services"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -130,13 +131,16 @@ func (ctr *AgentController) FinishTask(c *gin.Context) {
 		return
 	}
 	progress := updateTaskProgress(task.Progress, nodeID, req.State)
+	retLog := appendTaskLog(task.Ret, nodeID, req.State, req.Ret, task.ErrTimes)
 	updates := map[string]interface{}{
-		"ret":      req.Ret,
+		"ret":      retLog,
 		"progress": progress,
 	}
 	if req.State == "fail" {
 		nextErrTimes := task.ErrTimes + 1
 		maxRetries := 3
+		retLog = appendTaskLog(retLog, nodeID, "retry", fmt.Sprintf("retry %d/%d", nextErrTimes, maxRetries), nextErrTimes)
+		updates["ret"] = retLog
 		updates["err_times"] = nextErrTimes
 		if nextErrTimes >= maxRetries {
 			updates["state"] = "fail"
@@ -306,4 +310,37 @@ func deriveTaskState(progressRaw string) string {
 		}
 	}
 	return "done"
+}
+
+type taskLogEntry struct {
+	Time    string `json:"time"`
+	NodeID  string `json:"node_id"`
+	State   string `json:"state"`
+	Message string `json:"message"`
+	Attempt int    `json:"attempt"`
+}
+
+func appendTaskLog(raw string, nodeID string, state string, message string, attempt int) string {
+	entry := taskLogEntry{
+		Time:    time.Now().Format("2006-01-02 15:04:05"),
+		NodeID:  nodeID,
+		State:   state,
+		Message: message,
+		Attempt: attempt,
+	}
+	logs := make([]taskLogEntry, 0)
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &logs); err != nil {
+			logs = []taskLogEntry{{
+				Time:    time.Now().Format("2006-01-02 15:04:05"),
+				NodeID:  "",
+				State:   "legacy",
+				Message: raw,
+				Attempt: 0,
+			}}
+		}
+	}
+	logs = append(logs, entry)
+	b, _ := json.Marshal(logs)
+	return string(b)
 }

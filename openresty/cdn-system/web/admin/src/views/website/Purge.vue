@@ -167,6 +167,7 @@ const loadUsage = () => {
 }
 
 const onSubmit = () => {
+  if (submitLoading.value) return
   if (!form.urls.trim()) {
     ElMessage.warning('请输入URL')
     return
@@ -179,11 +180,9 @@ const onSubmit = () => {
     activeName.value = 'list'
     loadUsage()
     fetchList()
-  }).catch(err => {
-    const msg = err.response?.data?.msg || err.response?.data?.error || err.message || '请求失败'
-    ElMessage.error(msg)
-    submitLoading.value = false
-  })
+    }).catch(() => {
+      submitLoading.value = false
+    })
 }
 
 const fetchList = () => {
@@ -223,12 +222,10 @@ const handleResubmit = row => {
       ElMessage.success('重新提交成功')
       loadUsage()
       fetchList()
-    }).catch(err => {
-      const msg = err.response?.data?.msg || err.response?.data?.error || err.message || '请求失败'
-      ElMessage.error(msg)
+      }).catch(() => {
+      })
     })
-  })
-}
+  }
 
 const handleResubmitBatch = () => {
   if (!selectedRows.value.length) return
@@ -242,12 +239,10 @@ const handleResubmitBatch = () => {
         ElMessage.success('重新提交成功')
         loadUsage()
         fetchList()
-      }).catch(err => {
-        const msg = err.response?.data?.msg || err.response?.data?.error || err.message || '请求失败'
-        ElMessage.error(msg)
-      })
-  })
-}
+        }).catch(() => {
+        })
+    })
+  }
 
 watch(activeName, val => {
   if (val === 'list') {

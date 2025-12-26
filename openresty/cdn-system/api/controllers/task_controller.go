@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -55,10 +56,6 @@ func (c *TaskController) Create(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "URLs cannot be empty"})
 		return
 	}
-	if err := validateURLs(urls); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": err.Error()})
-		return
-	}
 
 	userID := input.UserID
 	if userID == 0 || isTaskUserRequest(ctx) {
@@ -66,6 +63,13 @@ func (c *TaskController) Create(ctx *gin.Context) {
 	}
 	if userID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "user_id is required"})
+		return
+	}
+
+	adminMode := !isTaskUserRequest(ctx)
+	urls, err := normalizePurgeURLs(urls, adminMode, userID)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"code": 1, "msg": err.Error()})
 		return
 	}
 
@@ -163,8 +167,10 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "URLs cannot be empty"})
 		return
 	}
-	if err := validateURLs(urls); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": err.Error()})
+	adminMode := !isTaskUserRequest(ctx)
+	urls, err := normalizePurgeURLs(urls, adminMode, userID)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"code": 1, "msg": err.Error()})
 		return
 	}
 	if err := consumePurgeQuota(userID, task.Type, len(urls)); err != nil {
@@ -176,7 +182,7 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 
 	newTask := models.Task{
 		Type:     task.Type,
-		Data:     task.Data,
+		Data:     strings.Join(urls, "\n"),
 		Res:      string(metaRaw),
 		State:    "waiting",
 		CreateAt: time.Now(),
@@ -268,13 +274,51 @@ func splitTaskLines(input string) []string {
 	return out
 }
 
-func validateURLs(urls []string) error {
+func normalizePurgeURLs(urls []string, adminMode bool, userID int64) ([]string, error) {
+	knownDomains, err := loadSiteDomains(adminMode, userID)
+	if err != nil {
+		return nil, errors.New("Failed to load site domains")
+	}
+	out := make([]string, 0, len(urls))
 	for _, raw := range urls {
 		if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-			return errors.New("url must start with http:// or https://")
+			return nil, errors.New("url必须以http://或https://开头")
 		}
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Host == "" {
+			return nil, errors.New("url格式不正确")
+		}
+		host := parsed.Hostname()
+		if host == "" {
+			return nil, errors.New("url格式不正确")
+		}
+		port := parsed.Port()
+		if strings.Contains(host, "*") {
+			suffix := strings.TrimPrefix(host, "*.")
+			if suffix == host || suffix == "" {
+				return nil, errors.New("泛域名格式不正确")
+			}
+			matches := matchWildcardDomains(knownDomains, suffix)
+			if len(matches) == 0 {
+				return nil, errors.New("域名不存在: " + host)
+			}
+			for _, domain := range matches {
+				copyURL := *parsed
+				if port != "" {
+					copyURL.Host = domain + ":" + port
+				} else {
+					copyURL.Host = domain
+				}
+				out = append(out, copyURL.String())
+			}
+			continue
+		}
+		if !isKnownDomain(knownDomains, host, port) {
+			return nil, errors.New("域名不存在: " + host)
+		}
+		out = append(out, raw)
 	}
-	return nil
+	return out, nil
 }
 func isPurgeType(val string) bool {
 	switch val {
@@ -390,9 +434,85 @@ func consumePurgeQuota(userID int64, taskType string, count int) error {
 		usage.Preheat += count
 	}
 	if err := saveUserPurgeUsage(userID, usage); err != nil {
-		return errors.New("Failed to save usage")
+		return errors.New("Failed to save usage: " + err.Error())
 	}
 	return nil
+}
+
+type knownDomainSet struct {
+	Exact map[string]struct{}
+	Host  map[string]struct{}
+}
+
+func loadSiteDomains(adminMode bool, userID int64) (*knownDomainSet, error) {
+	query := db.DB.Model(&models.Site{})
+	if !adminMode && userID != 0 {
+		query = query.Where("uid = ?", userID)
+	}
+	var sites []models.Site
+	if err := query.Find(&sites).Error; err != nil {
+		return nil, err
+	}
+	exact := map[string]struct{}{}
+	hostOnly := map[string]struct{}{}
+	for _, site := range sites {
+		for _, domain := range site.Domains {
+			domain = strings.TrimSpace(domain)
+			if domain == "" {
+				continue
+			}
+			exact[domain] = struct{}{}
+			if h := splitDomainHost(domain); h != "" {
+				hostOnly[h] = struct{}{}
+			}
+		}
+	}
+	return &knownDomainSet{Exact: exact, Host: hostOnly}, nil
+}
+
+func splitDomainHost(domain string) string {
+	if strings.Contains(domain, "://") {
+		if parsed, err := url.Parse(domain); err == nil {
+			return parsed.Hostname()
+		}
+	}
+	if idx := strings.Index(domain, ":"); idx >= 0 {
+		return domain[:idx]
+	}
+	return domain
+}
+
+func isKnownDomain(known *knownDomainSet, host, port string) bool {
+	if known == nil {
+		return false
+	}
+	if port != "" {
+		if _, ok := known.Exact[host+":"+port]; ok {
+			return true
+		}
+	}
+	if _, ok := known.Exact[host]; ok {
+		return true
+	}
+	if _, ok := known.Host[host]; ok {
+		return true
+	}
+	return false
+}
+
+func matchWildcardDomains(known *knownDomainSet, suffix string) []string {
+	if known == nil {
+		return nil
+	}
+	result := make([]string, 0)
+	dotted := "." + suffix
+	for domain := range known.Exact {
+		host := splitDomainHost(domain)
+		if host == suffix || strings.HasSuffix(host, dotted) {
+			result = append(result, host)
+		}
+	}
+	return result
 }
 
 func exceedsLimit(limit int, used int, add int) bool {
