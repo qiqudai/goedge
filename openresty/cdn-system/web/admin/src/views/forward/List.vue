@@ -26,11 +26,11 @@
 
       <div class="filter-right">
         <el-select v-model="listQuery.searchField" class="filter-item" style="width: 120px;">
+          <el-option label="全字段" value="all" />
           <el-option label="监听端口" value="listen" />
           <el-option label="源站" value="origin" />
           <el-option label="CNAME" value="cname" />
           <el-option label="用户" value="user" />
-          <el-option label="全字段" value="all" />
         </el-select>
         <el-input
           v-model="listQuery.keyword"

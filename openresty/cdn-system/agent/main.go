@@ -40,13 +40,30 @@ var (
 
 	NodeID    = "" // Unique Node ID
 	AuthToken = "" // Token from install parameter
+	DebugMode = false
 )
+
+func debugLogInteraction(method, url string, status int, reqBody, respBody []byte) {
+	if !DebugMode {
+		return
+	}
+	reqText := strings.TrimSpace(string(reqBody))
+	if len(reqText) > 1024 {
+		reqText = reqText[:1024] + "...(truncated)"
+	}
+	respText := strings.TrimSpace(string(respBody))
+	if len(respText) > 1024 {
+		respText = respText[:1024] + "...(truncated)"
+	}
+	log.Printf("[Debug] agent->api %s %s status=%d req=%s resp=%s", method, url, status, reqText, respText)
+}
 
 func main() {
 	// 1. Argument Parsing
 	configFile := flag.String("config", "agent.json", "Path to config file")
 	apiFlag := flag.String("api", "", "API Server URL")
 	tokenFlag := flag.String("token", "", "Node Auth Token")
+	debugFlag := flag.Bool("debug", false, "Enable debug logging")
 	flag.Parse()
 
 	// 2. Load from Config File
@@ -54,10 +71,12 @@ func main() {
 		var fileConfig struct {
 			API   string `json:"api"`
 			Token string `json:"token"`
+			Debug bool   `json:"debug"`
 		}
 		if err := json.Unmarshal(fileData, &fileConfig); err == nil {
 			if fileConfig.API != "" { API_BaseURL = fileConfig.API }
 			if fileConfig.Token != "" { AuthToken = fileConfig.Token }
+			if fileConfig.Debug { DebugMode = true }
 			log.Printf("[Info] Loaded config from %s", *configFile)
 		}
 	}
@@ -65,6 +84,7 @@ func main() {
 	// 3. Override with Flags
 	if *apiFlag != "" { API_BaseURL = *apiFlag }
 	if *tokenFlag != "" { AuthToken = *tokenFlag }
+	if *debugFlag { DebugMode = true }
 
 	if AuthToken == "" {
 		log.Fatal("Error: Token is required in either agent.json or -token flag.")
@@ -77,6 +97,7 @@ func main() {
 	log.Printf("Starting Edge Agent...")
 	log.Printf("Target Master: %s", API_BaseURL)
 	log.Printf("Node ID:       %s", NodeID)
+	log.Printf("Debug Mode:    %v", DebugMode)
 	
 	// Initialize Environment (Unpack Assets)
 	initEnvironment()
@@ -334,6 +355,8 @@ func sendHeartbeat() {
 		return
 	}
 	defer resp.Body.Close()
+	respBody, _ := ioutil.ReadAll(resp.Body)
+	debugLogInteraction("POST", req.URL.String(), resp.StatusCode, jsonData, respBody)
 
 	if resp.StatusCode == 200 {
 		log.Println("[Info] Heartbeat OK")
@@ -372,6 +395,7 @@ func pullConfig() {
 
 	if resp.StatusCode == 200 {
 		body, _ := ioutil.ReadAll(resp.Body)
+		debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, body)
 
 		newVersion := extractVersion(body)
 		currentVersion := readLocalVersion()
@@ -403,7 +427,10 @@ func pullConfig() {
 				log.Println("[Warn] Rolled back to previous config")
 			}
 		}
+		return
 	}
+
+	debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, nil)
 }
 
 func pullTasks() {
@@ -419,11 +446,13 @@ func pullTasks() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, nil)
 		log.Printf("[Warn] Task Pull Status: %d", resp.StatusCode)
 		return
 	}
 
 	body, _ := ioutil.ReadAll(resp.Body)
+	debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, body)
 	var payload struct {
 		Tasks []struct {
 			ID   int64  `json:"id"`
@@ -474,7 +503,9 @@ func reportTask(id int64, state string, ret string) {
 		log.Printf("[Error] Task Report Failed: %v", err)
 		return
 	}
+	respBody, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
+	debugLogInteraction("POST", req.URL.String(), resp.StatusCode, body, respBody)
 }
 
 func purgeURLs(urls []string) error {
@@ -778,6 +809,7 @@ type edgeDomain struct {
 	EnableWebsocket     bool             `json:"enable_websocket"`
 	EnableRange         bool             `json:"enable_range"`
 	BodyLimit           int64            `json:"body_limit"`
+	LimitRate           int64            `json:"limit_rate"`
 	UpstreamKeepalive   bool             `json:"upstream_keepalive"`
 	UpstreamKeepaliveConn int            `json:"upstream_keepalive_conn"`
 	UpstreamKeepaliveTimeout int         `json:"upstream_keepalive_timeout"`
@@ -1025,6 +1057,9 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		if domain.GzipTypes != "" {
 			b.WriteString("    gzip_types " + domain.GzipTypes + ";\n")
 		}
+	}
+	if domain.LimitRate > 0 {
+		b.WriteString(fmt.Sprintf("    limit_rate %d;\n", domain.LimitRate))
 	}
 
 	b.WriteString("    set $cc_rule_id " + fmt.Sprintf("%d", domain.CCRuleID) + ";\n")

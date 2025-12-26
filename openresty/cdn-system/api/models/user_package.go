@@ -37,7 +37,7 @@ type UserPackage struct {
 	StartAt   time.Time `json:"start_at"`
 	EndAt     time.Time `json:"end_at"`
 	CreatedAt time.Time `json:"create_at" gorm:"column:create_at"`
-	TaskID    int64     `json:"task_id" gorm:"column:task_id"`
+	TaskID    *int64    `json:"task_id" gorm:"column:task_id"`
 
 	// Status (Derived from time & state)
 	// No explicit status column in db.sql, usually checked via EndAt > Now()

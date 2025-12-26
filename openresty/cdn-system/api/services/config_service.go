@@ -61,6 +61,12 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	if err := db.DB.Where("node_group_id IN ?", groupIDs).Find(&sites).Error; err != nil {
 		return nil, err
 	}
+	nodeGroupCounts := loadNodeGroupCounts(groupIDs)
+	userPackageMap, err := loadUserPackageMap(sites)
+	if err != nil {
+		return nil, err
+	}
+	domainCountByUserGroup := buildDomainCountByUserGroup(sites)
 
 	// Preload certs for HTTPS mapping
 	var certs []models.Cert
@@ -102,6 +108,13 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			usedRuleIDs = append(usedRuleIDs, effectiveSite.CcDefaultRule)
 		}
 		for _, domain := range effectiveSite.Domains {
+			limitRate := calcDomainLimitRate(
+				effectiveSite.UserID,
+				effectiveSite.NodeGroupID,
+				userPackageMap[effectiveSite.UserPackageID].Bandwidth,
+				domainCountByUserGroup,
+				nodeGroupCounts,
+			)
 			domainConf := models.EdgeDomain{
 				Name:              domain,
 				UpstreamKey:       upstreamKey,
@@ -137,6 +150,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				EnableWebsocket:     advCfg.websocket,
 				EnableRange:         advCfg.rangeEnabled,
 				BodyLimit:           advCfg.bodyLimit,
+				LimitRate:           limitRate,
 				UpstreamKeepalive:   advCfg.keepalive,
 				UpstreamKeepaliveConn: advCfg.keepaliveConn,
 				UpstreamKeepaliveTimeout: advCfg.keepaliveTimeout,
@@ -307,6 +321,130 @@ func mapBalancePolicy(way string) string {
 	default:
 		return "round_robin"
 	}
+}
+
+type nodeGroupCount struct {
+	NodeGroupID int64 `gorm:"column:node_group_id"`
+	Count       int64 `gorm:"column:cnt"`
+}
+
+func loadNodeGroupCounts(groupIDs []int64) map[int64]int64 {
+	counts := map[int64]int64{}
+	if len(groupIDs) == 0 {
+		return counts
+	}
+	var rows []nodeGroupCount
+	_ = db.DB.Model(&models.Line{}).
+		Select("node_group_id, count(distinct node_id) as cnt").
+		Where("node_group_id IN ?", groupIDs).
+		Group("node_group_id").
+		Scan(&rows).Error
+	for _, row := range rows {
+		counts[row.NodeGroupID] = row.Count
+	}
+	return counts
+}
+
+func loadUserPackageMap(sites []models.Site) (map[int64]models.UserPackage, error) {
+	ids := make([]int64, 0, len(sites))
+	seen := map[int64]struct{}{}
+	for _, site := range sites {
+		if site.UserPackageID == 0 {
+			continue
+		}
+		if _, ok := seen[site.UserPackageID]; ok {
+			continue
+		}
+		seen[site.UserPackageID] = struct{}{}
+		ids = append(ids, site.UserPackageID)
+	}
+	result := map[int64]models.UserPackage{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var packages []models.UserPackage
+	if err := db.DB.Where("id IN ?", ids).Find(&packages).Error; err != nil {
+		return nil, err
+	}
+	for _, pkg := range packages {
+		result[pkg.ID] = pkg
+	}
+	return result, nil
+}
+
+func buildDomainCountByUserGroup(sites []models.Site) map[int64]map[int64]int {
+	result := map[int64]map[int64]int{}
+	for _, site := range sites {
+		if !site.Enable {
+			continue
+		}
+		if site.NodeGroupID == 0 || site.UserID == 0 {
+			continue
+		}
+		groupMap, ok := result[site.NodeGroupID]
+		if !ok {
+			groupMap = map[int64]int{}
+			result[site.NodeGroupID] = groupMap
+		}
+		count := len(site.Domains)
+		if count == 0 && site.DomainRaw != "" {
+			count = 1
+		}
+		groupMap[site.UserID] += count
+	}
+	return result
+}
+
+func calcDomainLimitRate(userID int64, nodeGroupID int64, bandwidth string, domainCountByUserGroup map[int64]map[int64]int, nodeGroupCounts map[int64]int64) int64 {
+	mbps := parseBandwidthMbps(bandwidth)
+	if mbps <= 0 {
+		return 0
+	}
+	nodeCount := nodeGroupCounts[nodeGroupID]
+	if nodeCount <= 0 {
+		return 0
+	}
+	groupMap := domainCountByUserGroup[nodeGroupID]
+	if groupMap == nil {
+		return 0
+	}
+	domainCount := groupMap[userID]
+	if domainCount <= 0 {
+		return 0
+	}
+	perNodeMbps := mbps / float64(nodeCount)
+	perDomainMbps := perNodeMbps / float64(domainCount)
+	return mbpsToLimitRate(perDomainMbps)
+}
+
+func parseBandwidthMbps(raw string) float64 {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" || value == "0" || value == "unlimited" || value == "unlimit" || value == "不限" {
+		return 0
+	}
+	multiplier := 1.0
+	switch {
+	case strings.HasSuffix(value, "g"):
+		multiplier = 1024
+		value = strings.TrimSuffix(value, "g")
+	case strings.HasSuffix(value, "m"):
+		value = strings.TrimSuffix(value, "m")
+	case strings.HasSuffix(value, "k"):
+		multiplier = 1.0 / 1024
+		value = strings.TrimSuffix(value, "k")
+	}
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0
+	}
+	return parsed * multiplier
+}
+
+func mbpsToLimitRate(mbps float64) int64 {
+	if mbps <= 0 {
+		return 0
+	}
+	return int64(mbps * 1024 * 1024 / 8)
 }
 
 func buildHeaderMap(settings map[string]interface{}) map[string]string {

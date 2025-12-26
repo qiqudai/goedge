@@ -20,6 +20,9 @@ type UserController struct{}
 // ListUsers returns paginated user list
 // GET /api/v1/admin/users?page=1&size=20
 func (ctr *UserController) ListUsers(c *gin.Context) {
+	if err := db.Ensure(); err != nil {
+		db.Init()
+	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	keyword := c.Query("keyword")
@@ -93,119 +96,6 @@ func (ctr *UserController) DeleteUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"msg": "User " + id + " deleted"})
-}
-
-// ListUserNodeGroups returns node groups assigned to a user
-// GET /api/v1/admin/users/:id/node-groups
-func (ctr *UserController) ListUserNodeGroups(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, _ := strconv.ParseInt(idStr, 10, 64)
-
-	var groups []models.NodeGroup
-	if err := db.DB.Table("node_group").
-		Select("node_group.*").
-		Joins("JOIN user_node_groups ON user_node_groups.node_group_id = node_group.id").
-		Where("user_node_groups.user_id = ?", userID).
-		Find(&groups).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error"})
-		return
-	}
-
-	var defaultID int64
-	db.DB.Model(&models.UserNodeGroup{}).
-		Select("node_group_id").
-		Where("user_id = ? AND is_default = ?", userID, true).
-		Limit(1).
-		Scan(&defaultID)
-
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups, "default_node_group_id": defaultID}})
-}
-
-// UpdateUserNodeGroups assigns node groups to a user
-// PUT /api/v1/admin/users/:id/node-groups
-func (ctr *UserController) UpdateUserNodeGroups(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, _ := strconv.ParseInt(idStr, 10, 64)
-
-	var req struct {
-		NodeGroupIDs       []int64 `json:"node_group_ids"`
-		DefaultNodeGroupID int64   `json:"default_node_group_id"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "Invalid Params"})
-		return
-	}
-	if req.DefaultNodeGroupID != 0 && !containsInt64(req.NodeGroupIDs, req.DefaultNodeGroupID) {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "Default node group must be in assigned list"})
-		return
-	}
-	if len(req.NodeGroupIDs) > 0 && req.DefaultNodeGroupID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "Default node group is required"})
-		return
-	}
-
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&models.UserNodeGroup{}).Error; err != nil {
-			return err
-		}
-		if len(req.NodeGroupIDs) == 0 {
-			return nil
-		}
-		mappings := make([]models.UserNodeGroup, 0, len(req.NodeGroupIDs))
-		for _, gid := range req.NodeGroupIDs {
-			mappings = append(mappings, models.UserNodeGroup{
-				UserID:      userID,
-				NodeGroupID: gid,
-				IsDefault:   req.DefaultNodeGroupID != 0 && gid == req.DefaultNodeGroupID,
-				CreatedAt:   time.Now(),
-			})
-		}
-		return tx.Create(&mappings).Error
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Update Failed"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "User node groups updated"})
-}
-
-// GetUserNodeGroups returns node groups assigned to current user
-// GET /api/v1/user/node-groups
-func (ctr *UserController) GetUserNodeGroups(c *gin.Context) {
-	userID := getContextUserID(c)
-	if userID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"msg": "Invalid user id"})
-		return
-	}
-
-	var groups []models.NodeGroup
-	if err := db.DB.Table("node_group").
-		Select("node_group.*").
-		Joins("JOIN user_node_groups ON user_node_groups.node_group_id = node_group.id").
-		Where("user_node_groups.user_id = ?", userID).
-		Find(&groups).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error"})
-		return
-	}
-
-	var defaultID int64
-	db.DB.Model(&models.UserNodeGroup{}).
-		Select("node_group_id").
-		Where("user_id = ? AND is_default = ?", userID, true).
-		Limit(1).
-		Scan(&defaultID)
-
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": groups, "default_node_group_id": defaultID}})
-}
-
-func containsInt64(items []int64, target int64) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
 }
 
 func getContextUserID(c *gin.Context) int64 {

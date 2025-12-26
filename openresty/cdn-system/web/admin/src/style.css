@@ -78,6 +78,10 @@ a:hover {
   color: var(--text-color);
 }
 
+.el-pagination {
+  justify-content: flex-start;
+}
+
 
 :root[data-theme="dark"] .el-table {
   --el-table-border-color: var(--border-color);

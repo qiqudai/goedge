@@ -225,14 +225,14 @@
                 <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="线路组">
+            <el-form-item v-if="isAdmin" label="线路组">
               <el-select
                 v-model.number="createForm.node_group_id"
                 clearable
                 placeholder="请选择线路组"
                 style="width: 100%;"
-                :loading="nodeGroupLoading"
-                :disabled="isAdmin && !createForm.user_id">
+                :loading="nodeGroupLoading">
+                <el-option label="默认" :value="0" />
                 <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
               </el-select>
             </el-form-item>
@@ -291,14 +291,14 @@
                 <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="线路组">
+            <el-form-item v-if="isAdmin" label="线路组">
               <el-select
                 v-model.number="batchForm.node_group_id"
                 clearable
                 placeholder="请选择线路组"
                 style="width: 100%;"
-                :loading="nodeGroupLoading"
-                :disabled="isAdmin && !batchForm.user_id">
+                :loading="nodeGroupLoading">
+                <el-option label="默认" :value="0" />
                 <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
               </el-select>
             </el-form-item>
@@ -1414,28 +1414,11 @@ const loadPackages = (userId) => {
   })
 }
 
-const applyNodeGroupDefaults = (defaultId) => {
-  if (defaultId && nodeGroupOptions.value.some(item => item.id === defaultId)) {
-    createForm.node_group_id = defaultId
-    batchForm.node_group_id = defaultId
-  } else {
-    createForm.node_group_id = undefined
-    batchForm.node_group_id = undefined
-  }
-}
-
-const loadUserNodeGroups = (userId) => {
-  if (isAdmin.value && !userId) {
-    nodeGroupOptions.value = []
-    applyNodeGroupDefaults(null)
-    return
-  }
+const loadNodeGroups = () => {
+  if (!isAdmin.value) return
   nodeGroupLoading.value = true
-  const url = isAdmin.value ? `/users/${userId}/node-groups` : '/node-groups'
-  request.get(url).then(res => {
-    const data = res.data || {}
-    nodeGroupOptions.value = data.list || []
-    applyNodeGroupDefaults(data.default_node_group_id || null)
+  request.get('/node-groups').then(res => {
+    nodeGroupOptions.value = res.data?.list || res.list || []
   }).finally(() => {
     nodeGroupLoading.value = false
   })
@@ -2090,10 +2073,6 @@ const openBatchEdit = () => {
 
 const handleCreateSubmit = () => {
   if (createTab.value === 'single') {
-    if (!createForm.node_group_id) {
-      ElMessage.warning('请选择线路组')
-      return
-    }
     const payload = {
       user_id: createForm.user_id || undefined,
       user_package_id: createForm.user_package_id || undefined,
@@ -2115,10 +2094,6 @@ const handleCreateSubmit = () => {
       ElMessageBox.alert(msg, '错误提示', { type: 'error' })
     })
   } else {
-    if (!batchForm.node_group_id) {
-      ElMessage.warning('请选择线路组')
-      return
-    }
     request.post('/sites/batch', batchForm).then(res => {
       ElMessage.success(res.message || '批量创建完成')
       createVisible.value = false
@@ -2538,9 +2513,6 @@ watch(
     if (val) {
       loadPackages(val)
       loadGroups(val)
-      loadUserNodeGroups(val)
-    } else {
-      loadUserNodeGroups()
     }
   }
 )
@@ -2554,9 +2526,6 @@ watch(
     if (val) {
       loadPackages(val)
       loadGroups(val)
-      loadUserNodeGroups(val)
-    } else {
-      loadUserNodeGroups()
     }
   }
 )
@@ -2577,7 +2546,8 @@ onMounted(() => {
   loadCcRuleOptions()
   if (!isAdmin.value) {
     loadPackages()
-    loadUserNodeGroups()
+  } else {
+    loadNodeGroups()
   }
   // Pre-load some users or wait for search
   // loadUsers('')

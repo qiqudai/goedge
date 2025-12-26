@@ -42,6 +42,8 @@ func Setup(r *gin.Engine) {
 			admin.POST("/node-groups", ngCtr.CreateNodeGroup)
 			admin.PUT("/node-groups/:id", ngCtr.UpdateNodeGroup)
 			admin.DELETE("/node-groups/:id", ngCtr.DeleteNodeGroup)
+			regionCtr := &controllers.RegionController{}
+			admin.GET("/regions", regionCtr.ListRegions)
 
 			dnsCtr := &controllers.DnsController{}
 			admin.GET("/dns/providers", dnsCtr.ListProviders)
@@ -99,6 +101,7 @@ func Setup(r *gin.Engine) {
 			// Plans (Packages)
 			planCtr := &controllers.PlanController{}
 			admin.GET("/plans", planCtr.ListPlans)
+			admin.GET("/plans/:id", planCtr.GetPlan)
 			admin.POST("/plans", planCtr.CreatePlan)
 			admin.PUT("/plans/:id", planCtr.UpdatePlan)
 			admin.DELETE("/plans/:id", planCtr.DeletePlan)
@@ -106,6 +109,8 @@ func Setup(r *gin.Engine) {
 			// User Plans (Sold)
 			admin.GET("/user_plans", planCtr.ListUserPlans)
 			admin.POST("/user_plans/assign", planCtr.AssignUserPlan)
+			admin.PUT("/user_plans/:id", planCtr.UpdateUserPlan)
+			admin.DELETE("/user_plans", planCtr.DeleteUserPlans)
 
 			// Finance
 			admin.GET("/orders", (&controllers.FinanceController{}).ListOrders)
@@ -131,8 +136,6 @@ func Setup(r *gin.Engine) {
 			admin.GET("/users", userCtr.ListUsers)
 			admin.PUT("/users/:id/status", userCtr.ToggleStatus)
 			admin.DELETE("/users/:id", userCtr.DeleteUser)
-			admin.GET("/users/:id/node-groups", userCtr.ListUserNodeGroups)
-			admin.PUT("/users/:id/node-groups", userCtr.UpdateUserNodeGroups)
 			admin.POST("/users/:id/purge/reset", userCtr.ResetPurgeUsage)
 			admin.POST("/users/:id/impersonate", userCtr.Impersonate)
 
@@ -317,9 +320,6 @@ func Setup(r *gin.Engine) {
 			user.GET("/dnsapi", userDnsapiCtr.List)
 			user.GET("/dnsapi/types", userDnsapiCtr.Types)
 
-			userCtr := &controllers.UserController{}
-			user.GET("/node-groups", userCtr.GetUserNodeGroups)
-
 			userRuleCtr := &controllers.RuleController{}
 			user.GET("/rules/cc/groups", userRuleCtr.ListCCRuleGroups)
 			user.POST("/rules/cc/groups", userRuleCtr.CreateCCRuleGroup)
@@ -378,7 +378,7 @@ func Setup(r *gin.Engine) {
 
 		// 3. Node Agent Routes (Require Node Token Middleware)
 		agentGroup := v1.Group("/agent")
-		agentGroup.Use(middleware.AuthAgent())
+		agentGroup.Use(middleware.AgentDebug(), middleware.AuthAgent())
 		{
 			agentCtr := controllers.NewAgentController()
 			agentGroup.POST("/heartbeat", agentCtr.Heartbeat)

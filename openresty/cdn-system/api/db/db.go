@@ -1,7 +1,9 @@
 package db
 
 import (
+	"errors"
 	"log"
+	"sync"
 	"time"
 
 	"cdn-api/config"
@@ -11,6 +13,7 @@ import (
 )
 
 var DB *gorm.DB
+var dbMu sync.Mutex
 
 func Init() {
 	var err error
@@ -27,7 +30,25 @@ func Init() {
 	// Connection Pooling
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxIdleTime(time.Minute)
 	sqlDB.SetConnMaxLifetime(time.Minute * 3)
 
 	log.Println("Database connection established")
+}
+
+func Ensure() error {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+
+	if DB == nil {
+		return errors.New("db not initialized")
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return err
+	}
+	if err := sqlDB.Ping(); err != nil {
+		return err
+	}
+	return nil
 }

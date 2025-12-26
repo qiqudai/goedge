@@ -156,7 +156,7 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		return
 	}
 
-	nodeGroupID, err := resolveUserNodeGroup(req.UserID, req.NodeGroupID)
+	nodeGroupID, err := resolveNodeGroupFromPackage(req.UserPackageID, req.NodeGroupID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -544,7 +544,7 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		backends = splitFields(req.BackendsInput)
 	}
 
-	nodeGroupID, err := resolveUserNodeGroup(userID, req.NodeGroupID)
+	nodeGroupID, err := resolveNodeGroupFromPackage(req.UserPackageID, req.NodeGroupID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -575,54 +575,21 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 	return site, req.GroupID, nil
 }
 
-func resolveUserNodeGroup(userID int64, requestedID int64) (int64, error) {
-	if userID == 0 {
-		return 0, errors.New("user_id is required")
-	}
+func resolveNodeGroupFromPackage(userPackageID int64, requestedID int64) (int64, error) {
 	if requestedID != 0 {
-		ok, err := userHasNodeGroup(userID, requestedID)
-		if err != nil {
-			return 0, err
-		}
-		if !ok {
-			return 0, errors.New("node_group_id is not authorized for user")
-		}
 		return requestedID, nil
 	}
-	defaultID, err := loadDefaultUserNodeGroup(userID)
-	if err != nil {
-		return 0, err
+	if userPackageID == 0 {
+		return 0, nil
 	}
-	if defaultID == 0 {
-		return 0, errors.New("user has no default node group")
-	}
-	return defaultID, nil
-}
-
-func loadDefaultUserNodeGroup(userID int64) (int64, error) {
-	var id int64
-	if err := db.DB.Model(&models.UserNodeGroup{}).
-		Where("user_id = ? AND is_default = ?", userID, true).
-		Pluck("node_group_id", &id).Error; err != nil {
+	var pkg models.UserPackage
+	if err := db.DB.Select("node_group_id").Where("id = ?", userPackageID).First(&pkg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, nil
 		}
 		return 0, err
 	}
-	return id, nil
-}
-
-func userHasNodeGroup(userID int64, nodeGroupID int64) (bool, error) {
-	if nodeGroupID == 0 {
-		return false, nil
-	}
-	var count int64
-	if err := db.DB.Model(&models.UserNodeGroup{}).
-		Where("user_id = ? AND node_group_id = ?", userID, nodeGroupID).
-		Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return pkg.NodeGroupID, nil
 }
 
 func createSiteWithGroup(site *models.Site, groupID int64) error {

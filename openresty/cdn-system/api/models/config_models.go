@@ -71,6 +71,7 @@ type EdgeDomain struct {
 	EnableWebsocket     bool             `json:"enable_websocket,omitempty"`
 	EnableRange         bool             `json:"enable_range,omitempty"`
 	BodyLimit           int64            `json:"body_limit,omitempty"`
+	LimitRate           int64            `json:"limit_rate,omitempty"`
 	UpstreamKeepalive   bool             `json:"upstream_keepalive,omitempty"`
 	UpstreamKeepaliveConn int            `json:"upstream_keepalive_conn,omitempty"`
 	UpstreamKeepaliveTimeout int         `json:"upstream_keepalive_timeout,omitempty"`

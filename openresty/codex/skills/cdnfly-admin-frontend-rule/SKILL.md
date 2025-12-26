@@ -22,14 +22,18 @@ Apply strict frontend rules for CDNFly admin UI work. Always rely on the existin
    - Default select the first available plan; do not require the user to reselect.
 5) Action buttons:
    - All text action buttons must use size `normal`.
-5) Node sync requirement:
+6) Date/pagination UI:
+   - All date pickers and pagination controls must use Chinese UI text.
+   - Pagination controls must always be left-aligned.
+   - Date pickers must include time selection and be clearable.
+7) Node sync requirement:
    - Any API changes for the following must trigger config sync to nodes:
      - Node management
      - Node group / line group management
      - Line management
      - Base package management
      - User package management
-6) No direct node sync:
+8) No direct node sync:
    - The following do not sync directly to nodes:
      - Region management
      - Admin user management

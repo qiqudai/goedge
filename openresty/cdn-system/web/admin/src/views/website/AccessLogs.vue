@@ -38,7 +38,9 @@
                 range-separator="至"
                 start-placeholder="开始时间"
                 end-placeholder="结束时间"
+                format="YYYY-MM-DD HH:mm:ss"
                 value-format="YYYY-MM-DD HH:mm:ss"
+                clearable
                 style="width: 360px"
               />
             </el-form-item>

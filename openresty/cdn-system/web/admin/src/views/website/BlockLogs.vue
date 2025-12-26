@@ -106,11 +106,14 @@
             <el-date-picker
               v-else
               v-model="historyFilter.dateRange"
-              type="daterange"
+              type="datetimerange"
               range-separator="?"
-              start-placeholder="开始时间"
-              end-placeholder="结束时间"
-              style="width: 250px"
+              start-placeholder="????"
+              end-placeholder="????"
+              format="YYYY-MM-DD HH:mm:ss"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              clearable
+              style="width: 360px"
               class="filter-item"
             />
             <el-button class="filter-item" type="primary" :icon="Search" @click="fetchHistoryList" />

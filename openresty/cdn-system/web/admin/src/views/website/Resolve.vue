@@ -13,9 +13,9 @@
       </div>
       <div class="filter-right">
         <el-select v-model="listQuery.searchField" class="filter-item" style="width: 120px;">
+          <el-option label="全字段" value="all" />
           <el-option label="域名" value="domain" />
           <el-option label="CNAME" value="cname" />
-          <el-option label="全字段" value="all" />
         </el-select>
         <el-input
           v-model="listQuery.keyword"

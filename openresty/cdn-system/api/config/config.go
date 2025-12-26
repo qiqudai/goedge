@@ -11,17 +11,20 @@ import (
 var App = &AppConfig{
 	Port:      "8080",
 	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
+	Debug:     false,
 }
 
 type AppConfig struct {
 	Port  string `yaml:"port"`
 	DBDSN string `yaml:"db_dsn"`
+	Debug bool   `yaml:"debug"`
 }
 
 var (
 	configFile = flag.String("config", "config.yaml", "Path to configuration file")
 	port       = flag.String("port", "", "Server port")
 	dbDSN      = flag.String("db", "", "Database DSN (e.g. root:pass@tcp(127.0.0.1:3306)/dbname)")
+	debugFlag  = flag.Bool("debug", false, "Enable debug logging")
 )
 
 func Load() {
@@ -45,5 +48,8 @@ func Load() {
 	}
 	if *dbDSN != "" {
 		App.DBDSN = *dbDSN
+	}
+	if *debugFlag {
+		App.Debug = true
 	}
 }
