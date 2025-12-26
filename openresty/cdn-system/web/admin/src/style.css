@@ -74,6 +74,11 @@ a:hover {
   border-bottom: 1px solid var(--border-color);
 }
 
+.el-table__header-wrapper th.el-table__cell {
+  background-color: #f2f4f7;
+  color: var(--text-color);
+}
+
 .el-divider__text {
   color: var(--text-color);
 }

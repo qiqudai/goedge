@@ -35,6 +35,7 @@ export const asyncRoutes = [
           { path: 'groups', name: 'NodeGroups', component: () => import('../views/nodes/groups/List.vue'), meta: { title: '节点分组' } },
           { path: 'dns', name: 'DNS', component: () => import('../views/dns/Index.vue'), meta: { title: 'DNS设置' } },
           { path: 'monitor', name: 'Monitor', component: () => import('../views/settings/Monitor.vue'), meta: { title: '监控配置' } },
+          { path: 'realtime', name: 'NodeRealtimeMonitor', component: () => import('../views/nodes/RealtimeMonitor.vue'), meta: { title: '实时监控' } },
           { path: 'groups/:id/resolution', name: 'NodeGroupResolution', component: () => import('../views/nodes/groups/Resolution.vue'), meta: { title: '分组解析配置', hidden: true } }
         ]
       },

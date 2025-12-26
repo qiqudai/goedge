@@ -1,19 +1,45 @@
 <template>
   <div class="app-container">
-    <div class="filter-container" style="margin-bottom: 20px;">
-      <el-input v-model="listQuery.keyword" :placeholder="t.nodeKeyword" style="width: 200px;" class="filter-item" @keyup.enter="handleFilter" />
-      <el-button class="filter-item" type="primary" :icon="Search" @click="handleFilter">
-        {{ t.search }}
-      </el-button>
-      <el-button class="filter-item" style="margin-left: 10px;" type="success" :icon="Plus" @click="handleCreate">
-        {{ t.addNode }}
-      </el-button>
+    <el-tabs v-model="pageTab" class="node-tabs" @tab-click="handleTabChange">
+      <el-tab-pane label="节点列表" name="list" />
+      <el-tab-pane label="待初始化" name="pending" />
+      <el-tab-pane label="区域管理" name="region" />
+    </el-tabs>
 
-      <el-button-group style="margin-left: 20px;">
-        <el-button type="success" plain :disabled="!selectedRows.length" @click="handleBatch('start')">{{ t.enableSelected }}</el-button>
-        <el-button type="warning" plain :disabled="!selectedRows.length" @click="handleBatch('stop')">{{ t.disableSelected }}</el-button>
-        <el-button type="danger" plain :disabled="!selectedRows.length" @click="handleBatch('delete')">{{ t.deleteSelected }}</el-button>
-      </el-button-group>
+    <div class="filter-container node-actions">
+      <el-button type="primary" size="normal" @click="handleCreate">{{ t.installNode }}</el-button>
+      <el-button size="normal" :disabled="!selectedRows.length" @click="handleBatch('stop')">{{ t.disableNode }}</el-button>
+      <el-button size="normal" :disabled="!selectedRows.length" @click="handleBatch('start')">{{ t.enableNode }}</el-button>
+      <el-button size="normal" @click="handleRefresh">{{ t.refresh }}</el-button>
+      <el-dropdown trigger="click">
+        <el-button size="normal">
+          {{ t.moreAction }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item :disabled="!selectedRows.length" @click="handleBatch('delete')">{{ t.deleteSelected }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </div>
+
+    <div class="filter-container node-filters">
+      <el-select v-model="listQuery.region_id" placeholder="所有区域" class="filter-item" style="width: 150px;">
+        <el-option v-for="item in regionOptions" :key="item.value" :label="item.label" :value="item.value" />
+      </el-select>
+      <el-select v-model="listQuery.status" placeholder="所有状态" class="filter-item" style="width: 150px;">
+        <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+      </el-select>
+      <el-select v-model="listQuery.node_type" placeholder="所有类型" class="filter-item" style="width: 150px;">
+        <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
+      </el-select>
+      <el-input v-model="listQuery.keyword" :placeholder="t.nodeKeyword" class="filter-item" style="width: 240px;" @keyup.enter="handleFilter">
+        <template #suffix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+      <el-button type="primary" size="normal" class="filter-item" @click="handleFilter">{{ t.search }}</el-button>
+      <el-button type="text" size="normal" class="filter-item" @click="resetFilters">{{ t.reset }}</el-button>
     </div>
 
     <el-table
@@ -31,52 +57,69 @@
         <template #default="scope">{{ scope.row.id }}</template>
       </el-table-column>
 
-      <el-table-column :label="t.name" min-width="120px">
+      <el-table-column :label="t.name" min-width="140px">
         <template #default="{ row }">
-          <div style="font-weight: bold; cursor: pointer;" class="link-type" @click="handleUpdate(row)">{{ row.name }}</div>
-          <div style="margin-top: 5px;">
-            <el-tag v-if="row.type === 1" type="primary" size="small" effect="plain" disable-transitions>{{ t.l1Edge }}</el-tag>
-            <el-tag v-else-if="row.type === 2" type="warning" size="small" effect="plain" disable-transitions>{{ t.l2Middle }}</el-tag>
-            <el-tag v-if="row.install_status === 1" type="success" size="small" effect="plain" style="margin-left: 5px;">{{ t.installed }}</el-tag>
-          </div>
+          <div class="node-name" @click="handleUpdate(row)">{{ row.name }}</div>
         </template>
       </el-table-column>
 
-      <el-table-column :label="t.group" width="100px" align="center">
+      <el-table-column label="区域" min-width="140px">
         <template #default="{ row }">
-          {{ row.group_id ? t.groupPrefix + row.group_id : t.groupDefault }}
+          <span>{{ row.region_name || '默认' }}</span>
+          <el-link type="primary" :underline="false" class="node-group-link" @click="goToNodeGroups">
+            {{ t.lineGroup }}({{ row.group_count || 1 }}{{ t.groupCountUnit }})
+          </el-link>
         </template>
       </el-table-column>
 
-      <el-table-column :label="t.nodeIp" min-width="120px">
+      <el-table-column :label="t.nodeIp" min-width="150px">
         <template #default="{ row }">
           <div>{{ row.ip }}</div>
           <div v-if="row.sub_ips && row.sub_ips.length > 0" style="color: #909399; font-size: 12px;">
-            +{{ row.sub_ips.length }} {{ t.fromIp }}
+            <el-popover placement="right" trigger="click" width="260">
+              <div class="sub-ip-list">
+                <div v-for="item in row.sub_ips" :key="item.ip || item">{{ item.ip || item }}</div>
+              </div>
+              <template #reference>
+                <el-button link type="primary" size="normal">+{{ row.sub_ips.length }} {{ t.fromIp }}</el-button>
+              </template>
+            </el-popover>
           </div>
         </template>
       </el-table-column>
 
-      <el-table-column :label="t.monitor" width="80px" align="center">
-        <template #default>
-          <el-icon color="#67C23A"><Monitor /></el-icon>
-        </template>
-      </el-table-column>
-
-      <el-table-column :label="t.bandwidth" width="100px" align="center">
+      <el-table-column :label="t.monitor" min-width="120px" align="center">
         <template #default="{ row }">
-          {{ row.bw_limit || '-' }}
+          <span class="monitor-protocol">{{ formatMonitorProtocol(row) }}</span>
+          <el-link type="primary" :underline="false" @click="openMonitorLogs(row)">{{ t.monitorLog }}</el-link>
         </template>
       </el-table-column>
 
-      <el-table-column :label="t.monthlyTraffic" width="120px" align="center">
+      <el-table-column :label="t.bandwidth" min-width="140px" align="center">
         <template #default="{ row }">
-          <div><el-icon><Top /></el-icon> {{ row.up_traffic || 0 }} KB</div>
-          <div><el-icon><Bottom /></el-icon> {{ row.down_traffic || 0 }} KB</div>
+          <span class="clickable-text" @click="goToRealtimeMonitor(row)">{{ formatBandwidth(row) }}</span>
         </template>
       </el-table-column>
 
-      <el-table-column :label="t.status" align="center" width="80">
+      <el-table-column :label="t.monthlyTraffic" min-width="120px" align="center">
+        <template #default="{ row }">
+          <div class="clickable-text" @click="goToRealtimeMonitor(row)">
+            <div>{{ formatMonthlyTraffic(row).up }}</div>
+            <div>{{ formatMonthlyTraffic(row).down }}</div>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t.status" align="center" width="90">
+        <template #default="{ row }">
+          <div class="node-status">
+            <span :class="['status-dot', isNodeOnline(row) ? 'status-ok' : 'status-stop']"></span>
+            <span>{{ isNodeOnline(row) ? t.statusOnline : t.statusOffline }}</span>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column label="启用" align="center" width="90">
         <template #default="{ row }">
           <el-switch v-model="row.enable" :active-value="true" :inactive-value="false" @change="handleStatusChange(row)" />
         </template>
@@ -86,24 +129,26 @@
 
       <el-table-column :label="t.sort" prop="sort_order" width="80" align="center" sortable />
 
-      <el-table-column :label="t.action" align="center" width="180" class-name="small-padding fixed-width">
+      <el-table-column :label="t.action" align="center" width="160" class-name="small-padding fixed-width">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleUpdate(row)">{{ t.setting }}</el-button>
-          <el-dropdown trigger="click" style="margin-left: 10px;">
-            <span class="el-dropdown-link" style="color: #409EFF; font-size: 12px; cursor: pointer;">
-              {{ t.more }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="handleBatch('delete', [row])">{{ t.delete }}</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div class="action-row">
+            <el-button link type="primary" size="normal" @click="handleUpdate(row)">{{ t.manage }}</el-button>
+            <el-dropdown trigger="click">
+              <el-button link type="primary" size="normal">
+                {{ t.more }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="handleBatch('delete', [row])">{{ t.delete }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
 
-    <div style="margin-top: 20px; text-align: right;">
+    <div style="margin-top: 16px;">
       <el-pagination
         v-if="total > 0"
         v-model:current-page="listQuery.page"
@@ -115,6 +160,50 @@
         @current-change="getList"
       />
     </div>
+
+    <el-dialog title="监控日志" v-model="monitorDialogVisible" width="680px">
+      <el-form :inline="true" class="monitor-form">
+        <el-form-item label="日志查看">
+          <el-select v-model="monitorQuery.type" style="width: 200px;">
+            <el-option v-for="item in monitorTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="时间段">
+          <el-date-picker
+            v-model="monitorQuery.timeRange"
+            type="datetimerange"
+            range-separator="至"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            clearable
+            style="width: 260px;"
+          />
+        </el-form-item>
+        <el-form-item label="监控组">
+          <el-select v-model="monitorQuery.group" style="width: 180px;">
+            <el-option v-for="item in monitorGroupOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <el-table :data="monitorLogs" border>
+        <el-table-column prop="checked_at" label="检测时间" min-width="140" />
+        <el-table-column prop="fail_count" label="失败个数" width="100" align="center" />
+        <el-table-column prop="total_count" label="总检测点" width="100" align="center" />
+      </el-table>
+      <div style="margin-top: 12px;">
+        <el-pagination
+          v-if="monitorTotal > 0"
+          v-model:current-page="monitorQuery.page"
+          v-model:page-size="monitorQuery.pageSize"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          :total="monitorTotal"
+          @current-change="loadMonitorLogs"
+          @size-change="loadMonitorLogs"
+        />
+      </div>
+    </el-dialog>
 
     <el-dialog :title="textMap[dialogStatus]" v-model="dialogFormVisible" width="600px">
       <el-tabs v-model="activeTab" type="card">
@@ -225,8 +314,8 @@
       </el-tabs>
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="dialogFormVisible = false">{{ t.cancel }}</el-button>
-          <el-button type="primary" @click="dialogStatus === 'create' ? createData() : updateData()">
+          <el-button size="normal" @click="dialogFormVisible = false">{{ t.cancel }}</el-button>
+          <el-button size="normal" type="primary" @click="dialogStatus === 'create' ? createData() : updateData()">
             {{ t.confirm }}
           </el-button>
         </div>
@@ -237,31 +326,38 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Search, Plus, Top, Bottom, ArrowDown, Monitor } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Search, ArrowDown } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const router = useRouter()
 const t = {
   nodeKeyword: '\u8282\u70b9\u540d\u79f0 / IP',
   search: '\u641c\u7d22',
-  addNode: '\u6dfb\u52a0\u8282\u70b9',
-  enableSelected: '\u542f\u7528\u9009\u4e2d',
-  disableSelected: '\u505c\u7528\u9009\u4e2d',
+  reset: '\u6e05\u9664',
+  refresh: '\u5237\u65b0',
+  installNode: '\u5b89\u88c5\u8282\u70b9',
+  enableNode: '\u542f\u7528\u8282\u70b9',
+  disableNode: '\u7981\u7528\u8282\u70b9',
+  moreAction: '\u66f4\u591a\u64cd\u4f5c',
   deleteSelected: '\u5220\u9664\u9009\u4e2d',
   name: '\u540d\u79f0',
-  group: '\u7ec4',
-  groupPrefix: '\u5206\u7ec4',
-  groupDefault: '\u9ed8\u8ba4',
+  lineGroup: '\u7ebf\u8def\u7ec4',
+  groupCountUnit: '\u4e2a',
   nodeIp: '\u8282\u70b9IP',
   fromIp: '\u4eceIP',
   monitor: '\u76d1\u63a7',
+  monitorLog: '\u65e5\u5fd7',
   bandwidth: '\u5e26\u5bbd',
   monthlyTraffic: '\u6708\u6d41\u91cf',
   status: '\u72b6\u6001',
+  statusOnline: '\u5728\u7ebf',
+  statusOffline: '\u4e0d\u5728\u7ebf',
   remark: '\u5907\u6ce8',
   sort: '\u6392\u5e8f',
   action: '\u64cd\u4f5c',
-  setting: '\u8bbe\u7f6e',
+  manage: '\u7ba1\u7406',
   more: '\u66f4\u591a',
   delete: '\u5220\u9664',
   basicSettings: '\u57fa\u672c\u8bbe\u7f6e',
@@ -312,11 +408,26 @@ const list = ref([])
 const total = ref(0)
 const listLoading = ref(true)
 const selectedRows = ref([])
+const pageTab = ref('list')
 const listQuery = reactive({
   page: 1,
   pageSize: 20,
-  keyword: ''
+  keyword: '',
+  region_id: '',
+  status: '',
+  node_type: ''
 })
+const regionOptions = ref([{ label: '\u6240\u6709\u533a\u57df', value: '' }])
+const statusOptions = ref([
+  { label: '\u6240\u6709\u72b6\u6001', value: '' },
+  { label: '\u6b63\u5e38', value: 'enabled' },
+  { label: '\u7981\u7528', value: 'disabled' }
+])
+const typeOptions = ref([
+  { label: '\u6240\u6709\u7c7b\u578b', value: '' },
+  { label: 'L1\u8fb9\u7f18', value: 1 },
+  { label: 'L2\u4e2d\u95f4', value: 2 }
+])
 
 const dialogFormVisible = ref(false)
 const dialogStatus = ref('')
@@ -355,6 +466,22 @@ const temp = reactive({
 const tempIPs = ref('')
 const bwLimitValue = ref('')
 const bwLimitUnit = ref('Mbps')
+const monitorDialogVisible = ref(false)
+const monitorLogs = ref([])
+const monitorTotal = ref(0)
+const monitorQuery = reactive({
+  type: 'availability',
+  timeRange: [],
+  group: 'all',
+  page: 1,
+  pageSize: 10
+})
+const monitorTypeOptions = [
+  { label: '\u53ef\u7528\u6027\u76d1\u63a7\u65e5\u5fd7', value: 'availability' }
+]
+const monitorGroupOptions = [
+  { label: '\u6240\u6709\u76d1\u63a7\u7ec4', value: 'all' }
+]
 
 const getList = () => {
   listLoading.value = true
@@ -364,7 +491,11 @@ const getList = () => {
     params: {
       page: listQuery.page,
       pageSize: listQuery.pageSize,
-      keyword: listQuery.keyword
+      keyword: listQuery.keyword,
+      region_id: listQuery.region_id,
+      status: listQuery.status,
+      node_type: listQuery.node_type,
+      tab: pageTab.value
     }
   }).then(response => {
     if (response.data) {
@@ -378,6 +509,23 @@ const getList = () => {
 }
 
 const handleFilter = () => {
+  listQuery.page = 1
+  getList()
+}
+
+const handleRefresh = () => {
+  getList()
+}
+
+const resetFilters = () => {
+  listQuery.region_id = ''
+  listQuery.status = ''
+  listQuery.node_type = ''
+  listQuery.keyword = ''
+  handleFilter()
+}
+
+const handleTabChange = () => {
   listQuery.page = 1
   getList()
 }
@@ -556,7 +704,177 @@ const handleSelectionChange = val => {
   selectedRows.value = val
 }
 
+const goToNodeGroups = () => {
+  router.push('/node/groups')
+}
+
+const goToRealtimeMonitor = () => {
+  router.push('/node/realtime')
+}
+
+const pickNumber = (row, keys) => {
+  for (const key of keys) {
+    const value = row[key]
+    if (value !== undefined && value !== null && value !== '') {
+      const num = Number(value)
+      if (!Number.isNaN(num)) {
+        return num
+      }
+    }
+  }
+  return 0
+}
+
+const formatSpeed = (value) => {
+  const num = Number(value)
+  if (!num) {
+    return '0 Kbps'
+  }
+  const units = ['Kbps', 'Mbps', 'Gbps', 'Tbps']
+  let size = num
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+  const display = size >= 10 ? size.toFixed(1) : size.toFixed(2)
+  return `${display} ${units[unitIndex]}`
+}
+
+const formatMonitorProtocol = (row) => {
+  if (row.check_protocol) {
+    return row.check_protocol
+  }
+  return 'tcp'
+}
+
+const formatBandwidth = (row) => {
+  const up = pickNumber(row, ['bandwidth_in', 'bw_in', 'in_speed'])
+  const down = pickNumber(row, ['bandwidth_out', 'bw_out', 'out_speed'])
+  return `${formatSpeed(up)} ↑ ${formatSpeed(down)} ↓`
+}
+
+const formatMonthlyTraffic = (row) => {
+  const up = pickNumber(row, ['month_traffic_in', 'month_in', 'up_traffic', 'traffic_in'])
+  const down = pickNumber(row, ['month_traffic_out', 'month_out', 'down_traffic', 'traffic_out'])
+  return {
+    up: formatSpeed(up),
+    down: formatSpeed(down)
+  }
+}
+
+const isNodeOnline = (row) => {
+  if (typeof row.online === 'boolean') {
+    return row.online
+  }
+  if (typeof row.is_online === 'boolean') {
+    return row.is_online
+  }
+  if (typeof row.status === 'string') {
+    return row.status === 'online'
+  }
+  if (typeof row.state === 'string') {
+    return row.state === 'online'
+  }
+  return false
+}
+
+const buildMonitorLogs = () => {
+  const rows = []
+  const now = new Date()
+  for (let i = 0; i < monitorQuery.pageSize; i += 1) {
+    const at = new Date(now.getTime() - i * 60 * 1000)
+    rows.push({
+      checked_at: `${at.getMonth() + 1}-${String(at.getDate()).padStart(2, '0')} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}:${String(at.getSeconds()).padStart(2, '0')}`,
+      fail_count: 0,
+      total_count: 6
+    })
+  }
+  monitorLogs.value = rows
+  monitorTotal.value = 20
+}
+
+const loadMonitorLogs = () => {
+  buildMonitorLogs()
+}
+
+const openMonitorLogs = () => {
+  monitorQuery.page = 1
+  loadMonitorLogs()
+  monitorDialogVisible.value = true
+}
+
 onMounted(() => {
   getList()
 })
 </script>
+
+<style scoped>
+.node-tabs {
+  margin-bottom: 12px;
+}
+
+.node-actions,
+.node-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.node-name {
+  font-weight: 600;
+  cursor: pointer;
+  color: #409eff;
+}
+
+.node-group-link {
+  margin-left: 6px;
+  font-size: 12px;
+}
+
+.monitor-protocol {
+  color: #409eff;
+  margin-right: 6px;
+}
+
+.clickable-text {
+  color: #409eff;
+  cursor: pointer;
+}
+
+.node-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-ok {
+  background: #67c23a;
+}
+
+.status-stop {
+  background: #f56c6c;
+}
+
+.sub-ip-list {
+  max-height: 220px;
+  overflow-y: auto;
+  line-height: 1.6;
+  color: #606266;
+}
+</style>
