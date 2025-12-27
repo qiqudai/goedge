@@ -26,7 +26,7 @@
             <el-radio-button label="1h">1小时</el-radio-button>
           </el-radio-group>
         </div>
-        <el-button type="primary" size="normal" class="refresh-button" @click="refreshRanking">刷新</el-button>
+        <el-button type="primary" size="normal" class="refresh-button" style="width: 96px;" @click="refreshRanking">刷新</el-button>
       </div>
 
       <AppTable :data="ranking.list" border persist-key="node-ranking">
@@ -65,8 +65,10 @@
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             class="time-range"
+            style="width: 320px;"
           />
         </div>
+        <el-button type="primary" size="normal" class="refresh-button" style="width: 96px;" @click="refreshMetrics">刷新</el-button>
       </div>
 
       <AppTable :data="metrics.list" border persist-key="node-metrics">
@@ -99,6 +101,7 @@
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             class="time-range"
+            style="width: 320px;"
           />
         </div>
         <div class="toolbar-row">
@@ -109,9 +112,9 @@
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">排除网卡</span>
-          <el-input v-model="traffic.exclude" placeholder="排除网卡，多个网卡用空格分隔" style="width: 280px;" />
+          <el-input v-model="traffic.exclude" placeholder="排除网卡，多个网卡用空格分隔" style="width: 320px;" />
         </div>
-        <el-button type="primary" size="normal" class="refresh-button" @click="refreshTraffic">刷新</el-button>
+        <el-button type="primary" size="normal" class="refresh-button" style="width: 96px;" @click="refreshTraffic">刷新</el-button>
       </div>
 
       <div class="chart-placeholder">
@@ -158,6 +161,10 @@ const refreshRanking = () => {
   ranking.list = []
 }
 
+const refreshMetrics = () => {
+  metrics.list = []
+}
+
 const refreshTraffic = () => {
   // Placeholder for future API integration.
 }
@@ -188,7 +195,7 @@ const refreshTraffic = () => {
 }
 
 .time-range {
-  width: 260px;
+  width: 320px;
 }
 
 .chart-placeholder {
@@ -208,6 +215,8 @@ const refreshTraffic = () => {
 }
 
 .refresh-button {
-  min-width: 76px;
+  min-width: 96px;
+  width: 96px;
+  align-self: flex-start;
 }
 </style>

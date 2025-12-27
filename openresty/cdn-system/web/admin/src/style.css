@@ -87,6 +87,10 @@ a:hover {
   justify-content: flex-start;
 }
 
+.monitor-toolbar .el-date-editor {
+  width: 320px !important;
+}
+
 
 :root[data-theme="dark"] .el-table {
   --el-table-border-color: var(--border-color);

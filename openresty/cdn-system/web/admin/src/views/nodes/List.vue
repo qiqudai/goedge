@@ -746,7 +746,7 @@ const formatMonitorProtocol = (row) => {
 const formatBandwidth = (row) => {
   const up = pickNumber(row, ['bandwidth_in', 'bw_in', 'in_speed'])
   const down = pickNumber(row, ['bandwidth_out', 'bw_out', 'out_speed'])
-  return `${formatSpeed(up)} �?${formatSpeed(down)} ↓`
+  return `${formatSpeed(up)} ↑ ${formatSpeed(down)} ↓`
 }
 
 const formatMonthlyTraffic = (row) => {

@@ -3,4 +3,4 @@ db_dsn: "root:123456@tcp(127.0.0.1:3306)/cdnfy?charset=utf8mb4&parseTime=True&lo
 debug: false
 agent_token: ""
 clickhouse_enabled: false
-clickhouse_dsn: "172.20.9.140:9000"
+clickhouse_dsn: "clickhouse://default:@172.20.9.140:9000/cdn_logs?compress=true"
