@@ -18,9 +18,9 @@
             <h4>默认拉黑方式</h4>
             <el-form-item label="拉黑动作">
               <el-radio-group v-model="config.waf.default_block_action">
-                <el-radio label="ipset">IPSet (系统防火墙)</el-radio>
-                <el-radio label="disconnect">断开连接</el-radio>
-                <el-radio label="page">显示拦截页面</el-radio>
+                <el-radio value="ipset">IPSet (系统防火墙)</el-radio>
+                <el-radio value="disconnect">断开连接</el-radio>
+                <el-radio value="page">显示拦截页面</el-radio>
               </el-radio-group>
               <div class="tip">建议默认选非 IPSet 方式，配合自动 IPSet 切换使用。</div>
             </el-form-item>
@@ -103,8 +103,8 @@
             <h4>默认页防护</h4>
             <el-form-item label="开启模式">
               <el-radio-group v-model="config.waf.default_page_protection">
-                <el-radio label="force">强制开启</el-radio>
-                <el-radio label="auto">自动开启</el-radio>
+                <el-radio value="force">强制开启</el-radio>
+                <el-radio value="auto">自动开启</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="自动开启阈值" v-if="config.waf.default_page_protection === 'auto'">
@@ -124,8 +124,8 @@
             </el-form-item>
             <el-form-item label="验证图片来源">
               <el-radio-group v-model="config.waf.anti_cc_image_source">
-                <el-radio label="system">系统默认</el-radio>
-                <el-radio label="custom">自定义 URL</el-radio>
+                <el-radio value="system">系统默认</el-radio>
+                <el-radio value="custom">自定义 URL</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="图片 URL" v-if="config.waf.anti_cc_image_source === 'custom'">

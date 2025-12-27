@@ -131,9 +131,9 @@
         </el-form-item>
         <el-form-item label="身份证号">
           <el-radio-group v-model="securityForm.verify">
-            <el-radio label="none">不设置</el-radio>
-            <el-radio label="sms">短信验证</el-radio>
-            <el-radio label="email">邮箱验证</el-radio>
+            <el-radio value="none">不设置</el-radio>
+            <el-radio value="sms">短信验证</el-radio>
+            <el-radio value="email">邮箱验证</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item>

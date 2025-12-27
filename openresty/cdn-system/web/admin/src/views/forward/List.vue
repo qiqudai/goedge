@@ -92,7 +92,7 @@
       <el-pagination
         v-model:current-page="listQuery.page"
         v-model:page-size="listQuery.pageSize"
-        :page-sizes="[10, 20, 30, 50]"
+
         layout="total, sizes, prev, pager, next, jumper"
         :total="total"
         @size-change="handleFilter"
@@ -233,8 +233,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.balance_way">负载方式</el-checkbox>
                 <el-radio-group v-model="batchEditForm.balance_way">
-                  <el-radio label="rr">轮循</el-radio>
-                  <el-radio label="ip_hash">定源</el-radio>
+                  <el-radio value="rr">轮循</el-radio>
+                  <el-radio value="ip_hash">定源</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -244,8 +244,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.proxy_protocol">Proxy Protocol</el-checkbox>
                 <el-radio-group v-model="batchEditForm.proxy_protocol">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -283,8 +283,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.acl_default">ACL默认行为</el-checkbox>
                 <el-radio-group v-model="batchEditForm.acl_default">
-                  <el-radio label="allow">允许</el-radio>
-                  <el-radio label="deny">拒绝</el-radio>
+                  <el-radio value="allow">允许</el-radio>
+                  <el-radio value="deny">拒绝</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -315,12 +315,12 @@
               <div class="batch-row" style="margin-top: 16px;">
                 <el-checkbox v-model="batchEditChecks.region_block">区域屏蔽</el-checkbox>
                 <el-radio-group v-model="batchEditForm.region_mode">
-                  <el-radio label="none">不设置</el-radio>
-                  <el-radio label="overseas_without_hk">国外(不包括港澳台)</el-radio>
-                  <el-radio label="overseas_with_hk">国外(包括港澳台)</el-radio>
-                  <el-radio label="china_with_hk">中国(包括港澳台)</el-radio>
-                  <el-radio label="china_without_hk">中国(不包括港澳台)</el-radio>
-                  <el-radio label="custom">自定义</el-radio>
+                  <el-radio value="none">不设置</el-radio>
+                  <el-radio value="overseas_without_hk">国外(不包括港澳台)</el-radio>
+                  <el-radio value="overseas_with_hk">国外(包括港澳台)</el-radio>
+                  <el-radio value="china_with_hk">中国(包括港澳台)</el-radio>
+                  <el-radio value="china_without_hk">中国(不包括港澳台)</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
                 </el-radio-group>
               </div>
               <country-selector v-if="batchEditForm.region_mode === 'custom'" v-model="batchEditForm.region_custom" />
@@ -328,8 +328,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.ipv6">IPv6开启</el-checkbox>
                 <el-radio-group v-model="batchEditForm.ipv6">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-action">

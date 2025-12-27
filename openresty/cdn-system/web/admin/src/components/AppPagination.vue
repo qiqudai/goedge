@@ -22,7 +22,7 @@ const props = defineProps({
   currentPage: { type: Number, default: 1 },
   pageSize: { type: Number, default: 10 },
   total: { type: Number, default: 0 },
-  pageSizes: { type: Array, default: () => [10, 20, 30, 50] },
+  pageSizes: { type: Array, default: () => [10, 30, 50, 100, 200, 300, 500] },
   layout: { type: String, default: 'total, sizes, prev, pager, next, jumper' },
   persistKey: { type: String, default: 'default' }
 })

@@ -22,8 +22,8 @@
       <el-table-column prop="remark" label="备注" min-width="200" />
       <el-table-column label="操作" width="160" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="normal" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" size="normal" @click="removeGroup(row)">删除</el-button>
+          <el-button link type="primary" size="" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="danger" size="" @click="removeGroup(row)">删除</el-button>
         </template>
       </el-table-column>
     </AppTable>

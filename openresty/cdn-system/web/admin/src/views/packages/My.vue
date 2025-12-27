@@ -21,10 +21,10 @@
       </el-table-column>
       <el-table-column label="操作" min-width="260">
         <template #default="{ row }">
-          <el-button link type="primary" size="normal" @click="openDetail(row)">详情</el-button>
-          <el-button link type="primary" size="normal" @click="openRenew(row)">续费</el-button>
-          <el-button link type="primary" size="normal" @click="openUpgrade(row)">升降配</el-button>
-          <el-button link type="primary" size="normal" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="primary" size="" @click="openDetail(row)">详情</el-button>
+          <el-button link type="primary" size="" @click="openRenew(row)">续费</el-button>
+          <el-button link type="primary" size="" @click="openUpgrade(row)">升降配</el-button>
+          <el-button link type="primary" size="" @click="openEdit(row)">编辑</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -97,7 +97,7 @@
         </el-tab-pane>
       </el-tabs>
       <template #footer>
-        <el-button size="normal" @click="detailVisible = false">关闭</el-button>
+        <el-button size="" @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -118,8 +118,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="renewVisible = false">关闭</el-button>
-        <el-button type="primary" size="normal" @click="submitRenew">确定</el-button>
+        <el-button size="" @click="renewVisible = false">关闭</el-button>
+        <el-button type="primary" size="" @click="submitRenew">确定</el-button>
       </template>
     </el-dialog>
 
@@ -145,8 +145,8 @@
             </el-form-item>
           </el-form>
           <div class="dialog-footer">
-            <el-button size="normal" @click="upgradeVisible = false">关闭</el-button>
-            <el-button type="primary" size="normal" @click="submitSwitch">确定</el-button>
+            <el-button size="" @click="upgradeVisible = false">关闭</el-button>
+            <el-button type="primary" size="" @click="submitSwitch">确定</el-button>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -163,8 +163,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="editVisible = false">关闭</el-button>
-        <el-button type="primary" size="normal" @click="submitEdit">确定</el-button>
+        <el-button size="" @click="editVisible = false">关闭</el-button>
+        <el-button type="primary" size="" @click="submitEdit">确定</el-button>
       </template>
     </el-dialog>
   </div>

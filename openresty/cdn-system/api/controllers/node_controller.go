@@ -35,8 +35,12 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 	var nodes []models.Node
 	query := db.DB.Model(&models.Node{}).Where("pid = 0")
 	if keyword != "" {
-		keywordLike := "%" + strings.ToLower(keyword) + "%"
-		query = query.Where("lower(name) LIKE ? OR ip LIKE ?", keywordLike, keywordLike)
+		if id, err := strconv.ParseInt(keyword, 10, 64); err == nil && id > 0 {
+			query = query.Where("id = ? OR lower(name) LIKE ? OR ip LIKE ?", id, "%"+strings.ToLower(keyword)+"%", "%"+keyword+"%")
+		} else {
+			keywordLike := "%" + strings.ToLower(keyword) + "%"
+			query = query.Where("lower(name) LIKE ? OR ip LIKE ?", keywordLike, keywordLike)
+		}
 	}
 
 	var total int64

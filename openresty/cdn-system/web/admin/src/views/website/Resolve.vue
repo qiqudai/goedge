@@ -1,30 +1,30 @@
 ﻿<template>
   <div class="app-container">
     <el-tabs v-if="!hideTabs" v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
-      <el-tab-pane label="��վ�б�" name="list" />
-      <el-tab-pane label="Ĭ������" name="default" />
+      <el-tab-pane label="网站列表" name="list" />
+      <el-tab-pane label="默认设置" name="default" />
       <el-tab-pane label="DNS API" name="dns" />
-      <el-tab-pane label="�������" name="resolve" />
+      <el-tab-pane label="解析检测" name="resolve" />
     </el-tabs>
 
     <div class="filter-container">
       <div class="filter-left">
-        <el-button type="primary" @click="syncResolve">ͬ������</el-button>
+        <el-button type="primary" @click="syncResolve">同步解析</el-button>
       </div>
       <div class="filter-right">
         <el-select v-model="listQuery.searchField" class="filter-item" style="width: 120px;">
-          <el-option label="ȫ�ֶ�" value="all" />
-          <el-option label="����" value="domain" />
+          <el-option label="全字段" value="all" />
+          <el-option label="域名" value="domain" />
           <el-option label="CNAME" value="cname" />
         </el-select>
         <el-input
           v-model="listQuery.keyword"
-          placeholder="��������, ģ������"
+          placeholder="输入域名, 模糊搜索"
           style="width: 260px;"
           class="filter-item"
           @keyup.enter="handleFilter"
         />
-        <el-button type="primary" class="filter-item" @click="handleFilter">��ѯ</el-button>
+        <el-button type="primary" class="filter-item" @click="handleFilter">查询</el-button>
       </div>
     </div>
 
@@ -37,7 +37,6 @@
       style="width: 100%;"
       v-model:current-page="listQuery.page"
       v-model:page-size="listQuery.pageSize"
-      :page-sizes="[10, 20, 30, 50]"
       layout="total, sizes, prev, pager, next, jumper"
       :total="total"
       @size-change="handleSizeChange"
@@ -45,17 +44,17 @@
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="90" />
-      <el-table-column prop="site_id" label="��վID" width="100" />
-      <el-table-column prop="domain" label="����" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="site_id" label="站点ID" width="100" />
+      <el-table-column prop="domain" label="域名" min-width="200" show-overflow-tooltip />
       <el-table-column prop="cname" label="CNAME" min-width="200" show-overflow-tooltip />
-      <el-table-column label="����״̬" width="140">
+      <el-table-column label="解析状态" width="140">
         <template #default="{ row }">
           <span class="status-dot" :class="statusClass(row.resolveStatus)" />
           <span class="status-text">{{ statusText(row.resolveStatus) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="dns_name" label="DNS API" width="140" />
-      <el-table-column prop="task_status" label="����״̬" width="120" />
+      <el-table-column prop="task_status" label="任务状态" width="120" />
     </AppTable>
   </div>
 </template>
@@ -87,7 +86,6 @@ const listQuery = reactive({
   searchField: 'domain'
 })
 
-
 const handleTopTab = tab => {
   if (tab.paneName === 'list') {
     router.push('/website/list')
@@ -99,10 +97,10 @@ const handleTopTab = tab => {
 }
 
 const statusText = status => {
-  if (status === 'checking') return '�����'
-  if (status === 'success') return '����'
-  if (status === 'failed') return '�쳣'
-  return 'δ���'
+  if (status === 'checking') return '检测中'
+  if (status === 'success') return '正常'
+  if (status === 'failed') return '异常'
+  return '未检测'
 }
 
 const statusClass = status => {
@@ -135,7 +133,7 @@ const fetchList = (autoResolve = false) => {
         domain,
         cname: site.cname || '-',
         resolveStatus: autoResolve ? 'checking' : 'default',
-        dns_name: dnsMap.value[site.dns_provider_id] || 'δ����',
+        dns_name: dnsMap.value[site.dns_provider_id] || '未设置',
         task_status: ''
       }
     })
@@ -251,6 +249,3 @@ onMounted(() => {
   background: #c0c4cc;
 }
 </style>
-
-
-

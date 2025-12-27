@@ -24,7 +24,7 @@
         style="width: 100%;"
         v-model:current-page="listQuery.page"
         v-model:page-size="listQuery.pageSize"
-        :page-sizes="[10, 20, 30, 50]"
+
         layout="total, sizes, prev, pager, next, jumper"
         :total="total"
         @size-change="handleFilter"
@@ -137,7 +137,7 @@ const submitForm = () => {
 }
 
 const removeGroup = row => {
-  ElMessageBox.confirm('确认删除该分�?', '提示', {
+  ElMessageBox.confirm('确认删除该分组?', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'

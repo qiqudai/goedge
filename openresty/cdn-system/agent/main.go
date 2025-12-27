@@ -25,6 +25,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"cdn-common/acme"
 )
 
 //go:embed assets
@@ -172,6 +174,7 @@ func initEnvironment() {
 		filepath.Join(WorkDir, "logs"),
 		filepath.Join(WorkDir, "cache"),
 		filepath.Join(WorkDir, "cert"),
+		filepath.Join(WorkDir, "cert", "acme"),
 	}
 	for _, d := range dirs {
 		os.MkdirAll(d, 0755)
@@ -811,9 +814,81 @@ func processTask(id int64, taskType string, data string) error {
 		return purgeDirs(splitLines(data))
 	case "preheat":
 		return preheatURLs(splitLines(data))
+	case "issue_cert":
+		return issueCertTask(id, data)
 	default:
 		return fmt.Errorf("unknown task type: %s", taskType)
 	}
+}
+
+type issueCertItem struct {
+	CertID  int64    `json:"cert_id"`
+	Domains []string `json:"domains"`
+}
+
+type issueCertTaskPayload struct {
+	CA       string          `json:"ca"`
+	CADirURL string          `json:"ca_dir_url"`
+	Email    string          `json:"email"`
+	Items    []issueCertItem `json:"items"`
+}
+
+func issueCertTask(taskID int64, raw string) error {
+	var payload issueCertTaskPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return fmt.Errorf("invalid issue cert task payload")
+	}
+	if len(payload.Items) == 0 {
+		return fmt.Errorf("no cert items")
+	}
+	webroot := filepath.Join(WorkDir, "cert", "acme")
+	accountKey := filepath.Join(webroot, "account_"+strings.ToLower(payload.CA)+".key")
+	issuer := acme.NewIssuer(acme.IssueOptions{
+		Email:          payload.Email,
+		CADirURL:       payload.CADirURL,
+		Webroot:        webroot,
+		AccountKeyPath: accountKey,
+		Timeout:        60 * time.Second,
+	})
+
+	for _, item := range payload.Items {
+		if len(item.Domains) == 0 || item.CertID == 0 {
+			continue
+		}
+		result, err := issuer.Issue(item.Domains)
+		if err != nil {
+			if acme.IsRegisterRateLimited(err) {
+				return fmt.Errorf("RATE_LIMITED: %s", err.Error())
+			}
+			return err
+		}
+		if err := reportIssuedCert(taskID, item.CertID, result.CertPEM, result.KeyPEM); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reportIssuedCert(taskID int64, certID int64, certPEM string, keyPEM string) error {
+	payload := map[string]interface{}{
+		"cert_id":       certID,
+		"cert":          certPEM,
+		"key":           keyPEM,
+		"issue_task_id": taskID,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/certs/issued", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+AuthToken)
+	req.Header.Set("Content-Type", "application/json")
+	respBody, status, err := doRequest(req, 15*time.Second, DebugMode)
+	if err != nil {
+		return err
+	}
+	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
+	if status != 200 {
+		return fmt.Errorf("cert report failed: %d", status)
+	}
+	return nil
 }
 
 func reportTask(id int64, state string, ret string) {
@@ -1452,6 +1527,7 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 }
 
 func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
+	writeAcmeLocation(b)
 	cacheCfg := domain.Cache
 	rules := make([]edgeCacheRule, 0)
 	if cacheCfg != nil && len(cacheCfg.Rules) > 0 {
@@ -1473,6 +1549,25 @@ func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
 
 	b.WriteString("    location / {\n")
 	writeProxyBlock(b, domain, tls, cacheCfg, nil)
+	b.WriteString("    }\n")
+}
+
+func writeAcmeLocation(b *strings.Builder) {
+	acmeRoot := filepath.ToSlash(filepath.Join(WorkDir, "cert", "acme"))
+	apiBase := strings.TrimRight(strings.TrimSpace(API_BaseURL), "/")
+	if apiBase == "" {
+		return
+	}
+	b.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
+	b.WriteString("        root " + acmeRoot + ";\n")
+	b.WriteString("        default_type text/plain;\n")
+	b.WriteString("        try_files $uri @acme_master;\n")
+	b.WriteString("    }\n")
+	b.WriteString("    location @acme_master {\n")
+	b.WriteString("        proxy_pass " + apiBase + ";\n")
+	b.WriteString("        proxy_set_header Host $host;\n")
+	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
 	b.WriteString("    }\n")
 }
 

@@ -7,10 +7,10 @@
           <el-form-item label="普通用户标题"><el-input v-model="form.user_title" /></el-form-item>
           <el-form-item label="管理员标题"><el-input v-model="form.admin_title" /></el-form-item>
           <el-form-item label="底部链接">
-            <el-input v-model="form.footer_links" type="textarea" placeholder="格式: 名称|URL" rows="3" />
+            <el-input v-model="form.footer_links" type="textarea" placeholder="格式: 名称|URL" :rows="3" />
           </el-form-item>
           <el-form-item label="底部文字"><el-input v-model="form.footer_text" /></el-form-item>
-          <el-form-item label="全站JS"><el-input v-model="form.global_js" type="textarea" rows="4" /></el-form-item>
+          <el-form-item label="全站JS"><el-input v-model="form.global_js" type="textarea" :rows="4" /></el-form-item>
 
           <el-divider>套餐相关</el-divider>
           <el-form-item label="套餐到期关闭"><el-switch v-model="form.expire_close_site" /></el-form-item>
@@ -73,7 +73,7 @@
 
           <el-divider>邮件模板</el-divider>
           <el-form-item label="注册成功标题"><el-input v-model="form.register_mail_title" /></el-form-item>
-          <el-form-item label="注册成功内容"><el-input type="textarea" v-model="form.register_mail_content" rows="4" /></el-form-item>
+          <el-form-item label="注册成功内容"><el-input type="textarea" v-model="form.register_mail_content" :rows="4" /></el-form-item>
 
           <el-form-item>
             <el-button type="primary" @click="save">保存</el-button>
@@ -109,8 +109,8 @@
       <el-tab-pane label="HTTPS设置" name="https">
         <el-form label-width="120px" :model="form">
           <el-form-item label="强制HTTPS"><el-switch v-model="form.force_ssl" /></el-form-item>
-          <el-form-item label="公钥 (PEM)"><el-input type="textarea" v-model="form.cert_content" rows="6" /></el-form-item>
-          <el-form-item label="私钥 (PEM)"><el-input type="textarea" v-model="form.key_content" rows="6" /></el-form-item>
+          <el-form-item label="公钥 (PEM)"><el-input type="textarea" v-model="form.cert_content" :rows="6" /></el-form-item>
+          <el-form-item label="私钥 (PEM)"><el-input type="textarea" v-model="form.key_content" :rows="6" /></el-form-item>
 
           <el-alert title="保存后需要重启Master服务生效" type="info" show-icon />
 

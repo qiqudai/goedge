@@ -16,7 +16,7 @@
       v-model:current-page="listQuery.page"
       v-model:page-size="listQuery.pageSize"
       persist-key="users"
-      :page-sizes="[10, 20, 30, 50]"
+
       layout="total, sizes, prev, pager, next, jumper"
       :total="total"
       @size-change="handleFilter"
@@ -82,16 +82,16 @@
 
       <el-table-column :label="t.action" align="center" width="420" class-name="small-padding fixed-width">
         <template #default="{ row }">
-          <el-button type="primary" size="normal" @click="handleUpdate(row)">
+          <el-button type="primary" size="" @click="handleUpdate(row)">
             {{ t.edit }}
           </el-button>
-          <el-button size="normal" type="success" @click="handleImpersonate(row)">
+          <el-button size="" type="success" @click="handleImpersonate(row)">
             {{ t.impersonate }}
           </el-button>
-          <el-button size="normal" type="warning" @click="handleResetPurge(row)">
+          <el-button size="" type="warning" @click="handleResetPurge(row)">
             {{ t.resetPurge }}
           </el-button>
-          <el-button size="normal" type="danger" @click="handleDelete(row)">
+          <el-button size="" type="danger" @click="handleDelete(row)">
             {{ t.delete }}
           </el-button>
         </template>

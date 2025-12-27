@@ -12,7 +12,7 @@
       style="width: 100%; margin-top: 20px;"
       v-model:current-page="filters.page"
       v-model:page-size="filters.pageSize"
-      :page-sizes="[10, 20, 50]"
+
       layout="total, sizes, prev, pager, next, jumper"
       :total="total"
       @size-change="handleFilter"

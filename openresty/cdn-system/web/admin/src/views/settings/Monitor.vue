@@ -13,11 +13,11 @@
       </el-form-item>
       <el-form-item label="通知类型">
         <el-checkbox-group v-model="notifyMsgTypes">
-          <el-checkbox label="node_ip_dns">节点IP变化</el-checkbox>
-          <el-checkbox label="bandwidth">带宽超限</el-checkbox>
-          <el-checkbox label="backup_ip">备用IP</el-checkbox>
-          <el-checkbox label="backup_default_line">默认线路备份</el-checkbox>
-          <el-checkbox label="backup_group">节点组备份</el-checkbox>
+          <el-checkbox value="node_ip_dns">节点IP变化</el-checkbox>
+          <el-checkbox value="bandwidth">带宽超限</el-checkbox>
+          <el-checkbox value="backup_ip">备用IP</el-checkbox>
+          <el-checkbox value="backup_default_line">默认线路备份</el-checkbox>
+          <el-checkbox value="backup_group">节点组备份</el-checkbox>
         </el-checkbox-group>
       </el-form-item>
       <el-form-item label="邮箱">

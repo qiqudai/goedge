@@ -54,7 +54,7 @@
       @selection-change="handleSelectionChange"
       v-model:current-page="listQuery.page"
       v-model:page-size="listQuery.pageSize"
-      :page-sizes="[10, 20, 30, 50]"
+
       layout="total, sizes, prev, pager, next, jumper"
       :total="total"
       @size-change="handleFilter"
@@ -111,10 +111,11 @@
             </el-form-item>
             <el-form-item label="类型">
               <el-radio-group v-model="form.type">
-                <el-radio label="upload">自己上传</el-radio>
-                <el-radio label="zerossl">ZeroSSL(推荐)</el-radio>
-                <el-radio label="letsencrypt">Let's Encrypt</el-radio>
-                <el-radio label="buypass">BuyPass</el-radio>
+                <el-radio value="upload">自己上传</el-radio>
+                <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+                <el-radio value="letsencrypt">Let's Encrypt</el-radio>
+                <el-radio value="buypass">BuyPass</el-radio>
+                <el-radio value="google">Google CA</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item v-if="form.type === 'upload'" label="证书">
@@ -131,7 +132,7 @@
               <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
               </el-select>
               <div class="help-text">
-                ??? DNS API ????????DNS ??????? CNAME ?????
+                这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
               </div>
             </el-form-item>
             <el-form-item label="自动续签">
@@ -144,9 +145,10 @@
           <el-form :model="batchForm" label-width="90px">
             <el-form-item label="类型">
               <el-radio-group v-model="batchForm.type">
-                <el-radio label="zerossl">ZeroSSL(推荐)</el-radio>
-                <el-radio label="letsencrypt">Let's Encrypt</el-radio>
-                <el-radio label="buypass">BuyPass</el-radio>
+                <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+                <el-radio value="letsencrypt">Let's Encrypt</el-radio>
+                <el-radio value="buypass">BuyPass</el-radio>
+                <el-radio value="google">Google CA</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="域名">
@@ -157,7 +159,7 @@
               <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
               </el-select>
               <div class="help-text">
-                ??? DNS API ????????DNS ??????? CNAME ?????
+                这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
               </div>
             </el-form-item>
             <el-form-item label="自动续签">
@@ -191,10 +193,11 @@
         <template v-if="!isAdmin || selectedDefaultUser">
           <el-form-item label="证书类型">
             <el-radio-group v-model="defaultForm.type">
-              <el-radio label="system">系统默认设置</el-radio>
-              <el-radio label="zerossl">ZeroSSL(推荐)</el-radio>
-              <el-radio label="letsencrypt">Let's Encrypt</el-radio>
-              <el-radio label="buypass">BuyPass</el-radio>
+              <el-radio value="system">系统默认设置</el-radio>
+              <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio value="letsencrypt">Let's Encrypt</el-radio>
+              <el-radio value="buypass">BuyPass</el-radio>
+              <el-radio value="google">Google CA</el-radio>
             </el-radio-group>
           </el-form-item>
           <el-form-item label="DNS API">

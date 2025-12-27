@@ -115,8 +115,8 @@
               <el-table-column prop="create_time" label="创建时间" width="160" />
               <el-table-column label="操作" width="150" align="center">
                 <template #default="{row}">
-                  <el-button type="primary" link size="normal" @click="handleEditFilter(row)">编辑</el-button>
-                  <el-button type="danger" link size="normal" @click="deleteFilter(row)">删除</el-button>
+                  <el-button type="primary" link size="" @click="handleEditFilter(row)">编辑</el-button>
+                  <el-button type="danger" link size="" @click="deleteFilter(row)">删除</el-button>
                 </template>
               </el-table-column>
             </AppTable>
@@ -163,8 +163,8 @@
       <el-form :model="tempGroup" label-position="right" label-width="100px" style="width: 700px; margin-left:50px;">
         <el-form-item label="类型">
           <el-radio-group v-model="tempGroup.type">
-            <el-radio label="system">系统</el-radio>
-            <el-radio label="user">用户</el-radio>
+            <el-radio value="system">系统</el-radio>
+            <el-radio value="user">用户</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="名称">
@@ -226,8 +226,8 @@
       <el-form :model="tempMatcher" label-width="80px">
         <el-form-item label="类型">
           <el-radio-group v-model="tempMatcher.type">
-            <el-radio label="system">系统</el-radio>
-            <el-radio label="user">用户</el-radio>
+            <el-radio value="system">系统</el-radio>
+            <el-radio value="user">用户</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="名称">
@@ -309,8 +309,8 @@
       <el-form :model="tempFilter" label-width="100px">
         <el-form-item label="类型">
           <el-radio-group v-model="tempFilter.type">
-            <el-radio label="system">系统</el-radio>
-            <el-radio label="user">用户</el-radio>
+            <el-radio value="system">系统</el-radio>
+            <el-radio value="user">用户</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="名称">
@@ -321,19 +321,19 @@
         </el-form-item>
         <el-form-item label="执行过滤">
           <el-radio-group v-model="tempFilter.action">
-            <el-radio v-for="opt in filterActionOptions" :key="opt.value" :label="opt.value">{{ opt.label }}</el-radio>
+            <el-radio v-for="opt in filterActionOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="showMatchMode" label="匹配模式">
           <el-radio-group v-model="tempFilter.match_mode">
-            <el-radio label="continue">继续下一条规则</el-radio>
-            <el-radio label="stop">停止匹配</el-radio>
+            <el-radio value="continue">继续下一条规则</el-radio>
+            <el-radio value="stop">停止匹配</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="showBlacklist" label="是否拉黑">
           <el-radio-group v-model="tempFilter.blacklist">
-            <el-radio :label="true">拉黑</el-radio>
-            <el-radio :label="false">不拉黑</el-radio>
+            <el-radio :value="true">拉黑</el-radio>
+            <el-radio :value="false">不拉黑</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="tempFilter.action === 'rate'" label="请求频率">
@@ -395,8 +395,8 @@
         </el-form-item>
         <el-form-item label="默认动作">
           <el-radio-group v-model="aclForm.default_action">
-            <el-radio label="allow">允许</el-radio>
-            <el-radio label="deny">拒绝</el-radio>
+            <el-radio value="allow">允许</el-radio>
+            <el-radio value="deny">拒绝</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="状态">

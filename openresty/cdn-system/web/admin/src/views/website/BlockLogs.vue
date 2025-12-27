@@ -30,7 +30,7 @@
           style="width: 100%"
           v-model:current-page="currentQuery.page"
           v-model:page-size="currentQuery.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
+
           layout="total, prev, pager, next, sizes, jumper"
           :total="currentTotal"
           persist-key="current"
@@ -47,7 +47,7 @@
           <el-table-column prop="release_time" label="封禁时间" />
           <el-table-column label="操作" width="100">
             <template #default="scope">
-              <el-button type="text" size="small" @click="handleUnblock(scope.row)">解封</el-button>
+              <el-button link type="primary" size="small" @click="handleUnblock(scope.row)">解封</el-button>
             </template>
           </el-table-column>
         </AppTable>
@@ -56,7 +56,7 @@
       <el-tab-pane label="统计" name="stats">
         <div class="filter-container">
           <el-radio-group v-model="statsType" style="margin-bottom: 20px;">
-            <el-radio-button label="rank">排行</el-radio-button>
+            <el-radio-button value="rank">排行</el-radio-button>
           </el-radio-group>
         </div>
 
@@ -67,7 +67,7 @@
           style="width: 100%"
           v-model:current-page="statsQuery.page"
           v-model:page-size="statsQuery.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
+
           layout="total, prev, pager, next, sizes, jumper"
           :total="statsTotal"
           persist-key="stats"
@@ -109,9 +109,9 @@
               v-else
               v-model="historyFilter.dateRange"
               type="datetimerange"
-              range-separator="?"
-              start-placeholder="????"
-              end-placeholder="????"
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
               format="YYYY-MM-DD HH:mm:ss"
               value-format="YYYY-MM-DD HH:mm:ss"
               clearable
@@ -129,7 +129,7 @@
           style="width: 100%"
           v-model:current-page="historyQuery.page"
           v-model:page-size="historyQuery.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
+
           layout="total, prev, pager, next, sizes, jumper"
           :total="historyTotal"
           persist-key="history"

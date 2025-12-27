@@ -98,8 +98,9 @@ type ForwardGroup struct {
 	UserID    int64     `json:"uid" gorm:"column:uid"`
 	Name      string    `json:"name" gorm:"column:name;type:varchar(64)"`
 	Remark    string    `json:"remark" gorm:"column:des;type:varchar(255)"`
-	CreatedAt time.Time `json:"create_at" gorm:"column:create_at"`
-	UpdatedAt time.Time `json:"update_at" gorm:"column:update_at"`
+	CreatedAt time.Time `json:"create_at" gorm:"-"`
+	UpdatedAt time.Time `json:"update_at" gorm:"-"`
+
 }
 
 func (ForwardGroup) TableName() string {

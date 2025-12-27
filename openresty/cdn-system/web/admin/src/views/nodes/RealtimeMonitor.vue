@@ -10,23 +10,23 @@
       <div class="monitor-toolbar">
         <div class="toolbar-row">
           <span class="toolbar-label">指标</span>
-          <el-radio-group v-model="ranking.metric" size="normal">
-            <el-radio-button label="bandwidth">带宽</el-radio-button>
-            <el-radio-button label="connection">连接</el-radio-button>
-            <el-radio-button label="load">负载</el-radio-button>
-            <el-radio-button label="disk">硬盘</el-radio-button>
+          <el-radio-group v-model="ranking.metric">
+            <el-radio-button value="bandwidth">带宽</el-radio-button>
+            <el-radio-button value="connection">连接</el-radio-button>
+            <el-radio-button value="load">负载</el-radio-button>
+            <el-radio-button value="disk">硬盘</el-radio-button>
           </el-radio-group>
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">时间</span>
-          <el-radio-group v-model="ranking.window" size="normal">
-            <el-radio-button label="1m">1分钟</el-radio-button>
-            <el-radio-button label="5m">5分钟</el-radio-button>
-            <el-radio-button label="30m">30分钟</el-radio-button>
-            <el-radio-button label="1h">1小时</el-radio-button>
+          <el-radio-group v-model="ranking.window">
+            <el-radio-button value="1m">1分钟</el-radio-button>
+            <el-radio-button value="5m">5分钟</el-radio-button>
+            <el-radio-button value="30m">30分钟</el-radio-button>
+            <el-radio-button value="1h">1小时</el-radio-button>
           </el-radio-group>
         </div>
-        <el-button type="primary" size="normal" class="refresh-button" style="width: 96px;" @click="refreshRanking">刷新</el-button>
+        <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshRanking">刷新</el-button>
       </div>
 
       <AppTable :data="ranking.list" border persist-key="node-ranking">
@@ -38,23 +38,23 @@
       </AppTable>
     </div>
 
-    <div v-else-if="activeTab === 'metrics'">
+    <div v-if="activeTab === 'metrics'">
       <div class="monitor-toolbar">
         <div class="toolbar-row">
           <span class="toolbar-label">指标</span>
-          <el-radio-group v-model="metrics.metric" size="normal">
-            <el-radio-button label="bandwidth">带宽</el-radio-button>
-            <el-radio-button label="connection">连接</el-radio-button>
-            <el-radio-button label="load">负载</el-radio-button>
-            <el-radio-button label="disk">硬盘</el-radio-button>
+          <el-radio-group v-model="metrics.metric">
+            <el-radio-button value="bandwidth">带宽</el-radio-button>
+            <el-radio-button value="connection">连接</el-radio-button>
+            <el-radio-button value="load">负载</el-radio-button>
+            <el-radio-button value="disk">硬盘</el-radio-button>
           </el-radio-group>
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">时间</span>
-          <el-radio-group v-model="metrics.window" size="normal">
-            <el-radio-button label="1h">1小时</el-radio-button>
-            <el-radio-button label="6h">6小时</el-radio-button>
-            <el-radio-button label="12h">12小时</el-radio-button>
+          <el-radio-group v-model="metrics.window">
+            <el-radio-button value="1h">1小时</el-radio-button>
+            <el-radio-button value="6h">6小时</el-radio-button>
+            <el-radio-button value="12h">12小时</el-radio-button>
           </el-radio-group>
           <el-date-picker
             v-model="metrics.timeRange"
@@ -68,7 +68,7 @@
             style="width: 320px;"
           />
         </div>
-        <el-button type="primary" size="normal" class="refresh-button" style="width: 96px;" @click="refreshMetrics">刷新</el-button>
+        <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshMetrics">刷新</el-button>
       </div>
 
       <AppTable :data="metrics.list" border persist-key="node-metrics">
@@ -86,11 +86,11 @@
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">时间</span>
-          <el-radio-group v-model="traffic.window" size="normal">
-            <el-radio-button label="1d">1天</el-radio-button>
-            <el-radio-button label="7d">7天</el-radio-button>
-            <el-radio-button label="30d">30天</el-radio-button>
-            <el-radio-button label="custom">自定义</el-radio-button>
+          <el-radio-group v-model="traffic.window">
+            <el-radio-button value="1d">1天</el-radio-button>
+            <el-radio-button value="7d">7天</el-radio-button>
+            <el-radio-button value="30d">30天</el-radio-button>
+            <el-radio-button value="custom">自定义</el-radio-button>
           </el-radio-group>
           <el-date-picker
             v-model="traffic.timeRange"
@@ -114,7 +114,7 @@
           <span class="toolbar-label">排除网卡</span>
           <el-input v-model="traffic.exclude" placeholder="排除网卡，多个网卡用空格分隔" style="width: 320px;" />
         </div>
-        <el-button type="primary" size="normal" class="refresh-button" style="width: 96px;" @click="refreshTraffic">刷新</el-button>
+        <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshTraffic">刷新</el-button>
       </div>
 
       <div class="chart-placeholder">

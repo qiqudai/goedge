@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
@@ -244,10 +245,11 @@ func (ctrl *CertController) Reissue(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ids is required"})
 		return
 	}
-	if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("update_at", time.Now()).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reissue"})
+	if strings.TrimSpace(config.App.AcmeEmail) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "acme_email is required"})
 		return
 	}
+	services.IssueCertsAsync(req.IDs)
 	c.JSON(http.StatusOK, gin.H{"message": "Reissue submitted"})
 }
 
@@ -561,6 +563,8 @@ func normalizeCertType(value string) string {
 		return "letsencrypt"
 	case "buypass":
 		return "buypass"
+	case "google":
+		return "google"
 	}
 	return value
 }

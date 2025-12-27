@@ -9,7 +9,11 @@
           <el-option label="所有区域" :value="0" />
           <el-option v-for="region in regions" :key="region.id" :label="region.name" :value="region.id" />
         </el-select>
-        <el-input v-model="listQuery.keyword" placeholder="填名称或解析值搜索" style="width: 220px;" class="filter-item" @keyup.enter="handleFilter" />
+        <el-input v-model="listQuery.keyword" placeholder="填名称或解析值搜索" style="width: 220px;" class="filter-item" @keyup.enter="handleFilter">
+          <template #append>
+            <el-button :icon="Search" @click="handleFilter" />
+          </template>
+        </el-input>
         <el-button link @click="resetFilter">清除</el-button>
       </div>
     </div>
@@ -23,7 +27,7 @@
       style="width: 100%; margin-top: 20px;"
       v-model:current-page="listQuery.page"
       v-model:page-size="listQuery.limit"
-      :page-sizes="[10, 20, 30, 50]"
+
       layout="total, sizes, prev, pager, next, jumper"
       :total="total"
       @size-change="getList"
@@ -102,9 +106,9 @@
         
         <el-form-item label="备用IP切换:">
             <el-radio-group v-model="temp.spare_ip_switch">
-                <el-radio label="1">有主IP下线时</el-radio>
-                <el-radio label="2">在线IP数少于备用IP数时</el-radio>
-                <el-radio label="3">间隔切换</el-radio>
+                <el-radio value="1">有主IP下线时</el-radio>
+                <el-radio value="2">在线IP数少于备用IP数时</el-radio>
+                <el-radio value="3">间隔切换</el-radio>
             </el-radio-group>
         </el-form-item>
       </el-form>
@@ -121,7 +125,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 

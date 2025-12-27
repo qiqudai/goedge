@@ -27,9 +27,9 @@
       </el-table-column>
       <el-table-column label="操作" width="200">
         <template #default="scope">
-          <el-button size="normal" @click="handleEdit(scope.row)">管理</el-button>
-          <el-button size="normal" type="success" @click="handleAssign(scope.row)">分配</el-button>
-          <el-button size="normal" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button size="" @click="handleEdit(scope.row)">管理</el-button>
+          <el-button size="" type="success" @click="handleAssign(scope.row)">分配</el-button>
+          <el-button size="" type="danger" @click="handleDelete(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </AppTable>
@@ -40,7 +40,7 @@
       width="900px"
       top="5vh"
     >
-      <el-form ref="dataForm" :model="temp" label-width="120px" size="normal">
+      <el-form ref="dataForm" :model="temp" label-width="120px" size="">
         <el-row>
           <el-col :span="12">
             <el-form-item label="名称">
@@ -295,10 +295,10 @@
         </el-form-item>
         <el-form-item label="时长">
           <el-radio-group v-model="assignForm.duration_mode">
-            <el-radio label="1">1个月</el-radio>
-            <el-radio label="3">3个月</el-radio>
-            <el-radio label="12">12个月</el-radio>
-            <el-radio label="custom">自定义</el-radio>
+            <el-radio value="1">1个月</el-radio>
+            <el-radio value="3">3个月</el-radio>
+            <el-radio value="12">12个月</el-radio>
+            <el-radio value="custom">自定义</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="到期时间">
@@ -315,8 +315,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="assignVisible = false">取消</el-button>
-        <el-button size="normal" type="primary" :loading="assignSaving" @click="submitAssign">确定</el-button>
+        <el-button size="" @click="assignVisible = false">取消</el-button>
+        <el-button size="" type="primary" :loading="assignSaving" @click="submitAssign">确定</el-button>
       </template>
     </el-dialog>
   </div>

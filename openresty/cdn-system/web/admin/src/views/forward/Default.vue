@@ -35,7 +35,7 @@
       <el-table-column prop="group_name" label="转发分组" min-width="180" />
       <el-table-column label="操作" width="160" align="center">
         <template #default="{ row }">
-          <el-button link type="danger" size="normal" @click="removeSetting(row)">删除</el-button>
+          <el-button link type="danger" size="" @click="removeSetting(row)">删除</el-button>
         </template>
       </el-table-column>
     </AppTable>
@@ -52,27 +52,27 @@
         <el-form-item label="设置值">
           <template v-if="form.key === 'proxy_protocol'">
             <el-radio-group v-model="form.value">
-              <el-radio :label="true">是</el-radio>
-              <el-radio :label="false">否</el-radio>
+              <el-radio :value="true">是</el-radio>
+              <el-radio :value="false">否</el-radio>
             </el-radio-group>
           </template>
           <template v-else-if="form.key === 'listen_protocol'">
             <el-radio-group v-model="form.value">
-              <el-radio label="tcp">TCP</el-radio>
-              <el-radio label="udp">UDP</el-radio>
+              <el-radio value="tcp">TCP</el-radio>
+              <el-radio value="udp">UDP</el-radio>
             </el-radio-group>
           </template>
           <template v-else>
             <el-radio-group v-model="form.value">
-              <el-radio label="rr">轮循</el-radio>
-              <el-radio label="ip_hash">定源</el-radio>
+              <el-radio value="rr">轮循</el-radio>
+              <el-radio value="ip_hash">定源</el-radio>
             </el-radio-group>
           </template>
         </el-form-item>
         <el-form-item label="生效范围">
           <el-radio-group v-model="form.scope">
-            <el-radio label="global">全局</el-radio>
-            <el-radio label="group">转发分组</el-radio>
+            <el-radio value="global">全局</el-radio>
+            <el-radio value="group">转发分组</el-radio>
           </el-radio-group>
           <el-select v-if="form.scope === 'group'" v-model="form.group_id" placeholder="请选择" style="width: 220px; margin-left: 12px;">
             <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />

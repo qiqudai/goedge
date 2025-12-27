@@ -1,57 +1,20 @@
-# 线路分组（功能理解）
+﻿# Node Groups / Line Groups
 
-## 功能目标
-- 线路分组决定网站配置分发到哪些节点。
-- 影响用户访问域名时被分配到的节点/IP。
+## Scope
+- Region (L1) is a large grouping: each node belongs to exactly one region.
+- Line group (L2) is a small grouping: a node can belong to multiple line groups.
+- Sites should inherit a default line group at creation, but can change later.
 
-## 基本流程
-1) 在“节点管理 -> 线路分组”新增分组。
-2) 在分组列表点击“设置解析”，为该线路组添加 IP。
-3) 使用该线路组的网站会把配置同步到此线路组内的节点。
+## UI
+- Region list with add/edit/delete.
+- Line group list with region assignment and L2 settings.
+- Resolution config view to assign nodes to line groups with primary/backup roles.
 
-## 分区解析（智能解析）
-- 根据地区分配不同线路 IP，例如国内用户走香港节点，国外用户走美国节点。
-- 需要设置：
-  - 境内线路（添加香港节点 IP）
-  - 境外线路（添加美国节点 IP）
-  - 默认线路必须有 IP，避免无匹配时无解析
+## API
+- CRUD for regions and line groups.
+- Endpoints to assign nodes to line groups and set backup/weight/sort.
 
-## 备用 IP
-- 备用 IP 平时不参与解析。
-- 主 IP 被监控判定不可用并禁用时，备用 IP 自动上线。
-
-## 备用默认解析
-- 当默认线路 IP 都不可用时，可能导致部分地区无解析。
-- 可将某个分区线路的 IP 设为“备用默认解析”，在默认线路不可用时顶替为默认线路，确保全地区有解析。
-
-## 权重
-- 同线路多个 IP 可设置权重。
-- 权重越高，解析命中次数越多。
-
-# 线路分组（实现思路）
-
-## 模块设计
-1) 线路组管理
-   - 新增/编辑/删除线路组
-   - 线路组与节点/站点绑定
-2) 解析管理
-   - 线路组内 IP 列表管理
-   - 批量添加 IP 与批量操作
-3) 分区解析
-   - 地域 -> 线路映射
-   - 境内/境外/默认线路与回退逻辑
-4) 监控与容灾
-   - IP 健康检查
-   - 主备切换与备用默认解析
-5) 解析权重
-   - 权重配置与解析比例控制
-
-## 关键逻辑
-- 默认线路必须始终可用，若无可用 IP，自动回退到备用默认解析。
-- 主 IP 不可用时触发备用 IP 上线，并记录事件。
-- 分区线路无匹配时自动回落到默认线路。
-
-## UI/交互建议
-- 分组列表展示：分组名、IP 数量、默认线路状态、分区线路概览。
-- 解析设置页：分区标签页 + 默认线路 + 备用默认解析标记。
-- 权重操作支持快速输入与批量编辑。
+## Node/Sync
+- Sync line group changes to nodes.
+- L1 should periodically check L2 availability (agent-side health checks).
+- Backup node switching modes must be enforced by node runtime.

@@ -39,20 +39,20 @@
       <el-tab-pane label="数据排行" name="ranking">
         <div class="filter-container">
            <el-radio-group v-model="rankingType" style="margin-bottom: 20px;" @change="fetchRankingList">
-             <el-radio-button label="domain">域名排行</el-radio-button>
-             <el-radio-button label="url">热门URL</el-radio-button>
-             <el-radio-button label="ip">Top客户端IP</el-radio-button>
-             <el-radio-button label="country">国家排行</el-radio-button>
-             <el-radio-button label="province">省份排行</el-radio-button>
-             <el-radio-button label="referer">热门Referer</el-radio-button>
+             <el-radio-button value="domain">域名排行</el-radio-button>
+             <el-radio-button value="url">热门URL</el-radio-button>
+             <el-radio-button value="ip">Top客户端IP</el-radio-button>
+             <el-radio-button value="country">国家排行</el-radio-button>
+             <el-radio-button value="province">省份排行</el-radio-button>
+             <el-radio-button value="referer">热门Referer</el-radio-button>
            </el-radio-group>
 
            <div style="margin-bottom: 20px;">
                 <el-radio-group v-model="timeRange" size="small" @change="fetchRankingList" style="margin-right: 10px;">
-                    <el-radio-button label="10min">10分钟实时</el-radio-button>
-                    <el-radio-button label="30min">近30分钟</el-radio-button>
-                    <el-radio-button label="1h">近1小时</el-radio-button>
-                    <el-radio-button label="custom">自定义</el-radio-button>
+                    <el-radio-button value="10min">10分钟实时</el-radio-button>
+                    <el-radio-button value="30min">近30分钟</el-radio-button>
+                    <el-radio-button value="1h">近1小时</el-radio-button>
+                    <el-radio-button value="custom">自定义</el-radio-button>
                 </el-radio-group>
                 <el-input v-model="rankingKeyword" :placeholder="searchPlaceholder" style="width: 200px;" class="filter-item" @keyup.enter="fetchRankingList" />
                 <el-button class="filter-item" type="primary" :icon="Search" @click="fetchRankingList" style="margin-left: 10px;">刷新</el-button>

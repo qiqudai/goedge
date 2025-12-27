@@ -2,17 +2,17 @@
   <div class="app-container">
     <el-tabs v-model="pageTab" class="node-tabs" @tab-click="handleTabChange">
       <el-tab-pane label="节点列表" name="list" />
-      <el-tab-pane label="待初始化" name="pending" />
+
       <el-tab-pane label="区域管理" name="region" />
     </el-tabs>
 
     <div class="filter-container node-actions">
-      <el-button type="primary" size="normal" @click="handleCreate">{{ t.installNode }}</el-button>
-      <el-button size="normal" :disabled="!selectedRows.length" @click="handleBatch('stop')">{{ t.disableNode }}</el-button>
-      <el-button size="normal" :disabled="!selectedRows.length" @click="handleBatch('start')">{{ t.enableNode }}</el-button>
-      <el-button size="normal" @click="handleRefresh">{{ t.refresh }}</el-button>
+      <el-button type="primary" @click="handleCreate">{{ t.installNode }}</el-button>
+      <el-button :disabled="!selectedRows.length" @click="handleBatch('stop')">{{ t.disableNode }}</el-button>
+      <el-button :disabled="!selectedRows.length" @click="handleBatch('start')">{{ t.enableNode }}</el-button>
+      <el-button @click="handleRefresh">{{ t.refresh }}</el-button>
       <el-dropdown trigger="click">
-        <el-button size="normal">
+        <el-button>
           {{ t.moreAction }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
         </el-button>
         <template #dropdown>
@@ -38,8 +38,8 @@
           <el-icon><Search /></el-icon>
         </template>
       </el-input>
-      <el-button type="primary" size="normal" class="filter-item" @click="handleFilter">{{ t.search }}</el-button>
-      <el-button type="text" size="normal" class="filter-item" @click="resetFilters">{{ t.reset }}</el-button>
+      <el-button type="primary" class="filter-item" @click="handleFilter">{{ t.search }}</el-button>
+      <el-button link type="primary" class="filter-item" @click="resetFilters">{{ t.reset }}</el-button>
     </div>
 
     <AppTable
@@ -48,7 +48,7 @@
       v-model:current-page="listQuery.page"
       v-model:page-size="listQuery.pageSize"
       persist-key="list"
-      :page-sizes="[10, 20, 30, 50]"
+
       layout="total, sizes, prev, pager, next, jumper"
       :total="total"
       @size-change="getList"
@@ -74,7 +74,7 @@
       <el-table-column label="区域" min-width="140px">
         <template #default="{ row }">
           <span>{{ row.region_name || '默认' }}</span>
-          <el-link type="primary" :underline="false" class="node-group-link" @click="goToNodeGroups">
+          <el-link type="primary" underline="never" class="node-group-link" @click="goToNodeGroups">
             {{ t.lineGroup }}({{ row.group_count || 1 }}{{ t.groupCountUnit }})
           </el-link>
         </template>
@@ -89,7 +89,7 @@
                 <div v-for="item in row.sub_ips" :key="item.ip || item">{{ item.ip || item }}</div>
               </div>
               <template #reference>
-                <el-button link type="primary" size="normal">+{{ row.sub_ips.length }} {{ t.fromIp }}</el-button>
+                <el-button link type="primary">+{{ row.sub_ips.length }} {{ t.fromIp }}</el-button>
               </template>
             </el-popover>
           </div>
@@ -99,7 +99,7 @@
       <el-table-column :label="t.monitor" min-width="120px" align="center">
         <template #default="{ row }">
           <span class="monitor-protocol">{{ formatMonitorProtocol(row) }}</span>
-          <el-link type="primary" :underline="false" @click="openMonitorLogs(row)">{{ t.monitorLog }}</el-link>
+          <el-link type="primary" underline="never" @click="openMonitorLogs(row)">{{ t.monitorLog }}</el-link>
         </template>
       </el-table-column>
 
@@ -146,9 +146,9 @@
       <el-table-column :label="t.action" align="center" width="160" class-name="small-padding fixed-width">
         <template #default="{ row }">
           <div class="action-row">
-            <el-button link type="primary" size="normal" @click="handleUpdate(row)">{{ t.manage }}</el-button>
+            <el-button link type="primary" @click="handleUpdate(row)">{{ t.manage }}</el-button>
             <el-dropdown trigger="click">
-              <el-button link type="primary" size="normal">
+              <el-button link type="primary">
                 {{ t.more }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
@@ -170,19 +170,19 @@
             <el-option v-for="item in monitorTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Time Range">
+        <el-form-item label="??">
           <el-date-picker
             v-model="monitorQuery.timeRange"
             type="datetimerange"
-            range-separator="To"
-            start-placeholder="Start"
-            end-placeholder="End"
+            range-separator="?"
+            start-placeholder="??"
+            end-placeholder="??"
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             style="width: 260px;"
           />
         </el-form-item>
-        <el-form-item label="Time Range">
+        <el-form-item label="?">
           <el-select v-model="monitorQuery.group" style="width: 180px;">
             <el-option v-for="item in monitorGroupOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
@@ -193,14 +193,14 @@
         v-model:current-page="monitorQuery.page"
         v-model:page-size="monitorQuery.pageSize"
         persist-key="monitor"
-        :page-sizes="[10, 20, 50]"
+
         layout="total, sizes, prev, pager, next"
         :total="monitorTotal"
         @current-change="loadMonitorLogs"
         @size-change="loadMonitorLogs"
         border
       >
-        <el-table-column prop="checked_at" label="Checked At" min-width="140" />
+        <el-table-column prop="checked_at" label="??" min-width="140" />
         <el-table-column prop="fail_count" label="失败个数" width="100" align="center" />
         <el-table-column prop="total_count" label="总检测点" width="100" align="center" />
       </AppTable>
@@ -225,8 +225,8 @@
             </el-form-item>
             <el-form-item :label="t.nodeType" prop="type">
               <el-radio-group v-model="temp.type">
-                <el-radio :label="1">{{ t.l1EdgeNode }}</el-radio>
-                <el-radio :label="2">{{ t.l2MiddleNode }}</el-radio>
+                <el-radio :value="1">{{ t.l1EdgeNode }}</el-radio>
+                <el-radio :value="2">{{ t.l2MiddleNode }}</el-radio>
               </el-radio-group>
               <div style="font-size: 12px; color: #909399; line-height: 1.5;">
                 <div v-text="t.l1Desc"></div>
@@ -315,8 +315,8 @@
       </el-tabs>
       <template #footer>
         <div class="dialog-footer">
-          <el-button size="normal" @click="dialogFormVisible = false">{{ t.cancel }}</el-button>
-          <el-button size="normal" type="primary" @click="dialogStatus === 'create' ? createData() : updateData()">
+          <el-button @click="dialogFormVisible = false">{{ t.cancel }}</el-button>
+          <el-button type="primary" @click="dialogStatus === 'create' ? createData() : updateData()">
             {{ t.confirm }}
           </el-button>
         </div>
@@ -327,6 +327,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import RealtimeMonitor from './RealtimeMonitor.vue'
 import { useRouter } from 'vue-router'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
 import request from '@/utils/request'

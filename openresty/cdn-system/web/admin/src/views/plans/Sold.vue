@@ -3,29 +3,29 @@
     <h2>已售套餐</h2>
 
     <div class="filter-container">
-      <el-button type="primary" size="normal" @click="fetchList">同步数据</el-button>
+      <el-button type="primary" size="" @click="fetchList">同步数据</el-button>
       <el-button
-        size="normal"
+        size=""
         :disabled="selectedIds.length === 0"
         @click="handleBatchDelete"
       >
         删除
       </el-button>
       <div class="filter-inline">
-        <el-select v-model="query.keywordType" size="normal" style="width: 110px">
+        <el-select v-model="query.keywordType" size="" style="width: 110px">
           <el-option label="用户ID" value="user_id" />
           <el-option label="用户名" value="user_name" />
           <el-option label="套餐名称" value="plan_name" />
         </el-select>
         <el-input
           v-model="query.keyword"
-          size="normal"
+          size=""
           placeholder="输入用户ID"
           clearable
           style="width: 220px"
           @keyup.enter="applyFilter"
         />
-        <el-button size="normal" type="primary" @click="applyFilter">
+        <el-button size="" type="primary" @click="applyFilter">
           <el-icon><Search /></el-icon>
         </el-button>
       </div>
@@ -39,7 +39,7 @@
       @selection-change="handleSelectionChange"
       v-model:current-page="page"
       v-model:page-size="pageSize"
-      :page-sizes="[10, 20, 50, 100]"
+
       layout="total, prev, pager, next, sizes, jumper"
       :total="total"
       persist-key="plans-sold"
@@ -78,9 +78,9 @@
       </el-table-column>
       <el-table-column label="操作" width="220">
         <template #default="{ row }">
-          <el-button link type="primary" size="normal" @click="openDetail(row)">详情</el-button>
-          <el-button link type="primary" size="normal" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="primary" size="normal" @click="openUpgrade(row)">升降配</el-button>
+          <el-button link type="primary" size="" @click="openDetail(row)">详情</el-button>
+          <el-button link type="primary" size="" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="primary" size="" @click="openUpgrade(row)">升降配</el-button>
         </template>
       </el-table-column>
     </AppTable>
@@ -149,7 +149,7 @@
         </el-tab-pane>
       </el-tabs>
       <template #footer>
-        <el-button size="normal" @click="detailVisible = false">关闭</el-button>
+        <el-button size="" @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -181,7 +181,7 @@
             </el-form-item>
           </el-form>
           <div class="dialog-footer">
-            <el-button size="normal" type="primary" @click="submitSwitch">确定</el-button>
+            <el-button size="" type="primary" @click="submitSwitch">确定</el-button>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -205,8 +205,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="editVisible = false">取消</el-button>
-        <el-button size="normal" type="primary" @click="submitEdit">确定</el-button>
+        <el-button size="" @click="editVisible = false">取消</el-button>
+        <el-button size="" type="primary" @click="submitEdit">确定</el-button>
       </template>
     </el-dialog>
   </div>

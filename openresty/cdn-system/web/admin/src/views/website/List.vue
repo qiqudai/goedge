@@ -121,7 +121,7 @@
       <el-pagination
         v-model:current-page="listQuery.page"
         v-model:page-size="listQuery.pageSize"
-        :page-sizes="[10, 20, 30, 50]"
+
         layout="total, sizes, prev, pager, next, jumper"
         :total="total"
         @size-change="handleFilter"
@@ -132,8 +132,8 @@
     <div v-if="activeTopTab === 'default'" class="default-section">
       <el-card>
         <div class="default-toolbar">
-          <el-button type="primary" size="normal" @click="openDefaultDialog()">新增设置</el-button>
-          <el-button size="normal" :disabled="!selectedDefaults.length" @click="removeDefaultBatch">删除</el-button>
+          <el-button type="primary" size="" @click="openDefaultDialog()">新增设置</el-button>
+          <el-button size="" :disabled="!selectedDefaults.length" @click="removeDefaultBatch">删除</el-button>
         </div>
         <el-table
           :data="defaultRows"
@@ -153,8 +153,8 @@
           </el-table-column>
           <el-table-column label="操作" width="160" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" size="normal" @click="openDefaultDialog(row)">编辑</el-button>
-              <el-button link type="danger" size="normal" @click="removeDefault(row)">删除</el-button>
+              <el-button link type="primary" size="" @click="openDefaultDialog(row)">编辑</el-button>
+              <el-button link type="danger" size="" @click="removeDefault(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -181,8 +181,8 @@
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
         <el-table-column label="操作" width="140" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="normal" @click="openDnsapiEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="normal" @click="removeDnsapi(row)">删除</el-button>
+            <el-button link type="primary" size="" @click="openDnsapiEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="" @click="removeDnsapi(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -244,10 +244,10 @@
             </el-form-item>
             <el-form-item label="加速类型">
               <el-radio-group v-model="createForm.site_type">
-                <el-radio label="website">网页加速(常用网站元素缓存)</el-radio>
-                <el-radio label="api">API加速(无缓存快速回源)</el-radio>
-                <el-radio label="download">大文件下载加速(压缩+分片回源)</el-radio>
-                <el-radio label="custom">自定义(手动配置)</el-radio>
+                <el-radio value="website">网页加速(常用网站元素缓存)</el-radio>
+                <el-radio value="api">API加速(无缓存快速回源)</el-radio>
+                <el-radio value="download">大文件下载加速(压缩+分片回源)</el-radio>
+                <el-radio value="custom">自定义(手动配置)</el-radio>
               </el-radio-group>
             </el-form-item>
             <div class="expand-more" @click="createMore = !createMore">
@@ -311,7 +311,7 @@
               />
               <div class="help-text">
                 domain是网站域名，ip源站地址，配置项以 | 分隔。
-                <el-link type="primary" :underline="false">了解更多</el-link>
+                <el-link type="primary" underline="never">了解更多</el-link>
               </div>
             </el-form-item>
             <el-form-item label="忽略错误">
@@ -438,7 +438,7 @@
             placeholder="一行一个"
           />
           <div v-else-if="defaultOptionType === 'headers'" class="header-list">
-            <el-button type="primary" size="normal" @click="addDefaultHeader">新增请求头</el-button>
+            <el-button type="primary" size="" @click="addDefaultHeader">新增请求头</el-button>
             <el-table :data="defaultForm.headers" border size="small" style="margin-top: 8px;">
               <el-table-column label="名称" min-width="160">
                 <template #default="{ row }">
@@ -452,15 +452,15 @@
               </el-table-column>
               <el-table-column label="操作" width="100">
                 <template #default="{ $index }">
-                  <el-button link type="danger" size="normal" @click="removeDefaultHeader($index)">删除</el-button>
+                  <el-button link type="danger" size="" @click="removeDefaultHeader($index)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
           </div>
           <div v-else-if="defaultOptionType === 'region'" class="region-setting">
             <el-radio-group v-model="defaultForm.region_mode">
-              <el-radio label="none">不设置</el-radio>
-              <el-radio label="custom">自定义</el-radio>
+              <el-radio value="none">不设置</el-radio>
+              <el-radio value="custom">自定义</el-radio>
             </el-radio-group>
             <CountrySelector
               v-if="defaultForm.region_mode === 'custom'"
@@ -471,8 +471,8 @@
         </el-form-item>
         <el-form-item label="生效范围">
           <el-radio-group v-model="defaultForm.scope">
-            <el-radio label="global">全局</el-radio>
-            <el-radio label="group">网站分组</el-radio>
+            <el-radio value="global">全局</el-radio>
+            <el-radio value="group">网站分组</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="defaultForm.scope === 'group'" label="网站分组">
@@ -486,8 +486,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="defaultDialogVisible = false">取消</el-button>
-        <el-button type="primary" size="normal" @click="submitDefault">确定</el-button>
+        <el-button size="" @click="defaultDialogVisible = false">取消</el-button>
+        <el-button type="primary" size="" @click="submitDefault">确定</el-button>
       </template>
     </el-dialog>
 
@@ -518,8 +518,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.http_enable">状态设置</el-checkbox>
                 <el-radio-group v-model="batchEditForm.http_enable">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -535,8 +535,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.https_enable">证书设置</el-checkbox>
                 <el-radio-group v-model="batchEditForm.https_enable">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -546,8 +546,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.force_https">强制HTTPS</el-checkbox>
                 <el-radio-group v-model="batchEditForm.force_https">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -557,37 +557,37 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.hsts">HSTS</el-checkbox>
                 <el-radio-group v-model="batchEditForm.hsts">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.http2">HTTP2</el-checkbox>
                 <el-radio-group v-model="batchEditForm.http2">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.ocsp_stapling">OCSP Stapling</el-checkbox>
                 <el-radio-group v-model="batchEditForm.ocsp_stapling">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.http3">HTTP3</el-checkbox>
                 <el-radio-group v-model="batchEditForm.http3">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.ssl_profile">SSL配置</el-checkbox>
                 <el-radio-group v-model="batchEditForm.ssl_profile">
-                  <el-radio label="compat">兼容旧浏览器</el-radio>
-                  <el-radio label="modern">兼容大部分浏览器</el-radio>
-                  <el-radio label="custom">自定义</el-radio>
+                  <el-radio value="compat">兼容旧浏览器</el-radio>
+                  <el-radio value="modern">兼容大部分浏览器</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-action">
@@ -680,15 +680,15 @@
               <div class="batch-row" style="margin-top: 16px;">
                 <el-checkbox v-model="batchEditChecks.balance_way">负载方式</el-checkbox>
                 <el-radio-group v-model="batchEditForm.balance_way">
-                  <el-radio label="rr">轮循</el-radio>
-                  <el-radio label="ip_hash">定源</el-radio>
+                  <el-radio value="rr">轮循</el-radio>
+                  <el-radio value="ip_hash">定源</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.origin_health_check">源站健康检查</el-checkbox>
                 <el-radio-group v-model="batchEditForm.origin_health_check">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-action">
@@ -700,10 +700,10 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.backsource_protocol">回源协议</el-checkbox>
                 <el-radio-group v-model="batchEditForm.backsource_protocol">
-                  <el-radio label="http">HTTP</el-radio>
-                  <el-radio label="https">HTTPS</el-radio>
-                  <el-radio label="follow">跟随协议</el-radio>
-                  <el-radio label="follow_with_port">跟随端口和协议</el-radio>
+                  <el-radio value="http">HTTP</el-radio>
+                  <el-radio value="https">HTTPS</el-radio>
+                  <el-radio value="follow">跟随协议</el-radio>
+                  <el-radio value="follow_with_port">跟随端口和协议</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -717,9 +717,9 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.backsource_host">回源域名</el-checkbox>
                 <el-radio-group v-model="batchEditForm.backsource_host_mode">
-                  <el-radio label="domain">访问域名</el-radio>
-                  <el-radio label="domain_port">访问域名+访问端口</el-radio>
-                  <el-radio label="custom">自定义</el-radio>
+                  <el-radio value="domain">访问域名</el-radio>
+                  <el-radio value="domain_port">访问域名+访问端口</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
                 </el-radio-group>
                 <el-input
                   v-if="batchEditForm.backsource_host_mode === 'custom'"
@@ -814,8 +814,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.security_auto_switch">自动切换</el-checkbox>
                 <el-radio-group v-model="batchEditForm.security_auto_switch">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -852,8 +852,8 @@
               <div class="batch-row" style="margin-top: 16px;">
                 <el-checkbox v-model="batchEditChecks.security_black_time">黑名单时间</el-checkbox>
                 <el-radio-group v-model="batchEditForm.security_black_time_mode">
-                  <el-radio label="system">系统默认</el-radio>
-                  <el-radio label="custom">自定义</el-radio>
+                  <el-radio value="system">系统默认</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
                 </el-radio-group>
                 <el-input
                   v-if="batchEditForm.security_black_time_mode === 'custom'"
@@ -865,8 +865,8 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.security_white_time">白名单时间</el-checkbox>
                 <el-radio-group v-model="batchEditForm.security_white_time_mode">
-                  <el-radio label="system">系统默认</el-radio>
-                  <el-radio label="custom">自定义</el-radio>
+                  <el-radio value="system">系统默认</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
                 </el-radio-group>
                 <el-input
                   v-if="batchEditForm.security_white_time_mode === 'custom'"
@@ -878,9 +878,9 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.security_bot">搜索引擎爬虫</el-checkbox>
                 <el-radio-group v-model="batchEditForm.security_bot">
-                  <el-radio label="none">不设置</el-radio>
-                  <el-radio label="allow">放行</el-radio>
-                  <el-radio label="deny">拦截</el-radio>
+                  <el-radio value="none">不设置</el-radio>
+                  <el-radio value="allow">放行</el-radio>
+                  <el-radio value="deny">拦截</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
@@ -894,19 +894,19 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.security_shield_proxy">屏蔽透明代理</el-checkbox>
                 <el-radio-group v-model="batchEditForm.security_shield_proxy">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.security_region_block">区域屏蔽</el-checkbox>
                 <el-radio-group v-model="batchEditForm.security_region_mode">
-                  <el-radio label="none">不设置</el-radio>
-                  <el-radio label="overseas_without_hk">国外(不包括港澳台)</el-radio>
-                  <el-radio label="overseas_with_hk">国外(包括港澳台)</el-radio>
-                  <el-radio label="china_with_hk">中国(包括港澳台)</el-radio>
-                  <el-radio label="china_without_hk">中国(不包括港澳台)</el-radio>
-                  <el-radio label="custom">自定义</el-radio>
+                  <el-radio value="none">不设置</el-radio>
+                  <el-radio value="overseas_without_hk">国外(不包括港澳台)</el-radio>
+                  <el-radio value="overseas_with_hk">国外(包括港澳台)</el-radio>
+                  <el-radio value="china_with_hk">中国(包括港澳台)</el-radio>
+                  <el-radio value="china_without_hk">中国(不包括港澳台)</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
                 </el-radio-group>
               </div>
               <country-selector
@@ -930,15 +930,15 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.access_hotlink">防盗链</el-checkbox>
                 <el-radio-group v-model="batchEditForm.access_hotlink">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.access_cors">跨域访问</el-checkbox>
                 <el-radio-group v-model="batchEditForm.access_cors">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-action">
@@ -950,29 +950,29 @@
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_ipv6">IPv6开启</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_ipv6">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_gzip">Gzip压缩</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_gzip">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_websocket">Websocket</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_websocket">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_search_origin">搜索引擎回源</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_search_origin">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
 
@@ -1077,43 +1077,43 @@
               <div class="batch-row" style="margin-top: 16px;">
                 <el-checkbox v-model="batchEditChecks.adv_acme_backsource">acme请求回源</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_acme_backsource">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_realtime_return">数据实时返回</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_realtime_return">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_realtime_send">数据实时发送</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_realtime_send">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_log_request_header">记录请求头</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_log_request_header">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_log_response_header">记录响应头</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_log_response_header">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.adv_log_request_body">记录请求体</el-checkbox>
                 <el-radio-group v-model="batchEditForm.adv_log_request_body">
-                  <el-radio :label="true">开启</el-radio>
-                  <el-radio :label="false">关闭</el-radio>
+                  <el-radio :value="true">开启</el-radio>
+                  <el-radio :value="false">关闭</el-radio>
                 </el-radio-group>
               </div>
               <div class="batch-row">

@@ -5,9 +5,9 @@
         <el-form :model="form" label-width="100px" class="purge-form">
           <el-form-item label="操作类型">
             <el-radio-group v-model="form.type" @change="loadUsage">
-              <el-radio label="refresh_url">刷新URL</el-radio>
-              <el-radio label="refresh_dir">刷新目录</el-radio>
-              <el-radio label="preheat">预热</el-radio>
+              <el-radio value="refresh_url">刷新URL</el-radio>
+              <el-radio value="refresh_dir">刷新目录</el-radio>
+              <el-radio value="preheat">预热</el-radio>
             </el-radio-group>
           </el-form-item>
           <el-form-item label="URL">
@@ -84,7 +84,7 @@
           </el-table-column>
           <el-table-column label="操作" width="120" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" size="normal" @click="handleResubmit(row)">重新提交</el-button>
+              <el-button link type="primary" size="" @click="handleResubmit(row)">重新提交</el-button>
             </template>
           </el-table-column>
         </AppTable>
@@ -209,7 +209,7 @@ const handleSelectionChange = rows => {
 }
 
 const handleResubmit = row => {
-  ElMessageBox.confirm('确认重新提交该任�?', '提示', {
+  ElMessageBox.confirm('确认重新提交该任务', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'

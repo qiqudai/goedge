@@ -185,7 +185,7 @@
         <el-pagination
           v-model:current-page="listQuery.page"
           v-model:page-size="listQuery.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
+
           layout="total, sizes, prev, pager, next, jumper"
           :total="total"
           @size-change="handleFilter"

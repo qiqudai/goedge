@@ -45,7 +45,7 @@
             <el-switch v-model="config.nginx.gzip" />
         </el-form-item>
         <el-form-item label="自定义配置片段 (http block)">
-            <el-input type="textarea" v-model="config.nginx.custom_snippet" rows="5" placeholder="# Custom nginx directives..." />
+            <el-input type="textarea" v-model="config.nginx.custom_snippet" :rows="5" placeholder="# Custom nginx directives..." />
         </el-form-item>
 
       </el-form>

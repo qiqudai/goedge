@@ -1,9 +1,7 @@
 <template>
   <div class="app-table">
     <el-table :data="tableData" v-loading="loading" v-bind="tableAttrs">
-      <template v-for="(slotFn, name) in slots" #[name]="slotProps">
-        <slot :name="name" v-bind="slotProps" />
-      </template>
+      <slot />
     </el-table>
     <div v-if="showPaginationComputed" :class="paginationClass">
       <AppPagination
@@ -20,8 +18,15 @@
   </div>
 </template>
 
+<script>
+export default {
+  inheritAttrs: false
+}
+</script>
+
 <script setup>
-import { computed, ref, useAttrs, useSlots } from 'vue'
+import { computed, ref, useAttrs } from 'vue'
+import AppPagination from './AppPagination.vue'
 
 const props = defineProps({
   data: { type: Array, default: () => [] },
@@ -29,7 +34,7 @@ const props = defineProps({
   currentPage: { type: [Number, String], default: undefined },
   pageSize: { type: [Number, String], default: undefined },
   total: { type: [Number, String], default: undefined },
-  pageSizes: { type: Array, default: () => [10, 20, 30, 50] },
+  pageSizes: { type: Array, default: () => [10, 30, 50, 100, 200, 300, 500] },
   layout: { type: String, default: 'total, sizes, prev, pager, next, jumper' },
   persistKey: { type: String, default: 'default' },
   showPagination: { type: Boolean, default: true },
@@ -44,7 +49,6 @@ const emit = defineEmits([
 ])
 
 const attrs = useAttrs()
-const slots = useSlots()
 
 const tableAttrs = computed(() => ({ ...attrs }))
 

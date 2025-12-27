@@ -42,8 +42,13 @@ func (ctr *NodeGroupController) ListNodeGroups(c *gin.Context) {
 	query := db.DB.Model(&models.NodeGroup{})
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	if keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("name LIKE ? OR cname_hostname LIKE ? OR des LIKE ?", like, like, like)
+		// If keyword is a number, try to search by ID as well
+		if id, err := strconv.ParseInt(keyword, 10, 64); err == nil && id > 0 {
+			query = query.Where("id = ? OR name LIKE ? OR cname_hostname LIKE ? OR des LIKE ?", id, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+		} else {
+			like := "%" + keyword + "%"
+			query = query.Where("name LIKE ? OR cname_hostname LIKE ? OR des LIKE ?", like, like, like)
+		}
 	}
 	if regionStr := strings.TrimSpace(c.Query("region_id")); regionStr != "" {
 		if regionID, err := strconv.ParseInt(regionStr, 10, 64); err == nil && regionID > 0 {

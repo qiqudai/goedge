@@ -83,11 +83,23 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 		{3, 30073, "example.com", "112.229.182.52", "CN-SD", "CC_DEFENSE", "2025-12-22 08:15:33", true},
 	}
 
+	// Filter
+	keyword := ctx.Query("keyword")
+	if keyword != "" {
+		filtered := make([]HistoryItem, 0)
+		for _, item := range list {
+			if item.IP == keyword || item.Domain == keyword {
+				filtered = append(filtered, item)
+			}
+		}
+		list = filtered
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
 			"list":  list,
-			"total": 3,
+			"total": len(list),
 		},
 	})
 }

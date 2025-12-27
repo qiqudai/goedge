@@ -20,9 +20,9 @@
             <el-divider content-position="left">Block Strategy</el-divider>
             <el-form-item label="Block Mode">
                 <el-radio-group v-model="form.waf_mode">
-                  <el-radio label="ipset">IPSet (Zero CPU Cost)</el-radio>
-                  <el-radio label="page">Return 403 Page</el-radio>
-                  <el-radio label="drop">Disconnect</el-radio>
+                  <el-radio value="ipset">IPSet (Zero CPU Cost)</el-radio>
+                  <el-radio value="page">Return 403 Page</el-radio>
+                  <el-radio value="drop">Disconnect</el-radio>
                 </el-radio-group>
             </el-form-item>
             <el-form-item label="Blacklist Duration (s)">

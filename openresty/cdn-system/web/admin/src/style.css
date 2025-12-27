@@ -388,3 +388,25 @@ a:hover {
   border-color: var(--border-color);
   color: var(--text-color);
 }
+
+/* Dark mode fixes for Dialog and Select visibility */
+:root[data-theme="dark"] .el-dialog__title {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select__selected-item {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select__placeholder {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-select .el-input__inner {
+  color: var(--text-color);
+}
+
+/* Fix for tabs layout clipping */
+.el-tabs__nav-scroll {
+  padding-left: 10px;
+}

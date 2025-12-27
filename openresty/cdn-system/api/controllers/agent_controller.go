@@ -293,6 +293,11 @@ func (ctr *AgentController) GetTasks(c *gin.Context) {
 		if task.RetryAt.After(now) {
 			continue
 		}
+		if strings.EqualFold(task.Type, "issue_cert") && nodeID != "" {
+			if target := parseIssueTaskTarget(task.Res); target != "" && target != nodeID {
+				continue
+			}
+		}
 		if nodeID == "" || !taskProgressHasNode(task.Progress, nodeID) {
 			filtered = append(filtered, task)
 		}
@@ -338,6 +343,13 @@ func (ctr *AgentController) FinishTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load task"})
 		return
 	}
+	if strings.EqualFold(task.Type, "issue_cert") {
+		if strings.Contains(strings.ToLower(req.Ret), "429") {
+			if nid, err := strconv.ParseInt(nodeID, 10, 64); err == nil {
+				services.MarkNodeRateLimited(nid, 15*time.Minute)
+			}
+		}
+	}
 	progress := updateTaskProgress(task.Progress, nodeID, req.State)
 	retLog := appendTaskLog(task.Ret, nodeID, req.State, req.Ret, task.ErrTimes)
 	updates := map[string]interface{}{
@@ -379,6 +391,10 @@ type taskMeta struct {
 	UserID int64 `json:"user_id"`
 }
 
+type issueTaskMeta struct {
+	TargetNodeID int64 `json:"target_node_id"`
+}
+
 func notifyTaskCompletion(task models.Task, state string, ret string) {
 	userID := parseTaskUserID(task.Res)
 	if userID == 0 {
@@ -415,6 +431,20 @@ func parseTaskUserID(raw string) int64 {
 		return 0
 	}
 	return meta.UserID
+}
+
+func parseIssueTaskTarget(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var meta issueTaskMeta
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return ""
+	}
+	if meta.TargetNodeID <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(meta.TargetNodeID, 10)
 }
 
 func lookupMessageSubscription(userID int64, msgType string) (bool, bool, bool) {

@@ -15,6 +15,9 @@ var App = &AppConfig{
 	AgentToken: "",
 	ClickHouseEnabled: false,
 	ClickHouseDSN:     "",
+	AcmeEmail:         "",
+	AcmeWebroot:       "./acme",
+	AcmeAccountDir:    "./acme/accounts",
 }
 
 type AppConfig struct {
@@ -24,6 +27,9 @@ type AppConfig struct {
 	AgentToken string `yaml:"agent_token"`
 	ClickHouseEnabled bool   `yaml:"clickhouse_enabled"`
 	ClickHouseDSN     string `yaml:"clickhouse_dsn"`
+	AcmeEmail         string `yaml:"acme_email"`
+	AcmeWebroot       string `yaml:"acme_webroot"`
+	AcmeAccountDir    string `yaml:"acme_account_dir"`
 }
 
 var (

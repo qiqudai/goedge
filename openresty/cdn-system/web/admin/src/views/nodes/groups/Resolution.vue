@@ -46,7 +46,7 @@
           :loading="loading"
           border
           height="420"
-          :page-sizes="[10, 20, 30, 50]"
+
           layout="total, sizes, prev, pager, next"
           :persist-key="`node-group-available-${selectedGroupId}`"
           @selection-change="handleLeftSelection"
@@ -95,7 +95,7 @@
           :loading="loading"
           border
           height="420"
-          :page-sizes="[10, 20, 30, 50]"
+
           layout="total, sizes, prev, pager, next"
           :persist-key="`node-group-assigned-${selectedGroupId}-${currentLineId}`"
           @selection-change="handleRightSelection"

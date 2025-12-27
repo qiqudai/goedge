@@ -14,6 +14,8 @@ func Setup(r *gin.Engine) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "node": "server-1"})
 	})
+	acmeCtr := &controllers.AcmeController{}
+	r.GET("/.well-known/acme-challenge/:token", acmeCtr.ServeChallenge)
 
 	// 0. Public Routes
 	authCtr := &controllers.AuthController{}
@@ -47,6 +49,9 @@ func Setup(r *gin.Engine) {
 			admin.POST("/node-groups/:id/resolution/action", ngCtr.LineResolutionAction)
 			regionCtr := &controllers.RegionController{}
 			admin.GET("/regions", regionCtr.ListRegions)
+			admin.POST("/regions", regionCtr.CreateRegion)
+			admin.PUT("/regions/:id", regionCtr.UpdateRegion)
+			admin.DELETE("/regions/:id", regionCtr.DeleteRegion)
 
 			dnsCtr := &controllers.DnsController{}
 			admin.GET("/dns/providers", dnsCtr.ListProviders)
@@ -384,6 +389,7 @@ func Setup(r *gin.Engine) {
 		agentGroup.Use(middleware.AgentDebug(), middleware.AuthAgent())
 		{
 			agentCtr := controllers.NewAgentController()
+			agentCertCtr := &controllers.AgentCertController{}
 			agentGroup.POST("/heartbeat", agentCtr.Heartbeat)
 			agentGroup.POST("/node/sync", agentCtr.SyncNodeStatus)
 			agentGroup.GET("/config", agentCtr.GetConfig)
@@ -391,6 +397,7 @@ func Setup(r *gin.Engine) {
 			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
 			agentGroup.GET("/l2/nodes", agentCtr.GetL2Nodes)
 			agentGroup.POST("/l2/heartbeat", agentCtr.ReportL2Heartbeat)
+			agentGroup.POST("/certs/issued", agentCertCtr.ReceiveIssued)
 
 			agentLogCtr := &controllers.AgentLogController{}
 			agentGroup.POST("/logs/access", agentLogCtr.AccessLogs)

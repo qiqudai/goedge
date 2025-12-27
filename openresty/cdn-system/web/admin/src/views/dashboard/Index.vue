@@ -7,9 +7,9 @@
             <div class="card-header">
               <span>运营数据</span>
               <el-radio-group v-model="opsRange" size="small" class="range-tabs">
-                <el-radio-button label="7d">近7日</el-radio-button>
-                <el-radio-button label="30d">近30日</el-radio-button>
-                <el-radio-button label="last_month">上个月</el-radio-button>
+                <el-radio-button value="7d">近7日</el-radio-button>
+                <el-radio-button value="30d">近30日</el-radio-button>
+                <el-radio-button value="last_month">上个月</el-radio-button>
               </el-radio-group>
             </div>
           </template>
@@ -62,10 +62,10 @@
             <div class="card-header">
               <span>网络概览</span>
               <el-radio-group v-model="overviewRange" size="small" class="range-tabs">
-                <el-radio-button label="today">今日</el-radio-button>
-                <el-radio-button label="yesterday">昨日</el-radio-button>
-                <el-radio-button label="7d">近7日</el-radio-button>
-                <el-radio-button label="30d">近30日</el-radio-button>
+                <el-radio-button value="today">今日</el-radio-button>
+                <el-radio-button value="yesterday">昨日</el-radio-button>
+                <el-radio-button value="7d">近7日</el-radio-button>
+                <el-radio-button value="30d">近30日</el-radio-button>
               </el-radio-group>
             </div>
           </template>
@@ -96,19 +96,19 @@
                 <div class="card-header">
                   <span>监控趋势</span>
                   <el-radio-group v-model="chartRange" size="small" class="range-tabs" @change="updateChart">
-                    <el-radio-button label="today">今日</el-radio-button>
-                    <el-radio-button label="yesterday">昨日</el-radio-button>
-                    <el-radio-button label="7d">近7日</el-radio-button>
-                    <el-radio-button label="30d">近30日</el-radio-button>
+                    <el-radio-button value="today">今日</el-radio-button>
+                    <el-radio-button value="yesterday">昨日</el-radio-button>
+                    <el-radio-button value="7d">近7日</el-radio-button>
+                    <el-radio-button value="30d">近30日</el-radio-button>
                   </el-radio-group>
                 </div>
               </template>
               <div class="chart-tabs">
                 <el-radio-group v-model="chartType" size="small" @change="updateChart">
-                  <el-radio-button label="bandwidth">带宽</el-radio-button>
-                  <el-radio-button label="requests">请求数</el-radio-button>
-                  <el-radio-button label="traffic">流量</el-radio-button>
-                  <el-radio-button label="blocked">拉黑IP数</el-radio-button>
+                  <el-radio-button value="bandwidth">带宽</el-radio-button>
+                  <el-radio-button value="requests">请求数</el-radio-button>
+                  <el-radio-button value="traffic">流量</el-radio-button>
+                  <el-radio-button value="blocked">拉黑IP数</el-radio-button>
                 </el-radio-group>
               </div>
               <div id="trendChart" class="trend-chart"></div>
@@ -123,10 +123,10 @@
               </template>
               <div class="top-tabs">
                 <el-radio-group v-model="topTab" size="small">
-                  <el-radio-button label="domain">域名</el-radio-button>
-                  <el-radio-button label="url">URL</el-radio-button>
-                  <el-radio-button label="ip">IP</el-radio-button>
-                  <el-radio-button label="country">国家</el-radio-button>
+                  <el-radio-button value="domain">域名</el-radio-button>
+                  <el-radio-button value="url">URL</el-radio-button>
+                  <el-radio-button value="ip">IP</el-radio-button>
+                  <el-radio-button value="country">国家</el-radio-button>
                 </el-radio-group>
               </div>
               <el-table :data="topRows" size="small" :max-height="320" class="top-table">

@@ -4,12 +4,12 @@
       <div class="usage-title">用量查询</div>
       <div class="usage-actions">
         <el-radio-group v-model="range" size="small" @change="loadUsage">
-          <el-radio-button label="today">今天</el-radio-button>
-          <el-radio-button label="yesterday">昨天</el-radio-button>
-          <el-radio-button label="7days">近7天</el-radio-button>
-          <el-radio-button label="30days">30天</el-radio-button>
+          <el-radio-button value="today">今天</el-radio-button>
+          <el-radio-button value="yesterday">昨天</el-radio-button>
+          <el-radio-button value="7days">近7天</el-radio-button>
+          <el-radio-button value="30days">30天</el-radio-button>
         </el-radio-group>
-        <el-button link type="primary" size="normal" @click="loadUsage">刷新</el-button>
+        <el-button link type="primary" size="" @click="loadUsage">刷新</el-button>
       </div>
     </div>
 
