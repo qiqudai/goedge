@@ -10,9 +10,17 @@
       </el-button>
     </div>
 
-    <el-table
-      v-loading="listLoading"
+    <AppTable
+      :loading="listLoading"
       :data="list"
+      v-model:current-page="listQuery.page"
+      v-model:page-size="listQuery.pageSize"
+      persist-key="users"
+      :page-sizes="[10, 20, 30, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="handleFilter"
+      @current-change="getList"
       border
       fit
       highlight-current-row
@@ -88,7 +96,7 @@
           </el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </AppTable>
   </div>
 
 </template>
@@ -131,6 +139,7 @@ const t = {
 
 const list = ref([])
 const listLoading = ref(true)
+const total = ref(0)
 const initSwitchLock = ref(true)
 const listQuery = reactive({
   page: 1,
@@ -154,6 +163,7 @@ const getList = () => {
       status: item.enable ? 1 : 0,
       name: item.name || item.username || ''
     }))
+    total.value = data.total || data.count || items.length
   }).finally(() => {
     listLoading.value = false
     nextTick(() => {

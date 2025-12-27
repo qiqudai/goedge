@@ -72,6 +72,10 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 		}
 	}
 
+	for i := range nodes {
+		nodes[i].Online = services.IsNodeOnline(nodes[i].ID, 30*time.Second)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{

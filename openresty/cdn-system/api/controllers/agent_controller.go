@@ -27,8 +27,47 @@ func NewAgentController() *AgentController {
 }
 
 func (ctr *AgentController) Heartbeat(c *gin.Context) {
-	// TODO: Update node status in DB
+	var payload struct {
+		NodeID    string `json:"node_id"`
+		Timestamp int64  `json:"timestamp"`
+		Status    string `json:"status"`
+	}
+	_ = c.ShouldBindJSON(&payload)
+	nodeID := resolveHeartbeatNodeID(c, payload.NodeID)
+	if nodeID != 0 {
+		services.MarkNodeOnline(nodeID, time.Now())
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "pong"})
+}
+
+func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
+	if v, ok := c.Get("nodeID"); ok {
+		if s, ok := v.(string); ok {
+			if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
+				return id
+			}
+		}
+	}
+
+	if payloadID != "" {
+		if id, err := strconv.ParseInt(payloadID, 10, 64); err == nil && id > 0 {
+			return id
+		}
+		var node models.Node
+		if err := db.DB.Where("name = ? AND pid = 0", payloadID).First(&node).Error; err == nil {
+			return node.ID
+		}
+	}
+
+	clientIP := c.ClientIP()
+	if clientIP == "" {
+		return 0
+	}
+	var node models.Node
+	if err := db.DB.Where("ip = ? AND pid = 0", clientIP).First(&node).Error; err == nil {
+		return node.ID
+	}
+	return 0
 }
 
 func (ctr *AgentController) GetConfig(c *gin.Context) {
@@ -75,7 +114,8 @@ func (ctr *AgentController) GetTasks(c *gin.Context) {
 	}
 
 	var tasks []models.Task
-	if err := db.DB.Where("enable = ? AND state IN ?", true, []string{"waiting", "running"}).Order("id asc").Limit(100).Find(&tasks).Error; err != nil {
+	if err := db.DB.Where("enable = ? AND state IN ? AND (retry_at IS NULL OR retry_at <= ?)", true, []string{"waiting", "running"}, time.Now()).
+		Order("id asc").Limit(100).Find(&tasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load tasks"})
 		return
 	}

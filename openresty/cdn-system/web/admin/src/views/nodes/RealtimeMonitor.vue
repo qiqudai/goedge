@@ -29,13 +29,13 @@
         <el-button type="primary" size="normal" class="refresh-button" @click="refreshRanking">刷新</el-button>
       </div>
 
-      <el-table :data="ranking.list" border>
+      <AppTable :data="ranking.list" border persist-key="node-ranking">
         <el-table-column prop="rank" label="排行" width="80" align="center" />
         <el-table-column prop="node" label="节点" min-width="160" />
         <el-table-column prop="nic" label="网卡" min-width="120" />
         <el-table-column prop="out" label="出站带宽" min-width="140" />
         <el-table-column prop="in" label="入站带宽" min-width="140" />
-      </el-table>
+      </AppTable>
     </div>
 
     <div v-else-if="activeTab === 'metrics'">
@@ -69,10 +69,10 @@
         </div>
       </div>
 
-      <el-table :data="metrics.list" border>
+      <AppTable :data="metrics.list" border persist-key="node-metrics">
         <el-table-column prop="time" label="时间" min-width="160" />
         <el-table-column prop="value" label="数值" min-width="120" />
-      </el-table>
+      </AppTable>
     </div>
 
     <div v-else>

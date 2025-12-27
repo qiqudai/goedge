@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <div class="filter-container">
       <el-input v-model="filters.keyword" placeholder="标题/内容" style="width: 240px;" />
@@ -6,7 +6,18 @@
       <el-button type="success" @click="openCreate">新增公告</el-button>
     </div>
 
-    <el-table :data="list" border style="width: 100%;">
+    <AppTable
+      :data="list"
+      border
+      style="width: 100%;"
+      v-model:current-page="filters.page"
+      v-model:page-size="filters.pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="loadList"
+      @current-change="loadList"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
       <el-table-column prop="created_at" label="创建时间" width="180" />
@@ -21,19 +32,7 @@
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
-
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="filters.page"
-        v-model:page-size="filters.pageSize"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="loadList"
-        @current-change="loadList"
-      />
-    </div>
+    </AppTable>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
       <el-form :model="form" label-width="100px">
@@ -160,3 +159,4 @@ onMounted(() => loadList())
   text-align: right;
 }
 </style>
+

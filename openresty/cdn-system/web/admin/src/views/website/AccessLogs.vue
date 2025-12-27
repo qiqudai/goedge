@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="app-container">
     <el-tabs v-model="activeTab" type="card">
       <el-tab-pane label="日志查询" name="query" />
@@ -18,6 +18,13 @@
           >
             <el-option v-for="item in domainOptions" :key="item" :label="item" :value="item" />
           </el-select>
+          <el-input
+            v-model="listQuery.keyword"
+            placeholder="域名/URI/IP"
+            clearable
+            style="width: 220px"
+            class="filter-item"
+          />
           <el-button type="primary" class="filter-item" :icon="Search" @click="handleFilter">搜索</el-button>
           <el-button class="filter-item" @click="handleDownload">申请下载</el-button>
           <el-button link class="filter-item" @click="toggleAdvanced">
@@ -44,6 +51,12 @@
                 style="width: 360px"
               />
             </el-form-item>
+            <el-form-item label="域名匹配">
+              <el-select v-model="listQuery.domain_mode" clearable placeholder="精确">
+                <el-option label="精确" value="exact" />
+                <el-option label="模糊" value="fuzzy" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="客户端IP">
               <el-input v-model="listQuery.client_ip" placeholder="请输入IP地址" clearable />
             </el-form-item>
@@ -68,13 +81,55 @@
               </el-select>
             </el-form-item>
             <el-form-item label="状态码">
-              <el-input v-model="listQuery.status" placeholder="请输入状态码" clearable />
+              <el-input v-model="listQuery.status" placeholder="如200" clearable />
+            </el-form-item>
+            <el-form-item label="状态范围">
+              <div class="range-input">
+                <el-input v-model="listQuery.status_min" placeholder="最小" clearable />
+                <span class="range-sep">-</span>
+                <el-input v-model="listQuery.status_max" placeholder="最大" clearable />
+              </div>
             </el-form-item>
             <el-form-item label="访问端口">
-              <el-input v-model="listQuery.port" placeholder="请输入访问端口" clearable />
+              <el-input v-model="listQuery.port" placeholder="端口" clearable />
             </el-form-item>
             <el-form-item label="节点ID">
-              <el-input v-model="listQuery.node_id" placeholder="请输入节点ID" clearable />
+              <el-input v-model="listQuery.node_id" placeholder="节点ID" clearable />
+            </el-form-item>
+            <el-form-item label="节点IP">
+              <el-input v-model="listQuery.node_ip" placeholder="节点IP" clearable />
+            </el-form-item>
+            <el-form-item label="协议">
+              <el-select v-model="listQuery.scheme" clearable placeholder="http/https">
+                <el-option label="http" value="http" />
+                <el-option label="https" value="https" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="缓存状态">
+              <el-select v-model="listQuery.cache_status" clearable placeholder="状态">
+                <el-option label="HIT" value="HIT" />
+                <el-option label="MISS" value="MISS" />
+                <el-option label="EXPIRED" value="EXPIRED" />
+                <el-option label="STALE" value="STALE" />
+                <el-option label="BYPASS" value="BYPASS" />
+                <el-option label="REVALIDATED" value="REVALIDATED" />
+                <el-option label="UPDATING" value="UPDATING" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="来源">
+              <el-input v-model="listQuery.referer" placeholder="Referer" clearable />
+            </el-form-item>
+            <el-form-item label="浏览器">
+              <el-input v-model="listQuery.user_agent" placeholder="User-Agent" clearable />
+            </el-form-item>
+            <el-form-item label="回源地址">
+              <el-input v-model="listQuery.upstream_addr" placeholder="回源地址" clearable />
+            </el-form-item>
+            <el-form-item label="SSL协议">
+              <el-input v-model="listQuery.ssl_protocol" placeholder="SSL协议" clearable />
+            </el-form-item>
+            <el-form-item label="SSL套件">
+              <el-input v-model="listQuery.ssl_cipher" placeholder="SSL套件" clearable />
             </el-form-item>
             <el-form-item>
               <el-button @click="resetFilters">重置</el-button>
@@ -89,6 +144,7 @@
           时间范围: {{ listQuery.timeRange[0] }} - {{ listQuery.timeRange[1] }}
         </el-tag>
         <el-tag v-if="listQuery.domain" closable @close="listQuery.domain = ''">域名: {{ listQuery.domain }}</el-tag>
+        <el-tag v-if="listQuery.keyword" closable @close="listQuery.keyword = ''">关键字: {{ listQuery.keyword }}</el-tag>
         <el-button link type="primary" size="small" @click="resetFilters">清除</el-button>
       </div>
 
@@ -101,35 +157,28 @@
         style="width: 100%; margin-top: 10px;"
         size="small"
       >
-        <el-table-column prop="time" label="时间" width="160" show-overflow-tooltip />
-        <el-table-column prop="domain" label="域名" width="180" show-overflow-tooltip />
-        <el-table-column prop="port" label="端口" width="60" />
-        <el-table-column prop="scheme" label="协议" width="80" />
+        <el-table-column prop="timestamp" label="时间" width="170" show-overflow-tooltip />
+        <el-table-column prop="host" label="域名" width="200" show-overflow-tooltip />
+        <el-table-column prop="scheme" label="协议" width="70" />
         <el-table-column prop="method" label="方法" width="70" />
-        <el-table-column prop="uri" label="URI" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="uri" label="URI" min-width="220" show-overflow-tooltip />
         <el-table-column prop="status" label="状态码" width="70">
           <template #default="{ row }">
             <span :class="getStatusColor(row.status)">{{ row.status }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="client_ip" label="客户端IP" width="130" />
-        <el-table-column prop="location" label="地理位置" width="120" show-overflow-tooltip />
-        <el-table-column prop="origin" label="源地址" width="140" show-overflow-tooltip />
-        <el-table-column prop="content_type" label="内容类型" width="120" show-overflow-tooltip />
-        <el-table-column prop="referer" label="来源" width="150" show-overflow-tooltip />
-        <el-table-column prop="user_agent" label="浏览器" width="150" show-overflow-tooltip />
-        <el-table-column prop="origin_time" label="回源耗时" width="80" />
-        <el-table-column prop="bytes" label="返回字节" width="80" />
-        <el-table-column prop="cache_hit" label="缓存命中" width="80" />
-        <el-table-column prop="l1_hit" label="L1缓存" width="80" />
-        <el-table-column prop="l2_hit" label="L2缓存" width="80" />
-        <el-table-column prop="l2_ip" label="L2 IP" width="120" />
-        <el-table-column prop="node_id" label="节点ID" width="70" />
-        <el-table-column label="操作" width="60" fixed="right" align="center">
-          <template #default>
-            <el-button link type="primary" size="small">详情</el-button>
-          </template>
-        </el-table-column>
+        <el-table-column prop="remote_addr" label="客户端IP" width="130" />
+        <el-table-column prop="bytes" label="字节数" width="90" />
+        <el-table-column prop="request_time" label="耗时" width="80" />
+        <el-table-column prop="upstream_response_time" label="回源耗时" width="90" />
+        <el-table-column prop="upstream_addr" label="回源地址" width="140" show-overflow-tooltip />
+        <el-table-column prop="upstream_cache_status" label="缓存状态" width="90" />
+        <el-table-column prop="http_referer" label="来源" width="140" show-overflow-tooltip />
+        <el-table-column prop="http_user_agent" label="浏览器" width="160" show-overflow-tooltip />
+        <el-table-column prop="node_id" label="节点ID" width="80" />
+        <el-table-column prop="node_ip" label="节点IP" width="130" />
+        <el-table-column prop="ssl_protocol" label="SSL协议" width="90" />
+        <el-table-column prop="ssl_cipher" label="SSL套件" width="140" show-overflow-tooltip />
       </el-table>
 
       <div class="pagination-container">
@@ -167,18 +216,39 @@ const listQuery = reactive({
   page: 1,
   pageSize: 20,
   domain: '',
+  domain_mode: 'exact',
+  keyword: '',
   timeRange: [],
   client_ip: '',
   uri: '',
   uri_mode: 'fuzzy',
   method: '',
   status: '',
+  status_min: '',
+  status_max: '',
   port: '',
-  node_id: ''
+  node_id: '',
+  node_ip: '',
+  scheme: '',
+  cache_status: '',
+  referer: '',
+  user_agent: '',
+  upstream_addr: '',
+  ssl_protocol: '',
+  ssl_cipher: ''
 })
 
 const hasActiveFilters = computed(() => {
-  return Boolean(listQuery.domain || listQuery.timeRange.length || listQuery.client_ip || listQuery.uri || listQuery.status)
+  return Boolean(
+    listQuery.domain ||
+      listQuery.keyword ||
+      listQuery.timeRange.length ||
+      listQuery.client_ip ||
+      listQuery.uri ||
+      listQuery.status ||
+      listQuery.status_min ||
+      listQuery.status_max
+  )
 })
 
 const getStatusColor = status => {
@@ -196,25 +266,41 @@ const toggleAdvanced = () => {
 
 const resetFilters = () => {
   listQuery.domain = ''
+  listQuery.domain_mode = 'exact'
+  listQuery.keyword = ''
   listQuery.timeRange = []
   listQuery.client_ip = ''
   listQuery.uri = ''
+  listQuery.uri_mode = 'fuzzy'
   listQuery.method = ''
   listQuery.status = ''
+  listQuery.status_min = ''
+  listQuery.status_max = ''
   listQuery.port = ''
   listQuery.node_id = ''
+  listQuery.node_ip = ''
+  listQuery.scheme = ''
+  listQuery.cache_status = ''
+  listQuery.referer = ''
+  listQuery.user_agent = ''
+  listQuery.upstream_addr = ''
+  listQuery.ssl_protocol = ''
+  listQuery.ssl_cipher = ''
   handleFilter()
 }
 
 const handleFilter = () => {
   listLoading.value = true
-  request.get('/logs/access', { params: listQuery }).then(res => {
-    list.value = res.data?.list || []
-    total.value = res.data?.total || 0
-    listLoading.value = false
-  }).catch(() => {
-    listLoading.value = false
-  })
+  request
+    .get('/logs/access', { params: listQuery })
+    .then(res => {
+      list.value = res.data?.list || []
+      total.value = res.data?.total || 0
+      listLoading.value = false
+    })
+    .catch(() => {
+      listLoading.value = false
+    })
 }
 
 const handleDownload = () => {
@@ -248,6 +334,14 @@ onMounted(() => {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
+}
+.range-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.range-sep {
+  color: #909399;
 }
 .text-success { color: #67c23a; }
 .text-warning { color: #e6a23c; }

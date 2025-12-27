@@ -14,7 +14,7 @@
               <el-button class="filter-item" type="primary" :icon="Search" @click="fetchGroups">查询</el-button>
             </div>
 
-            <el-table :data="groupsList" border fit highlight-current-row style="width: 100%">
+            <AppTable :data="groupsList" border fit highlight-current-row style="width: 100%" persist-key="cc-groups">
               <el-table-column type="selection" width="55" />
               <el-table-column prop="id" label="ID" width="80" />
               <el-table-column prop="user" label="用户" width="100">
@@ -43,7 +43,7 @@
                   <el-button type="primary" link size="small" @click="handleEditGroup(row)">编辑</el-button>
                 </template>
               </el-table-column>
-            </el-table>
+            </AppTable>
           </el-tab-pane>
 
           <el-tab-pane label="匹配器" name="matchers">
@@ -57,7 +57,7 @@
               <el-button class="filter-item" type="primary" :icon="Search" @click="fetchMatchers">查询</el-button>
             </div>
 
-            <el-table :data="matchers" border fit highlight-current-row style="width: 100%">
+            <AppTable :data="matchers" border fit highlight-current-row style="width: 100%" persist-key="cc-matchers">
               <el-table-column type="selection" width="55" />
               <el-table-column prop="id" label="ID" width="80" />
               <el-table-column prop="user" label="用户" width="100">
@@ -80,7 +80,7 @@
                   <el-button type="primary" link size="small" @click="handleEditMatcher(row)">编辑</el-button>
                 </template>
               </el-table-column>
-            </el-table>
+            </AppTable>
           </el-tab-pane>
 
           <el-tab-pane label="过滤器" name="filters">
@@ -94,7 +94,7 @@
               <el-button class="filter-item" type="primary" :icon="Search" @click="fetchFilters">查询</el-button>
             </div>
 
-            <el-table :data="filters" border fit highlight-current-row style="width: 100%">
+            <AppTable :data="filters" border fit highlight-current-row style="width: 100%" persist-key="cc-filters">
               <el-table-column type="selection" width="55" />
               <el-table-column prop="id" label="ID" width="80" />
               <el-table-column prop="user" label="用户" width="100">
@@ -119,7 +119,7 @@
                   <el-button type="danger" link size="normal" @click="deleteFilter(row)">删除</el-button>
                 </template>
               </el-table-column>
-            </el-table>
+            </AppTable>
           </el-tab-pane>
         </el-tabs>
       </el-tab-pane>
@@ -135,7 +135,7 @@
           <el-button class="filter-item" type="primary" :icon="Search" @click="fetchAcl">查询</el-button>
         </div>
 
-        <el-table :data="aclList" border fit highlight-current-row style="width: 100%">
+        <AppTable :data="aclList" border fit highlight-current-row style="width: 100%" persist-key="acl-list">
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="name" label="名称" min-width="160" />
           <el-table-column prop="default_action" label="默认动作" width="120">
@@ -155,7 +155,7 @@
               <el-button link type="danger" size="small" @click="deleteAcl(row)">删除</el-button>
             </template>
           </el-table-column>
-        </el-table>
+        </AppTable>
       </el-tab-pane>
     </el-tabs>
 

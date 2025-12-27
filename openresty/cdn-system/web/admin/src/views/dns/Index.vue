@@ -56,7 +56,14 @@
             </div>
           </div>
 
-          <el-table :data="cnameList" style="width: 100%" border @selection-change="handleCnameSelectionChange" v-loading="cnameLoading">
+          <AppTable
+            :data="cnameList"
+            :loading="cnameLoading"
+            persist-key="cname"
+            style="width: 100%"
+            border
+            @selection-change="handleCnameSelectionChange"
+          >
             <el-table-column type="selection" width="55" />
             <el-table-column prop="id" label="ID" width="80" align="center" />
             <el-table-column prop="domain" label="域名" />
@@ -66,7 +73,7 @@
                 <el-button link type="danger" @click="handleDeleteCname(row)">删除</el-button>
               </template>
             </el-table-column>
-          </el-table>
+          </AppTable>
         </el-tab-pane>
       </el-tabs>
     </el-card>

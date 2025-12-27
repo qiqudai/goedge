@@ -15,6 +15,7 @@ type Node struct {
 	Name           string      `json:"name"`
 	Remark         string      `json:"remark" gorm:"column:des"`
 	IP             string      `json:"ip" gorm:"index"`
+	Token          string      `json:"token" gorm:"column:token"`
 	Host           string      `json:"host"`
 	Port           int         `json:"port"`
 	HttpProxy      string      `json:"http_proxy"`
@@ -31,6 +32,7 @@ type Node struct {
 	CheckNodeGroup string      `json:"check_node_group"`
 	CheckAction    string      `json:"check_action"`
 	BwLimit        string      `json:"bw_limit"`
+	Online         bool        `json:"online" gorm:"-"`
 	// New fields for Node Settings
 	Level        int    `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2
 	Sort         int    `json:"sort_order" gorm:"column:sort;default:0"`

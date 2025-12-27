@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <div class="filter-container">
       <el-input v-model="filters.keyword" placeholder="用户名/用户ID" style="width: 220px;" />
@@ -6,7 +6,18 @@
       <el-button type="success" @click="dialogVisible = true">手动充值</el-button>
     </div>
 
-    <el-table :data="list" border style="width: 100%; margin-top: 20px;">
+    <AppTable
+      :data="list"
+      border
+      style="width: 100%; margin-top: 20px;"
+      v-model:current-page="filters.page"
+      v-model:page-size="filters.pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="handleFilter"
+      @current-change="handleFilter"
+    >
       <el-table-column prop="id" label="订单ID" width="120" />
       <el-table-column prop="user_id" label="用户ID" width="100" />
       <el-table-column prop="amount" label="金额" width="140">
@@ -23,19 +34,7 @@
       <el-table-column prop="type" label="类型" width="120" />
       <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
       <el-table-column prop="created_at" label="创建时间" width="180" />
-    </el-table>
-
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="filters.page"
-        v-model:page-size="filters.pageSize"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="handleFilter"
-        @current-change="handleFilter"
-      />
-    </div>
+    </AppTable>
 
     <el-dialog title="手动充值" v-model="dialogVisible" width="420px">
       <el-form :model="form" label-width="100px">
@@ -111,3 +110,4 @@ onMounted(() => getList())
   text-align: right;
 }
 </style>
+

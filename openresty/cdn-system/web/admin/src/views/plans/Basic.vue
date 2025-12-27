@@ -6,7 +6,13 @@
       <el-button type="primary" @click="handleCreate">添加套餐</el-button>
     </div>
 
-    <el-table :data="list" v-loading="loading" border style="width: 100%; margin-top: 20px;">
+    <AppTable
+      :data="list"
+      :loading="loading"
+      border
+      style="width: 100%; margin-top: 20px;"
+      persist-key="plans-basic"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="名称" />
       <el-table-column prop="group" label="分组" />
@@ -26,7 +32,7 @@
           <el-button size="normal" type="danger" @click="handleDelete(scope.row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </AppTable>
 
     <el-dialog
       :title="dialogStatus === 'create' ? '添加套餐' : '编辑套餐'"

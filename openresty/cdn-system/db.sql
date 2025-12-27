@@ -66,6 +66,7 @@ create table `login_log` (
     `id` int(11) not null AUTO_INCREMENT,
     `uid` int(11),
     `ip` varchar(255),
+    `token` varchar(255),
     `create_at` datetime,
     `success` boolean,
     `post_content` text,
@@ -113,6 +114,7 @@ create table `node` (
 
     KEY `idx_enable` (`enable`),
     KEY `idx_ip` (`ip`),
+    KEY `idx_token` (`token`),
     CONSTRAINT `region_ibfk_1` FOREIGN KEY (`region_id`) REFERENCES `region` (`id`),
     primary KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

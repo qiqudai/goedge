@@ -21,6 +21,7 @@ func main() {
 
 	// 2. Connect Database (MySQL)
 	db.Init()
+	db.InitClickHouse()
 	// Auto Migrate
 	db.DB.AutoMigrate(
 		&models.Node{},

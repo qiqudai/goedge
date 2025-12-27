@@ -24,13 +24,13 @@
     </div>
 
     <div class="filter-container node-filters">
-      <el-select v-model="listQuery.region_id" placeholder="所有区域" class="filter-item" style="width: 150px;">
+      <el-select v-model="listQuery.region_id" placeholder="All Regions" class="filter-item" style="width: 150px;">
         <el-option v-for="item in regionOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
-      <el-select v-model="listQuery.status" placeholder="所有状态" class="filter-item" style="width: 150px;">
+      <el-select v-model="listQuery.status" placeholder="All Status" class="filter-item" style="width: 150px;">
         <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
-      <el-select v-model="listQuery.node_type" placeholder="所有类型" class="filter-item" style="width: 150px;">
+      <el-select v-model="listQuery.node_type" placeholder="All Types" class="filter-item" style="width: 150px;">
         <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
       <el-input v-model="listQuery.keyword" :placeholder="t.nodeKeyword" class="filter-item" style="width: 240px;" @keyup.enter="handleFilter">
@@ -42,9 +42,17 @@
       <el-button type="text" size="normal" class="filter-item" @click="resetFilters">{{ t.reset }}</el-button>
     </div>
 
-    <el-table
-      v-loading="listLoading"
+    <AppTable
+      :loading="listLoading"
       :data="list"
+      v-model:current-page="listQuery.page"
+      v-model:page-size="listQuery.pageSize"
+      persist-key="list"
+      :page-sizes="[10, 20, 30, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="getList"
+      @current-change="getList"
       border
       fit
       highlight-current-row
@@ -146,20 +154,8 @@
           </div>
         </template>
       </el-table-column>
-    </el-table>
+    </AppTable>
 
-    <div style="margin-top: 16px;">
-      <el-pagination
-        v-if="total > 0"
-        v-model:current-page="listQuery.page"
-        v-model:page-size="listQuery.pageSize"
-        :page-sizes="[10, 20, 30, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="getList"
-        @current-change="getList"
-      />
-    </div>
 
     <el-dialog title="监控日志" v-model="monitorDialogVisible" width="680px">
       <el-form :inline="true" class="monitor-form">
@@ -168,41 +164,40 @@
             <el-option v-for="item in monitorTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="时间段">
+        <el-form-item label="Time Range">
           <el-date-picker
             v-model="monitorQuery.timeRange"
             type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
+            range-separator="To"
+            start-placeholder="Start"
+            end-placeholder="End"
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             style="width: 260px;"
           />
         </el-form-item>
-        <el-form-item label="监控组">
+        <el-form-item label="Time Range">
           <el-select v-model="monitorQuery.group" style="width: 180px;">
             <el-option v-for="item in monitorGroupOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
       </el-form>
-      <el-table :data="monitorLogs" border>
-        <el-table-column prop="checked_at" label="检测时间" min-width="140" />
+      <AppTable
+        :data="monitorLogs"
+        v-model:current-page="monitorQuery.page"
+        v-model:page-size="monitorQuery.pageSize"
+        persist-key="monitor"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        :total="monitorTotal"
+        @current-change="loadMonitorLogs"
+        @size-change="loadMonitorLogs"
+        border
+      >
+        <el-table-column prop="checked_at" label="Checked At" min-width="140" />
         <el-table-column prop="fail_count" label="失败个数" width="100" align="center" />
         <el-table-column prop="total_count" label="总检测点" width="100" align="center" />
-      </el-table>
-      <div style="margin-top: 12px;">
-        <el-pagination
-          v-if="monitorTotal > 0"
-          v-model:current-page="monitorQuery.page"
-          v-model:page-size="monitorQuery.pageSize"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          :total="monitorTotal"
-          @current-change="loadMonitorLogs"
-          @size-change="loadMonitorLogs"
-        />
-      </div>
+      </AppTable>
     </el-dialog>
 
     <el-dialog :title="textMap[dialogStatus]" v-model="dialogFormVisible" width="600px">
@@ -751,7 +746,7 @@ const formatMonitorProtocol = (row) => {
 const formatBandwidth = (row) => {
   const up = pickNumber(row, ['bandwidth_in', 'bw_in', 'in_speed'])
   const down = pickNumber(row, ['bandwidth_out', 'bw_out', 'out_speed'])
-  return `${formatSpeed(up)} ↑ ${formatSpeed(down)} ↓`
+  return `${formatSpeed(up)} �?${formatSpeed(down)} ↓`
 }
 
 const formatMonthlyTraffic = (row) => {
@@ -803,6 +798,8 @@ const openMonitorLogs = () => {
   loadMonitorLogs()
   monitorDialogVisible.value = true
 }
+
+
 
 onMounted(() => {
   getList()
@@ -878,3 +875,10 @@ onMounted(() => {
   color: #606266;
 }
 </style>
+
+
+
+
+
+
+

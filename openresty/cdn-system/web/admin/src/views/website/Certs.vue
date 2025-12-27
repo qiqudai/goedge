@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
       <el-tab-pane label="证书列表" name="list" />
@@ -44,14 +44,21 @@
       </div>
     </div>
 
-    <el-table
+    <AppTable
       v-if="activeTopTab === 'list'"
-      v-loading="listLoading"
+      :loading="listLoading"
       :data="list"
       border
       fit
       highlight-current-row
       @selection-change="handleSelectionChange"
+      v-model:current-page="listQuery.page"
+      v-model:page-size="listQuery.pageSize"
+      :page-sizes="[10, 20, 30, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="handleFilter"
+      @current-change="handleFilter"
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="80" />
@@ -90,19 +97,7 @@
           </el-dropdown>
         </template>
       </el-table-column>
-    </el-table>
-
-    <div v-if="activeTopTab === 'list'" class="pagination-container">
-      <el-pagination
-        v-model:current-page="listQuery.page"
-        v-model:page-size="listQuery.pageSize"
-        :page-sizes="[10, 20, 30, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="handleFilter"
-        @current-change="handleFilter"
-      />
-    </div>
+    </AppTable>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
       <el-tabs v-model="dialogTab" type="card">
@@ -704,3 +699,4 @@ onMounted(() => {
   padding: 4px 0 4px 90px;
 }
 </style>
+

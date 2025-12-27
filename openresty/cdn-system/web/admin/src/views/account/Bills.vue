@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <div class="filter-container">
       <el-select v-model="filters.type" placeholder="类型" style="width: 140px;">
@@ -11,7 +11,18 @@
       <el-button type="primary" @click="applyFilter">查询</el-button>
     </div>
 
-    <el-table :data="list" border style="width: 100%;">
+    <AppTable
+      :data="list"
+      border
+      style="width: 100%;"
+      v-model:current-page="filters.page"
+      v-model:page-size="filters.pageSize"
+      :page-sizes="[10, 20, 30]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="applyFilter"
+      @current-change="applyFilter"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="type_label" label="类型" width="120" />
       <el-table-column prop="remark" label="备注" min-width="200" />
@@ -26,19 +37,7 @@
           <el-tag :type="row.paid ? 'success' : 'info'">{{ row.paid ? '\u5df2\u4ed8\u6b3e' : '\u672a\u4ed8\u6b3e' }}</el-tag>
         </template>
       </el-table-column>
-    </el-table>
-
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="filters.page"
-        v-model:page-size="filters.pageSize"
-        :page-sizes="[10, 20, 30]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="applyFilter"
-        @current-change="applyFilter"
-      />
-    </div>
+    </AppTable>
   </div>
 </template>
 
@@ -79,3 +78,4 @@ onMounted(() => applyFilter())
   text-align: right;
 }
 </style>
+

@@ -12,12 +12,18 @@ var App = &AppConfig{
 	Port:      "8080",
 	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
 	Debug:     false,
+	AgentToken: "",
+	ClickHouseEnabled: false,
+	ClickHouseDSN:     "",
 }
 
 type AppConfig struct {
-	Port  string `yaml:"port"`
-	DBDSN string `yaml:"db_dsn"`
-	Debug bool   `yaml:"debug"`
+	Port       string `yaml:"port"`
+	DBDSN      string `yaml:"db_dsn"`
+	Debug      bool   `yaml:"debug"`
+	AgentToken string `yaml:"agent_token"`
+	ClickHouseEnabled bool   `yaml:"clickhouse_enabled"`
+	ClickHouseDSN     string `yaml:"clickhouse_dsn"`
 }
 
 var (

@@ -10,17 +10,23 @@
       <el-button type="primary" @click="openCreate">添加分组</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="groups" border style="width: 100%;">
+    <AppTable
+      :data="groups"
+      :loading="loading"
+      border
+      style="width: 100%;"
+      persist-key="forward-groups"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="分组名称" min-width="200" />
       <el-table-column prop="remark" label="备注" min-width="200" />
       <el-table-column label="操作" width="160" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="removeGroup(row)">删除</el-button>
+          <el-button link type="primary" size="normal" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="danger" size="normal" @click="removeGroup(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </AppTable>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="420px">
       <el-form :model="form" label-width="80px">

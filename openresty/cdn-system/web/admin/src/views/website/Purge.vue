@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-tabs v-model="activeName">
       <el-tab-pane label="刷新预热" name="create">
@@ -15,7 +15,7 @@
               v-model="form.urls"
               type="textarea"
               :rows="12"
-              placeholder="一行一条URL"
+              placeholder="URL或域名"
               class="url-textarea"
             />
             <div class="limit-tip">
@@ -32,7 +32,7 @@
       <el-tab-pane label="操作记录" name="list">
         <div class="filter-container">
           <el-button type="primary" :disabled="!selectedRows.length" @click="handleResubmitBatch">重新提交</el-button>
-          <el-select v-model="listQuery.type" placeholder="不限类型" clearable class="filter-item" style="width: 140px;">
+          <el-select v-model="listQuery.type" placeholder="URL或域名" clearable class="filter-item" style="width: 140px;">
             <el-option label="刷新URL" value="refresh_url" />
             <el-option label="刷新目录" value="refresh_dir" />
             <el-option label="预热" value="preheat" />
@@ -47,12 +47,18 @@
           <el-button type="primary" class="filter-item" @click="handleFilter">查询</el-button>
         </div>
 
-        <el-table
+        <AppTable
           :data="list"
-          v-loading="listLoading"
+          :loading="listLoading"
           border
           style="width: 100%"
           @selection-change="handleSelectionChange"
+          v-model:current-page="listQuery.page"
+          v-model:page-size="listQuery.limit"
+          :total="total"
+          layout="total, prev, pager, next, sizes"
+          @current-change="fetchList"
+          @size-change="fetchList"
         >
           <el-table-column type="selection" width="55" />
           <el-table-column prop="id" label="JobId / TaskId" width="130" />
@@ -81,18 +87,7 @@
               <el-button link type="primary" size="normal" @click="handleResubmit(row)">重新提交</el-button>
             </template>
           </el-table-column>
-        </el-table>
-
-        <div class="pagination-container">
-          <el-pagination
-            v-model:current-page="listQuery.page"
-            v-model:page-size="listQuery.limit"
-            :total="total"
-            layout="total, prev, pager, next, sizes"
-            @current-change="fetchList"
-            @size-change="fetchList"
-          />
-        </div>
+        </AppTable>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -121,6 +116,7 @@ const listQuery = reactive({
   keyword: '',
   type: ''
 })
+
 
 const usage = reactive({
   limits: { refresh_url: 0, refresh_dir: 0, preheat: 0 },
@@ -213,7 +209,7 @@ const handleSelectionChange = rows => {
 }
 
 const handleResubmit = row => {
-  ElMessageBox.confirm('确认重新提交该任务?', '提示', {
+  ElMessageBox.confirm('确认重新提交该任�?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -288,3 +284,5 @@ onMounted(() => {
   text-align: right;
 }
 </style>
+
+

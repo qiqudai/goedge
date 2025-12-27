@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <div class="filter-container">
       <el-button type="primary" :icon="Plus" @click="handleCreate">新增分组</el-button>
@@ -14,7 +14,21 @@
       </div>
     </div>
 
-    <el-table :data="list" v-loading="listLoading" border fit highlight-current-row style="width: 100%; margin-top: 20px;">
+    <AppTable
+      :data="list"
+      :loading="listLoading"
+      border
+      fit
+      highlight-current-row
+      style="width: 100%; margin-top: 20px;"
+      v-model:current-page="listQuery.page"
+      v-model:page-size="listQuery.limit"
+      :page-sizes="[10, 20, 30, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="getList"
+      @current-change="getList"
+    >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="ID" prop="id" width="80" align="center" />
       <el-table-column label="名称" min-width="150">
@@ -41,20 +55,7 @@
           <el-button type="text" size="small" style="color: red;" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
-
-    <div style="margin-top: 20px; text-align: right;">
-        <el-pagination
-          v-show="total>0"
-          v-model:current-page="listQuery.page"
-          v-model:page-size="listQuery.limit"
-          :page-sizes="[10, 20, 30, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          :total="total"
-          @size-change="getList"
-          @current-change="getList"
-        />
-    </div>
+    </AppTable>
 
     <!-- Edit Dialog -->
     <el-dialog :title="textMap[dialogStatus]" v-model="dialogFormVisible" width="600px">
@@ -252,3 +253,4 @@ onMounted(() => {
     cursor: pointer;
 }
 </style>
+

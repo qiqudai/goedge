@@ -10,7 +10,13 @@
       <el-button type="primary" @click="openCreate">新增设置</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="settings" border style="width: 100%;">
+    <AppTable
+      :data="settings"
+      :loading="loading"
+      border
+      style="width: 100%;"
+      persist-key="forward-default"
+    >
       <el-table-column prop="key" label="设置项" width="180">
         <template #default="{ row }">
           {{ keyLabel(row.key) }}
@@ -29,10 +35,10 @@
       <el-table-column prop="group_name" label="转发分组" min-width="180" />
       <el-table-column label="操作" width="160" align="center">
         <template #default="{ row }">
-          <el-button link type="danger" size="small" @click="removeSetting(row)">删除</el-button>
+          <el-button link type="danger" size="normal" @click="removeSetting(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
+    </AppTable>
 
     <el-dialog v-model="dialogVisible" title="新增设置" width="520px">
       <el-form :model="form" label-width="80px">

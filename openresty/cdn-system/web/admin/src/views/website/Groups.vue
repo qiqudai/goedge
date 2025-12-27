@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-card>
       <div class="filter-container">
@@ -17,7 +17,19 @@
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="groups" border style="width: 100%;">
+      <AppTable
+        :data="groups"
+        :loading="loading"
+        border
+        style="width: 100%;"
+        v-model:current-page="listQuery.page"
+        v-model:page-size="listQuery.pageSize"
+        :page-sizes="[10, 20, 30, 50]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="total"
+        @size-change="handleFilter"
+        @current-change="handleFilter"
+      >
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="分组名称" min-width="200" />
         <el-table-column prop="remark" label="备注" min-width="200" />
@@ -27,19 +39,7 @@
             <el-button link type="danger" size="small" @click="removeGroup(row)">删除</el-button>
           </template>
         </el-table-column>
-      </el-table>
-
-      <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="listQuery.page"
-          v-model:page-size="listQuery.pageSize"
-          :page-sizes="[10, 20, 30, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          :total="total"
-          @size-change="handleFilter"
-          @current-change="handleFilter"
-        />
-      </div>
+      </AppTable>
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="420px">
@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 
@@ -104,6 +104,7 @@ const handleFilter = () => {
   fetchGroups()
 }
 
+
 const openCreate = () => {
   editingId.value = 0
   form.name = ''
@@ -136,7 +137,7 @@ const submitForm = () => {
 }
 
 const removeGroup = row => {
-  ElMessageBox.confirm('确认删除该分组?', '提示', {
+  ElMessageBox.confirm('确认删除该分�?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -169,3 +170,5 @@ onMounted(fetchGroups)
   justify-content: flex-end;
 }
 </style>
+
+

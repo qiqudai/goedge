@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/utils"
@@ -51,9 +52,7 @@ func AuthRequired(requiredRole string) gin.HandlerFunc {
 }
 
 // AuthAgent validates agent tokens (edge nodes).
-// It supports a global token via APP_AGENT_TOKEN and per-node tokens in DB.
-// AuthAgent validates agent tokens (edge nodes).
-// It supports a global token via APP_AGENT_TOKEN and per-node tokens in DB.
+// It supports a global token via APP_AGENT_TOKEN or per-node tokens in DB.
 // It creates a session with "nodeID" if authenticated.
 func AuthAgent() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -66,31 +65,44 @@ func AuthAgent() gin.HandlerFunc {
 			}
 		}
 
-		// 1. Check Env Token
-		if envToken := os.Getenv("APP_AGENT_TOKEN"); envToken != "" && token == envToken {
-			c.Set("agentToken", token)
-		} else {
-			// 2. Check DB Token
-			if token != "" && db.DB != nil {
-				var node models.Node
-				// Query DB
-				if err := db.DB.Where("token = ?", token).First(&node).Error; err == nil {
-					c.Set("nodeID", strconv.FormatInt(node.ID, 10))
-					c.Set("agentToken", token)
-				}
-			}
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization token missing"})
+			return
 		}
-		
-		// 3. Check IP (Fallthrough or if Token failed/missing)
-		if _, ok := c.Get("nodeID"); !ok && db.DB != nil {
-			clientIP := c.ClientIP()
+
+		// 1) Global token (preferred)
+		if config.App.AgentToken != "" {
+			if token != config.App.AgentToken {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid agent token"})
+				return
+			}
+			c.Set("agentToken", token)
+			c.Next()
+			return
+		}
+		if envToken := os.Getenv("APP_AGENT_TOKEN"); envToken != "" {
+			if token != envToken {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid agent token"})
+				return
+			}
+			c.Set("agentToken", token)
+			c.Next()
+			return
+		}
+
+		// 2) Per-node token from DB (requires a token column)
+		if db.DB != nil {
 			var node models.Node
-			if err := db.DB.Where("ip = ? AND enable = ?", clientIP, true).First(&node).Error; err == nil {
+			if err := db.DB.Where("token = ?", token).First(&node).Error; err == nil {
 				c.Set("nodeID", strconv.FormatInt(node.ID, 10))
+				c.Set("agentToken", token)
+				c.Next()
+				return
 			}
 		}
 
-		// Proceed
-		c.Next()
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid agent token"})
+		return
+
 	}
 }

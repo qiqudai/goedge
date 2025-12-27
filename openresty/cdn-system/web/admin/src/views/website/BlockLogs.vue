@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-tabs v-model="activeTab" @tab-click="handleTabClick">
       <el-tab-pane label="当前封禁" name="current">
@@ -23,7 +23,20 @@
           </div>
         </div>
 
-        <el-table :data="currentList" border style="width: 100%" v-loading="loading">
+        <AppTable
+          :data="currentList"
+          :loading="loading"
+          border
+          style="width: 100%"
+          v-model:current-page="currentQuery.page"
+          v-model:page-size="currentQuery.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, prev, pager, next, sizes, jumper"
+          :total="currentTotal"
+          persist-key="current"
+          @size-change="fetchCurrentList"
+          @current-change="fetchCurrentList"
+        >
           <el-table-column type="selection" width="55" />
           <el-table-column prop="site_id" label="网站ID" width="100" />
           <el-table-column prop="domain" label="域名" />
@@ -37,19 +50,7 @@
               <el-button type="text" size="small" @click="handleUnblock(scope.row)">解封</el-button>
             </template>
           </el-table-column>
-        </el-table>
-
-        <div class="pagination-container">
-          <el-pagination
-            v-model:current-page="currentQuery.page"
-            v-model:page-size="currentQuery.pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            layout="total, prev, pager, next, sizes, jumper"
-            :total="currentTotal"
-            @size-change="fetchCurrentList"
-            @current-change="fetchCurrentList"
-          />
-        </div>
+        </AppTable>
       </el-tab-pane>
 
       <el-tab-pane label="统计" name="stats">
@@ -59,22 +60,23 @@
           </el-radio-group>
         </div>
 
-        <el-table :data="statsList" border style="width: 100%" v-loading="loading">
+        <AppTable
+          :data="statsList"
+          :loading="loading"
+          border
+          style="width: 100%"
+          v-model:current-page="statsQuery.page"
+          v-model:page-size="statsQuery.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, prev, pager, next, sizes, jumper"
+          :total="statsTotal"
+          persist-key="stats"
+          @size-change="fetchStatsList"
+          @current-change="fetchStatsList"
+        >
           <el-table-column prop="site_id" label="网站ID" />
           <el-table-column prop="count" label="封禁时间" />
-        </el-table>
-
-        <div class="pagination-container">
-          <el-pagination
-            v-model:current-page="statsQuery.page"
-            v-model:page-size="statsQuery.pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            layout="total, prev, pager, next, sizes, jumper"
-            :total="statsTotal"
-            @size-change="fetchStatsList"
-            @current-change="fetchStatsList"
-          />
-        </div>
+        </AppTable>
       </el-tab-pane>
 
       <el-tab-pane label="历史记录" name="history">
@@ -120,7 +122,20 @@
           </div>
         </div>
 
-        <el-table :data="historyList" border style="width: 100%" v-loading="loading">
+        <AppTable
+          :data="historyList"
+          :loading="loading"
+          border
+          style="width: 100%"
+          v-model:current-page="historyQuery.page"
+          v-model:page-size="historyQuery.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, prev, pager, next, sizes, jumper"
+          :total="historyTotal"
+          persist-key="history"
+          @size-change="fetchHistoryList"
+          @current-change="fetchHistoryList"
+        >
           <el-table-column prop="site_id" label="网站ID" width="100" />
           <el-table-column prop="domain" label="域名" />
           <el-table-column prop="ip" label="IP" />
@@ -130,26 +145,14 @@
           <el-table-column prop="is_manual" label="解封方式">
             <template #default="scope">{{ scope.row.is_manual ? '\u624b\u52a8' : '\u81ea\u52a8' }}</template>
           </el-table-column>
-        </el-table>
-
-        <div class="pagination-container">
-          <el-pagination
-            v-model:current-page="historyQuery.page"
-            v-model:page-size="historyQuery.pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            layout="total, prev, pager, next, sizes, jumper"
-            :total="historyTotal"
-            @size-change="fetchHistoryList"
-            @current-change="fetchHistoryList"
-          />
-        </div>
+        </AppTable>
       </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, computed } from 'vue'
+import { ref, onMounted, reactive, computed} from 'vue'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
@@ -254,6 +257,9 @@ const fetchHistoryList = async () => {
   }
 }
 
+
+
+
 const handleExportHistory = () => {
   ElMessage.info('\u8bf7\u5148\u9009\u62e9\u8bb0\u5f55')
 }
@@ -298,3 +304,5 @@ onMounted(() => {
   gap: 4px;
 }
 </style>
+
+

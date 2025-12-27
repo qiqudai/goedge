@@ -1,7 +1,7 @@
-<template>
+﻿<template>
   <div class="app-container">
     <div class="filter-container">
-      <el-select v-model="filters.type" placeholder="类型" clearable style="width: 160px;">
+      <el-select v-model="filters.type" placeholder="关键词" clearable style="width: 160px;">
         <el-option label="刷新URL" value="refresh_url" />
         <el-option label="刷新目录" value="refresh_dir" />
         <el-option label="预热" value="preheat" />
@@ -10,30 +10,29 @@
       <el-button type="primary" @click="loadList">查询</el-button>
     </div>
 
-    <el-table :data="list" border style="width: 100%;">
+    <AppTable
+      :data="list"
+      border
+      style="width: 100%;"
+      v-model:current-page="filters.page"
+      v-model:page-size="filters.pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="loadList"
+      @current-change="loadList"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="type" label="类型" width="120" />
       <el-table-column prop="state" label="类型" width="120" />
       <el-table-column prop="data" label="数据" min-width="220" show-overflow-tooltip />
       <el-table-column prop="create_at" label="创建时间" width="180" />
-    </el-table>
-
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="filters.page"
-        v-model:page-size="filters.pageSize"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="loadList"
-        @current-change="loadList"
-      />
-    </div>
+    </AppTable>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted} from 'vue'
 import request from '@/utils/request'
 
 const list = ref([])
@@ -54,6 +53,7 @@ const loadList = () => {
 }
 
 onMounted(() => loadList())
+
 </script>
 
 <style scoped>
@@ -69,3 +69,6 @@ onMounted(() => loadList())
   text-align: right;
 }
 </style>
+
+
+

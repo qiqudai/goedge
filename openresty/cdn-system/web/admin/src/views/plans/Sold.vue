@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="app-container">
     <h2>已售套餐</h2>
 
@@ -31,12 +31,18 @@
       </div>
     </div>
 
-    <el-table
+    <AppTable
       :data="pagedList"
-      v-loading="loading"
+      :loading="loading"
       border
       style="width: 100%; margin-top: 16px;"
       @selection-change="handleSelectionChange"
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :page-sizes="[10, 20, 50, 100]"
+      layout="total, prev, pager, next, sizes, jumper"
+      :total="total"
+      persist-key="plans-sold"
     >
       <el-table-column type="selection" width="50" />
       <el-table-column prop="id" label="ID" width="80" />
@@ -77,17 +83,7 @@
           <el-button link type="primary" size="normal" @click="openUpgrade(row)">升降配</el-button>
         </template>
       </el-table-column>
-    </el-table>
-
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, prev, pager, next, sizes, jumper"
-        :total="total"
-      />
-    </div>
+    </AppTable>
 
     <el-dialog v-model="detailVisible" title="套餐详情" width="720px">
       <el-tabs v-model="detailTab">
@@ -131,11 +127,11 @@
             </div>
             <div class="detail-item">
               <span class="detail-label">自定义CC规则:</span>
-              <span class="detail-value">{{ current.custom_cc_rule ? '允许' : '禁止' }}</span>
+              <span class="detail-value">{{ current.custom_cc_rule ? '允许' : '拒绝' }}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">Websocket:</span>
-              <span class="detail-value">{{ current.websocket ? '允许' : '禁止' }}</span>
+              <span class="detail-value">{{ current.websocket ? '允许' : '拒绝' }}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">到期时间:</span>
@@ -194,7 +190,7 @@
     <el-dialog v-model="editVisible" title="套餐编辑" width="520px">
       <el-form label-width="90px">
         <el-form-item label="套餐名称">
-          <el-input v-model="editForm.name" placeholder="请输入名称" />
+          <el-input v-model="editForm.name" placeholder="请输入套餐名称" />
         </el-form-item>
         <el-form-item label="到期时间">
           <el-date-picker
@@ -209,7 +205,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="editVisible = false">关闭</el-button>
+        <el-button size="normal" @click="editVisible = false">取消</el-button>
         <el-button size="normal" type="primary" @click="submitEdit">确定</el-button>
       </template>
     </el-dialog>
@@ -296,7 +292,7 @@ const handleBatchDelete = () => {
   if (selectedIds.value.length === 0) {
     return
   }
-  ElMessageBox.confirm('确认删除所选套餐吗?', '提示', { type: 'warning' }).then(() => {
+  ElMessageBox.confirm('确认删除选中的套餐?', '提示', { type: 'warning' }).then(() => {
     request({
       url: '/user_plans',
       method: 'delete',
@@ -339,14 +335,14 @@ const submitEdit = () => {
     name: editForm.value.name,
     end_at: editForm.value.end_at
   }).then(() => {
-    ElMessage.success('保存成功')
+    ElMessage.success('更新成功')
     editVisible.value = false
     fetchList()
   })
 }
 
 const submitSwitch = () => {
-  ElMessage.info('暂无可用套餐')
+  ElMessage.info('暂未实现')
 }
 
 const usageRows = computed(() => {

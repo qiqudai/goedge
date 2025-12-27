@@ -847,6 +847,26 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 		return nil, err
 	}
 
+	query = query.Select(strings.Join([]string{
+		"id",
+		"uid",
+		"user_package",
+		"region_id",
+		"node_group_id",
+		"dns_provider_id",
+		"cname_domain",
+		"cname_hostname",
+		"cname_hostname2",
+		"cname_mode",
+		"domain",
+		"http_listen",
+		"https_listen",
+		"backend",
+		"state",
+		"enable",
+		"create_at",
+	}, ","))
+
 	var sites []models.Site
 	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&sites).Error; err != nil {
 		return nil, err

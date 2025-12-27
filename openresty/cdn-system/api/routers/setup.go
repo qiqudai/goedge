@@ -385,6 +385,11 @@ func Setup(r *gin.Engine) {
 			agentGroup.GET("/config", agentCtr.GetConfig)
 			agentGroup.GET("/tasks", agentCtr.GetTasks)
 			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
+
+			agentLogCtr := &controllers.AgentLogController{}
+			agentGroup.POST("/logs/access", agentLogCtr.AccessLogs)
+			agentGroup.POST("/logs/metrics", agentLogCtr.Metrics)
+			agentGroup.POST("/logs/events", agentLogCtr.Events)
 		}
 
 	}

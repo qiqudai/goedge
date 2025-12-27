@@ -2,7 +2,9 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/tls"
 	"embed"
@@ -31,17 +33,48 @@ var assetsFS embed.FS
 var (
 	API_BaseURL   = "http://127.0.0.1:8080"
 	HEARTBEAT_INT = 10 * time.Second
-	
+	LOG_SHIP_INT  = 5 * time.Second
+	METRICS_INT   = 10 * time.Second
+
 	// Dynamic Paths (will be set in initEnvironment)
-	WorkDir       = "./edge-node"
-	CONFIG_PATH   = "" // e.g. ./edge-node/conf/cdn_config.json
-	CONFIG_BAK    = "" 
-	NginxBinPath  = "" // e.g. ./edge-node/nginx
+	WorkDir      = "./edge-node"
+	CONFIG_PATH  = "" // e.g. ./edge-node/conf/cdn_config.json
+	CONFIG_BAK   = ""
+	NginxBinPath = "" // e.g. ./edge-node/nginx
 
 	NodeID    = "" // Unique Node ID
 	AuthToken = "" // Token from install parameter
 	DebugMode = false
 )
+
+var httpClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+}
+
+func doRequest(req *http.Request, timeout time.Duration, readBody bool) ([]byte, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req = req.WithContext(ctx)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if readBody {
+		body, err := ioutil.ReadAll(resp.Body)
+		return body, resp.StatusCode, err
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil, resp.StatusCode, nil
+}
 
 func debugLogInteraction(method, url string, status int, reqBody, respBody []byte) {
 	if !DebugMode {
@@ -74,17 +107,29 @@ func main() {
 			Debug bool   `json:"debug"`
 		}
 		if err := json.Unmarshal(fileData, &fileConfig); err == nil {
-			if fileConfig.API != "" { API_BaseURL = fileConfig.API }
-			if fileConfig.Token != "" { AuthToken = fileConfig.Token }
-			if fileConfig.Debug { DebugMode = true }
+			if fileConfig.API != "" {
+				API_BaseURL = fileConfig.API
+			}
+			if fileConfig.Token != "" {
+				AuthToken = fileConfig.Token
+			}
+			if fileConfig.Debug {
+				DebugMode = true
+			}
 			log.Printf("[Info] Loaded config from %s", *configFile)
 		}
 	}
 
 	// 3. Override with Flags
-	if *apiFlag != "" { API_BaseURL = *apiFlag }
-	if *tokenFlag != "" { AuthToken = *tokenFlag }
-	if *debugFlag { DebugMode = true }
+	if *apiFlag != "" {
+		API_BaseURL = *apiFlag
+	}
+	if *tokenFlag != "" {
+		AuthToken = *tokenFlag
+	}
+	if *debugFlag {
+		DebugMode = true
+	}
 
 	if AuthToken == "" {
 		log.Fatal("Error: Token is required in either agent.json or -token flag.")
@@ -98,7 +143,7 @@ func main() {
 	log.Printf("Target Master: %s", API_BaseURL)
 	log.Printf("Node ID:       %s", NodeID)
 	log.Printf("Debug Mode:    %v", DebugMode)
-	
+
 	// Initialize Environment (Unpack Assets)
 	initEnvironment()
 
@@ -106,11 +151,12 @@ func main() {
 	go startHeartbeat()
 	go startConfigPull()
 	go startTaskPull()
+	go startAccessLogShip()
+	go startMetricsShip()
 
 	// 3. Keep Alive
 	select {}
 }
-
 
 // ... imports ...
 
@@ -130,11 +176,11 @@ func initEnvironment() {
 
 	// 1. Unpack Binary / Runtime
 	binName := "nginx"
-	
+
 	if runtime.GOOS == "windows" {
 		binName = "nginx.exe"
 		assetBinPath := "assets/nginx.exe"
-		
+
 		// Unpack Windows DLLs
 		files, _ := assetsFS.ReadDir("assets")
 		for _, f := range files {
@@ -142,7 +188,7 @@ func initEnvironment() {
 				restoreFile(path.Join("assets", f.Name()), filepath.Join(WorkDir, f.Name()))
 			}
 		}
-		
+
 		targetBin := filepath.Join(WorkDir, binName)
 		restoreFile(assetBinPath, targetBin)
 		NginxBinPath = targetBin
@@ -152,11 +198,11 @@ func initEnvironment() {
 		// Expect structure: openresty/nginx/sbin/nginx
 		zipPath := "assets/openresty.zip"
 		destDir := WorkDir
-		
+
 		if err := unzipEmbedded(zipPath, destDir); err != nil {
 			log.Printf("[Warn] Failed to unzip %s: %v (Ignore if not Linux or file missing)", zipPath, err)
 		}
-		
+
 		// Set generic path, adjust if structure differs
 		// Based on user provided zip: openresty/nginx/sbin/nginx
 		NginxBinPath = filepath.Join(WorkDir, "openresty", "nginx", "sbin", "nginx")
@@ -189,7 +235,7 @@ func initEnvironment() {
 	if abs, err := filepath.Abs(NginxBinPath); err == nil {
 		NginxBinPath = abs
 	}
-	
+
 	confPath := filepath.Join(WorkDir, "conf", "cdn_config.json")
 	if abs, err := filepath.Abs(confPath); err == nil {
 		CONFIG_PATH = abs
@@ -197,7 +243,7 @@ func initEnvironment() {
 		CONFIG_PATH = confPath
 	}
 	CONFIG_BAK = CONFIG_PATH + ".bak"
-	
+
 	log.Printf("[Init] Environment Setup: Bin=%s, Config=%s", NginxBinPath, CONFIG_PATH)
 }
 
@@ -214,18 +260,18 @@ func unzipEmbedded(zipPath, dest string) error {
 	if err != nil {
 		return err
 	}
-	
-	// 3. Read entire content into memory for ReaderAt 
+
+	// 3. Read entire content into memory for ReaderAt
 	// (embed.FS doesn't support ReaderAt directly efficiently without copy?)
-	// Actually typical zip usage requires ReaderAt. 
+	// Actually typical zip usage requires ReaderAt.
 	// Since file maps to memory in embed, we can read it.
 	// But zip.NewReader takes ReaderAt. bytes.NewReader impl ReaderAt.
-	
+
 	content, err := ioutil.ReadAll(f)
 	if err != nil {
 		return err
 	}
-	
+
 	r, err := zip.NewReader(bytes.NewReader(content), stat.Size())
 	if err != nil {
 		return err
@@ -299,7 +345,7 @@ func generateFallbackCert(certDir string) {
 
 	// Note: In a real agent we should use 'crypto/x509' to generate valid certs
 	// For now, we write empty files? No, Nginx will fail start.
-	// Since we don't have crypto code handy in this snippet, we assume 
+	// Since we don't have crypto code handy in this snippet, we assume
 	// the user eventually provides them or we accept Nginx failure if SSL on.
 	// BUT, strict mode requires them.
 	// Providing a dummy placeholder that is NOT valid might crash Nginx if it tries to load.
@@ -348,20 +394,18 @@ func sendHeartbeat() {
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	readBody := DebugMode
+	respBody, status, err := doRequest(req, 5*time.Second, readBody)
 	if err != nil {
 		log.Printf("[Error] Heartbeat Failed: %v", err)
 		return
 	}
-	defer resp.Body.Close()
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	debugLogInteraction("POST", req.URL.String(), resp.StatusCode, jsonData, respBody)
+	debugLogInteraction("POST", req.URL.String(), status, jsonData, respBody)
 
-	if resp.StatusCode == 200 {
+	if status == 200 {
 		log.Println("[Info] Heartbeat OK")
 	} else {
-		log.Printf("[Warn] Heartbeat Status: %d", resp.StatusCode)
+		log.Printf("[Warn] Heartbeat Status: %d", status)
 	}
 }
 
@@ -381,21 +425,118 @@ func startTaskPull() {
 	}
 }
 
+func startAccessLogShip() {
+	ticker := time.NewTicker(LOG_SHIP_INT)
+	for range ticker.C {
+		shipAccessLogs()
+	}
+}
+
+func startMetricsShip() {
+	ticker := time.NewTicker(METRICS_INT)
+	for range ticker.C {
+		shipMetrics()
+	}
+}
+
+func shipAccessLogs() {
+	logPath := filepath.Join(WorkDir, "logs", "access.json")
+	offsetPath := filepath.Join(WorkDir, "logs", "access.offset")
+	fi, err := os.Stat(logPath)
+	if err != nil {
+		return
+	}
+	offset := loadOffset(offsetPath)
+	if offset > fi.Size() {
+		offset = 0
+	}
+
+	file, err := os.Open(logPath)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return
+	}
+
+	reader := bufio.NewReader(file)
+	lines := make([]string, 0, 200)
+	for len(lines) < 200 {
+		line, err := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+		if err != nil {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+
+	newOffset, _ := file.Seek(0, io.SeekCurrent)
+	payload := map[string]interface{}{
+		"node_id": NodeID,
+		"node_ip": "",
+		"lines":   lines,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/logs/access", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+AuthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	readBody := DebugMode
+	respBody, status, err := doRequest(req, 10*time.Second, readBody)
+	if err != nil {
+		log.Printf("[Error] Access log ship failed: %v", err)
+		return
+	}
+	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
+	if status == 200 {
+		saveOffset(offsetPath, newOffset)
+	}
+}
+
+func shipMetrics() {
+	req, _ := http.NewRequest("GET", "http://127.0.0.1:9100/metrics", nil)
+	body, status, err := doRequest(req, 5*time.Second, true)
+	if err != nil || status != 200 {
+		return
+	}
+	payload := map[string]interface{}{
+		"node_id": NodeID,
+		"node_ip": "",
+		"content": string(body),
+	}
+	jsonBody, _ := json.Marshal(payload)
+	postReq, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/logs/metrics", bytes.NewBuffer(jsonBody))
+	postReq.Header.Set("Authorization", "Bearer "+AuthToken)
+	postReq.Header.Set("Content-Type", "application/json")
+
+	readBody := DebugMode
+	respBody, status, err := doRequest(postReq, 10*time.Second, readBody)
+	if err != nil {
+		log.Printf("[Error] Metrics ship failed: %v", err)
+		return
+	}
+	debugLogInteraction("POST", postReq.URL.String(), status, jsonBody, respBody)
+}
+
 func pullConfig() {
 	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/config?node_id="+NodeID, nil)
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	body, status, err := doRequest(req, 10*time.Second, true)
 	if err != nil {
 		log.Printf("[Error] Config Pull Failed: %v", err)
 		return
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		body, _ := ioutil.ReadAll(resp.Body)
-		debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, body)
+	if status == 200 {
+		debugLogInteraction("GET", req.URL.String(), status, nil, body)
 
 		newVersion := extractVersion(body)
 		currentVersion := readLocalVersion()
@@ -430,29 +571,26 @@ func pullConfig() {
 		return
 	}
 
-	debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, nil)
+	debugLogInteraction("GET", req.URL.String(), status, nil, nil)
 }
 
 func pullTasks() {
 	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/tasks", nil)
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	body, status, err := doRequest(req, 10*time.Second, true)
 	if err != nil {
 		log.Printf("[Error] Task Pull Failed: %v", err)
 		return
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, nil)
-		log.Printf("[Warn] Task Pull Status: %d", resp.StatusCode)
+	if status != 200 {
+		debugLogInteraction("GET", req.URL.String(), status, nil, nil)
+		log.Printf("[Warn] Task Pull Status: %d", status)
 		return
 	}
 
-	body, _ := ioutil.ReadAll(resp.Body)
-	debugLogInteraction("GET", req.URL.String(), resp.StatusCode, nil, body)
+	debugLogInteraction("GET", req.URL.String(), status, nil, body)
 	var payload struct {
 		Tasks []struct {
 			ID   int64  `json:"id"`
@@ -497,15 +635,13 @@ func reportTask(id int64, state string, ret string) {
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	readBody := DebugMode
+	respBody, status, err := doRequest(req, 5*time.Second, readBody)
 	if err != nil {
 		log.Printf("[Error] Task Report Failed: %v", err)
 		return
 	}
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	debugLogInteraction("POST", req.URL.String(), resp.StatusCode, body, respBody)
+	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
 }
 
 func purgeURLs(urls []string) error {
@@ -631,6 +767,26 @@ func splitLines(input string) []string {
 	return out
 }
 
+func loadOffset(path string) int64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	value := strings.TrimSpace(string(data))
+	if value == "" {
+		return 0
+	}
+	offset, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return offset
+}
+
+func saveOffset(path string, offset int64) {
+	_ = os.WriteFile(path, []byte(strconv.FormatInt(offset, 10)), 0644)
+}
+
 func executeReload() error {
 	// Check if nginx is running first to avoid errors
 	// Use absolute path to the extracted binary
@@ -689,7 +845,9 @@ func extractVersion(body []byte) int64 {
 }
 
 func readLocalVersion() int64 {
-	if CONFIG_PATH == "" { return 0 }
+	if CONFIG_PATH == "" {
+		return 0
+	}
 	data, err := ioutil.ReadFile(CONFIG_PATH)
 	if err != nil {
 		return 0
@@ -698,7 +856,9 @@ func readLocalVersion() int64 {
 }
 
 func writeConfigWithBackup(body []byte) error {
-	if CONFIG_PATH == "" { return os.ErrNotExist }
+	if CONFIG_PATH == "" {
+		return os.ErrNotExist
+	}
 	// Backup
 	if current, err := ioutil.ReadFile(CONFIG_PATH); err == nil {
 		_ = ioutil.WriteFile(CONFIG_BAK, current, 0644)
@@ -712,7 +872,9 @@ func writeConfigWithBackup(body []byte) error {
 }
 
 func restoreBackup() error {
-	if CONFIG_PATH == "" { return os.ErrNotExist }
+	if CONFIG_PATH == "" {
+		return os.ErrNotExist
+	}
 	data, err := ioutil.ReadFile(CONFIG_BAK)
 	if err != nil {
 		return err
@@ -730,14 +892,14 @@ type edgeStreamTarget struct {
 }
 
 type edgeStream struct {
-	ID           int64             `json:"id"`
-	ListenPorts  []string          `json:"listen_ports"`
-	Targets      []edgeStreamTarget `json:"targets"`
-	BalanceWay   string            `json:"balance_way"`
-	ProxyProtocol bool             `json:"proxy_protocol"`
-	ProxyConnectTimeout string      `json:"proxy_connect_timeout"`
-	ProxyTimeout        string      `json:"proxy_timeout"`
-	ConnLimit           int          `json:"conn_limit"`
+	ID                  int64              `json:"id"`
+	ListenPorts         []string           `json:"listen_ports"`
+	Targets             []edgeStreamTarget `json:"targets"`
+	BalanceWay          string             `json:"balance_way"`
+	ProxyProtocol       bool               `json:"proxy_protocol"`
+	ProxyConnectTimeout string             `json:"proxy_connect_timeout"`
+	ProxyTimeout        string             `json:"proxy_timeout"`
+	ConnLimit           int                `json:"conn_limit"`
 }
 
 type edgeUpstreamTarget struct {
@@ -765,8 +927,8 @@ type edgeCacheRule struct {
 }
 
 type edgeCacheConfig struct {
-	Enable     bool           `json:"enable"`
-	DefaultTTL int            `json:"default_ttl"`
+	Enable     bool            `json:"enable"`
+	DefaultTTL int             `json:"default_ttl"`
 	Rules      []edgeCacheRule `json:"rules"`
 }
 
@@ -783,36 +945,36 @@ type edgeDomain struct {
 		IP     string `json:"ip"`
 		Action string `json:"action"`
 	} `json:"acl_rules"`
-	BlackIPs          []string          `json:"black_ips"`
-	WhiteIPs          []string          `json:"white_ips"`
-	CCRuleID          int64             `json:"cc_rule_id"`
-	OriginProtocol    string            `json:"origin_protocol"`
-	OriginHTTPPort    string            `json:"origin_http_port"`
-	OriginHTTPSPort   string            `json:"origin_https_port"`
-	Cache             *edgeCacheConfig  `json:"cache"`
-	HttpListen        []string          `json:"http_listen"`
-	HttpsListen       []string          `json:"https_listen"`
-	HTTPSForce        bool              `json:"https_force"`
-	HTTPSRedirectPort string            `json:"https_redirect_port"`
-	HTTPSHSTS         bool              `json:"https_hsts"`
-	HTTPSHTTP2        bool              `json:"https_http2"`
-	HTTPSSSLProtocols string            `json:"https_ssl_protocols"`
-	HTTPSSSLCiphers   string            `json:"https_ssl_ciphers"`
-	HTTPSSSLPreferServerCiphers string   `json:"https_ssl_prefer_server_ciphers"`
-	ProxyConnectTimeout string           `json:"proxy_connect_timeout"`
-	ProxyReadTimeout    string           `json:"proxy_read_timeout"`
-	ProxySendTimeout    string           `json:"proxy_send_timeout"`
-	ProxyHTTPVersion    string           `json:"proxy_http_version"`
-	ProxySSLProtocols   string           `json:"proxy_ssl_protocols"`
-	EnableGzip          bool             `json:"enable_gzip"`
-	GzipTypes           string           `json:"gzip_types"`
-	EnableWebsocket     bool             `json:"enable_websocket"`
-	EnableRange         bool             `json:"enable_range"`
-	BodyLimit           int64            `json:"body_limit"`
-	LimitRate           int64            `json:"limit_rate"`
-	UpstreamKeepalive   bool             `json:"upstream_keepalive"`
-	UpstreamKeepaliveConn int            `json:"upstream_keepalive_conn"`
-	UpstreamKeepaliveTimeout int         `json:"upstream_keepalive_timeout"`
+	BlackIPs                    []string         `json:"black_ips"`
+	WhiteIPs                    []string         `json:"white_ips"`
+	CCRuleID                    int64            `json:"cc_rule_id"`
+	OriginProtocol              string           `json:"origin_protocol"`
+	OriginHTTPPort              string           `json:"origin_http_port"`
+	OriginHTTPSPort             string           `json:"origin_https_port"`
+	Cache                       *edgeCacheConfig `json:"cache"`
+	HttpListen                  []string         `json:"http_listen"`
+	HttpsListen                 []string         `json:"https_listen"`
+	HTTPSForce                  bool             `json:"https_force"`
+	HTTPSRedirectPort           string           `json:"https_redirect_port"`
+	HTTPSHSTS                   bool             `json:"https_hsts"`
+	HTTPSHTTP2                  bool             `json:"https_http2"`
+	HTTPSSSLProtocols           string           `json:"https_ssl_protocols"`
+	HTTPSSSLCiphers             string           `json:"https_ssl_ciphers"`
+	HTTPSSSLPreferServerCiphers string           `json:"https_ssl_prefer_server_ciphers"`
+	ProxyConnectTimeout         string           `json:"proxy_connect_timeout"`
+	ProxyReadTimeout            string           `json:"proxy_read_timeout"`
+	ProxySendTimeout            string           `json:"proxy_send_timeout"`
+	ProxyHTTPVersion            string           `json:"proxy_http_version"`
+	ProxySSLProtocols           string           `json:"proxy_ssl_protocols"`
+	EnableGzip                  bool             `json:"enable_gzip"`
+	GzipTypes                   string           `json:"gzip_types"`
+	EnableWebsocket             bool             `json:"enable_websocket"`
+	EnableRange                 bool             `json:"enable_range"`
+	BodyLimit                   int64            `json:"body_limit"`
+	LimitRate                   int64            `json:"limit_rate"`
+	UpstreamKeepalive           bool             `json:"upstream_keepalive"`
+	UpstreamKeepaliveConn       int              `json:"upstream_keepalive_conn"`
+	UpstreamKeepaliveTimeout    int              `json:"upstream_keepalive_timeout"`
 }
 
 type edgeNginxConfig struct {
@@ -828,10 +990,10 @@ type edgeNginxConfig struct {
 }
 
 type edgeConfig struct {
-	Domains  []edgeDomain  `json:"domains"`
-	Upstreams []edgeUpstream `json:"upstreams"`
-	Streams []edgeStream `json:"streams"`
-	Nginx   *edgeNginxConfig `json:"nginx"`
+	Domains   []edgeDomain     `json:"domains"`
+	Upstreams []edgeUpstream   `json:"upstreams"`
+	Streams   []edgeStream     `json:"streams"`
+	Nginx     *edgeNginxConfig `json:"nginx"`
 }
 
 func generateDynamicConfigs(payload []byte) error {

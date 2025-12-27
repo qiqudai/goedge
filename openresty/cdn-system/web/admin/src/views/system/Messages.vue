@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <div class="filter-container">
       <el-select v-model="filters.type" placeholder="消息类型" style="width: 180px;">
@@ -14,7 +14,18 @@
       <el-button type="primary" @click="loadList">查询</el-button>
     </div>
 
-    <el-table :data="list" border style="width: 100%;">
+    <AppTable
+      :data="list"
+      border
+      style="width: 100%;"
+      v-model:current-page="filters.page"
+      v-model:page-size="filters.pageSize"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      @size-change="loadList"
+      @current-change="loadList"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="type_label" label="类型" width="160" />
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
@@ -25,19 +36,7 @@
           <el-button link type="primary" @click="openDetail(row)">详情</el-button>
         </template>
       </el-table-column>
-    </el-table>
-
-    <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="filters.page"
-        v-model:page-size="filters.pageSize"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        :total="total"
-        @size-change="loadList"
-        @current-change="loadList"
-      />
-    </div>
+    </AppTable>
 
     <el-dialog v-model="detailVisible" title="消息详情" width="560px">
       <el-form label-width="80px">
@@ -119,3 +118,4 @@ onMounted(() => loadList())
   line-height: 1.6;
 }
 </style>
+
