@@ -121,15 +121,21 @@
       <el-table-column :label="t.status" align="center" width="90">
         <template #default="{ row }">
           <div class="node-status">
-            <span :class="['status-dot', isNodeOnline(row) ? 'status-ok' : 'status-stop']"></span>
-            <span>{{ isNodeOnline(row) ? t.statusOnline : t.statusOffline }}</span>
+            <span :class="['status-dot', resolveStatusClass(row)]"></span>
+            <span>{{ resolveStatusText(row) }}</span>
           </div>
         </template>
       </el-table-column>
 
       <el-table-column label="启用" align="center" width="90">
         <template #default="{ row }">
-          <el-switch v-model="row.enable" :active-value="true" :inactive-value="false" @change="handleStatusChange(row)" />
+          <el-switch
+            v-model="row.enable"
+            :active-value="true"
+            :inactive-value="false"
+            :disabled="isSyncing(row)"
+            @change="handleStatusChange(row)"
+          />
         </template>
       </el-table-column>
 
@@ -349,6 +355,8 @@ const t = {
   status: '\u72b6\u6001',
   statusOnline: '\u5728\u7ebf',
   statusOffline: '\u4e0d\u5728\u7ebf',
+  statusSync: '\u540c\u6b65\u4e2d',
+  statusDisabled: '\u7981\u7528',
   remark: '\u5907\u6ce8',
   sort: '\u6392\u5e8f',
   action: '\u64cd\u4f5c',
@@ -743,6 +751,30 @@ const formatMonitorProtocol = (row) => {
   return 'tcp'
 }
 
+const isSyncing = (row) => {
+  return row.config_task === 'sync_enable' || row.config_task === 'sync_disable'
+}
+
+const resolveStatusText = (row) => {
+  if (isSyncing(row)) {
+    return t.statusSync
+  }
+  if (!row.enable) {
+    return t.statusDisabled
+  }
+  return isNodeOnline(row) ? t.statusOnline : t.statusOffline
+}
+
+const resolveStatusClass = (row) => {
+  if (isSyncing(row)) {
+    return 'status-sync'
+  }
+  if (!row.enable) {
+    return 'status-disabled'
+  }
+  return isNodeOnline(row) ? 'status-ok' : 'status-stop'
+}
+
 const formatBandwidth = (row) => {
   const up = pickNumber(row, ['bandwidth_in', 'bw_in', 'in_speed'])
   const down = pickNumber(row, ['bandwidth_out', 'bw_out', 'out_speed'])
@@ -811,6 +843,16 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.node-tabs :deep(.el-tabs__nav-wrap) {
+  overflow: visible;
+}
+
+.node-tabs :deep(.el-tabs__item) {
+  padding: 0 18px;
+  min-width: 88px;
+  text-align: center;
+}
+
 .node-actions,
 .node-filters {
   display: flex;
@@ -866,6 +908,14 @@ onMounted(() => {
 
 .status-stop {
   background: #f56c6c;
+}
+
+.status-sync {
+  background: #e6a23c;
+}
+
+.status-disabled {
+  background: #909399;
 }
 
 .sub-ip-list {

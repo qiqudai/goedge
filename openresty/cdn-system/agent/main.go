@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +36,7 @@ var (
 	HEARTBEAT_INT = 10 * time.Second
 	LOG_SHIP_INT  = 5 * time.Second
 	METRICS_INT   = 10 * time.Second
+	L2_CHECK_INT  = 30 * time.Second
 
 	// Dynamic Paths (will be set in initEnvironment)
 	WorkDir      = "./edge-node"
@@ -153,6 +155,7 @@ func main() {
 	go startTaskPull()
 	go startAccessLogShip()
 	go startMetricsShip()
+	go startL2Monitor()
 
 	// 3. Keep Alive
 	select {}
@@ -394,7 +397,7 @@ func sendHeartbeat() {
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	readBody := DebugMode
+	readBody := true
 	respBody, status, err := doRequest(req, 5*time.Second, readBody)
 	if err != nil {
 		log.Printf("[Error] Heartbeat Failed: %v", err)
@@ -404,8 +407,196 @@ func sendHeartbeat() {
 
 	if status == 200 {
 		log.Println("[Info] Heartbeat OK")
+		var resp struct {
+			SyncAction string `json:"sync_action"`
+		}
+		if len(respBody) > 0 && json.Unmarshal(respBody, &resp) == nil {
+			if action := strings.ToLower(strings.TrimSpace(resp.SyncAction)); action != "" {
+				if err := applyNodeSync(action); err != nil {
+					log.Printf("[Error] Sync node status failed: %v", err)
+				}
+			}
+		}
 	} else {
 		log.Printf("[Warn] Heartbeat Status: %d", status)
+	}
+}
+
+func applyNodeSync(action string) error {
+	switch action {
+	case "enable":
+		if err := startNginx(); err != nil {
+			if reloadErr := executeReload(); reloadErr != nil {
+				_ = reportNodeSync(action, false)
+				return err
+			}
+		}
+	case "disable":
+		if err := stopNginx(); err != nil {
+			_ = reportNodeSync(action, false)
+			return err
+		}
+	default:
+		return nil
+	}
+	return reportNodeSync(action, true)
+}
+
+func reportNodeSync(action string, success bool) error {
+	payload := map[string]interface{}{
+		"node_id": NodeID,
+		"action":  action,
+		"success": success,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/node/sync", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+AuthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	respBody, status, err := doRequest(req, 10*time.Second, DebugMode)
+	if err != nil {
+		return err
+	}
+	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
+	if status != 200 {
+		return fmt.Errorf("sync status failed: %d", status)
+	}
+	return nil
+}
+
+type l2NodeInfo struct {
+	ID            int64  `json:"id"`
+	IP            string `json:"ip"`
+	Port          int    `json:"port"`
+	CheckProtocol string `json:"check_protocol"`
+	CheckPort     int    `json:"check_port"`
+	CheckHost     string `json:"check_host"`
+	CheckPath     string `json:"check_path"`
+	CheckTimeout  int    `json:"check_timeout"`
+}
+
+type l2NodesResponse struct {
+	Nodes []l2NodeInfo `json:"nodes"`
+}
+
+func startL2Monitor() {
+	ticker := time.NewTicker(L2_CHECK_INT)
+	for range ticker.C {
+		checkL2Nodes()
+	}
+}
+
+func checkL2Nodes() {
+	nodes, err := fetchL2Nodes()
+	if err != nil {
+		log.Printf("[Error] L2 Monitor fetch failed: %v", err)
+		return
+	}
+	if len(nodes) == 0 {
+		return
+	}
+	online := make([]int64, 0, len(nodes))
+	for _, node := range nodes {
+		if isL2Alive(node) {
+			online = append(online, node.ID)
+		}
+	}
+	if len(online) == 0 {
+		return
+	}
+	if err := reportL2Heartbeat(online); err != nil {
+		log.Printf("[Error] L2 Monitor report failed: %v", err)
+		return
+	}
+	if DebugMode {
+		log.Printf("[Debug] L2 Monitor OK: %d/%d online", len(online), len(nodes))
+	}
+}
+
+func fetchL2Nodes() ([]l2NodeInfo, error) {
+	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/l2/nodes?node_id="+NodeID, nil)
+	req.Header.Set("Authorization", "Bearer "+AuthToken)
+
+	body, status, err := doRequest(req, 10*time.Second, true)
+	if err != nil {
+		return nil, err
+	}
+	if status != 200 {
+		return nil, fmt.Errorf("unexpected status: %d", status)
+	}
+	var resp l2NodesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Nodes, nil
+}
+
+func reportL2Heartbeat(nodes []int64) error {
+	payload := map[string]interface{}{
+		"nodes": nodes,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/l2/heartbeat", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer "+AuthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	_, status, err := doRequest(req, 10*time.Second, true)
+	if err != nil {
+		return err
+	}
+	if status != 200 {
+		return fmt.Errorf("unexpected status: %d", status)
+	}
+	return nil
+}
+
+func isL2Alive(node l2NodeInfo) bool {
+	timeout := time.Duration(node.CheckTimeout)
+	if timeout <= 0 {
+		timeout = 5
+	}
+	timeout *= time.Second
+	protocol := strings.ToLower(strings.TrimSpace(node.CheckProtocol))
+	port := node.CheckPort
+	if port <= 0 {
+		if node.Port > 0 {
+			port = node.Port
+		} else if protocol == "https" {
+			port = 443
+		} else {
+			port = 80
+		}
+	}
+	checkHost := strings.TrimSpace(node.CheckHost)
+	if checkHost == "" {
+		checkHost = node.IP
+	}
+	path := strings.TrimSpace(node.CheckPath)
+	if path == "" {
+		path = "/"
+	}
+
+	switch protocol {
+	case "http", "https":
+		target := fmt.Sprintf("%s://%s:%d%s", protocol, node.IP, port, path)
+		client := &http.Client{Timeout: timeout}
+		req, _ := http.NewRequest("GET", target, nil)
+		if checkHost != "" {
+			req.Host = checkHost
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode >= 200 && resp.StatusCode < 400
+	default:
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", node.IP, port), timeout)
+		if err != nil {
+			return false
+		}
+		_ = conn.Close()
+		return true
 	}
 }
 
@@ -787,6 +978,53 @@ func saveOffset(path string, offset int64) {
 	_ = os.WriteFile(path, []byte(strconv.FormatInt(offset, 10)), 0644)
 }
 
+func nginxConfPath() string {
+	confPath := filepath.Join(WorkDir, "conf", "nginx.conf")
+	if abs, err := filepath.Abs(confPath); err == nil {
+		confPath = abs
+	}
+	return confPath
+}
+
+func setNginxEnv(cmd *exec.Cmd) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	env := os.Environ()
+	libPath := filepath.Join(WorkDir, "openresty", "luajit", "lib")
+	lualibPath := filepath.Join(WorkDir, "openresty", "lualib")
+	ldPath := fmt.Sprintf("LD_LIBRARY_PATH=%s:%s", libPath, lualibPath)
+	cmd.Env = append(env, ldPath)
+}
+
+func startNginx() error {
+	if NginxBinPath == "" {
+		return nil
+	}
+	confPath := nginxConfPath()
+	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-c", confPath)
+	setNginxEnv(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	log.Println("[Success] Nginx Started")
+	return nil
+}
+
+func stopNginx() error {
+	if NginxBinPath == "" {
+		return nil
+	}
+	confPath := nginxConfPath()
+	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-s", "stop", "-c", confPath)
+	setNginxEnv(cmd)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	log.Println("[Success] Nginx Stopped")
+	return nil
+}
+
 func executeReload() error {
 	// Check if nginx is running first to avoid errors
 	// Use absolute path to the extracted binary
@@ -794,24 +1032,12 @@ func executeReload() error {
 		return nil // Should not happen if initEnvironment called
 	}
 
-	confPath := filepath.Join(WorkDir, "conf", "nginx.conf")
-	if abs, err := filepath.Abs(confPath); err == nil {
-		confPath = abs
-	}
+	confPath := nginxConfPath()
 
 	// nginx -t -c ... -p ...
 	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-t", "-c", confPath)
 	// Set LD_LIBRARY_PATH for Linux if needed (assuming libs in openresty/luajit/lib etc)
-	if runtime.GOOS != "windows" {
-		// Append to existing env
-		newEnv := os.Environ()
-		// Try to find luajit lib path
-		libPath := filepath.Join(WorkDir, "openresty", "luajit", "lib")
-		lualibPath := filepath.Join(WorkDir, "openresty", "lualib")
-		ldPath := fmt.Sprintf("LD_LIBRARY_PATH=%s:%s", libPath, lualibPath)
-		newEnv = append(newEnv, ldPath)
-		cmd.Env = newEnv
-	}
+	setNginxEnv(cmd)
 
 	if err := cmd.Run(); err != nil {
 		return err
@@ -819,13 +1045,7 @@ func executeReload() error {
 
 	// nginx -s reload -c ... -p ...
 	cmd = exec.Command(NginxBinPath, "-p", WorkDir, "-s", "reload", "-c", confPath)
-	if runtime.GOOS != "windows" {
-		cmd.Env = os.Environ()
-		libPath := filepath.Join(WorkDir, "openresty", "luajit", "lib")
-		lualibPath := filepath.Join(WorkDir, "openresty", "lualib")
-		ldPath := fmt.Sprintf("LD_LIBRARY_PATH=%s:%s", libPath, lualibPath)
-		cmd.Env = append(cmd.Env, ldPath)
-	}
+	setNginxEnv(cmd)
 
 	if err := cmd.Run(); err != nil {
 		return err

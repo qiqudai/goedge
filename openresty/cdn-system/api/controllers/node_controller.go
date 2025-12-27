@@ -167,6 +167,17 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 		req.RegionID = nil
 	}
 
+	var existing models.Node
+	_ = db.DB.Select("enable").Where("id = ?", id).First(&existing).Error
+	syncTask := ""
+	if req.Enable != existing.Enable {
+		if req.Enable {
+			syncTask = "sync_enable"
+		} else {
+			syncTask = "sync_disable"
+		}
+	}
+
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
 			"name":             req.Name,
@@ -193,6 +204,9 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 			"max_cache_size":   req.MaxCacheSize,
 			"log_dir":          req.LogDir,
 			"update_at":        time.Now(),
+		}
+		if syncTask != "" {
+			updates["config_task"] = syncTask
 		}
 
 		if err := tx.Model(&models.Node{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -250,15 +264,39 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 
 	switch strings.ToLower(req.Action) {
 	case "start":
-		if err := db.DB.Model(&models.Node{}).Where("id IN ?", req.Ids).Update("enable", true).Error; err != nil {
+		if err := db.DB.Model(&models.Node{}).
+			Where("id IN ?", req.Ids).
+			Updates(map[string]interface{}{
+				"enable":      true,
+				"config_task": "sync_enable",
+				"update_at":   time.Now(),
+			}).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"msg": "Update Failed"})
 			return
 		}
+		_ = db.DB.Model(&models.Node{}).
+			Where("pid IN ?", req.Ids).
+			Updates(map[string]interface{}{
+				"enable":    true,
+				"update_at": time.Now(),
+			}).Error
 	case "stop":
-		if err := db.DB.Model(&models.Node{}).Where("id IN ?", req.Ids).Update("enable", false).Error; err != nil {
+		if err := db.DB.Model(&models.Node{}).
+			Where("id IN ?", req.Ids).
+			Updates(map[string]interface{}{
+				"enable":      false,
+				"config_task": "sync_disable",
+				"update_at":   time.Now(),
+			}).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"msg": "Update Failed"})
 			return
 		}
+		_ = db.DB.Model(&models.Node{}).
+			Where("pid IN ?", req.Ids).
+			Updates(map[string]interface{}{
+				"enable":    false,
+				"update_at": time.Now(),
+			}).Error
 	case "delete":
 		err := db.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("node_id IN ?", req.Ids).Delete(&models.Line{}).Error; err != nil {

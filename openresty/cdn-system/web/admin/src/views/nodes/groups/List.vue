@@ -2,15 +2,15 @@
   <div class="app-container">
     <div class="filter-container">
       <el-button type="primary" :icon="Plus" @click="handleCreate">新增分组</el-button>
-<!--      <el-button @click="handleBatchDelete">删除</el-button>-->
-      
-      <div class="right-actions" style="float: right;">
-        <el-select v-model="listQuery.region" placeholder="区域: 默认" style="width: 120px; margin-right: 10px;">
-          <el-option label="默认" value="default" />
-          <el-option label="中国" value="china" />
+      <el-button :disabled="selectedIds.length === 0" @click="handleBatchDelete">删除</el-button>
+
+      <div class="right-actions">
+        <el-select v-model="listQuery.region_id" placeholder="所有区域" style="width: 160px; margin-right: 10px;">
+          <el-option label="所有区域" :value="0" />
+          <el-option v-for="region in regions" :key="region.id" :label="region.name" :value="region.id" />
         </el-select>
-        <el-input v-model="listQuery.keyword" placeholder="填名称或解析值搜索" style="width: 200px;" class="filter-item" @keyup.enter="handleFilter" />
-        <el-button type="text" @click="listQuery.keyword = ''; handleFilter()">清除</el-button>
+        <el-input v-model="listQuery.keyword" placeholder="填名称或解析值搜索" style="width: 220px;" class="filter-item" @keyup.enter="handleFilter" />
+        <el-button link @click="resetFilter">清除</el-button>
       </div>
     </div>
 
@@ -28,6 +28,7 @@
       :total="total"
       @size-change="getList"
       @current-change="getList"
+      @selection-change="handleSelectionChange"
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column label="ID" prop="id" width="80" align="center" />
@@ -36,23 +37,37 @@
           <el-button type="primary" link @click="handleUpdate(row)">{{ row.name }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column label="区域" prop="region_id" width="100" align="center" />
-      <el-table-column label="解析值" min-width="200">
+      <el-table-column label="区域" min-width="120" align="center">
         <template #default="{row}">
-          <div>{{ row.resolution }} <span style="color: grey;">(IPv4: {{ row.ipv4_resolution }})</span></div>
+          {{ regionNameMap[row.region_id || 0] || '默认' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="解析值" min-width="220">
+        <template #default="{row}">
+          <div>
+            {{ row.resolution }}
+            <span class="muted-text">(IPv4: {{ row.ipv4_resolution || '-' }})</span>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="统计" min-width="200" align="center">
+        <template #default="{row}">
+          节点数({{ row.node_count || 0 }})
+          网站数({{ row.site_count || 0 }})
+          转发数({{ row.forward_count || 0 }})
         </template>
       </el-table-column>
       <el-table-column label="L2配置" width="100" align="center">
         <template #default="{row}">
-           {{ row.l2_config === 'default' ? '默认配置' : row.l2_config }}
+           {{ row.l2_config === 'default' || !row.l2_config ? '默认配置' : row.l2_config }}
         </template>
       </el-table-column>
       <el-table-column label="排序" prop="sort_order" width="80" align="center" />
       <el-table-column label="操作" align="center" width="200" class-name="small-padding fixed-width">
         <template #default="{row}">
-          <el-button type="text" size="small" @click="handleResolution(row)">配置解析</el-button>
-          <el-button type="text" size="small" @click="handleUpdate(row)">编辑</el-button>
-          <el-button type="text" size="small" style="color: red;" @click="handleDelete(row)">删除</el-button>
+          <el-button link type="primary" @click="handleResolution(row)">配置解析</el-button>
+          <el-button link type="primary" @click="handleUpdate(row)">编辑</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </AppTable>
@@ -113,11 +128,14 @@ import request from '@/utils/request'
 const list = ref([])
 const total = ref(0)
 const listLoading = ref(true)
+const regions = ref([])
+const regionNameMap = ref({ 0: '默认' })
+const selectedIds = ref([])
 const listQuery = reactive({
   page: 1,
   limit: 20,
   keyword: '',
-  region: ''
+  region_id: 0
 })
 
 const dialogFormVisible = ref(false)
@@ -159,6 +177,12 @@ const getList = () => {
 const handleFilter = () => {
   listQuery.page = 1
   getList()
+}
+
+const resetFilter = () => {
+  listQuery.keyword = ''
+  listQuery.region_id = 0
+  handleFilter()
 }
 
 const resetTemp = () => {
@@ -234,7 +258,33 @@ const handleDelete = (row) => {
     })
 }
 
-const handleBatchDelete = () => {}
+const handleSelectionChange = (rows) => {
+  selectedIds.value = rows.map(row => row.id)
+}
+
+const handleBatchDelete = () => {
+  if (selectedIds.value.length === 0) {
+    return
+  }
+  ElMessageBox.confirm('确认删除选中的分组?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    Promise.all(
+      selectedIds.value.map(id =>
+        request({
+          url: `/node-groups/${id}`,
+          method: 'delete'
+        })
+      )
+    ).then(() => {
+      selectedIds.value = []
+      getList()
+      ElMessage.success('删除成功')
+    })
+  })
+}
 
 const router = useRouter() // Initialize router
 
@@ -242,12 +292,41 @@ const handleResolution = (row) => {
    router.push({ name: 'NodeGroupResolution', params: { id: row.id } })
 }
 
+const loadRegions = () => {
+  request({
+    url: '/regions',
+    method: 'get'
+  }).then(response => {
+    regions.value = response.data.list || []
+    const map = { 0: '默认' }
+    regions.value.forEach(region => {
+      map[region.id] = region.name
+    })
+    regionNameMap.value = map
+  })
+}
+
 onMounted(() => {
+  loadRegions()
   getList()
 })
 </script>
 
 <style scoped>
+.filter-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.muted-text {
+  color: #909399;
+  margin-left: 6px;
+}
 .link-type {
     color: #409EFF;
     cursor: pointer;

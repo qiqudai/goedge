@@ -42,6 +42,9 @@ func Setup(r *gin.Engine) {
 			admin.POST("/node-groups", ngCtr.CreateNodeGroup)
 			admin.PUT("/node-groups/:id", ngCtr.UpdateNodeGroup)
 			admin.DELETE("/node-groups/:id", ngCtr.DeleteNodeGroup)
+			admin.GET("/node-groups/:id/resolution", ngCtr.GetResolution)
+			admin.POST("/node-groups/:id/resolution/assign", ngCtr.AssignResolutionLines)
+			admin.POST("/node-groups/:id/resolution/action", ngCtr.LineResolutionAction)
 			regionCtr := &controllers.RegionController{}
 			admin.GET("/regions", regionCtr.ListRegions)
 
@@ -382,9 +385,12 @@ func Setup(r *gin.Engine) {
 		{
 			agentCtr := controllers.NewAgentController()
 			agentGroup.POST("/heartbeat", agentCtr.Heartbeat)
+			agentGroup.POST("/node/sync", agentCtr.SyncNodeStatus)
 			agentGroup.GET("/config", agentCtr.GetConfig)
 			agentGroup.GET("/tasks", agentCtr.GetTasks)
 			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
+			agentGroup.GET("/l2/nodes", agentCtr.GetL2Nodes)
+			agentGroup.POST("/l2/heartbeat", agentCtr.ReportL2Heartbeat)
 
 			agentLogCtr := &controllers.AgentLogController{}
 			agentGroup.POST("/logs/access", agentLogCtr.AccessLogs)

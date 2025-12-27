@@ -8,10 +8,10 @@ type NodeGroup struct {
 	RegionID         *int64 `json:"region_id"`
 	Name             string `json:"name"`
 	CnameHostname    string `json:"resolution"`                 // Frontend: resolution
-	Ipv4Resolution   string `json:"ipv4_resolution"`            // New
+	Ipv4Resolution   string `json:"ipv4_resolution" gorm:"-"`   // stored in backup_switch_policy
 	Description      string `json:"remark" gorm:"column:des"`   // Frontend: remark -> DB: des
-	SortOrder        int    `json:"sort_order" gorm:"default:100"` // New
-	L2Config         string `json:"l2_config"`                  // New
+	SortOrder        int    `json:"sort_order" gorm:"-"`         // stored in backup_switch_policy
+	L2Config         string `json:"l2_config" gorm:"-"`          // stored in backup_switch_policy
 	BackupSwitchType string `json:"spare_ip_switch"`            // Frontend: spare_ip_switch (string)
 	BackupSwitchPolicy string `json:"backup_switch_policy"`
 

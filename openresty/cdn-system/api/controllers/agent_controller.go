@@ -37,7 +37,19 @@ func (ctr *AgentController) Heartbeat(c *gin.Context) {
 	if nodeID != 0 {
 		services.MarkNodeOnline(nodeID, time.Now())
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "pong"})
+	syncAction := ""
+	if nodeID != 0 {
+		var node models.Node
+		if err := db.DB.Select("config_task").Where("id = ?", nodeID).First(&node).Error; err == nil {
+			switch strings.TrimSpace(node.ConfigTask) {
+			case "sync_enable":
+				syncAction = "enable"
+			case "sync_disable":
+				syncAction = "disable"
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "pong", "sync_action": syncAction})
 }
 
 func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
@@ -100,6 +112,162 @@ func (ctr *AgentController) GetConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, config)
+}
+
+func (ctr *AgentController) GetL2Nodes(c *gin.Context) {
+	nodeID := resolveAgentNodeID(c)
+	if nodeID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})
+		return
+	}
+
+	var self models.Node
+	if err := db.DB.Where("id = ?", nodeID).First(&self).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+	if self.Level != 1 {
+		c.JSON(http.StatusOK, gin.H{"nodes": []gin.H{}})
+		return
+	}
+
+	var groupIDs []int64
+	if err := db.DB.Model(&models.Line{}).
+		Select("distinct node_group_id").
+		Where("node_id = ?", nodeID).
+		Pluck("node_group_id", &groupIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load node groups"})
+		return
+	}
+	if len(groupIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"nodes": []gin.H{}})
+		return
+	}
+
+	var l2NodeIDs []int64
+	if err := db.DB.Model(&models.Line{}).
+		Select("distinct node_id").
+		Where("node_group_id IN ?", groupIDs).
+		Where("node_id <> ?", nodeID).
+		Pluck("node_id", &l2NodeIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load l2 nodes"})
+		return
+	}
+	if len(l2NodeIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"nodes": []gin.H{}})
+		return
+	}
+
+	var nodes []models.Node
+	if err := db.DB.Where("id IN ? AND level = ? AND enable = ?", l2NodeIDs, 2, true).
+		Select("id", "ip", "port", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
+		Find(&nodes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load l2 nodes"})
+		return
+	}
+
+	result := make([]gin.H, 0, len(nodes))
+	for _, n := range nodes {
+		result = append(result, gin.H{
+			"id":             n.ID,
+			"ip":             n.IP,
+			"port":           n.Port,
+			"check_protocol": n.CheckProtocol,
+			"check_port":     n.CheckPort,
+			"check_host":     n.CheckHost,
+			"check_path":     n.CheckPath,
+			"check_timeout":  n.CheckTimeout,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"nodes": result})
+}
+
+func (ctr *AgentController) ReportL2Heartbeat(c *gin.Context) {
+	var req struct {
+		Nodes []int64 `json:"nodes"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if len(req.Nodes) == 0 {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		return
+	}
+	now := time.Now()
+	for _, id := range req.Nodes {
+		services.MarkNodeOnline(id, now)
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (ctr *AgentController) SyncNodeStatus(c *gin.Context) {
+	var req struct {
+		NodeID  string `json:"node_id"`
+		Action  string `json:"action"`
+		Success bool   `json:"success"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	nodeID := resolveAgentNodeID(c)
+	if nodeID == 0 && strings.TrimSpace(req.NodeID) != "" {
+		if id, err := strconv.ParseInt(req.NodeID, 10, 64); err == nil {
+			nodeID = id
+		} else {
+			var node models.Node
+			if err := db.DB.Where("name = ? AND pid = 0", req.NodeID).First(&node).Error; err == nil {
+				nodeID = node.ID
+			}
+		}
+	}
+	if nodeID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})
+		return
+	}
+
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action != "enable" && action != "disable" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
+		return
+	}
+	if !req.Success {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		return
+	}
+
+	if err := db.DB.Model(&models.Node{}).Where("id = ?", nodeID).Updates(map[string]interface{}{
+		"config_task": "",
+		"update_at":   time.Now(),
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func resolveAgentNodeID(c *gin.Context) int64 {
+	if v, ok := c.Get("nodeID"); ok {
+		if s, ok := v.(string); ok {
+			if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
+				return id
+			}
+		}
+	}
+	nodeID := strings.TrimSpace(c.Query("node_id"))
+	if nodeID == "" {
+		return 0
+	}
+	if id, err := strconv.ParseInt(nodeID, 10, 64); err == nil && id > 0 {
+		return id
+	}
+	var node models.Node
+	if err := db.DB.Where("name = ? AND pid = 0", nodeID).First(&node).Error; err == nil {
+		return node.ID
+	}
+	return 0
 }
 
 func (ctr *AgentController) GetTasks(c *gin.Context) {

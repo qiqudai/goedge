@@ -34,12 +34,12 @@ func (p *CloudFlareProvider) GetDomains() ([]string, error) {
 }
 
 func (p *CloudFlareProvider) AddRecord(domain string, record dns.DNSRecord) error {
-	fmt.Printf("[CloudFlare] Adding record: %s %s -> %s (TTL: %d)\n", record.Type, record.Name, record.Value, record.TTL)
+	fmt.Printf("[CloudFlare] Adding record: %s %s -> %s (TTL: %d) line=%s\n", record.Type, record.Name, record.Value, record.TTL, record.Line)
 	return nil
 }
 
 func (p *CloudFlareProvider) DeleteRecord(domain string, record dns.DNSRecord) error {
-	fmt.Printf("[CloudFlare] Deleting record: %s %s -> %s\n", record.Type, record.Name, record.Value)
+	fmt.Printf("[CloudFlare] Deleting record: %s %s -> %s line=%s\n", record.Type, record.Name, record.Value, record.Line)
 	return nil
 }
 

@@ -33,12 +33,12 @@ func (p *AliyunProvider) GetDomains() ([]string, error) {
 }
 
 func (p *AliyunProvider) AddRecord(domain string, record dns.DNSRecord) error {
-	fmt.Printf("[Aliyun] Adding record: %s %s -> %s\n", record.Type, record.Name, record.Value)
+	fmt.Printf("[Aliyun] Adding record: %s %s -> %s line=%s\n", record.Type, record.Name, record.Value, record.Line)
 	return nil
 }
 
 func (p *AliyunProvider) DeleteRecord(domain string, record dns.DNSRecord) error {
-	fmt.Printf("[Aliyun] Deleting record: %s %s -> %s\n", record.Type, record.Name, record.Value)
+	fmt.Printf("[Aliyun] Deleting record: %s %s -> %s line=%s\n", record.Type, record.Name, record.Value, record.Line)
 	return nil
 }
 

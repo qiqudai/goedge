@@ -11,6 +11,7 @@ type DNSRecord struct {
 	Name  string // @, www, etc.
 	Value string
 	TTL   int
+	Line  string // vendor-specific line value
 }
 
 type ProviderFactory func(credentials string) (Provider, error)
