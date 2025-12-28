@@ -6,7 +6,7 @@ import (
 
 // SysConfig corresponds to the `config` table in db.sql
 type SysConfig struct {
-	Name      string    `gorm:"column:name" json:"name"`
+	Name      string    `gorm:"column:name;size:255" json:"name"`
 	Value     string    `gorm:"column:value" json:"value"` // Stored as JSON string
 	Type      string    `gorm:"column:type" json:"type"`
 	ScopeID   int       `gorm:"column:scope_id" json:"scope_id"`

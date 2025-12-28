@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services/dns"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,7 +50,7 @@ func (ctr *DnsController) GetProviderTypes(c *gin.Context) {
 		{"type": "huawei", "name": "Huawei", "fields": []string{"id", "secret"}},
 		{"type": "dnsla", "name": "DNSLA", "fields": []string{"id", "secret"}},
 		{"type": "dnspod", "name": "DNSPod", "fields": []string{"id", "token"}},
-		{"type": "dnspod_intl", "name": "DNSPod Intl", "fields": []string{"id", "token"}},
+		{"type": "dnspod_intl", "name": "DNSPod Intl", "fields": []string{"secret_id", "secret_key"}},
 		{"type": "51dns", "name": "51DNS", "fields": []string{"id", "secret"}},
 		{"type": "cloudflare", "name": "Cloudflare", "fields": []string{"email", "api_key"}},
 		{"type": "godaddy", "name": "GoDaddy", "fields": []string{"key", "secret"}},
@@ -78,6 +79,21 @@ func (ctr *DnsController) CreateProvider(c *gin.Context) {
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Type) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Name and type are required"})
 		return
+	}
+
+	if req.Type == "dnspod_intl" {
+		var auth struct {
+			SecretID  string `json:"secret_id"`
+			SecretKey string `json:"secret_key"`
+		}
+		if err := json.Unmarshal([]byte(req.Credentials), &auth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Credentials: invalid auth format"})
+			return
+		}
+		if strings.TrimSpace(auth.SecretID) == "" || strings.TrimSpace(auth.SecretKey) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Credentials: secret_id/secret_key required"})
+			return
+		}
 	}
 
 	// Validate Credentials with Factory

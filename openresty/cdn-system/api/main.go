@@ -8,6 +8,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/routers"
+	"cdn-api/services"
 	"cdn-api/utils"
 	"log"
 	"time"
@@ -22,6 +23,27 @@ func main() {
 	// 2. Connect Database (MySQL)
 	db.Init()
 	db.InitClickHouse()
+	dropForeignKey := func(table, fk string) {
+		var count int64
+		if err := db.DB.Raw(
+			"SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'",
+			table, fk,
+		).Scan(&count).Error; err != nil {
+			log.Printf("Failed to check foreign key %s on %s: %v", fk, table, err)
+			return
+		}
+		if count == 0 {
+			return
+		}
+		sql := "ALTER TABLE `" + table + "` DROP FOREIGN KEY `" + fk + "`"
+		if err := db.DB.Exec(sql).Error; err != nil {
+			log.Printf("Failed to drop foreign key %s on %s: %v", fk, table, err)
+		} else {
+			log.Printf("Dropped foreign key %s on %s", fk, table)
+		}
+	}
+	dropForeignKey("node", "region_ibfk_1")
+	dropForeignKey("site", "region_ibfk_4")
 	// Auto Migrate
 	db.DB.AutoMigrate(
 		&models.Node{},
@@ -74,15 +96,6 @@ func main() {
 		migrator.AddColumn(&models.Site{}, "CnameHostname2")
 		log.Println("Added missing column: cname_hostname2")
 	}
-	// Drop troublesome FK constraint if exists to allow 0 value
-	if migrator.HasConstraint(&models.Site{}, "region_ibfk_4") {
-		if err := migrator.DropConstraint(&models.Site{}, "region_ibfk_4"); err == nil {
-			log.Println("Dropped constraint: region_ibfk_4")
-		} else {
-			log.Printf("Failed to drop constraint region_ibfk_4: %v", err)
-		}
-	}
-
 	// Ensure Admin Role / User Exists
 	go func() {
 		var u models.User
@@ -184,6 +197,16 @@ func main() {
 	})
 
 	routers.Setup(r)
+
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+		for range ticker.C {
+			offlineIDs := services.EvaluateNodeHealth(3*time.Second, 5)
+			for _, nodeID := range offlineIDs {
+				services.HandleNodeOffline(nodeID)
+			}
+		}
+	}()
 
 	// 4. Start Server
 	// Recommend running behind Nginx Load Balancer for HA

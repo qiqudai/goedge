@@ -35,7 +35,7 @@ var assetsFS embed.FS
 // Global Configuration
 var (
 	API_BaseURL   = "http://127.0.0.1:8080"
-	HEARTBEAT_INT = 10 * time.Second
+	HEARTBEAT_INT = 3 * time.Second
 	LOG_SHIP_INT  = 5 * time.Second
 	METRICS_INT   = 10 * time.Second
 	L2_CHECK_INT  = 30 * time.Second
@@ -379,8 +379,9 @@ func ensureDynamicConf(path string) {
 	_ = ioutil.WriteFile(path, []byte(""), 0644)
 }
 
-// startHeartbeat sends status to API every 30s
+// startHeartbeat sends status to API at the configured interval.
 func startHeartbeat() {
+	sendHeartbeat()
 	ticker := time.NewTicker(HEARTBEAT_INT)
 	for range ticker.C {
 		sendHeartbeat()

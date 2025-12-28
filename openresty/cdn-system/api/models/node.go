@@ -15,7 +15,7 @@ type Node struct {
 	Name           string      `json:"name"`
 	Remark         string      `json:"remark" gorm:"column:des"`
 	IP             string      `json:"ip" gorm:"index"`
-	Token          string      `json:"token" gorm:"column:token"`
+	Token          string      `json:"token" gorm:"column:token;size:255"`
 	Host           string      `json:"host"`
 	Port           int         `json:"port"`
 	HttpProxy      string      `json:"http_proxy"`

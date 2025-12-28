@@ -1665,7 +1665,7 @@ const dnsapiFieldLabel = (type, field) => {
     huawei: { id: 'Access Key ID', secret: 'Secret Access Key' },
     dnsla: { id: 'API ID', secret: 'API Key' },
     dnspod: { id: 'ID', token: 'Token' },
-    dnspod_intl: { id: 'ID', token: 'Token' },
+    dnspod_intl: { secret_id: 'SecretId', secret_key: 'SecretKey' },
     cloudflare: { email: 'Email', key: 'API Key' },
     godaddy: { key: 'Key', secret: 'Secret' }
   }

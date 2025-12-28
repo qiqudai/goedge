@@ -1012,6 +1012,7 @@ DROP TABLE IF EXISTS `cname_domains`;
 CREATE TABLE `cname_domains` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `domain` varchar(255) NOT NULL,
+  `dns_provider_id` int(11) NOT NULL DEFAULT 0,
   `note` varchar(255) DEFAULT '',
   `create_at` datetime DEFAULT NULL,
   `update_at` datetime DEFAULT NULL,

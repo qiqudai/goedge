@@ -49,7 +49,11 @@ func BumpConfigVersion(resource string, ids []int64) int64 {
 		}
 		cfg.Value = strconv.FormatInt(version, 10)
 		cfg.UpdatedAt = time.Now()
-		db.DB.Save(&cfg)
+		// Manual update using WHERE because config table has no primary key ID
+		db.DB.Model(&models.SysConfig{}).Where("name = ? AND type = ?", configVersionKey, "system").Updates(map[string]interface{}{
+			"value":     cfg.Value,
+			"update_at": cfg.UpdatedAt,
+		})
 	}
 
 	NotifyConfigChanged(ConfigChange{

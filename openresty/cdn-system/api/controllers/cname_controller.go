@@ -28,8 +28,9 @@ func (c *CnameController) ListDomains(ctx *gin.Context) {
 
 func (c *CnameController) CreateDomain(ctx *gin.Context) {
 	var input struct {
-		Domain string `json:"domain"`
-		Note   string `json:"note"`
+		Domain        string `json:"domain"`
+		Note          string `json:"note"`
+		DNSProviderID int64  `json:"dns_provider_id"`
 	}
 	if err := ctx.BindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid params"})
@@ -46,12 +47,21 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid domain"})
 		return
 	}
+	if input.DNSProviderID == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "DNS provider is required"})
+		return
+	}
+	if err := db.DB.First(&models.DNSAPI{}, input.DNSProviderID).Error; err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "DNS provider not found"})
+		return
+	}
 
 	model := models.CnameDomain{
-		Domain:    domain,
-		Note:      input.Note,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		Domain:        domain,
+		DNSProviderID: input.DNSProviderID,
+		Note:          input.Note,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
 
 	if err := db.DB.Create(&model).Error; err != nil {
@@ -64,8 +74,9 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 func (c *CnameController) UpdateDomain(ctx *gin.Context) {
 	id := ctx.Param("id")
 	var input struct {
-		Domain string `json:"domain"`
-		Note   string `json:"note"`
+		Domain        string `json:"domain"`
+		Note          string `json:"note"`
+		DNSProviderID int64  `json:"dns_provider_id"`
 	}
 	if err := ctx.BindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid params"})
@@ -82,11 +93,20 @@ func (c *CnameController) UpdateDomain(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid domain"})
 		return
 	}
+	if input.DNSProviderID == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "DNS provider is required"})
+		return
+	}
+	if err := db.DB.First(&models.DNSAPI{}, input.DNSProviderID).Error; err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "DNS provider not found"})
+		return
+	}
 
 	updates := map[string]interface{}{
-		"domain":    domain,
-		"note":      input.Note,
-		"update_at": time.Now(),
+		"domain":          domain,
+		"dns_provider_id": input.DNSProviderID,
+		"note":            input.Note,
+		"update_at":       time.Now(),
 	}
 
 	if err := db.DB.Model(&models.CnameDomain{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -113,17 +133,24 @@ func ensureCnameTable() error {
 	if db.DB == nil {
 		return nil
 	}
-	return db.DB.Exec(`
+	if err := db.DB.Exec(`
 CREATE TABLE IF NOT EXISTS cname_domains (
   id INT(11) NOT NULL AUTO_INCREMENT,
   domain VARCHAR(255) NOT NULL,
+  dns_provider_id BIGINT NOT NULL DEFAULT 0,
   note VARCHAR(255) DEFAULT '',
   create_at DATETIME DEFAULT NULL,
   update_at DATETIME DEFAULT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY idx_cname_domains_domain (domain)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-`).Error
+`).Error; err != nil {
+		return err
+	}
+	if db.DB.Migrator().HasColumn(&models.CnameDomain{}, "dns_provider_id") {
+		return nil
+	}
+	return db.DB.Migrator().AddColumn(&models.CnameDomain{}, "DNSProviderID")
 }
 
 func normalizeDomainInput(input string) string {

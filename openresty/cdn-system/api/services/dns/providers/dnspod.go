@@ -1,18 +1,34 @@
 package providers
 
 import (
+	"bytes"
 	"cdn-api/services/dns"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
+	"strings"
+	"time"
+)
+
+const (
+	dnsPodInternational = "international"
 )
 
 type DNSPodConfig struct {
-	ID    string `json:"id"`
-	Token string `json:"token"`
+	APIType   string `json:"apiType"`
+	ID        string `json:"id"`
+	Token     string `json:"token"`
+	SecretId  string `json:"secret_id"`
+	SecretKey string `json:"secret_key"`
+	AppID     string `json:"app_id"`
+	Region    string `json:"region"`
 }
 
 type DNSPodProvider struct {
@@ -27,17 +43,43 @@ func NewDNSPodProvider(credentials string) (dns.Provider, error) {
 	return &DNSPodProvider{Config: config}, nil
 }
 
+func (p *DNSPodProvider) useTC3() bool {
+	if strings.EqualFold(strings.TrimSpace(p.Config.APIType), "tencentDNS") {
+		return true
+	}
+	return strings.TrimSpace(p.Config.SecretId) != "" && strings.TrimSpace(p.Config.SecretKey) != ""
+}
+
 func (p *DNSPodProvider) GetDomains() ([]string, error) {
 	// Not implemented for this task, returning stub
 	return []string{}, nil
 }
 
 func (p *DNSPodProvider) AddRecord(domain string, record dns.DNSRecord) error {
-	// Check if already exists to avoid duplicates if necessary, or just create
-	// For robustness, usually try to create. DNSPod might allow duplicates.
-	// Best practice: Check existence first or handle error.
-	// Simple implementation: Create.
-	
+	if p.useTC3() {
+		return p.addRecordTC3(domain, record)
+	}
+	return p.addRecordV2(domain, record)
+}
+
+func (p *DNSPodProvider) DeleteRecord(domain string, record dns.DNSRecord) error {
+	if p.useTC3() {
+		return p.deleteRecordTC3(domain, record)
+	}
+	return p.deleteRecordV2(domain, record)
+}
+
+func (p *DNSPodProvider) DeleteRecordsByLine(domain string, record dns.DNSRecord) error {
+	if p.useTC3() {
+		return p.deleteRecordsByLineTC3(domain, record)
+	}
+	return p.deleteRecordsByLineV2(domain, record)
+}
+
+func (p *DNSPodProvider) addRecordV2(domain string, record dns.DNSRecord) error {
+	if strings.TrimSpace(p.Config.ID) == "" || strings.TrimSpace(p.Config.Token) == "" {
+		return errors.New("dnspod id/token required")
+	}
 	vals := url.Values{}
 	vals.Set("domain", domain)
 	vals.Set("sub_domain", record.Name)
@@ -45,47 +87,134 @@ func (p *DNSPodProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	vals.Set("record_line", record.Line)
 	vals.Set("value", record.Value)
 	vals.Set("ttl", fmt.Sprintf("%d", record.TTL))
-	
-	_, err := p.sendRequest("Record.Create", vals)
-	return err
+
+	resp, err := p.sendRequestV2("Record.Create", vals)
+	if err != nil {
+		return err
+	}
+
+	var r struct {
+		Status struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(resp, &r); err != nil {
+		return err
+	}
+	if r.Status.Code != "1" {
+		return fmt.Errorf("api error code: %s message: %s response: %s", r.Status.Code, r.Status.Message, string(resp))
+	}
+	return nil
 }
 
-func (p *DNSPodProvider) DeleteRecord(domain string, record dns.DNSRecord) error {
-	// 1. Find record ID
-	recordID, err := p.findRecordID(domain, record)
+func (p *DNSPodProvider) deleteRecordV2(domain string, record dns.DNSRecord) error {
+	recordID, err := p.findRecordIDV2(domain, record)
 	if err != nil {
-		return err // Not found or error
+		return err
 	}
 	if recordID == "" {
-		return nil // Already deleted
+		return nil
 	}
 
-	// 2. Remove
 	vals := url.Values{}
 	vals.Set("domain", domain)
 	vals.Set("record_id", recordID)
-	
-	_, err = p.sendRequest("Record.Remove", vals)
-	return err
+
+	resp, err := p.sendRequestV2("Record.Remove", vals)
+	if err != nil {
+		return err
+	}
+
+	var r struct {
+		Status struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(resp, &r); err != nil {
+		return err
+	}
+	if r.Status.Code != "1" {
+		return fmt.Errorf("api error code: %s message: %s response: %s", r.Status.Code, r.Status.Message, string(resp))
+	}
+	return nil
 }
 
-func (p *DNSPodProvider) findRecordID(domain string, record dns.DNSRecord) (string, error) {
+func (p *DNSPodProvider) deleteRecordsByLineV2(domain string, record dns.DNSRecord) error {
+	vals := url.Values{}
+	vals.Set("domain", domain)
+	if record.Name != "" {
+		vals.Set("sub_domain", record.Name)
+	}
+	if record.Type != "" {
+		vals.Set("record_type", record.Type)
+	}
+	if record.Line != "" {
+		vals.Set("record_line", record.Line)
+	}
+
+	respData, err := p.sendRequestV2("Record.List", vals)
+	if err != nil {
+		return err
+	}
+
+	var resp struct {
+		Status struct {
+			Code string `json:"code"`
+		} `json:"status"`
+		Records []struct {
+			ID string `json:"id"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(respData, &resp); err != nil {
+		return err
+	}
+	if resp.Status.Code != "1" {
+		if resp.Status.Code == "10" {
+			return nil
+		}
+		return fmt.Errorf("api error code: %s response: %s", resp.Status.Code, string(respData))
+	}
+	for _, r := range resp.Records {
+		if r.ID == "" {
+			continue
+		}
+		delVals := url.Values{}
+		delVals.Set("domain", domain)
+		delVals.Set("record_id", r.ID)
+		deleteResp, err := p.sendRequestV2("Record.Remove", delVals)
+		if err != nil {
+			return err
+		}
+		var delParsed struct {
+			Status struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"status"`
+		}
+		if err := json.Unmarshal(deleteResp, &delParsed); err != nil {
+			return err
+		}
+		if delParsed.Status.Code != "1" {
+			return fmt.Errorf("api error code: %s message: %s response: %s", delParsed.Status.Code, delParsed.Status.Message, string(deleteResp))
+		}
+	}
+	return nil
+}
+
+func (p *DNSPodProvider) findRecordIDV2(domain string, record dns.DNSRecord) (string, error) {
 	vals := url.Values{}
 	vals.Set("domain", domain)
 	vals.Set("sub_domain", record.Name)
 	vals.Set("record_type", record.Type)
-	// DNSPod Record.List filtering by line or value is not always perfect/supported in all versions in filtering.
-	// We list and filter manually.
-	// Note: 'record_line' parameter in Record.List exists in some docs.
 	vals.Set("record_line", record.Line)
-	// vals.Set("keyword", record.Value) // keyword search might be fuzzy
 
-	respData, err := p.sendRequest("Record.List", vals)
+	respData, err := p.sendRequestV2("Record.List", vals)
 	if err != nil {
 		return "", err
 	}
 
-	// Parse response
 	var resp struct {
 		Status struct {
 			Code string `json:"code"`
@@ -97,38 +226,40 @@ func (p *DNSPodProvider) findRecordID(domain string, record dns.DNSRecord) (stri
 			Type  string `json:"type"`
 		} `json:"records"`
 	}
-	
+
 	if err := json.Unmarshal(respData, &resp); err != nil {
 		return "", err
 	}
-	
+
 	if resp.Status.Code != "1" {
-		// Code 10 means no records
 		if resp.Status.Code == "10" {
 			return "", nil
 		}
-		return "", errors.New("api error code: " + resp.Status.Code)
+		return "", fmt.Errorf("api error code: %s response: %s", resp.Status.Code, string(respData))
 	}
 
 	for _, r := range resp.Records {
-		if r.Type == record.Type && r.Value == record.Value { 
-			// Line check: API 'record_line' filter usually works, but confirm.
-			// The returned 'Line' name might vary (e.g. "默认" vs "Default").
-			// We trust the API filter or loose match if strict match fails.
+		if r.Type == record.Type && r.Value == record.Value {
 			return r.ID, nil
 		}
 	}
-
 	return "", nil
 }
 
-func (p *DNSPodProvider) sendRequest(action string, vals url.Values) ([]byte, error) {
+func (p *DNSPodProvider) sendRequestV2(action string, vals url.Values) ([]byte, error) {
+	apiHost := "https://dnsapi.cn"
+	lang := "cn"
+	if strings.EqualFold(strings.TrimSpace(p.Config.Region), dnsPodInternational) {
+		apiHost = "https://api.dnspod.com"
+		lang = "en"
+	}
+
 	vals.Set("login_token", p.Config.ID+","+p.Config.Token)
 	vals.Set("format", "json")
-	vals.Set("lang", "cn")
+	vals.Set("lang", lang)
 	vals.Set("error_on_empty", "no")
 
-	resp, err := http.PostForm("https://dnsapi.cn/"+action, vals)
+	resp, err := http.PostForm(apiHost+"/"+action, vals)
 	if err != nil {
 		return nil, err
 	}
@@ -138,12 +269,289 @@ func (p *DNSPodProvider) sendRequest(action string, vals url.Values) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	
-	// Basic error check
-	// DNSPod always returns 200 OK mostly, check JSON status.
-	// Wrapper usually checks status code.
-	
 	return body, nil
+}
+
+func (p *DNSPodProvider) addRecordTC3(domain string, record dns.DNSRecord) error {
+	line := strings.TrimSpace(record.Line)
+	if line == "" {
+		line = "默认"
+	}
+	payload := map[string]interface{}{
+		"Domain":     domain,
+		"SubDomain":  record.Name,
+		"RecordType": record.Type,
+		"RecordLine": line,
+		"Value":      record.Value,
+		"TTL":        record.TTL,
+	}
+	resp, err := p.sendRequestTC3("CreateRecord", payload)
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Response struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return err
+	}
+	if parsed.Response.Error != nil {
+		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
+	}
+	return nil
+}
+
+func (p *DNSPodProvider) deleteRecordTC3(domain string, record dns.DNSRecord) error {
+	recordID, err := p.findRecordIDTC3(domain, record)
+	if err != nil {
+		return err
+	}
+	if recordID == 0 {
+		return nil
+	}
+	payload := map[string]interface{}{
+		"Domain":   domain,
+		"RecordId": recordID,
+	}
+	resp, err := p.sendRequestTC3("DeleteRecord", payload)
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Response struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return err
+	}
+	if parsed.Response.Error != nil {
+		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
+	}
+	return nil
+}
+
+func (p *DNSPodProvider) deleteRecordsByLineTC3(domain string, record dns.DNSRecord) error {
+	line := strings.TrimSpace(record.Line)
+	if line == "" {
+		line = "默认"
+	}
+	payload := map[string]interface{}{
+		"Domain":     domain,
+		"Subdomain":  record.Name,
+		"RecordType": record.Type,
+		"RecordLine": line,
+		"Offset":     0,
+		"Limit":      200,
+	}
+	resp, err := p.sendRequestTC3("DescribeRecordList", payload)
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Response struct {
+			Error      *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+			RecordList []struct {
+				RecordId uint64 `json:"RecordId"`
+			} `json:"RecordList"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return err
+	}
+	if parsed.Response.Error != nil {
+		if parsed.Response.Error.Code == "ResourceNotFound.NoDataOfRecord" {
+			return nil
+		}
+		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
+	}
+	for _, item := range parsed.Response.RecordList {
+		if item.RecordId == 0 {
+			continue
+		}
+		delPayload := map[string]interface{}{
+			"Domain":   domain,
+			"RecordId": item.RecordId,
+		}
+		delResp, err := p.sendRequestTC3("DeleteRecord", delPayload)
+		if err != nil {
+			return err
+		}
+		var delParsed struct {
+			Response struct {
+				Error *struct {
+					Code    string `json:"Code"`
+					Message string `json:"Message"`
+				} `json:"Error"`
+			} `json:"Response"`
+		}
+		if err := json.Unmarshal(delResp, &delParsed); err != nil {
+			return err
+		}
+		if delParsed.Response.Error != nil {
+			return fmt.Errorf("api error code: %s message: %s response: %s", delParsed.Response.Error.Code, delParsed.Response.Error.Message, string(delResp))
+		}
+	}
+	return nil
+}
+
+func (p *DNSPodProvider) findRecordIDTC3(domain string, record dns.DNSRecord) (uint64, error) {
+	line := strings.TrimSpace(record.Line)
+	if line == "" {
+		line = "默认"
+	}
+	payload := map[string]interface{}{
+		"Domain":     domain,
+		"Subdomain":  record.Name,
+		"RecordType": record.Type,
+		"RecordLine": line,
+		"Offset":     0,
+		"Limit":      100,
+	}
+	resp, err := p.sendRequestTC3("DescribeRecordList", payload)
+	if err != nil {
+		return 0, err
+	}
+	var parsed struct {
+		Response struct {
+			Error      *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+			RecordList []struct {
+				RecordId uint64 `json:"RecordId"`
+				Name     string `json:"Name"`
+				Type     string `json:"Type"`
+				Value    string `json:"Value"`
+				Line     string `json:"Line"`
+			} `json:"RecordList"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return 0, err
+	}
+	if parsed.Response.Error != nil {
+		if parsed.Response.Error.Code == "ResourceNotFound.NoDataOfRecord" {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
+	}
+	for _, item := range parsed.Response.RecordList {
+		if item.Type == record.Type && item.Value == record.Value {
+			if strings.TrimSpace(record.Line) == "" || item.Line == record.Line {
+				return item.RecordId, nil
+			}
+		}
+	}
+	return 0, nil
+}
+
+func (p *DNSPodProvider) sendRequestTC3(action string, payload interface{}) ([]byte, error) {
+	const (
+		host    = "dnspod.tencentcloudapi.com"
+		version = "2021-03-23"
+		service = "dnspod"
+	)
+	if strings.TrimSpace(p.Config.SecretId) == "" || strings.TrimSpace(p.Config.SecretKey) == "" {
+		return nil, errors.New("dnspod secret_id/secret_key required")
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	timestamp := time.Now().Unix()
+	date := time.Unix(timestamp, 0).UTC().Format("2006-01-02")
+
+	canonicalURI := "/"
+	canonicalQueryString := ""
+	canonicalHeaders := map[string]string{
+		"content-type": "application/json; charset=utf-8",
+		"host":         host,
+	}
+	signedHeaders := []string{"content-type", "host"}
+	sort.Strings(signedHeaders)
+	canonicalHeaderLines := make([]string, 0, len(signedHeaders))
+	for _, key := range signedHeaders {
+		canonicalHeaderLines = append(canonicalHeaderLines, key+":"+canonicalHeaders[key])
+	}
+	canonicalHeadersStr := strings.Join(canonicalHeaderLines, "\n") + "\n"
+	signedHeadersStr := strings.Join(signedHeaders, ";")
+
+	hashedPayload := sha256Hex(body)
+	canonicalRequest := strings.Join([]string{
+		"POST",
+		canonicalURI,
+		canonicalQueryString,
+		canonicalHeadersStr,
+		signedHeadersStr,
+		hashedPayload,
+	}, "\n")
+
+	credentialScope := date + "/" + service + "/tc3_request"
+	stringToSign := strings.Join([]string{
+		"TC3-HMAC-SHA256",
+		fmt.Sprintf("%d", timestamp),
+		credentialScope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+
+	signingKey := hmacSHA256([]byte("TC3"+p.Config.SecretKey), date)
+	signingKey = hmacSHA256(signingKey, service)
+	signingKey = hmacSHA256(signingKey, "tc3_request")
+	signature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
+
+	authHeader := fmt.Sprintf(
+		"TC3-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		p.Config.SecretId, credentialScope, signedHeadersStr, signature,
+	)
+
+	req, err := http.NewRequest("POST", "https://"+host, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Host", host)
+	req.Header.Set("X-TC-Action", action)
+	req.Header.Set("X-TC-Timestamp", fmt.Sprintf("%d", timestamp))
+	req.Header.Set("X-TC-Version", version)
+	if region := strings.TrimSpace(p.Config.Region); region != "" {
+		req.Header.Set("X-TC-Region", region)
+	}
+	req.Header.Set("Authorization", authHeader)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return respBody, nil
+}
+
+func sha256Hex(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
+func hmacSHA256(key []byte, msg string) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(msg))
+	return mac.Sum(nil)
 }
 
 func init() {

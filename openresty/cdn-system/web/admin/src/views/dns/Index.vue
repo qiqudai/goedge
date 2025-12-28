@@ -67,6 +67,11 @@
             <el-table-column type="selection" width="55" />
             <el-table-column prop="id" label="ID" width="80" align="center" />
             <el-table-column prop="domain" label="域名" />
+            <el-table-column label="DNS提供商" min-width="200">
+              <template #default="{ row }">
+                {{ getProviderNameById(row.dns_provider_id) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="note" label="备注" />
             <el-table-column label="操作" width="150" align="center">
               <template #default="{ row }">
@@ -85,6 +90,11 @@
       <el-form :model="cnameForm" label-width="100px">
         <el-form-item label="域名" required>
           <el-input v-model="cnameForm.domain" placeholder="example.com" @blur="handleCnameBlur" />
+        </el-form-item>
+        <el-form-item label="DNS提供商" required>
+          <el-select v-model="cnameForm.dns_provider_id" placeholder="请选择" style="width: 100%;">
+            <el-option v-for="item in providers" :key="item.id" :label="getProviderLabel(item)" :value="item.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="cnameForm.note" type="textarea" />
@@ -132,7 +142,7 @@ const form = ref({
   type: '',
   credentials: {},
   ttl: 600,
-  ip_weight: false
+  ip_weight: true
 })
 
 const labelMaps = {
@@ -140,7 +150,7 @@ const labelMaps = {
   huawei: { id: 'Access Key Id', secret: 'Secret Access Key' },
   dnsla: { id: 'APIID', secret: 'API Key' },
   dnspod: { id: 'ID', token: 'Token' },
-  dnspod_intl: { id: 'ID', token: 'Token' },
+  dnspod_intl: { secret_id: 'SecretId', secret_key: 'SecretKey' },
   '51dns': { id: 'API Key', secret: 'API Secret' },
   cloudflare: { email: 'Email', api_key: 'API Key' },
   godaddy: { key: 'Key', secret: 'Secret' }
@@ -162,6 +172,14 @@ const getProviderLabel = item => {
     return ''
   }
   return providerLabelMap[item.type] || item.name || item.type
+}
+
+const getProviderNameById = id => {
+  const match = providers.value.find(item => item.id === id)
+  if (!match) {
+    return '-'
+  }
+  return getProviderLabel(match)
 }
 
 const applyProvider = item => {
@@ -276,7 +294,7 @@ const submitForm = () => {
 const cnameList = ref([])
 const cnameLoading = ref(false)
 const cnameDialogVisible = ref(false)
-const cnameForm = reactive({ id: 0, domain: '', note: '' })
+const cnameForm = reactive({ id: 0, domain: '', note: '', dns_provider_id: 0 })
 const cnameQuery = reactive({ keyword: '' })
 const selectedCnames = ref([])
 
@@ -299,6 +317,7 @@ const handleCreateCname = () => {
   cnameForm.id = 0
   cnameForm.domain = ''
   cnameForm.note = ''
+  cnameForm.dns_provider_id = providers.value.length > 0 ? providers.value[0].id : 0
   cnameDialogVisible.value = true
 }
 
@@ -306,6 +325,7 @@ const handleEditCname = row => {
   cnameForm.id = row.id
   cnameForm.domain = row.domain
   cnameForm.note = row.note
+  cnameForm.dns_provider_id = row.dns_provider_id || 0
   cnameDialogVisible.value = true
 }
 
@@ -378,6 +398,10 @@ const submitCnameForm = () => {
   }
   if (!isValidDomain(normalized)) {
     ElMessage.error('域名格式不正确')
+    return
+  }
+  if (!cnameForm.dns_provider_id) {
+    ElMessage.error('请选择DNS提供商')
     return
   }
   cnameForm.domain = normalized

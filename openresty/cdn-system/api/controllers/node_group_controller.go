@@ -387,10 +387,12 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		for _, item := range createItems {
 			var existing models.Line
-			if err := tx.Where("node_group_id = ? AND line_id = ? AND node_ip_id = ?", item.NodeGroupID, item.LineID, item.NodeIPID).First(&existing).Error; err == nil {
+			result := tx.Where("node_group_id = ? AND line_id = ? AND node_ip_id = ?", item.NodeGroupID, item.LineID, item.NodeIPID).Limit(1).Find(&existing)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
 				continue
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
 			}
 			if err := tx.Create(&item).Error; err != nil {
 				return err
@@ -404,7 +406,10 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 	}
 
 	services.BumpConfigVersion("line", []int64{groupID})
-	_ = dns.SyncLineRecords(groupID, lineID, lineName, "add", assignedIPIDs)
+	if err := dns.SyncLineRecords(groupID, lineID, lineName, "add", assignedIPIDs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "dns sync failed: " + err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0})
 }
 
@@ -518,7 +523,7 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 		return
 	}
 	services.BumpConfigVersion("line", []int64{groupID})
-	if len(targetLines) > 0 {
+	if len(targetLines) > 0 && action == "delete" {
 		groupIDs := map[int64][]int64{}
 		lineIDs := map[int64]string{}
 		lineNames := map[int64]string{}
@@ -528,7 +533,10 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 			lineNames[line.NodeGroupID] = line.LineName
 		}
 		for gid, ipIDs := range groupIDs {
-			_ = dns.SyncLineRecords(gid, lineIDs[gid], lineNames[gid], action, ipIDs)
+			if err := dns.SyncLineRecords(gid, lineIDs[gid], lineNames[gid], action, ipIDs); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"msg": "dns sync failed: " + err.Error()})
+				return
+			}
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0})

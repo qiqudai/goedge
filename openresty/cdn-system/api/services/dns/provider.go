@@ -6,6 +6,11 @@ type Provider interface {
 	DeleteRecord(domain string, record DNSRecord) error
 }
 
+// LineRecordDeleter optionally deletes all records for the same name + line.
+type LineRecordDeleter interface {
+	DeleteRecordsByLine(domain string, record DNSRecord) error
+}
+
 type DNSRecord struct {
 	Type  string // A, CNAME, TXT
 	Name  string // @, www, etc.
