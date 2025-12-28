@@ -190,6 +190,19 @@ a:hover {
   color: var(--text-color);
 }
 
+:root[data-theme="dark"] .el-button--primary {
+  --el-button-bg-color: #409eff !important;
+  --el-button-border-color: #409eff !important;
+  --el-button-text-color: #ffffff !important;
+  --el-button-hover-bg-color: #66b1ff !important;
+  --el-button-hover-border-color: #66b1ff !important;
+  --el-button-hover-text-color: #ffffff !important;
+  --el-button-active-bg-color: #3a8ee6 !important;
+  --el-button-active-border-color: #3a8ee6 !important;
+  background-color: #409eff !important;
+  border-color: #409eff !important;
+  color: #ffffff !important;
+}
 :root[data-theme="dark"] .el-tabs__nav-wrap::after {
   background-color: var(--border-color);
 }

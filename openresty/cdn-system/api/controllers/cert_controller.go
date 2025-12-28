@@ -367,7 +367,7 @@ func (ctrl *CertController) GetDefaultSettings(c *gin.Context) {
 	}
 
 	if targetUserID != 0 {
-		if settings, err := loadCertDefaultSettings("user", "user", int(targetUserID)); err == nil && settings != nil {
+		if settings, err := loadCertDefaultSettings("system", "user", int(targetUserID)); err == nil && settings != nil {
 			c.JSON(http.StatusOK, gin.H{"data": settings})
 			return
 		}
@@ -376,7 +376,23 @@ func (ctrl *CertController) GetDefaultSettings(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"data": settings})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": certDefaultSettings{Type: "system", DNSAPI: 0}})
+
+	// Create default if not exists
+	defaultSettings := certDefaultSettings{Type: "system", DNSAPI: 0}
+	b, _ := json.Marshal(defaultSettings)
+	sys := models.SysConfig{
+		Name:      "cert_default_settings",
+		Value:     string(b),
+		Type:      "system",
+		ScopeID:   0,
+		ScopeName: "global",
+		Enable:    true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	db.DB.Create(&sys)
+
+	c.JSON(http.StatusOK, gin.H{"data": defaultSettings})
 }
 
 func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
@@ -396,11 +412,10 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 		targetUserID = parseUserID(mustGet(c, "userID"))
 	}
 
-	scopeType := "system"
+	configType := "system"
 	scopeName := "global"
 	scopeID := 0
 	if targetUserID != 0 {
-		scopeType = "user"
 		scopeName = "user"
 		scopeID = int(targetUserID)
 	}
@@ -408,7 +423,7 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 	payload := certDefaultSettings{Type: req.Type, DNSAPI: req.DNSAPI}
 	b, _ := json.Marshal(payload)
 	var sys models.SysConfig
-	query := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "cert_default_settings", scopeType, scopeName, scopeID)
+	query := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "cert_default_settings", configType, scopeName, scopeID)
 	if err := query.First(&sys).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Save failed"})
@@ -417,7 +432,7 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 		sys = models.SysConfig{
 			Name:      "cert_default_settings",
 			Value:     string(b),
-			Type:      scopeType,
+			Type:      configType,
 			ScopeID:   scopeID,
 			ScopeName: scopeName,
 			Enable:    true,

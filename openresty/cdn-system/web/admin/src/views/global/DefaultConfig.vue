@@ -32,12 +32,12 @@
                 </el-form-item>
                 <el-form-item label="ssl_protocols" style="max-width: 600px;">
                   <el-checkbox-group v-model="siteForm.sslProtocols" @change="saveSiteConfig">
-                    <el-checkbox label="SSLv2" />
-                    <el-checkbox label="SSLv3" />
-                    <el-checkbox label="TLSv1" />
-                    <el-checkbox label="TLSv1.1" />
-                    <el-checkbox label="TLSv1.2" />
-                    <el-checkbox label="TLSv1.3" />
+                    <el-checkbox :value="'SSLv2'">SSLv2</el-checkbox>
+                    <el-checkbox :value="'SSLv3'">SSLv3</el-checkbox>
+                    <el-checkbox :value="'TLSv1'">TLSv1</el-checkbox>
+                    <el-checkbox :value="'TLSv1.1'">TLSv1.1</el-checkbox>
+                    <el-checkbox :value="'TLSv1.2'">TLSv1.2</el-checkbox>
+                    <el-checkbox :value="'TLSv1.3'">TLSv1.3</el-checkbox>
                   </el-checkbox-group>
                 </el-form-item>
                 <el-form-item label="ssl_ciphers" style="max-width: 600px;">
@@ -57,10 +57,10 @@
                 <div class="section-title">回源设置</div>
                 <el-form-item label="回源协议" style="max-width: 600px;">
                   <el-radio-group v-model="siteForm.backendProtocol" @change="saveSiteConfig">
-                    <el-radio label="http">HTTP</el-radio>
-                    <el-radio label="https">HTTPS</el-radio>
-                    <el-radio label="follow">跟随协议</el-radio>
-                    <el-radio label="follow_port">跟随端口和协议</el-radio>
+                    <el-radio :value="'http'">HTTP</el-radio>
+                    <el-radio :value="'https'">HTTPS</el-radio>
+                    <el-radio :value="'follow'">跟随协议</el-radio>
+                    <el-radio :value="'follow_port'">跟随端口和协议</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="回源http端口" style="max-width: 500px;">
@@ -77,28 +77,31 @@
                 </el-form-item>
                 <el-form-item label="回源SSL协议" style="max-width: 600px;">
                   <el-checkbox-group v-model="siteForm.proxySslProtocols" @change="saveSiteConfig">
-                    <el-checkbox label="SSLv2" />
-                    <el-checkbox label="SSLv3" />
-                    <el-checkbox label="TLSv1" />
-                    <el-checkbox label="TLSv1.1" />
-                    <el-checkbox label="TLSv1.2" />
-                    <el-checkbox label="TLSv1.3" />
+                    <el-checkbox :value="'SSLv2'">SSLv2</el-checkbox>
+                    <el-checkbox :value="'SSLv3'">SSLv3</el-checkbox>
+                    <el-checkbox :value="'TLSv1'">TLSv1</el-checkbox>
+                    <el-checkbox :value="'TLSv1.1'">TLSv1.1</el-checkbox>
+                    <el-checkbox :value="'TLSv1.2'">TLSv1.2</el-checkbox>
+                    <el-checkbox :value="'TLSv1.3'">TLSv1.3</el-checkbox>
                   </el-checkbox-group>
                 </el-form-item>
                 <el-divider />
                 <div class="section-title">缓存</div>
                 <div class="toolbar-row">
-                  <el-button type="primary" size="normal" @click="openCacheRuleDialog('create')">新增规则</el-button>
+                  <el-button type="primary" size="default" @click="openCacheRuleDialog('create')">新增规则</el-button>
+                  
+                <el-form-item label="快速添加缓存配置">
                   <el-select
                     v-model="cacheQuickPreset"
-                    placeholder="快速设置缓存"
-                    style="max-width: 200px"
-                    size="normal"
+                    style="width: 140px; margin-left: 10px;"
                     @change="applyCachePreset">
-                    <el-option label="通用静态资源" value="static" />
-                    <el-option label="视频资源" value="video" />
-                    <el-option label="图片资源" value="image" />
+                    <el-option label="首页缓存" value="index" />
+                    <el-option label="全站缓存" value="all" />
+                    <el-option label="静态资源缓存" value="static" />
+                    <el-option label="视频文件缓存" value="video" />
+                    <el-option label="Wordpress缓存" value="wordpress" />
                   </el-select>
+                  </el-form-item>
                 </div>
                 <el-table :data="siteForm.cacheRules" border class="config-table">
                   <el-table-column type="selection" width="50" />
@@ -114,7 +117,7 @@
                   </el-table-column>
                   <el-table-column label="有效期" width="120">
                     <template #default="{ row }">
-                      <span>{{ row.ttl }} 天</span>
+                      <span>{{ formatTTL(row.ttl) }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="忽略参数" width="120">
@@ -133,8 +136,8 @@
                   </el-table-column>
                   <el-table-column label="操作" width="140">
                     <template #default="{ row, $index }">
-                      <el-button type="primary" link size="normal" @click="openCacheRuleDialog('edit', row, $index)">编辑</el-button>
-                      <el-button type="danger" link size="normal" @click="removeCacheRule($index)">删除</el-button>
+                      <el-button type="primary" link size="default" @click="openCacheRuleDialog('edit', row, $index)">编辑</el-button>
+                      <el-button type="danger" link size="default" @click="removeCacheRule($index)">删除</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -142,7 +145,7 @@
                 <el-divider />
                 <div class="section-title">源站请求头</div>
                 <div class="toolbar-row">
-                  <el-button type="primary" size="normal" @click="openHeaderDialog('create')">新增请求头</el-button>
+                  <el-button type="primary" size="default" @click="openHeaderDialog('create')">新增请求头</el-button>
                 </div>
                 <el-table :data="siteForm.originHeaders" border class="config-table">
                   <el-table-column type="selection" width="50" />
@@ -150,8 +153,8 @@
                   <el-table-column label="值" min-width="260" prop="value" />
                   <el-table-column label="操作" width="140">
                     <template #default="{ row, $index }">
-                      <el-button type="primary" link size="normal" @click="openHeaderDialog('edit', row, $index)">编辑</el-button>
-                      <el-button type="danger" link size="normal" @click="removeHeader($index)">删除</el-button>
+                      <el-button type="primary" link size="default" @click="openHeaderDialog('edit', row, $index)">编辑</el-button>
+                      <el-button type="danger" link size="default" @click="removeHeader($index)">删除</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -178,8 +181,8 @@
                 <div class="section-title">其它</div>
                 <el-form-item label="负载方式" style="max-width: 600px;">
                   <el-radio-group v-model="siteForm.balanceWay" @change="saveSiteConfig">
-                    <el-radio label="rr">轮循</el-radio>
-                    <el-radio label="ip_hash">定源</el-radio>
+                    <el-radio :value="'rr'">轮循</el-radio>
+                    <el-radio :value="'ip_hash'">定源</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="默认CC规则" style="max-width: 500px;">
@@ -189,9 +192,9 @@
                 </el-form-item>
                 <el-form-item label="搜索引擎爬虫" style="max-width: 600px;">
                   <el-radio-group v-model="siteForm.securityBot" @change="saveSiteConfig">
-                    <el-radio label="">不设置</el-radio>
-                    <el-radio label="allow">放行</el-radio>
-                    <el-radio label="block">拦截</el-radio>
+                    <el-radio :value="''">不设置</el-radio>
+                    <el-radio :value="'allow'">放行</el-radio>
+                    <el-radio :value="'block'">拦截</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="开启Gzip" style="max-width: 500px;">
@@ -221,14 +224,14 @@
               <el-form label-width="150px" class="config-form">
                 <el-form-item label="监听协议" style="max-width: 600px;">
                   <el-radio-group v-model="streamForm.listenProtocol" @change="saveStreamConfig">
-                    <el-radio label="tcp">tcp</el-radio>
-                    <el-radio label="udp">udp</el-radio>
+                    <el-radio :value="'tcp'">tcp</el-radio>
+                    <el-radio :value="'udp'">udp</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="负载方式" style="max-width: 600px;">
                   <el-radio-group v-model="streamForm.balanceWay" @change="saveStreamConfig">
-                    <el-radio label="rr">轮循</el-radio>
-                    <el-radio label="ip_hash">定源</el-radio>
+                    <el-radio :value="'rr'">轮循</el-radio>
+                    <el-radio :value="'ip_hash'">定源</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="开启proxy protocol" style="max-width: 500px;">
@@ -240,10 +243,10 @@
               <el-form label-width="150px" class="config-form">
                 <el-form-item label="默认证书类型" style="max-width: 600px;">
                   <el-radio-group v-model="certForm.provider" @change="saveCertConfig">
-                    <el-radio label="zerossl">zerossl</el-radio>
-                    <el-radio label="lets">lets</el-radio>
-                    <el-radio label="buypass">buypass</el-radio>
-                    <el-radio label="google">google</el-radio>
+                    <el-radio :value="'zerossl'">zerossl</el-radio>
+                    <el-radio :value="'lets'">lets</el-radio>
+                    <el-radio :value="'buypass'">buypass</el-radio>
+                    <el-radio :value="'google'">google</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item label="DNS API" style="max-width: 500px;">
@@ -316,8 +319,8 @@
     </el-card>
     <el-dialog
       v-model="cacheRuleDialog.visible"
-      :title="cacheRuleDialog.mode === 'create' ? '新增规则' : '编辑规则'"
-      width="520px"
+      :title="cacheRuleDialog.mode === 'create' ? '新增缓存规则' : '编辑缓存规则'"
+      width="600px"
       @close="cacheRuleDialog.visible = false">
       <el-form label-width="100px">
         <el-form-item label="类型">
@@ -330,10 +333,19 @@
           </el-select>
         </el-form-item>
         <el-form-item label="内容">
-          <el-input v-model="cacheRuleForm.value" placeholder="需要匹配的内容" />
+          <el-input v-model="cacheRuleForm.value" placeholder="多个用|分隔" />
         </el-form-item>
-        <el-form-item label="有效期(天)">
-          <el-input v-model="cacheRuleForm.ttl" />
+        <el-form-item label="有效期">
+          <el-input v-model="cacheRuleForm.ttl_value" placeholder="时长">
+            <template #append>
+              <el-select v-model="cacheRuleForm.ttl_unit" style="width: 80px">
+                <el-option label="天" value="day" />
+                <el-option label="时" value="hour" />
+                <el-option label="分" value="minute" />
+                <el-option label="秒" value="second" />
+              </el-select>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="忽略参数">
           <el-switch v-model="cacheRuleForm.ignore_query" />
@@ -341,10 +353,56 @@
         <el-form-item label="强制缓存">
           <el-switch v-model="cacheRuleForm.force_cache" />
         </el-form-item>
+
+        <div class="more-settings-divider">
+           <el-divider border-style="dashed">
+             <span class="more-settings-toggle" @click="moreSettingsVisible = !moreSettingsVisible" style="cursor: pointer; color: #666; font-size: 12px;">
+                更多设置 <el-icon><ArrowDown v-if="!moreSettingsVisible" /><ArrowUp v-else /></el-icon>
+             </span>
+           </el-divider>
+        </div>
+
+        <div v-show="moreSettingsVisible">
+            <el-form-item label="分片回源">
+                <el-switch v-model="cacheRuleForm.enable_range" />
+            </el-form-item>
+            <el-form-item label="忽略Vary">
+                <el-switch v-model="cacheRuleForm.ignore_vary" />
+            </el-form-item>
+            <el-form-item label-width="0">
+                <div style="margin-bottom: 5px; font-weight: bold; color: #606266;">不缓存条件：</div>
+                <div class="condition-list">
+                    <el-table :data="cacheRuleForm.skip_conditions" size="small" border empty-text="暂无数据">
+                        <el-table-column prop="type" label="匹配项" width="100">
+                             <template #default="{ row }">{{ matchTypeLabel(row.type) }}</template>
+                        </el-table-column>
+                        <el-table-column prop="value" label="匹配值" />
+                        <el-table-column label="操作" width="60" align="center">
+                             <template #default="{ $index }">
+                                 <el-button link type="danger" @click="removeCondition($index)">删除</el-button>
+                             </template>
+                        </el-table-column>
+                    </el-table>
+                    <div style="display: flex; margin-top: 5px; gap: 5px;">
+                         <el-select v-model="newCondition.type" placeholder="选择匹配项" size="small" style="width: 140px">
+                             <el-option label="请求URI" value="request_uri" />
+                             <el-option label="请求URI(不带参数)" value="uri" />
+                             <el-option label="客户IP地址" value="remote_addr" />
+                             <el-option label="请求协议" value="scheme" />
+                             <el-option label="请求参数" value="args" />
+                             <el-option label="域名" value="host" />
+                             <el-option label="自定义" value="custom" />
+                         </el-select>
+                         <el-input v-model="newCondition.value" placeholder="请输入匹配值" size="small" style="flex: 1" />
+                         <el-button type="primary" size="small" @click="addCondition">添加</el-button>
+                    </div>
+                </div>
+            </el-form-item>
+        </div>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="cacheRuleDialog.visible = false">取消</el-button>
-        <el-button size="normal" type="primary" @click="saveCacheRule">确定</el-button>
+        <el-button size="default" @click="cacheRuleDialog.visible = false">取消</el-button>
+        <el-button size="default" type="primary" @click="saveCacheRule">确定</el-button>
       </template>
     </el-dialog>
     <el-dialog
@@ -361,8 +419,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button size="normal" @click="headerDialog.visible = false">取消</el-button>
-        <el-button size="normal" type="primary" @click="saveHeader">确定</el-button>
+        <el-button size="default" @click="headerDialog.visible = false">取消</el-button>
+        <el-button size="default" type="primary" @click="saveHeader">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -371,6 +429,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const topTab = ref('global')
@@ -477,10 +536,18 @@ const cacheRuleDialog = reactive({
 const cacheRuleForm = reactive({
   type: 'index',
   value: '',
-  ttl: '1',
+  ttl: '86400',
+  ttl_value: '1',
+  ttl_unit: 'day',
   ignore_query: false,
-  force_cache: false
+  force_cache: false,
+  enable_range: false,
+  ignore_vary: false,
+  skip_conditions: []
 })
+
+const moreSettingsVisible = ref(false)
+const newCondition = reactive({ type: 'request_uri', value: '' })
 
 const headerDialog = reactive({
   visible: false,
@@ -519,8 +586,53 @@ const cacheTypeLabelMap = {
   path: '单个路径'
 }
 
+const matchTypeLabelMap = {
+    request_uri: '请求URI',
+    uri: '请求URI(不带参数)',
+    remote_addr: '客户IP地址',
+    scheme: '请求协议',
+    args: '请求参数',
+    host: '域名',
+    custom: '自定义'
+}
+
+function matchTypeLabel(type) {
+    return matchTypeLabelMap[type] || type
+}
+
 function cacheTypeLabel(type) {
   return cacheTypeLabelMap[type] || type
+}
+
+
+function formatTTL(seconds) {
+  const s = parseInt(seconds)
+  if (isNaN(s)) return seconds
+  if (s % 86400 === 0) return (s / 86400) + ' 天'
+  if (s % 3600 === 0) return (s / 3600) + ' 小时'
+  if (s % 60 === 0) return (s / 60) + ' 分'
+  return s + ' 秒'
+}
+
+function convertSecondsToUnit(seconds) {
+    const s = parseInt(seconds || 0)
+    if (s <= 0) return { value: '0', unit: 'second' }
+    if (s % 86400 === 0) return { value: String(s / 86400), unit: 'day' }
+    if (s % 3600 === 0) return { value: String(s / 3600), unit: 'hour' }
+    if (s % 60 === 0) return { value: String(s / 60), unit: 'minute' }
+    return { value: String(s), unit: 'second' }
+}
+
+function convertUnitToSeconds(value, unit) {
+    const v = parseInt(value || 0)
+    if (isNaN(v)) return 0
+    switch (unit) {
+        case 'day': return v * 86400
+        case 'hour': return v * 3600
+        case 'minute': return v * 60
+        case 'second': return v
+        default: return v
+    }
 }
 
 function parseBool(value, def = false) {
@@ -569,10 +681,13 @@ function normalizeCacheRule(rule) {
   const ttl = rule.ttl || rule.expire || rule.cache_time || ''
   return {
     type: rule.type || 'index',
-    value: rule.value || rule.content || '',
-    ttl: String(ttl || '1'),
+    value: toStr(rule.value || rule.content || '', ''),
+    ttl: toStr(ttl || '86400', '86400'),
     ignore_query: parseBool(rule.ignore_query, false),
-    force_cache: parseBool(rule.force_cache, false)
+    force_cache: parseBool(rule.force_cache, false),
+    enable_range: parseBool(rule.enable_range, false),
+    ignore_vary: parseBool(rule.ignore_vary, false),
+    skip_conditions: Array.isArray(rule.skip_conditions) ? rule.skip_conditions : []
   }
 }
 
@@ -620,6 +735,7 @@ const saveSiteConfig = debounce(async () => {
       scope_id: 0,
       data: buildSiteConfigPayload()
     })
+    ElMessage.success('保存成功')
   } catch (err) {
     ElMessage.error('保存失败')
   }
@@ -668,20 +784,42 @@ function openCacheRuleDialog(mode, rule, index) {
   cacheRuleDialog.mode = mode
   cacheRuleDialog.index = index ?? -1
   if (rule) {
-    Object.assign(cacheRuleForm, normalizeCacheRule(rule))
+    const norm = normalizeCacheRule(rule)
+    Object.assign(cacheRuleForm, norm)
+    const { value, unit } = convertSecondsToUnit(norm.ttl)
+    cacheRuleForm.ttl_value = value
+    cacheRuleForm.ttl_unit = unit
+    moreSettingsVisible.value = norm.enable_range || norm.ignore_vary || (norm.skip_conditions && norm.skip_conditions.length > 0)
   } else {
     Object.assign(cacheRuleForm, {
       type: 'index',
       value: '',
-      ttl: '1',
+      ttl: '86400',
+      ttl_value: '1',
+      ttl_unit: 'day',
       ignore_query: false,
-      force_cache: false
+      force_cache: false,
+      enable_range: false,
+      ignore_vary: false,
+      skip_conditions: []
     })
+    moreSettingsVisible.value = false
   }
   cacheRuleDialog.visible = true
 }
 
+function addCondition() {
+    if (!newCondition.value) return
+    cacheRuleForm.skip_conditions.push({ ...newCondition })
+    newCondition.value = ''
+}
+
+function removeCondition(index) {
+    cacheRuleForm.skip_conditions.splice(index, 1)
+}
+
 function saveCacheRule() {
+  cacheRuleForm.ttl = String(convertUnitToSeconds(cacheRuleForm.ttl_value, cacheRuleForm.ttl_unit))
   const newRule = normalizeCacheRule(cacheRuleForm)
   if (!newRule) return
   if (cacheRuleDialog.mode === 'edit' && cacheRuleDialog.index >= 0) {
@@ -696,6 +834,43 @@ function saveCacheRule() {
 function removeCacheRule(index) {
   siteForm.cacheRules.splice(index, 1)
   saveSiteConfig()
+}
+
+function applyCachePreset(val) {
+  if (!val) return
+  let rule = null
+  switch (val) {
+    case 'index':
+      rule = { type: 'index', value: '', ttl: '86400' }
+      break
+    case 'all':
+      rule = { type: 'all', value: '', ttl: '259200' }
+      break
+    case 'static':
+      rule = {
+        type: 'suffix',
+        value: 'jpg|jpeg|png|gif|ico|css|js|svg|bmp|webp|woff|woff2',
+        ttl: '604800',
+        ignore_query: true
+      }
+      break
+    case 'video':
+      rule = {
+        type: 'suffix',
+        value: 'mp4|avi|mov|webm|m3u8|ts',
+        ttl: '2592000'
+      }
+      break
+    case 'wordpress':
+      rule = { type: 'all', value: '', ttl: '259200' }
+      break
+  }
+  if (rule) {
+    siteForm.cacheRules.push(normalizeCacheRule(rule))
+    saveSiteConfig()
+    ElMessage.success('已添加规则')
+  }
+  cacheQuickPreset.value = ''
 }
 
 function openHeaderDialog(mode, row, index) {
@@ -725,24 +900,6 @@ function removeHeader(index) {
   saveSiteConfig()
 }
 
-function applyCachePreset() {
-  if (!cacheQuickPreset.value) return
-  if (cacheQuickPreset.value === 'static') {
-    siteForm.cacheRules = [
-      { type: 'suffix', value: 'jpg|jpeg|png|gif|ico|css|js|svg|bmp|webp|woff|woff2', ttl: '7', ignore_query: true, force_cache: false }
-    ]
-  } else if (cacheQuickPreset.value === 'video') {
-    siteForm.cacheRules = [
-      { type: 'suffix', value: 'mp4|avi|mov|webm|m3u8|ts', ttl: '30', ignore_query: false, force_cache: false }
-    ]
-  } else if (cacheQuickPreset.value === 'image') {
-    siteForm.cacheRules = [
-      { type: 'suffix', value: 'jpg|jpeg|png|gif|webp', ttl: '15', ignore_query: true, force_cache: false }
-    ]
-  }
-  saveSiteConfig()
-}
-
 function debounce(fn, wait) {
   let timer
   return (...args) => {
@@ -754,11 +911,23 @@ async function loadSiteConfig() {
   const res = await request.get('/site_defaults', {
     params: { scope_name: 'global', scope_id: 0 }
   })
-  const data = res?.data?.data?.list || []
+  const data = res?.data?.list || []
+  if (data.length > 0) {
+     ElMessage.success('已加载 ' + data.length + ' 条配置')
+  } else {
+     // Fallback to check deep nest just in case, or safe backup
+     const deepData = res?.data?.data?.list
+     if (deepData && deepData.length > 0) {
+        data.push(...deepData)
+     } else {
+        ElMessage.warning('未加载到配置 (列表为空)')
+     }
+  }
   const map = {}
   data.forEach((item) => {
     map[item.name] = item.value
   })
+
   if (map['http_listen-port'] !== undefined) siteForm.httpListen = toStr(map['http_listen-port'], siteForm.httpListen)
   if (map['https_listen-port'] !== undefined) siteForm.httpsListen = toStr(map['https_listen-port'], siteForm.httpsListen)
   siteForm.httpsHsts = parseBool(map['https_listen-hsts'], siteForm.httpsHsts)
@@ -769,8 +938,11 @@ async function loadSiteConfig() {
     siteForm.sslProtocols = map['https_listen-ssl_protocols']
       .map((item) => toStr(item))
       .filter((item) => item !== '')
-  } else if (map['https_listen-ssl_protocols']) {
-    siteForm.sslProtocols = String(map['https_listen-ssl_protocols']).split(/\s+/).filter(Boolean)
+  } else {
+    const protoStr = toStr(map['https_listen-ssl_protocols'], '')
+    if (protoStr) {
+      siteForm.sslProtocols = protoStr.split(/\s+/).filter(Boolean)
+    }
   }
   if (map['https_listen-ssl_ciphers'] !== undefined) {
     siteForm.sslCiphers = toStr(map['https_listen-ssl_ciphers'], siteForm.sslCiphers)
@@ -786,11 +958,17 @@ async function loadSiteConfig() {
     siteForm.proxySslProtocols = map['proxy_ssl_protocols']
       .map((item) => toStr(item))
       .filter((item) => item !== '')
-  } else if (map['proxy_ssl_protocols']) {
-    siteForm.proxySslProtocols = String(map['proxy_ssl_protocols']).split(/\s+/).filter(Boolean)
+  } else {
+    const proxyProtoStr = toStr(map['proxy_ssl_protocols'], '')
+    if (proxyProtoStr) {
+      siteForm.proxySslProtocols = proxyProtoStr.split(/\s+/).filter(Boolean)
+    }
   }
   siteForm.cacheRules = parseList(map['proxy_cache']).map(normalizeCacheRule).filter(Boolean)
-  siteForm.originHeaders = parseList(map['origin_headers'])
+  siteForm.originHeaders = parseList(map['origin_headers']).map((item) => ({
+    name: toStr(item?.name || item?.key || '', ''),
+    value: toStr(item?.value || '', '')
+  }))
   siteForm.logRequestHeader = parseBool(map['log_request_header'], siteForm.logRequestHeader)
   siteForm.logResponseHeader = parseBool(map['log_response_header'], siteForm.logResponseHeader)
   siteForm.logRequestBody = parseBool(map['log_request_body'], siteForm.logRequestBody)

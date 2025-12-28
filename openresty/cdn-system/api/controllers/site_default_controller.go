@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -25,36 +26,37 @@ func (ctr *SiteDefaultController) List(c *gin.Context) {
 			userID = uid
 		}
 	}
-	if !isUserRequest(c) && userID == 0 {
-		scopeName := strings.TrimSpace(c.Query("scope_name"))
-		scopeID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("scope_id")), 10, 64)
-		if scopeName != "" || scopeID != 0 {
-			if scopeName == "" {
-				scopeName = "global"
-			}
-			var items []models.ConfigItem
-			if err := db.DB.Where("type = ? AND scope_name = ? AND scope_id = ?", "site_default_config", scopeName, scopeID).
-				Order("name asc").Find(&items).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Error"})
-				return
-			}
-			list := make([]gin.H, 0, len(items))
-			for _, item := range items {
-				list = append(list, gin.H{
-					"name":       item.Name,
-					"value":      item.Value,
-					"type":       item.Type,
-					"scope_id":   item.ScopeID,
-					"scope_name": item.ScopeName,
-					"enable":     item.Enable,
-					"user_id":    int64(0),
-					"user_name":  "",
-					"group_name": "",
-				})
-			}
-			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list}})
+	// Allow querying by scope if parameters are present, regardless of user context (Admin accesses global configs)
+	scopeName := strings.TrimSpace(c.Query("scope_name"))
+	scopeIDStr := strings.TrimSpace(c.Query("scope_id"))
+	if scopeName != "" || scopeIDStr != "" {
+		scopeID, _ := strconv.ParseInt(scopeIDStr, 10, 64)
+		if scopeName == "" {
+			scopeName = "global"
+		}
+		var items []models.ConfigItem
+		
+		if err := db.DB.Where("type = ? AND scope_name = ? AND scope_id = ?", "site_default_config", scopeName, scopeID).
+			Order("name asc").Find(&items).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Error"})
 			return
 		}
+		list := make([]gin.H, 0, len(items))
+		for _, item := range items {
+			list = append(list, gin.H{
+				"name":       item.Name,
+				"value":      item.Value,
+				"type":       item.Type,
+				"scope_id":   item.ScopeID,
+				"scope_name": item.ScopeName,
+				"enable":     item.Enable,
+				"user_id":    int64(0), // Simplified for list response
+				"user_name":  "",
+				"group_name": "",
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list}})
+		return
 	}
 	if userID == 0 && !isUserRequest(c) {
 		var items []models.ConfigItem
@@ -153,22 +155,26 @@ func (ctr *SiteDefaultController) List(c *gin.Context) {
 
 func (ctr *SiteDefaultController) Create(c *gin.Context) {
 	var req struct {
-		UserID    int64  `json:"user_id"`
-		Name      string `json:"name"`
-		Value     string `json:"value"`
-		ScopeName string `json:"scope_name"`
-		ScopeID   int64  `json:"scope_id"`
+		UserID    int64                  `json:"user_id"`
+		Name      string                 `json:"name"`
+		Value     string                 `json:"value"`
+		ScopeName string                 `json:"scope_name"`
+		ScopeID   int64                  `json:"scope_id"`
+		Data      map[string]interface{} `json:"data"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Params"})
 		return
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "name is required"})
-		return
+	scopeName := strings.TrimSpace(req.ScopeName)
+	if scopeName == "" {
+		scopeName = "global"
 	}
+	scopeID := req.ScopeID
+	// if scopeName == "global" && scopeID == 0 && isUserRequest(c) {
+	// 	scopeID = userID
+	// }
 
 	userID := req.UserID
 	if isUserRequest(c) {
@@ -179,14 +185,6 @@ func (ctr *SiteDefaultController) Create(c *gin.Context) {
 		return
 	}
 
-	scopeName := strings.TrimSpace(req.ScopeName)
-	if scopeName == "" {
-		scopeName = "global"
-	}
-	scopeID := req.ScopeID
-	if scopeName == "global" && scopeID == 0 && isUserRequest(c) {
-		scopeID = userID
-	}
 	if scopeName == "group" {
 		if scopeID == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "scope_id is required"})
@@ -202,6 +200,78 @@ func (ctr *SiteDefaultController) Create(c *gin.Context) {
 		}
 	}
 
+	// Batch Update Logic
+	if len(req.Data) > 0 {
+		for k, v := range req.Data {
+			name := strings.TrimSpace(k)
+			if name == "" {
+				continue
+			}
+			val := ""
+			switch v.(type) {
+			case string:
+				val = v.(string)
+			case bool:
+				if v.(bool) {
+					val = "1"
+				} else {
+					val = "0"
+				}
+			case float64:
+				val = strconv.FormatFloat(v.(float64), 'f', -1, 64)
+			default:
+				// Fallback generic
+				// Or use fmt.Sprintf("%v", v)
+				// For map/slice, maybe JSON stringify? 
+				// The frontend usually sends stringified JSON for proxy_cache.
+				// But let's be safe.
+				val = fmt.Sprintf("%v", v)
+			}
+			
+			// Perform Upsert for this item
+			var item models.ConfigItem
+			query := db.DB.Where("name = ? AND type = ? AND scope_id = ?", name, "site_default_config", scopeID)
+			if scopeName == "global" {
+				query = query.Where("scope_name IN ?", []string{"global", "user"})
+			} else {
+				query = query.Where("scope_name = ?", scopeName)
+			}
+
+			if err := query.First(&item).Error; err == nil {
+				updates := map[string]interface{}{
+					"value":      val,
+					"enable":     true,
+					"scope_name": scopeName,
+					"scope_id":   scopeID,
+					"update_at":  time.Now(),
+				}
+				query.Updates(updates)
+			} else {
+				now := time.Now()
+				newItem := models.ConfigItem{
+					Name:      name,
+					Value:     val,
+					Type:      "site_default_config",
+					ScopeID:   scopeID,
+					ScopeName: scopeName,
+					Enable:    true,
+					CreatedAt: now,
+					UpdatedAt: now,
+				}
+				db.DB.Create(&newItem)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Saved"})
+		return
+	}
+
+	// Single Item Logic (Existing)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "name is required"})
+		return
+	}
+
 	var item models.ConfigItem
 	query := db.DB.Where("name = ? AND type = ? AND scope_id = ?", req.Name, "site_default_config", scopeID)
 	if scopeName == "global" {
@@ -210,12 +280,14 @@ func (ctr *SiteDefaultController) Create(c *gin.Context) {
 		query = query.Where("scope_name = ?", scopeName)
 	}
 	if err := query.First(&item).Error; err == nil {
-		item.Value = req.Value
-		item.Enable = true
-		item.ScopeName = scopeName
-		item.ScopeID = scopeID
-		item.UpdatedAt = time.Now()
-		if err := db.DB.Save(&item).Error; err != nil {
+		updates := map[string]interface{}{
+			"value":      req.Value,
+			"enable":     true,
+			"scope_name": scopeName,
+			"scope_id":   scopeID,
+			"update_at":  time.Now(),
+		}
+		if err := query.Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed"})
 			return
 		}
