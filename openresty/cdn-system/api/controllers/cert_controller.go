@@ -444,14 +444,17 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 			return
 		}
 	} else {
-		sys.Value = string(b)
-		sys.UpdatedAt = time.Now()
-		if err := db.DB.Save(&sys).Error; err != nil {
+		// Fix: Use explicit Update because 'config' table might not have primary key 'id' for GORM Save()
+		updates := map[string]interface{}{
+			"value":     string(b),
+			"update_at": time.Now(),
+		}
+		if err := query.Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Save failed"})
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Updated"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "saved"})
 }
 
 func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error) {

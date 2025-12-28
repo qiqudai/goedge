@@ -743,16 +743,18 @@ const saveSiteConfig = debounce(async () => {
 
 const saveStreamConfig = debounce(async () => {
   try {
+    const items = [
+      { name: 'listen_protocol', value: streamForm.listenProtocol },
+      { name: 'balance_way', value: streamForm.balanceWay },
+      { name: 'proxy_protocol', value: streamForm.proxyProtocol ? '1' : '0' }
+    ]
     await request.post('/config_items', {
       type: 'stream_default_config',
       scope_name: 'global',
       scope_id: 0,
-      value: JSON.stringify({
-        listen_protocol: streamForm.listenProtocol,
-        balance_way: streamForm.balanceWay,
-        proxy_protocol: streamForm.proxyProtocol
-      })
+      items: items
     })
+    ElMessage.success('保存成功')
   } catch (err) {
     ElMessage.error('保存失败')
   }
@@ -760,10 +762,17 @@ const saveStreamConfig = debounce(async () => {
 
 const saveCertConfig = debounce(async () => {
   try {
-    await request.post('/certs/default_settings', {
-      cert_provider: certForm.provider,
-      dnsapi_id: certForm.dnsapiId
+    const items = [
+      { name: 'cert_default_type', value: certForm.provider },
+      { name: 'cert_default_dnsapi_id', value: String(certForm.dnsapiId || 0) }
+    ]
+    await request.post('/config_items', {
+      type: 'cert_default_config',
+      scope_name: 'global',
+      scope_id: 0,
+      items: items
     })
+    ElMessage.success('保存成功')
   } catch (err) {
     ElMessage.error('保存失败')
   }
@@ -775,10 +784,13 @@ const saveCacheDefaults = debounce(async (mode) => {
       name: `cache_default_${mode}`,
       value: JSON.stringify(cacheDefaults[mode])
     })
+    ElMessage.success('保存成功')
   } catch (err) {
     ElMessage.error('保存失败')
   }
 }, 300)
+
+
 
 function openCacheRuleDialog(mode, rule, index) {
   cacheRuleDialog.mode = mode
@@ -935,13 +947,13 @@ async function loadSiteConfig() {
   siteForm.httpsHttp3 = parseBool(map['https_listen-http3'], siteForm.httpsHttp3)
   siteForm.httpsForce = parseBool(map['https_listen-force_ssl_enable'], siteForm.httpsForce)
   if (Array.isArray(map['https_listen-ssl_protocols'])) {
-    siteForm.sslProtocols = map['https_listen-ssl_protocols']
+    siteForm.proxySslProtocols = map['https_listen-ssl_protocols']
       .map((item) => toStr(item))
       .filter((item) => item !== '')
   } else {
-    const protoStr = toStr(map['https_listen-ssl_protocols'], '')
-    if (protoStr) {
-      siteForm.sslProtocols = protoStr.split(/\s+/).filter(Boolean)
+    const sslProtoStr = toStr(map['https_listen-ssl_protocols'], '')
+    if (sslProtoStr) {
+       siteForm.sslProtocols = sslProtoStr.split(/\s+/).filter(Boolean)
     }
   }
   if (map['https_listen-ssl_ciphers'] !== undefined) {
@@ -992,25 +1004,39 @@ async function loadStreamConfig() {
   const res = await request.get('/config_items', {
     params: { type: 'stream_default_config', scope_name: 'global', scope_id: 0 }
   })
-  const item = res?.data?.data
-  if (!item?.value) return
-  try {
-    const value = JSON.parse(item.value)
-    if (value.listen_protocol) streamForm.listenProtocol = value.listen_protocol
-    if (value.balance_way) streamForm.balanceWay = value.balance_way
-    if (value.proxy_protocol !== undefined) streamForm.proxyProtocol = parseBool(value.proxy_protocol)
-  } catch (err) {
-    return
-  }
+  const list = res?.list || []
+  
+  list.forEach((item) => {
+    switch (item.name) {
+      case 'listen_protocol':
+        streamForm.listenProtocol = item.value
+        break
+      case 'balance_way':
+        streamForm.balanceWay = item.value
+        break
+      case 'proxy_protocol':
+        streamForm.proxyProtocol = (item.value === '1')
+        break
+    }
+  })
 }
 
 async function loadCertConfig() {
-  const res = await request.get('/certs/default_settings')
-  const data = res?.data?.data || {}
-  if (data.cert_provider) certForm.provider = data.cert_provider
-  if (data.dnsapi_id !== undefined && data.dnsapi_id !== null) {
-    certForm.dnsapiId = toIntSafe(data.dnsapi_id, 0)
-  }
+  const res = await request.get('/config_items', {
+    params: { type: 'cert_default_config', scope_name: 'global', scope_id: 0 }
+  })
+  const list = res?.list || []
+  
+  list.forEach((item) => {
+    switch (item.name) {
+      case 'cert_default_type':
+        certForm.provider = item.value
+        break
+      case 'cert_default_dnsapi_id':
+        certForm.dnsapiId = toIntSafe(item.value, 0)
+        break
+    }
+  })
 }
 
 async function loadCacheDefaults() {

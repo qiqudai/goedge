@@ -4,11 +4,12 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	// "strconv"
 	"gorm.io/gorm"
 )
 
@@ -30,23 +31,39 @@ type configItemUpsertRequest struct {
 func (ctrl *ConfigItemController) List(c *gin.Context) {
 	cfgType := c.Query("type")
 	scopeName := c.DefaultQuery("scope_name", "global")
-	scopeID, _ := strconv.ParseInt(c.DefaultQuery("scope_id", "0"), 10, 64)
+	// scopeID, _ := strconv.ParseInt(c.DefaultQuery("scope_id", "0"), 10, 64)
+
+	fmt.Printf("[DEBUG] List Config: type='%s', scope='%s'\n", cfgType, scopeName)
 
 	var items []models.ConfigItem
 	query := db.DB.Model(&models.ConfigItem{})
 	if cfgType != "" {
 		query = query.Where("type = ?", cfgType)
 	}
-	if scopeName != "" {
+	/*
+	if scopeName == "global" {
+		query = query.Where("scope_name IN ? OR scope_name IS NULL", []string{"global", "system", ""})
+	} else if scopeName != "" {
 		query = query.Where("scope_name = ?", scopeName)
 	}
 	query = query.Where("scope_id = ?", scopeID)
+	*/
 	if err := query.Find(&items).Error; err != nil {
+		fmt.Printf("[DEBUG] List Config Error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load config"})
 		return
 	}
+	fmt.Printf("[DEBUG] List Config Found: %d items\n", len(items))
+	for _, item := range items {
+		fmt.Printf("[DEBUG] Item: Name='%s', ScopeName='%s', ScopeID=%d\n", item.Name, item.ScopeName, item.ScopeID)
+	}
 
-	c.JSON(http.StatusOK, gin.H{"list": items})
+	c.JSON(http.StatusOK, gin.H{
+		"list": items,
+		"debug_type": cfgType,
+		"debug_scope_name": scopeName, 
+		"count": len(items),
+	})
 }
 
 func (ctrl *ConfigItemController) Upsert(c *gin.Context) {
@@ -149,7 +166,14 @@ func upsertConfigItems(req configItemUpsertRequest) error {
 			existing.Value = item.Value
 			existing.Enable = enable
 			existing.UpdatedAt = time.Now()
-			if err := tx.Save(&existing).Error; err != nil {
+			
+			// Fix: Use explicit Update because 'config' table might not have primary key 'id' for GORM Save()
+			updates := map[string]interface{}{
+				"value":     item.Value,
+				"enable":    enable,
+				"update_at": time.Now(),
+			}
+			if err := tx.Model(&existing).Where("type = ? AND scope_name = ? AND scope_id = ? AND name = ?", req.Type, req.ScopeName, req.ScopeID, item.Name).Updates(updates).Error; err != nil {
 				return err
 			}
 		}
