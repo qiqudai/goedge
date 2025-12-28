@@ -61,6 +61,41 @@ func (c *CnameController) CreateDomain(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
 }
 
+func (c *CnameController) UpdateDomain(ctx *gin.Context) {
+	id := ctx.Param("id")
+	var input struct {
+		Domain string `json:"domain"`
+		Note   string `json:"note"`
+	}
+	if err := ctx.BindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid params"})
+		return
+	}
+
+	if err := ensureCnameTable(); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to init cname table"})
+		return
+	}
+
+	domain := normalizeDomainInput(input.Domain)
+	if domain == "" || !isValidDomain(domain) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid domain"})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"domain":    domain,
+		"note":      input.Note,
+		"update_at": time.Now(),
+	}
+
+	if err := db.DB.Model(&models.CnameDomain{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to update"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
+}
+
 func (c *CnameController) DeleteDomain(ctx *gin.Context) {
 	if err := ensureCnameTable(); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to init cname table"})

@@ -70,6 +70,7 @@
             <el-table-column prop="note" label="备注" />
             <el-table-column label="操作" width="150" align="center">
               <template #default="{ row }">
+                <el-button link type="primary" @click="handleEditCname(row)">编辑</el-button>
                 <el-button link type="danger" @click="handleDeleteCname(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -80,7 +81,7 @@
 
     
 
-    <el-dialog v-model="cnameDialogVisible" title="添加CNAME域名" width="500px">
+    <el-dialog v-model="cnameDialogVisible" :title="cnameForm.id > 0 ? '编辑CNAME域名' : '添加CNAME域名'" width="500px">
       <el-form :model="cnameForm" label-width="100px">
         <el-form-item label="域名" required>
           <el-input v-model="cnameForm.domain" placeholder="example.com" @blur="handleCnameBlur" />
@@ -275,7 +276,7 @@ const submitForm = () => {
 const cnameList = ref([])
 const cnameLoading = ref(false)
 const cnameDialogVisible = ref(false)
-const cnameForm = reactive({ domain: '', note: '' })
+const cnameForm = reactive({ id: 0, domain: '', note: '' })
 const cnameQuery = reactive({ keyword: '' })
 const selectedCnames = ref([])
 
@@ -295,8 +296,16 @@ const getCnameList = () => {
 }
 
 const handleCreateCname = () => {
+  cnameForm.id = 0
   cnameForm.domain = ''
   cnameForm.note = ''
+  cnameDialogVisible.value = true
+}
+
+const handleEditCname = row => {
+  cnameForm.id = row.id
+  cnameForm.domain = row.domain
+  cnameForm.note = row.note
   cnameDialogVisible.value = true
 }
 
@@ -372,9 +381,14 @@ const submitCnameForm = () => {
     return
   }
   cnameForm.domain = normalized
-  request.post('/cname_domains', cnameForm).then(res => {
+  
+  const promise = cnameForm.id > 0 
+    ? request.put(`/cname_domains/${cnameForm.id}`, cnameForm)
+    : request.post('/cname_domains', cnameForm)
+
+  promise.then(res => {
     if (res.code === 0) {
-      ElMessage.success('添加成功')
+      ElMessage.success('保存成功')
       cnameDialogVisible.value = false
       getCnameList()
     } else {

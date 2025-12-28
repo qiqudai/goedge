@@ -63,6 +63,7 @@ func Setup(r *gin.Engine) {
 			cnameCtr := &controllers.CnameController{}
 			admin.GET("/cname_domains", cnameCtr.ListDomains)
 			admin.POST("/cname_domains", cnameCtr.CreateDomain)
+			admin.PUT("/cname_domains/:id", cnameCtr.UpdateDomain)
 			admin.DELETE("/cname_domains/:id", cnameCtr.DeleteDomain)
 
 			admin.GET("/monitor_config", (&controllers.MonitorController{}).GetConfig)
