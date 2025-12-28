@@ -6,7 +6,6 @@
         <div class="field">
           <span class="label">区域:</span>
           <el-select v-model="selectedRegionId" placeholder="请选择" style="width: 160px" @change="handleRegionChange">
-            <el-option label="默认" :value="0" />
             <el-option v-for="region in regions" :key="region.id" :label="region.name" :value="region.id" />
           </el-select>
         </div>
@@ -19,36 +18,37 @@
       </div>
     </div>
 
-    <div class="line-bar">
-      <span class="label">当前线路:</span>
-      <el-cascader
-        v-model="currentLineId"
-        :options="lineOptions"
-        :props="lineProps"
-        style="width: 300px"
-        @change="handleLineChange"
-      />
-      <span class="line-tip">当前线路为“全部”时，新增节点会对所有线路生效。</span>
-    </div>
-
     <div class="split-container">
       <el-card class="panel left">
         <template #header>
           <div class="panel-title">未设置的IP</div>
         </template>
         <div class="panel-actions">
-          <el-button type="primary" @click="handleAssign">批量添加</el-button>
-          <el-input v-model="leftKeyword" placeholder="输入IP或名称搜索" clearable style="width: 220px" />
-          <el-button link @click="leftKeyword = ''">清除</el-button>
+          <el-button type="primary" @click="handleAssign(false)">批量添加</el-button>
+          <el-button @click="handleAssign(true)">批量备用</el-button>
+          <div class="search-box">
+            <el-input
+              v-model="leftSearchValue"
+              placeholder="输入IP或名称搜索"
+              clearable
+              style="width: 200px"
+              @keyup.enter="handleLeftSearch"
+              @clear="handleLeftSearch"
+            />
+            <el-button @click="handleLeftSearch">
+              <el-icon><Search /></el-icon>
+            </el-button>
+          </div>
         </div>
         <AppTable
           :data="filteredAvailable"
           :loading="loading"
           border
-          height="420"
 
           layout="total, sizes, prev, pager, next"
-          :persist-key="`node-group-available-${selectedGroupId}`"
+          :show-pagination="false"
+          :page-sizes="[10000]"
+          :persist-key="availablePersistKey"
           @selection-change="handleLeftSelection"
         >
           <el-table-column type="selection" width="48" align="center" />
@@ -65,7 +65,19 @@
 
       <el-card class="panel right">
         <template #header>
-          <div class="panel-title">已设置的IP，当前线路：{{ currentLineLabel }}</div>
+          <div class="line-bar">
+            <span class="label">当前线路:</span>
+            <el-cascader
+              v-model="currentLineId"
+              :options="lineOptions"
+              :props="lineProps"
+              style="width: 300px"
+              popper-class="long-cascader-dropdown"
+              @change="handleLineChange"
+            />
+            <span class="line-tip">当前线路为“全部”时，新增节点会对所有线路生效。</span>
+          </div>
+
         </template>
         <div class="panel-actions">
           <el-button @click="handleAction('enable')">启用</el-button>
@@ -87,8 +99,19 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-input v-model="rightKeyword" placeholder="输入IP或名称搜索" clearable style="width: 220px" />
-          <el-button link @click="rightKeyword = ''">清除</el-button>
+          <div class="search-box">
+            <el-input
+              v-model="rightKeyword"
+              placeholder="输入IP或名称搜索"
+              clearable
+              style="width: 200px"
+              @keyup.enter="handleRightSearch"
+              @clear="handleRightSearch"
+            />
+            <el-button @click="handleRightSearch">
+              <el-icon><Search /></el-icon>
+            </el-button>
+          </div>
         </div>
         <AppTable
           :data="filteredAssigned"
@@ -97,22 +120,29 @@
           height="420"
 
           layout="total, sizes, prev, pager, next"
-          :persist-key="`node-group-assigned-${selectedGroupId}-${currentLineId}`"
+          :show-pagination="false"
+          :page-sizes="[10000]"
+          :persist-key="assignedPersistKey"
           @selection-change="handleRightSelection"
         >
           <el-table-column type="selection" width="48" align="center" />
           <el-table-column prop="id" label="ID" width="70" align="center" />
+          <el-table-column prop="line_name" label="线路" min-width="100" />
           <el-table-column prop="name" label="名称" min-width="120" />
           <el-table-column prop="ip" label="IP" min-width="140" />
           <el-table-column label="备用IP" width="100" align="center">
             <template #default="{ row }">
-              {{ row.is_backup ? '是' : '否' }}
+              <el-icon v-if="row.is_backup" style="font-size: 16px; color: rgb(25, 190, 107); vertical-align: middle;"><CircleCheckFilled /></el-icon>
+              <span v-else>否</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="110" align="center">
             <template #default="{ row }">
-              <span :class="['status-dot', row.enabled ? 'status-ok' : 'status-stop']"></span>
-              <span>{{ row.enabled ? '启用' : '禁用' }}</span>
+              <span :class="['status-dot', (!row.is_on || !row.node_is_on || !row.online) ? 'status-stop' : 'status-ok']"></span>
+              <span v-if="!row.is_on">禁用</span>
+              <span v-else-if="!row.node_is_on">节点已禁用</span>
+              <span v-else-if="!row.online">节点离线</span>
+              <span v-else>启用</span>
             </template>
           </el-table-column>
           <el-table-column prop="weight" label="权重" width="90" align="center" />
@@ -126,7 +156,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Search, CircleCheckFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 import AppTable from '@/components/AppTable.vue'
@@ -141,9 +171,10 @@ const selectedGroupId = ref(0)
 const currentLineId = ref('default')
 const loading = ref(false)
 
-const availableNodes = ref([])
-const assignedNodes = ref([])
+const allAvailable = ref([])
+const allAssigned = ref([])
 const leftKeyword = ref('')
+const leftSearchValue = ref('')
 const rightKeyword = ref('')
 const leftSelected = ref([])
 const rightSelected = ref([])
@@ -158,21 +189,9 @@ const lineProps = {
 const lineOptions = [
   { label: '全部', value: 'all' },
   { label: '默认', value: 'default' },
-  {
-    label: '电信',
-    value: 'telecom',
-    children: [{ label: '电信', value: 'telecom' }]
-  },
-  {
-    label: '联通',
-    value: 'unicom',
-    children: [{ label: '联通', value: 'unicom' }]
-  },
-  {
-    label: '移动',
-    value: 'mobile',
-    children: [{ label: '移动', value: 'mobile' }]
-  },
+  { label: '电信', value: 'telecom' },
+  { label: '联通', value: 'unicom' },
+  { label: '移动', value: 'mobile' },
   {
     label: '其他运营商',
     value: 'other',
@@ -182,16 +201,8 @@ const lineOptions = [
       { label: '教育网', value: 'edu' }
     ]
   },
-  {
-    label: '境内',
-    value: 'china',
-    children: [{ label: '境内', value: 'china' }]
-  },
-  {
-    label: '全球',
-    value: 'global',
-    children: [{ label: '境外', value: 'global' }]
-  },
+  { label: '境内', value: 'china' },
+  { label: '境外', value: 'global' },
   {
     label: '搜索引擎',
     value: 'search',
@@ -232,21 +243,66 @@ const filteredGroups = computed(() => {
   return groups.value.filter(group => Number(group.region_id || 0) === Number(selectedRegionId.value))
 })
 
-const filteredAvailable = computed(() => {
-  if (!leftKeyword.value) {
-    return availableNodes.value
-  }
-  const keyword = leftKeyword.value.trim()
-  return availableNodes.value.filter(item => item.name.includes(keyword) || item.ip.includes(keyword))
-})
-
 const filteredAssigned = computed(() => {
+  let list = allAssigned.value
+  if (currentLineId.value !== 'all') {
+    list = list.filter(item => (item.line_id || item.line) === currentLineId.value)
+  }
+
   if (!rightKeyword.value) {
-    return assignedNodes.value
+    return list
   }
   const keyword = rightKeyword.value.trim()
-  return assignedNodes.value.filter(item => item.name.includes(keyword) || item.ip.includes(keyword))
+  return list.filter(item => item.name.includes(keyword) || item.ip.includes(keyword))
 })
+
+const filteredAvailable = computed(() => {
+  // Universe = allAvailable + unique(allAssigned)
+  const universe = [...allAvailable.value]
+  const existingNodeIds = new Set(universe.map(u => u.id))
+  
+  allAssigned.value.forEach(item => {
+    // For assigned items, node ID is 'node_id'. If not present, fallback to 'id' (though usually id is Resolution ID)
+    // Actually, backend usually sends Resolution object {id, node_id, ...}.
+    // We need to map it to a Node-like object for the Left Panel.
+    const nodeId = item.node_id
+    if (nodeId && !existingNodeIds.has(nodeId)) {
+      existingNodeIds.add(nodeId)
+      universe.push({
+        ...item,
+        id: nodeId, // Left panel expects 'id' to be Node ID
+        online: true, // Assigned nodes are presumed online or status unknown
+        is_on: true // Assigned nodes are presumed enabled (validation shouldn't block based on resolution status)
+      })
+    }
+  })
+
+  // Exclude what is currently in Right Panel
+  // Right Panel items: filteredAssigned (but we need the raw list for the current line, ignoring search keyword)
+  let currentAssignedList = allAssigned.value
+  if (currentLineId.value !== 'all') {
+    currentAssignedList = currentAssignedList.filter(item => (item.line_id || item.line) === currentLineId.value)
+  }
+  const currentAssignedNodeIds = new Set(currentAssignedList.map(item => item.node_id))
+
+  const available = universe.filter(u => !currentAssignedNodeIds.has(u.id))
+
+  if (!leftKeyword.value) {
+    return available
+  }
+  const keyword = leftKeyword.value.trim()
+  return available.filter(item => item.name.includes(keyword) || item.ip.includes(keyword))
+})
+
+const handleRightSearch = () => {
+  // Trigger computed property update if needed, but v-model rightKeyword already does it.
+  // This function is mainly for the enter key and button click if we wanted to debounce,
+  // but for frontend filtering, reactivity handles it.
+  // We can leave it empty or use it to force a refresh if logic was complex.
+}
+
+const availablePersistKey = computed(() => `node-group-available-${selectedGroupId.value}`)
+const assignedPersistKey = computed(() => `node-group-assigned-${selectedGroupId.value}-${currentLineId.value}`)
 
 const goBack = () => {
   router.push('/node/groups')
@@ -284,8 +340,8 @@ const loadResolution = () => {
     const payload = res.data || {}
     const group = payload.group || {}
     selectedRegionId.value = Number(group.region_id || 0)
-    availableNodes.value = payload.available || []
-    assignedNodes.value = payload.assigned || []
+    allAvailable.value = payload.available || []
+    allAssigned.value = payload.assigned || []
   }).finally(() => {
     loading.value = false
   })
@@ -323,7 +379,11 @@ const handleRightSelection = (rows) => {
   rightSelected.value = rows
 }
 
-const handleAssign = () => {
+const handleLeftSearch = () => {
+  leftKeyword.value = leftSearchValue.value
+}
+
+const handleAssign = (isBackup = false) => {
   if (!selectedGroupId.value) {
     return
   }
@@ -331,16 +391,27 @@ const handleAssign = () => {
     ElMessage.warning('请选择要添加的节点')
     return
   }
+  // Check for offline or disabled nodes
+  // is_on might be undefined for available nodes, so we only check if it is explicitly false/0
+  const invalidNodes = leftSelected.value.filter(item => !item.online || (item.is_on != null && !item.is_on))
+  if (invalidNodes.length > 0) {
+    ElMessage.warning('禁止添加不在线或已禁用的节点')
+    return
+  }
   const items = leftSelected.value.map(item => ({
-    node_id: item.node_id,
+    node_id: item.node_id || item.id,
     node_ip_id: item.node_ip_id,
     name: item.name,
-    ip: item.ip
+    ip: item.ip,
+    is_backup: isBackup,
+    line: currentLineLabel.value,
+    line_name: currentLineLabel.value
   }))
   request({
     url: `/node-groups/${selectedGroupId.value}/resolution/assign`,
     method: 'post',
     data: {
+      line: currentLineLabel.value,
       line_id: currentLineId.value,
       line_name: currentLineLabel.value,
       items
@@ -362,7 +433,7 @@ const handleAction = (action, value = '') => {
     method: 'post',
     data: {
       action,
-      ids: rightSelected.value.map(item => item.id),
+      ids: rightSelected.value.map(item => Number(item.id)),
       value
     }
   }).then(() => {
@@ -375,6 +446,11 @@ const handleAction = (action, value = '') => {
 const handleDelete = () => {
   if (rightSelected.value.length === 0) {
     ElMessage.warning('请选择要删除的节点')
+    return
+  }
+  // Check for enabled nodes (require disable first)
+  if (rightSelected.value.some(item => item.is_on)) {
+    ElMessage.warning('请先禁用节点后再删除')
     return
   }
   ElMessageBox.confirm('确认删除选中的节点?', '提示', {
@@ -435,8 +511,8 @@ watch(
 .header-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 16px;
+  gap: 28px;
 }
 .header-fields {
   display: flex;
@@ -455,7 +531,6 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
 }
 .line-tip {
   color: #909399;
@@ -465,14 +540,23 @@ watch(
   display: flex;
   gap: 16px;
 }
-.panel {
+.panel.left {
+  flex: 0 0 35%;
+}
+.panel.right {
   flex: 1;
+  min-width: 0;
 }
 .panel-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  gap: 8px;
   margin-bottom: 12px;
+}
+.search-box {
+  display: flex;
+  gap: 4px;
 }
 .panel-title {
   font-weight: 600;
@@ -489,5 +573,11 @@ watch(
 }
 .status-stop {
   background: #f56c6c;
+}
+</style>
+
+<style>
+.long-cascader-dropdown .el-cascader-menu__wrap {
+  height: 400px;
 }
 </style>

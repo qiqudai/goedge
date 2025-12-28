@@ -196,10 +196,13 @@ type lineAssignedItem struct {
 	ID                  int64  `json:"id"`
 	NodeID              int64  `json:"node_id"`
 	NodeIPID            int64  `json:"node_ip_id"`
+	LineID              string `json:"line_id"`
+	LineName            string `json:"line_name"`
 	Name                string `json:"name"`
 	IP                  string `json:"ip"`
 	Online              bool   `json:"online"`
-	Enabled             bool   `json:"enabled"`
+	IsOn                bool   `json:"is_on"`      // Resolution Status
+	NodeIsOn            bool   `json:"node_is_on"` // Node Status
 	IsBackup            bool   `json:"is_backup"`
 	IsBackupDefaultLine bool   `json:"is_backup_default_line"`
 	Weight              string `json:"weight"`
@@ -235,7 +238,10 @@ func (ctr *NodeGroupController) GetResolution(c *gin.Context) {
 	applyNodeGroupPolicy(&group)
 
 	lineID := strings.TrimSpace(c.DefaultQuery("line_id", "default"))
-	if lineID == "" {
+	if lineID == "all" {
+		lineID = ""
+	}
+	if lineID == "" && strings.TrimSpace(c.Query("line_id")) == "" {
 		lineID = "default"
 	}
 
@@ -248,7 +254,11 @@ func (ctr *NodeGroupController) GetResolution(c *gin.Context) {
 	}
 
 	var lines []models.Line
-	if err := db.DB.Where("node_group_id = ? AND line_id = ?", groupID, lineID).Find(&lines).Error; err != nil {
+	lineQuery := db.DB.Where("node_group_id = ?", groupID)
+	if lineID != "" {
+		lineQuery = lineQuery.Where("line_id = ?", lineID)
+	}
+	if err := lineQuery.Find(&lines).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "load lines failed"})
 		return
 	}
@@ -565,10 +575,13 @@ func buildAssignedLineItems(lines []models.Line) ([]lineAssignedItem, map[int64]
 			ID:                  line.ID,
 			NodeID:              line.NodeID,
 			NodeIPID:            line.NodeIPID,
+			LineID:              line.LineID,
+			LineName:            line.LineName,
 			Name:                node.Name,
 			IP:                  nodeIP.IP,
 			Online:              services.IsNodeOnline(line.NodeID, 90*time.Second),
-			Enabled:             line.Enable,
+			IsOn:                line.Enable,
+			NodeIsOn:            node.Enable,
 			IsBackup:            line.IsBackup,
 			IsBackupDefaultLine: line.IsBackupDefaultLine,
 			Weight:              line.Weight,

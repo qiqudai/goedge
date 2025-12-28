@@ -32,7 +32,7 @@ export const asyncRoutes = [
         meta: { title: '节点管理', icon: 'data-line', roles: ['admin'] },
         children: [
           { path: 'list', name: 'NodeList', component: () => import('../views/nodes/List.vue'), meta: { title: '节点列表' } },
-          { path: 'groups', name: 'NodeGroups', component: () => import('../views/nodes/groups/List.vue'), meta: { title: '节点分组' } },
+          { path: 'groups', name: 'NodeGroups', component: () => import('../views/nodes/groups/List.vue'), meta: { title: '线路分组' } },
           { path: 'dns', name: 'DNS', component: () => import('../views/dns/Index.vue'), meta: { title: 'DNS设置' } },
           { path: 'monitor', name: 'Monitor', component: () => import('../views/settings/Monitor.vue'), meta: { title: '监控配置' } },
           { path: 'realtime', name: 'NodeRealtimeMonitor', component: () => import('../views/nodes/RealtimeMonitor.vue'), meta: { title: '实时监控' } },

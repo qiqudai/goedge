@@ -6,6 +6,7 @@
       <el-tab-pane label="区域管理" name="region" />
     </el-tabs>
 
+    <div v-if="pageTab === 'list'">
     <div class="filter-container node-actions">
       <el-button type="primary" @click="handleCreate">{{ t.installNode }}</el-button>
       <el-button :disabled="!selectedRows.length" @click="handleBatch('stop')">{{ t.disableNode }}</el-button>
@@ -24,13 +25,13 @@
     </div>
 
     <div class="filter-container node-filters">
-      <el-select v-model="listQuery.region_id" placeholder="All Regions" class="filter-item" style="width: 150px;">
+      <el-select v-model="listQuery.region_id" placeholder="所有区域" class="filter-item" style="width: 150px;">
         <el-option v-for="item in regionOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
-      <el-select v-model="listQuery.status" placeholder="All Status" class="filter-item" style="width: 150px;">
+      <el-select v-model="listQuery.status" placeholder="所有状态" class="filter-item" style="width: 150px;">
         <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
-      <el-select v-model="listQuery.node_type" placeholder="All Types" class="filter-item" style="width: 150px;">
+      <el-select v-model="listQuery.node_type" placeholder="所有类型" class="filter-item" style="width: 150px;">
         <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
       <el-input v-model="listQuery.keyword" :placeholder="t.nodeKeyword" class="filter-item" style="width: 240px;" @keyup.enter="handleFilter">
@@ -161,6 +162,39 @@
         </template>
       </el-table-column>
     </AppTable>
+    </div>
+
+    <div v-else class="region-panel">
+      <div class="filter-container node-actions">
+        <el-button type="primary" @click="openRegionDialog('create')">新增区域</el-button>
+        <el-button :disabled="!regionSelected.length" @click="handleRegionBatchDelete">删除</el-button>
+      </div>
+
+      <AppTable
+        :loading="regionLoading"
+        :data="regionList"
+        persist-key="region"
+        border
+        fit
+        highlight-current-row
+        style="width: 100%;"
+        @selection-change="handleRegionSelectionChange"
+      >
+        <el-table-column type="selection" width="55" align="center" />
+        <el-table-column prop="id" label="ID" width="80" align="center" />
+        <el-table-column prop="name" label="名称" min-width="160" />
+        <el-table-column prop="remark" label="备注" min-width="160" />
+        <el-table-column prop="l2_check_port" label="L2检测端口" width="140" align="center" />
+        <el-table-column prop="sort_order" label="排序" width="100" align="center" />
+        <el-table-column prop="create_at" label="添加时间" min-width="160" />
+        <el-table-column label="操作" width="120" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openRegionDialog('edit', row)">编辑</el-button>
+            <el-button link type="primary" @click="handleRegionDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </AppTable>
+    </div>
 
 
     <el-dialog title="监控日志" v-model="monitorDialogVisible" width="680px">
@@ -170,19 +204,19 @@
             <el-option v-for="item in monitorTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="??">
+        <el-form-item label="时间段">
           <el-date-picker
             v-model="monitorQuery.timeRange"
             type="datetimerange"
-            range-separator="?"
-            start-placeholder="??"
-            end-placeholder="??"
+            range-separator="至"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             style="width: 260px;"
           />
         </el-form-item>
-        <el-form-item label="?">
+        <el-form-item label="监控组">
           <el-select v-model="monitorQuery.group" style="width: 180px;">
             <el-option v-for="item in monitorGroupOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
@@ -200,10 +234,33 @@
         @size-change="loadMonitorLogs"
         border
       >
-        <el-table-column prop="checked_at" label="??" min-width="140" />
+        <el-table-column prop="checked_at" label="检测时间" min-width="140" />
         <el-table-column prop="fail_count" label="失败个数" width="100" align="center" />
         <el-table-column prop="total_count" label="总检测点" width="100" align="center" />
       </AppTable>
+    </el-dialog>
+
+    <el-dialog :title="regionDialogTitle" v-model="regionDialogVisible" width="520px">
+      <el-form :model="regionForm" label-position="right" label-width="110px">
+        <el-form-item label="名称">
+          <el-input v-model="regionForm.name" placeholder="请输入区域名称" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="regionForm.remark" placeholder="请输入备注" />
+        </el-form-item>
+        <el-form-item label="L2检测端口">
+          <el-input v-model.number="regionForm.l2_check_port" placeholder="80" />
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input v-model.number="regionForm.sort_order" placeholder="100" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="regionDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveRegion">确定</el-button>
+        </div>
+      </template>
     </el-dialog>
 
     <el-dialog :title="textMap[dialogStatus]" v-model="dialogFormVisible" width="600px">
@@ -326,7 +383,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import RealtimeMonitor from './RealtimeMonitor.vue'
 import { useRouter } from 'vue-router'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
@@ -422,6 +479,19 @@ const listQuery = reactive({
   node_type: ''
 })
 const regionOptions = ref([{ label: '\u6240\u6709\u533a\u57df', value: '' }])
+const regionList = ref([])
+const regionLoading = ref(false)
+const regionSelected = ref([])
+const regionDialogVisible = ref(false)
+const regionDialogMode = ref('create')
+const regionForm = reactive({
+  id: 0,
+  name: '',
+  remark: '',
+  l2_check_port: 80,
+  sort_order: 100
+})
+const regionDialogTitle = computed(() => (regionDialogMode.value === 'create' ? '新增区域' : '编辑区域'))
 const statusOptions = ref([
   { label: '\u6240\u6709\u72b6\u6001', value: '' },
   { label: '\u6b63\u5e38', value: 'enabled' },
@@ -487,6 +557,36 @@ const monitorGroupOptions = [
   { label: '\u6240\u6709\u76d1\u63a7\u7ec4', value: 'all' }
 ]
 
+const resetRegionForm = () => {
+  regionForm.id = 0
+  regionForm.name = ''
+  regionForm.remark = ''
+  regionForm.l2_check_port = 80
+  regionForm.sort_order = 100
+}
+
+const loadRegions = () => {
+  regionLoading.value = true
+  request({ url: '/regions', method: 'get' }).then(response => {
+    const rows = response.data?.list || []
+    regionList.value = rows.map(item => ({
+      ...item,
+      remark: item.remark || '',
+      l2_check_port: item.l2_check_port || 80,
+      sort_order: item.sort_order || 100
+    }))
+    regionOptions.value = [{ label: '所有区域', value: '' }].concat(
+      rows.map(item => ({
+        label: item.name,
+        value: item.id
+      }))
+    )
+    regionSelected.value = []
+  }).finally(() => {
+    regionLoading.value = false
+  })
+}
+
 const getList = () => {
   listLoading.value = true
   request({
@@ -531,7 +631,73 @@ const resetFilters = () => {
 
 const handleTabChange = () => {
   listQuery.page = 1
-  getList()
+  if (pageTab.value === 'list') {
+    getList()
+    return
+  }
+  loadRegions()
+}
+
+const handleRegionSelectionChange = (rows) => {
+  regionSelected.value = rows
+}
+
+const openRegionDialog = (mode, row) => {
+  resetRegionForm()
+  regionDialogMode.value = mode
+  if (row) {
+    regionForm.id = row.id
+    regionForm.name = row.name
+    regionForm.remark = row.remark || ''
+    regionForm.l2_check_port = row.l2_check_port || 80
+    regionForm.sort_order = row.sort_order || 100
+  }
+  regionDialogVisible.value = true
+}
+
+const saveRegion = () => {
+  const payload = {
+    name: regionForm.name,
+    remark: regionForm.remark,
+    l2_check_port: regionForm.l2_check_port,
+    sort_order: regionForm.sort_order
+  }
+  const req = regionDialogMode.value === 'create'
+    ? request({ url: '/regions', method: 'post', data: payload })
+    : request({ url: `/regions/${regionForm.id}`, method: 'put', data: payload })
+  req.then(() => {
+    regionDialogVisible.value = false
+    loadRegions()
+  })
+}
+
+const handleRegionDelete = (row) => {
+  ElMessageBox.confirm('确定要删除该区域吗？', t.promptTitle, {
+    confirmButtonText: t.confirm,
+    cancelButtonText: t.cancel,
+    type: 'warning'
+  }).then(() => {
+    request({ url: `/regions/${row.id}`, method: 'delete' }).then(() => {
+      loadRegions()
+    })
+  })
+}
+
+const handleRegionBatchDelete = () => {
+  if (!regionSelected.value.length) {
+    return
+  }
+  ElMessageBox.confirm('确定要删除选中的区域吗？', t.promptTitle, {
+    confirmButtonText: t.confirm,
+    cancelButtonText: t.cancel,
+    type: 'warning'
+  }).then(() => {
+    Promise.all(
+      regionSelected.value.map(item => request({ url: `/regions/${item.id}`, method: 'delete' }))
+    ).then(() => {
+      loadRegions()
+    })
+  })
 }
 
 const resetTemp = () => {
@@ -779,7 +945,7 @@ const resolveStatusClass = (row) => {
 const formatBandwidth = (row) => {
   const up = pickNumber(row, ['bandwidth_in', 'bw_in', 'in_speed'])
   const down = pickNumber(row, ['bandwidth_out', 'bw_out', 'out_speed'])
-  return `${formatSpeed(up)} ↑ ${formatSpeed(down)} ↓`
+  return `${formatSpeed(up)} \u2191 ${formatSpeed(down)} \u2193`
 }
 
 const formatMonthlyTraffic = (row) => {
@@ -836,6 +1002,7 @@ const openMonitorLogs = () => {
 
 onMounted(() => {
   getList()
+  loadRegions()
 })
 </script>
 
@@ -849,8 +1016,8 @@ onMounted(() => {
 }
 
 .node-tabs :deep(.el-tabs__item) {
-  padding: 0 18px;
-  min-width: 88px;
+  padding: 0 20px;
+  min-width: 110px;
   text-align: center;
 }
 

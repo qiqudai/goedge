@@ -13,13 +13,13 @@ type Line struct {
 	LineName                string    `json:"line_name"` // e.g. "联通", "电信"
 	Weight                  string    `json:"weight"`
 	RecordID                string    `json:"record_id"`
-	TaskID                  int64     `json:"task_id"`
+	TaskID                  *int64    `json:"task_id" gorm:"column:task_id"`
 	Enable                  bool      `json:"enable"`
 	IsBackup                bool      `json:"is_backup"`
 	EnableBackup            bool      `json:"enable_backup"`
 	IsBackupDefaultLine     bool      `json:"is_backup_default_line"`
 	EnableBackupDefaultLine bool      `json:"enable_backup_default_line"`
-	SwitchAt                time.Time `json:"switch_at"`
+	SwitchAt                *time.Time `json:"switch_at" gorm:"column:switch_at"`
 	DisableBy               string    `json:"disable_by"`
 
 	CreatedAt time.Time `json:"create_at" gorm:"column:create_at"`

@@ -213,7 +213,7 @@ func findNode(nodeID string) (*models.Node, error) {
 
 func loadGlobalConfig() *models.GlobalConfig {
 	var sys models.SysConfig
-	if err := db.DB.First(&sys, "`key` = ?", "global_config").Error; err != nil {
+	if err := db.DB.First(&sys, "name = ?", "global_config").Error; err != nil {
 		return nil
 	}
 	if sys.Value == "" {

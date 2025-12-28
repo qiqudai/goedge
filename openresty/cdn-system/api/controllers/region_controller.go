@@ -44,12 +44,20 @@ func (ctr *RegionController) ListRegions(c *gin.Context) {
 	views := make([]regionView, 0, len(regions))
 	for _, region := range regions {
 		meta := metaMap[strconv.FormatInt(region.ID, 10)]
+		l2Port := meta.L2CheckPort
+		if l2Port == 0 {
+			l2Port = 80
+		}
+		sortOrder := meta.SortOrder
+		if sortOrder == 0 {
+			sortOrder = 100
+		}
 		views = append(views, regionView{
 			ID:          region.ID,
 			Name:        region.Name,
 			Remark:      region.Desc,
-			L2CheckPort: meta.L2CheckPort,
-			SortOrder:   meta.SortOrder,
+			L2CheckPort: l2Port,
+			SortOrder:   sortOrder,
 			CreatedAt:   region.CreatedAt,
 			UpdatedAt:   region.UpdatedAt,
 		})

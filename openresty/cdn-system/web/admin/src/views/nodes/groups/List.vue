@@ -82,8 +82,10 @@
         <el-form-item label="名称:" prop="name">
           <el-input v-model="temp.name" placeholder="分组名称" />
         </el-form-item>
-        <el-form-item label="区域ID:" prop="region_id">
-             <el-input v-model.number="temp.region_id" placeholder="区域ID (0为默认)" />
+        <el-form-item label="区域:" prop="region_id">
+          <el-select v-model="temp.region_id" placeholder="请选择区域" style="width: 100%;">
+            <el-option v-for="region in regions" :key="region.id" :label="region.name" :value="region.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="解析值:" prop="resolution">
           <el-input v-model="temp.resolution" placeholder="CNAME解析值" />
@@ -203,6 +205,9 @@ const resetTemp = () => {
 
 const handleCreate = () => {
   resetTemp()
+  if (regions.value.length > 0) {
+    temp.region_id = regions.value[0].id
+  }
   dialogStatus.value = 'create'
   dialogFormVisible.value = true
 }
@@ -336,4 +341,3 @@ onMounted(() => {
     cursor: pointer;
 }
 </style>
-
