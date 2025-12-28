@@ -407,7 +407,7 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 
 	services.BumpConfigVersion("line", []int64{groupID})
 	if err := dns.SyncLineRecords(groupID, lineID, lineName, "add", assignedIPIDs); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": "dns sync failed: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "dns sync failed: " + err.Error(), "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0})
@@ -534,7 +534,7 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 		}
 		for gid, ipIDs := range groupIDs {
 			if err := dns.SyncLineRecords(gid, lineIDs[gid], lineNames[gid], action, ipIDs); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"msg": "dns sync failed: " + err.Error()})
+				c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "dns sync failed: " + err.Error(), "error": err.Error()})
 				return
 			}
 		}

@@ -66,7 +66,10 @@ func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
 			return id
 		}
 		var node models.Node
-		if err := db.DB.Where("name = ? AND pid = 0", payloadID).First(&node).Error; err == nil {
+		if err := db.DB.Where("name = ?", payloadID).First(&node).Error; err == nil {
+			return node.ID
+		}
+		if err := db.DB.Where("host = ?", payloadID).First(&node).Error; err == nil {
 			return node.ID
 		}
 	}
@@ -76,7 +79,7 @@ func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
 		return 0
 	}
 	var node models.Node
-	if err := db.DB.Where("ip = ? AND pid = 0", clientIP).First(&node).Error; err == nil {
+	if err := db.DB.Where("ip = ?", clientIP).First(&node).Error; err == nil {
 		return node.ID
 	}
 	return 0

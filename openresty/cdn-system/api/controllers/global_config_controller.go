@@ -83,9 +83,25 @@ func getDefaultConfig() models.GlobalConfig {
 			Gzip:                  true,
 		},
 		DefaultConfig: models.DefaultSiteConfig{
-			Website:  models.SiteTemplate{CacheEnable: true, CacheTTL: 86400, Gzip: true, WAFEnable: true},
-			API:      models.SiteTemplate{CacheEnable: false, CacheTTL: 0, Gzip: true, WAFEnable: true},
-			Download: models.SiteTemplate{CacheEnable: false, CacheTTL: 0, Gzip: false, WAFEnable: true},
+			Website: models.SiteTemplate{
+				CacheEnable: true,
+				CacheTTL:    86400,
+				Gzip:        true,
+				WAFEnable:   true,
+				SSLCiphers:  "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA",
+			},
+			API: models.SiteTemplate{
+				CacheEnable: false,
+				CacheTTL:    0,
+				Gzip:        true,
+				WAFEnable:   true,
+			},
+			Download: models.SiteTemplate{
+				CacheEnable: false,
+				CacheTTL:    0,
+				Gzip:        false,
+				WAFEnable:   true,
+			},
 		},
 		Resources: models.GlobalResourceConfig{
 			Website: models.WebsiteResourceConfig{

@@ -124,6 +124,7 @@ type SiteTemplate struct {
 	CacheTTL    int  `json:"cache_ttl"` // seconds
 	Gzip        bool `json:"gzip"`
 	WAFEnable   bool `json:"waf_enable"`
+	SSLCiphers  string `json:"ssl_ciphers"`
 }
 
 type GlobalResourceConfig struct {

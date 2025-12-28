@@ -44,14 +44,14 @@
           :data="filteredAvailable"
           :loading="loading"
           border
-
+          :row-key="getAvailableRowKey"
           layout="total, sizes, prev, pager, next"
           :show-pagination="false"
           :page-sizes="[10000]"
           :persist-key="availablePersistKey"
           @selection-change="handleLeftSelection"
         >
-          <el-table-column type="selection" width="48" align="center" />
+          <el-table-column type="selection" width="48" align="center" reserve-selection />
           <el-table-column prop="name" label="名称" min-width="140" />
           <el-table-column prop="ip" label="IP" min-width="140" />
           <el-table-column label="状态" width="100" align="center">
@@ -118,14 +118,14 @@
           :loading="loading"
           border
           height="420"
-
+          row-key="id"
           layout="total, sizes, prev, pager, next"
           :show-pagination="false"
           :page-sizes="[10000]"
           :persist-key="assignedPersistKey"
           @selection-change="handleRightSelection"
         >
-          <el-table-column type="selection" width="48" align="center" />
+          <el-table-column type="selection" width="48" align="center" reserve-selection />
           <el-table-column prop="id" label="ID" width="70" align="center" />
           <el-table-column prop="line_name" label="线路" min-width="100" />
           <el-table-column prop="name" label="名称" min-width="120" />
@@ -154,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Search, CircleCheckFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -170,6 +170,7 @@ const selectedRegionId = ref(0)
 const selectedGroupId = ref(0)
 const currentLineId = ref('default')
 const loading = ref(false)
+let refreshTimer = null
 
 const allAvailable = ref([])
 const allAssigned = ref([])
@@ -385,6 +386,18 @@ const loadResolution = () => {
   })
 }
 
+const startAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+  }
+  refreshTimer = setInterval(() => {
+    if (loading.value || !selectedGroupId.value) {
+      return
+    }
+    loadResolution()
+  }, 3000)
+}
+
 const handleRegionChange = () => {
   if (filteredGroups.value.length === 0) {
     selectedGroupId.value = 0
@@ -412,6 +425,8 @@ const handleLineChange = () => {
 const handleLeftSelection = (rows) => {
   leftSelected.value = rows
 }
+
+const getAvailableRowKey = (row) => row.node_ip_id || row.id || row.node_id
 
 const handleRightSelection = (rows) => {
   rightSelected.value = rows
@@ -531,6 +546,14 @@ onMounted(() => {
   loadRegions()
   loadGroups()
   loadResolution()
+  startAutoRefresh()
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 })
 
 watch(

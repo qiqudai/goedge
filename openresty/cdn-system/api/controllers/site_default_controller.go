@@ -25,6 +25,37 @@ func (ctr *SiteDefaultController) List(c *gin.Context) {
 			userID = uid
 		}
 	}
+	if !isUserRequest(c) && userID == 0 {
+		scopeName := strings.TrimSpace(c.Query("scope_name"))
+		scopeID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("scope_id")), 10, 64)
+		if scopeName != "" || scopeID != 0 {
+			if scopeName == "" {
+				scopeName = "global"
+			}
+			var items []models.ConfigItem
+			if err := db.DB.Where("type = ? AND scope_name = ? AND scope_id = ?", "site_default_config", scopeName, scopeID).
+				Order("name asc").Find(&items).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Database Error"})
+				return
+			}
+			list := make([]gin.H, 0, len(items))
+			for _, item := range items {
+				list = append(list, gin.H{
+					"name":       item.Name,
+					"value":      item.Value,
+					"type":       item.Type,
+					"scope_id":   item.ScopeID,
+					"scope_name": item.ScopeName,
+					"enable":     item.Enable,
+					"user_id":    int64(0),
+					"user_name":  "",
+					"group_name": "",
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list}})
+			return
+		}
+	}
 	if userID == 0 && !isUserRequest(c) {
 		var items []models.ConfigItem
 		if err := db.DB.Where("type = ? AND scope_name IN ? AND scope_id <> ?", "site_default_config", []string{"global", "group", "user"}, 0).
@@ -143,7 +174,7 @@ func (ctr *SiteDefaultController) Create(c *gin.Context) {
 	if isUserRequest(c) {
 		userID = parseUserID(mustGet(c, "userID"))
 	}
-	if userID == 0 {
+	if userID == 0 && isUserRequest(c) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "user_id is required"})
 		return
 	}
@@ -153,12 +184,16 @@ func (ctr *SiteDefaultController) Create(c *gin.Context) {
 		scopeName = "global"
 	}
 	scopeID := req.ScopeID
-	if scopeName == "global" && scopeID == 0 {
+	if scopeName == "global" && scopeID == 0 && isUserRequest(c) {
 		scopeID = userID
 	}
 	if scopeName == "group" {
 		if scopeID == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "scope_id is required"})
+			return
+		}
+		if userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "user_id is required"})
 			return
 		}
 		if err := ensureSiteGroupOwner(scopeID, userID); err != nil {
@@ -235,7 +270,7 @@ func (ctr *SiteDefaultController) Update(c *gin.Context) {
 	if isUserRequest(c) {
 		userID = parseUserID(mustGet(c, "userID"))
 	}
-	if userID == 0 {
+	if userID == 0 && isUserRequest(c) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "user_id is required"})
 		return
 	}
@@ -245,12 +280,16 @@ func (ctr *SiteDefaultController) Update(c *gin.Context) {
 		scopeName = "global"
 	}
 	scopeID := req.ScopeID
-	if scopeName == "global" && scopeID == 0 {
+	if scopeName == "global" && scopeID == 0 && isUserRequest(c) {
 		scopeID = userID
 	}
 	if scopeName == "group" {
 		if scopeID == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "scope_id is required"})
+			return
+		}
+		if userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "user_id is required"})
 			return
 		}
 		if err := ensureSiteGroupOwner(scopeID, userID); err != nil {
@@ -304,7 +343,7 @@ func (ctr *SiteDefaultController) Delete(c *gin.Context) {
 			userID = uid
 		}
 	}
-	if userID == 0 {
+	if userID == 0 && isUserRequest(c) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "user_id is required"})
 		return
 	}
@@ -315,13 +354,19 @@ func (ctr *SiteDefaultController) Delete(c *gin.Context) {
 		scopeName = "global"
 	}
 	if scopeName == "global" && scopeID == 0 {
-		scopeID = userID
+		if isUserRequest(c) {
+			scopeID = userID
+		}
 	}
 	if scopeName == "group" && scopeID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "scope_id is required"})
 		return
 	}
 	if scopeName == "group" {
+		if userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "user_id is required"})
+			return
+		}
 		if err := ensureSiteGroupOwner(scopeID, userID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "invalid group"})
 			return

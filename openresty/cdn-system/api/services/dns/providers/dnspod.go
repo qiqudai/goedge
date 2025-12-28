@@ -103,6 +103,9 @@ func (p *DNSPodProvider) addRecordV2(domain string, record dns.DNSRecord) error 
 		return err
 	}
 	if r.Status.Code != "1" {
+		if p.isIgnorableV2(r.Status.Code, r.Status.Message) {
+			return nil
+		}
 		return fmt.Errorf("api error code: %s message: %s response: %s", r.Status.Code, r.Status.Message, string(resp))
 	}
 	return nil
@@ -136,6 +139,9 @@ func (p *DNSPodProvider) deleteRecordV2(domain string, record dns.DNSRecord) err
 		return err
 	}
 	if r.Status.Code != "1" {
+		if p.isIgnorableV2(r.Status.Code, r.Status.Message) {
+			return nil
+		}
 		return fmt.Errorf("api error code: %s message: %s response: %s", r.Status.Code, r.Status.Message, string(resp))
 	}
 	return nil
@@ -301,6 +307,9 @@ func (p *DNSPodProvider) addRecordTC3(domain string, record dns.DNSRecord) error
 		return err
 	}
 	if parsed.Response.Error != nil {
+		if p.isIgnorableTC3(parsed.Response.Error.Code, parsed.Response.Error.Message) {
+			return nil
+		}
 		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
 	}
 	return nil
@@ -334,6 +343,9 @@ func (p *DNSPodProvider) deleteRecordTC3(domain string, record dns.DNSRecord) er
 		return err
 	}
 	if parsed.Response.Error != nil {
+		if p.isIgnorableTC3(parsed.Response.Error.Code, parsed.Response.Error.Message) {
+			return nil
+		}
 		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
 	}
 	return nil
@@ -374,6 +386,9 @@ func (p *DNSPodProvider) deleteRecordsByLineTC3(domain string, record dns.DNSRec
 		if parsed.Response.Error.Code == "ResourceNotFound.NoDataOfRecord" {
 			return nil
 		}
+		if p.isIgnorableTC3(parsed.Response.Error.Code, parsed.Response.Error.Message) {
+			return nil
+		}
 		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
 	}
 	for _, item := range parsed.Response.RecordList {
@@ -400,6 +415,9 @@ func (p *DNSPodProvider) deleteRecordsByLineTC3(domain string, record dns.DNSRec
 			return err
 		}
 		if delParsed.Response.Error != nil {
+			if p.isIgnorableTC3(delParsed.Response.Error.Code, delParsed.Response.Error.Message) {
+				continue
+			}
 			return fmt.Errorf("api error code: %s message: %s response: %s", delParsed.Response.Error.Code, delParsed.Response.Error.Message, string(delResp))
 		}
 	}
@@ -552,6 +570,33 @@ func hmacSHA256(key []byte, msg string) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(msg))
 	return mac.Sum(nil)
+}
+
+func (p *DNSPodProvider) isIgnorableTC3(code, message string) bool {
+	code = strings.TrimSpace(code)
+	switch code {
+	case "InvalidParameter.DomainRecordExist",
+		"ResourceNotFound.NoDataOfRecord",
+		"InvalidParameter.RecordLineInvalid":
+		return true
+	}
+	_ = message
+	return false
+}
+
+func (p *DNSPodProvider) isIgnorableV2(code, message string) bool {
+	code = strings.TrimSpace(code)
+	switch code {
+	case "10", "9":
+		return true
+	}
+	if strings.Contains(message, "记录已存在") || strings.Contains(strings.ToLower(message), "record already exists") {
+		return true
+	}
+	if strings.Contains(message, "线路") && strings.Contains(message, "不") {
+		return true
+	}
+	return false
 }
 
 func init() {

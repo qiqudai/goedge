@@ -150,7 +150,7 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(backsourceCfg, "http_port", defaults["backend_http_port"])
 	setIfMissing(backsourceCfg, "https_port", defaults["backend_https_port"])
 	setIfMissing(backsourceCfg, "timeout", defaults["proxy_timeout"])
-	setIfMissing(backsourceCfg, "connect_timeout", defaults["proxy_timeout"])
+	setIfMissing(backsourceCfg, "connect_timeout", defaults["connect_timeout"])
 
 	cacheCfg := getSubMap(site.Settings, "cache")
 	if _, ok := cacheCfg["enable"]; !ok {
@@ -210,6 +210,9 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(advCfg, "ups_keepalive_conn", parseInt64(defaults["ups_keepalive_conn"]))
 	setIfMissing(advCfg, "ups_keepalive_timeout", parseInt64(defaults["ups_keepalive_timeout"]))
 	setIfMissing(advCfg, "body_limit", parseInt64(defaults["post_size_limit"]))
+	setIfMissing(advCfg, "log_request_header", parseBool(defaults["log_request_header"], false))
+	setIfMissing(advCfg, "log_response_header", parseBool(defaults["log_response_header"], false))
+	setIfMissing(advCfg, "log_request_body", parseBool(defaults["log_request_body"], false))
 	setIfMissing(advCfg, "realtime_send", parseBool(defaults["realtime_send"], false))
 	setIfMissing(advCfg, "realtime_return", parseBool(defaults["realtime_return"], false))
 	if v := defaults["origin_headers"]; v != "" {
