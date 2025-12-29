@@ -599,7 +599,17 @@ func (p *DNSPodProvider) isIgnorableV2(code, message string) bool {
 	return false
 }
 
+func NewDNSPodProviderIntl(credentials string) (dns.Provider, error) {
+	provider, err := NewDNSPodProvider(credentials)
+	if err != nil {
+		return nil, err
+	}
+	p := provider.(*DNSPodProvider)
+	p.Config.Region = dnsPodInternational // Force international
+	return p, nil
+}
+
 func init() {
 	dns.RegisterProvider("dnspod", NewDNSPodProvider)
-	dns.RegisterProvider("dnspod_intl", NewDNSPodProvider)
+	dns.RegisterProvider("dnspod_intl", NewDNSPodProviderIntl)
 }

@@ -14,7 +14,7 @@
 
     <!-- 自定义部分 -->
     <div v-if="mode === 'custom'" class="custom-selector">
-      <el-checkbox-group v-model="innerValue">
+
         <div v-for="(group, index) in displayGroups" :key="group.label" class="country-group">
           <div class="group-header">
             <div class="header-left">
@@ -48,7 +48,7 @@
             </el-checkbox>
           </el-checkbox-group>
         </div>
-      </el-checkbox-group>
+
     </div>
   </div>
 </template>

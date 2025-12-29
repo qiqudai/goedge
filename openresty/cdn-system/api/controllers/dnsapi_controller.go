@@ -116,13 +116,19 @@ func (ctr *DNSAPIController) Delete(c *gin.Context) {
 
 func (ctr *DNSAPIController) Types(c *gin.Context) {
 	types := []gin.H{
-		{"type": "cloudflare", "name": "Cloudflare", "fields": []string{"email", "key"}},
-		{"type": "aliyun", "name": "Aliyun", "fields": []string{"id", "secret"}},
-		{"type": "dnspod", "name": "DNSPod", "fields": []string{"id", "token"}},
-		{"type": "godaddy", "name": "GoDaddy", "fields": []string{"key", "secret"}},
-		{"type": "huawei", "name": "Huawei", "fields": []string{"id", "secret"}},
-		{"type": "dnsla", "name": "DNSLA", "fields": []string{"id", "secret"}},
-		{"type": "51dns", "name": "51DNS", "fields": []string{"id", "secret"}},
+		{"type": "cloudflare", "name": "Cloudflare", "fields": []string{"email", "api_key"}},
+		{"type": "aliyun", "name": "Aliyun", "fields": []string{"access_key_id", "access_key_secret"}},
+		{"type": "dnspod", "name": "DNSPod.cn", "fields": []string{"id", "token"}},
+		{"type": "dnspod_intl", "name": "DNSPod.com", "fields": []string{"id", "token"}},
+		{"type": "godaddy", "name": "GoDaddy", "fields": []string{"api_key", "api_secret"}},
+		{"type": "namecom", "name": "Name.com", "fields": []string{"username", "api_token"}},
+		{"type": "namecheap", "name": "Namecheap", "fields": []string{"user", "api_key", "ip"}},
+		{"type": "cloudns", "name": "ClouDNS", "fields": []string{"auth_id", "auth_password"}},
+		{"type": "namesilo", "name": "Namesilo", "fields": []string{"api_key"}},
+		{"type": "jdcloud", "name": "JDCloud", "fields": []string{"access_key", "secret_key"}},
+		{"type": "dnsla", "name": "DNS.LA", "fields": []string{"api_id", "api_pass"}},
+		{"type": "51dns", "name": "51DNS", "fields": []string{"app_id", "app_secret"}},
+		{"type": "huawei", "name": "Huawei Cloud", "fields": []string{"access_key_id", "secret_access_key"}},
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"types": types}})
 }

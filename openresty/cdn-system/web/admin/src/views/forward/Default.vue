@@ -1,47 +1,51 @@
 ﻿<template>
   <div class="app-container">
-    <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
-      <el-tab-pane label="转发列表" name="list" />
-      <el-tab-pane label="分组设置" name="groups" />
-      <el-tab-pane label="默认设置" name="default" />
-      <el-tab-pane label="实时监控" name="monitor" />
-    </el-tabs>
-    <div class="filter-container">
-      <el-button type="primary" @click="openCreate">新增设置</el-button>
-    </div>
+    <el-card shadow="never" class="layout-card">
+      <el-tabs v-model="activeTopTab" class="custom-tabs" @tab-change="handleTopTab">
+        <el-tab-pane label="转发列表" name="list" />
+        <el-tab-pane label="默认设置" name="default">
+          <div class="filter-container">
+            <el-button type="primary" @click="openCreate">新增设置</el-button>
+          </div>
 
-    <AppTable
-      :data="settings"
-      :loading="loading"
-      border
-      style="width: 100%;"
-      persist-key="forward-default"
-    >
-      <el-table-column prop="key" label="设置项" width="180">
-        <template #default="{ row }">
-          {{ keyLabel(row.key) }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="value" label="设置值" min-width="180">
-        <template #default="{ row }">
-          {{ valueLabel(row.key, row.value) }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="scope" label="生效范围" width="140">
-        <template #default="{ row }">
-          {{ row.scope === 'group' ? '转发分组' : '全局' }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="group_name" label="转发分组" min-width="180" />
-      <el-table-column label="操作" width="160" align="center">
-        <template #default="{ row }">
-          <el-button link type="danger" size="" @click="removeSetting(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </AppTable>
+          <AppTable
+            v-loading="loading"
+            :data="settings"
+            border
+            fit
+            highlight-current-row
+            persist-key="forward-default-list"
+            style="width: 100%;"
+          >
+            <el-table-column prop="key" label="设置项" width="180">
+              <template #default="{ row }">
+                {{ keyLabel(row.key) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="value" label="设置值" min-width="180">
+              <template #default="{ row }">
+                {{ valueLabel(row.key, row.value) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="scope" label="生效范围" width="140">
+              <template #default="{ row }">
+                {{ row.scope === 'group' ? '转发分组' : '全局' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="group_name" label="转发分组" min-width="180" />
+            <el-table-column label="操作" width="160" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="danger" @click="removeSetting(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </AppTable>
+        </el-tab-pane>
+        <el-tab-pane label="实时监控" name="monitor" />
+      </el-tabs>
+    </el-card>
 
     <el-dialog v-model="dialogVisible" title="新增设置" width="520px">
-      <el-form :model="form" label-width="80px">
+      <el-form :model="form" label-width="100px" style="padding-top: 10px;">
         <el-form-item label="设置项">
           <el-select v-model="form.key" placeholder="请选择" style="width: 100%;" @change="handleKeyChange">
             <el-option label="开启proxy_protocol" value="proxy_protocol" />
@@ -95,19 +99,17 @@ import request from '@/utils/request'
 
 const router = useRouter()
 const activeTopTab = ref('default')
-const handleTopTab = tab => {
-  const name = typeof tab === 'string' ? tab : tab?.paneName
+
+const handleTopTab = (name) => {
   const map = {
     list: '/forward/list',
-    groups: '/forward/groups',
     default: '/forward/default',
     monitor: '/forward/monitor'
   }
   const path = map[name]
-  if (path) {
-    router.push(path)
-  }
+  if (path && name !== 'default') router.push(path)
 }
+
 const settings = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -120,20 +122,19 @@ const form = reactive({
   group_id: ''
 })
 
-const fetchSettings = () => {
+const fetchSettings = async () => {
   loading.value = true
-  request.get('/forward_defaults').then(res => {
-    settings.value = res.data?.list || res.list || []
+  try {
+    const res = await request.get('/forward_defaults')
+    settings.value = res.list || []
+  } finally {
     loading.value = false
-  }).catch(() => {
-    loading.value = false
-  })
+  }
 }
 
-const loadGroups = () => {
-  request.get('/forward_groups').then(res => {
-    groupOptions.value = res.data?.list || res.list || []
-  })
+const loadGroups = async () => {
+  const res = await request.get('/forward_groups')
+  groupOptions.value = res.list || []
 }
 
 const keyLabel = key => {
@@ -162,36 +163,27 @@ const handleKeyChange = () => {
 
 const openCreate = () => {
   dialogVisible.value = true
-  form.key = 'proxy_protocol'
-  form.value = true
-  form.scope = 'global'
-  form.group_id = ''
+  Object.assign(form, { key: 'proxy_protocol', value: true, scope: 'global', group_id: '' })
 }
 
-const submitForm = () => {
+const submitForm = async () => {
   const payload = {
     key: form.key,
     value: form.value,
     scope: form.scope,
     group_id: form.scope === 'group' ? form.group_id : 0
   }
-  request.post('/forward_defaults', payload).then(() => {
-    ElMessage.success('新增成功')
-    dialogVisible.value = false
-    fetchSettings()
-  })
+  await request.post('/forward_defaults', payload)
+  ElMessage.success('新增成功')
+  dialogVisible.value = false
+  fetchSettings()
 }
 
 const removeSetting = row => {
-  ElMessageBox.confirm('确认删除该设置?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    request.delete('/forward_defaults', { data: { id: row.id } }).then(() => {
-      ElMessage.success('删除成功')
-      fetchSettings()
-    })
+  ElMessageBox.confirm('确认删除该设置?', '提示').then(async () => {
+    await request.delete('/forward_defaults', { data: { id: row.id } })
+    ElMessage.success('删除成功')
+    fetchSettings()
   })
 }
 
@@ -202,9 +194,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.filter-container {
-  margin-bottom: 16px;
-}
+.app-container { padding: 20px; }
+.layout-card { border: none; }
+.custom-tabs :deep(.el-tabs__item) { font-weight: 600; }
+.filter-container { margin-bottom: 20px; }
 </style>
-
-

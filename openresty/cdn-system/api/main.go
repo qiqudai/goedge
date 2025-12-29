@@ -44,6 +44,13 @@ func main() {
 	}
 	dropForeignKey("node", "region_ibfk_1")
 	dropForeignKey("site", "region_ibfk_4")
+	dropForeignKey("stream", "region_ibfk_2")
+	dropForeignKey("stream", "node_group_ibfk_1")
+	dropForeignKey("stream", "stream_ibfk_1")
+	dropForeignKey("stream", "stream_ibfk_2")
+	dropForeignKey("stream", "stream_ibfk_3")
+	dropForeignKey("merge_stream_group", "merge_stream_group_ibfk_1")
+	dropForeignKey("merge_stream_group", "merge_stream_group_ibfk_2")
 	// Auto Migrate
 	db.DB.AutoMigrate(
 		&models.Node{},
@@ -74,6 +81,9 @@ func main() {
 		&models.Message{},
 		&models.MessageRead{},
 		&models.MessageSub{},
+		&models.Forward{},
+		&models.ForwardGroup{},
+		&models.ForwardGroupRelation{},
 	)
 
 	// Custom Migration Fixes

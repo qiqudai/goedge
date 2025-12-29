@@ -1,182 +1,159 @@
 ﻿<template>
   <div class="app-container">
-    <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
-      <el-tab-pane label="转发列表" name="list" />
-      <el-tab-pane label="分组设置" name="groups" />
-      <el-tab-pane label="默认设置" name="default" />
-      <el-tab-pane label="实时监控" name="monitor" />
-    </el-tabs>
-    <el-tabs v-model="activeTab" class="monitor-tabs">
-      <el-tab-pane label="带宽流量" name="traffic">
-        <div class="filter-container">
-          <el-input v-model="query.keyword" placeholder="输入端口, 如88/TCP 99/UDP" style="width: 240px;" />
-          <el-button-group>
-            <el-button :type="range === '1h' ? 'primary' : 'default'" @click="setRange('1h')">近1小时</el-button>
-            <el-button :type="range === '6h' ? 'primary' : 'default'" @click="setRange('6h')">近6小时</el-button>
-            <el-button :type="range === '12h' ? 'primary' : 'default'" @click="setRange('12h')">近12小时</el-button>
-            <el-button :type="range === 'custom' ? 'primary' : 'default'" @click="setRange('custom')">自定义</el-button>
-          </el-button-group>
-          <el-button type="primary" @click="reload">查询</el-button>
-        </div>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <div class="chart-title">带宽</div>
-            <div id="bandwidthChart" class="chart"></div>
-          </el-col>
-          <el-col :span="12">
-            <div class="chart-title">流量</div>
-            <div id="trafficChart" class="chart"></div>
-          </el-col>
-        </el-row>
-      </el-tab-pane>
+    <el-card shadow="never" class="layout-card">
+      <el-tabs v-model="activeTopTab" class="custom-tabs" @tab-change="handleTopTab">
+        <el-tab-pane label="转发列表" name="list" />
+        <el-tab-pane label="默认设置" name="default" />
+        <el-tab-pane label="实时监控" name="monitor">
+          <el-tabs v-model="activeTab" class="monitor-inner-tabs">
+            <el-tab-pane label="带宽流量" name="traffic">
+              <div class="filter-container">
+                <el-input v-model="query.keyword" placeholder="端口检索 (如: 88/TCP)" style="width: 200px; margin-right: 12px;" />
+                <el-button-group style="margin-right: 12px;">
+                  <el-button :type="range === '1h' ? 'primary' : 'default'" @click="setRange('1h')">1h</el-button>
+                  <el-button :type="range === '6h' ? 'primary' : 'default'" @click="setRange('6h')">6h</el-button>
+                  <el-button :type="range === '24h' ? 'primary' : 'default'" @click="setRange('24h')">24h</el-button>
+                </el-button-group>
+                <el-button type="primary" @click="reload">刷新</el-button>
+              </div>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <div class="chart-box">
+                    <div class="chart-header">带宽占用 (Mbps)</div>
+                    <div id="bandwidthChart" class="chart-body"></div>
+                  </div>
+                </el-col>
+                <el-col :span="12">
+                  <div class="chart-box">
+                    <div class="chart-header">流量统计 (GB)</div>
+                    <div id="trafficChart" class="chart-body"></div>
+                  </div>
+                </el-col>
+              </el-row>
+            </el-tab-pane>
 
-      <el-tab-pane label="端口排行" name="ranking">
-        <div class="filter-container">
-          <el-button-group>
-            <el-button :type="rankRange === '10m' ? 'primary' : 'default'" @click="setRankRange('10m')">10分钟实时</el-button>
-            <el-button :type="rankRange === '30m' ? 'primary' : 'default'" @click="setRankRange('30m')">近30分钟</el-button>
-            <el-button :type="rankRange === '1h' ? 'primary' : 'default'" @click="setRankRange('1h')">近1小时</el-button>
-          </el-button-group>
-          <el-button type="primary" @click="reloadRanking">刷新</el-button>
-        </div>
-        <el-table :data="ranking" border size="small">
-          <el-table-column prop="rank" label="排行" width="80" />
-          <el-table-column prop="port" label="端口" />
-          <el-table-column prop="connections" label="连接数" sortable />
-          <el-table-column prop="traffic" label="流量" sortable />
-        </el-table>
-      </el-tab-pane>
-    </el-tabs>
+            <el-tab-pane label="端口排行" name="ranking">
+              <div class="filter-container">
+                <el-button type="primary" size="small" @click="reloadRanking">即时刷新</el-button>
+              </div>
+              <AppTable :data="ranking" border fit persist-key="forward-ranking-list">
+                <el-table-column prop="rank" label="排名" width="80" align="center">
+                    <template #default="{ $index }">
+                        <el-tag :type="$index < 3 ? 'danger' : 'info'" effect="dark" round>{{ $index + 1 }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="port" label="业务端口" min-width="150" />
+                <el-table-column prop="connections" label="当前连接数" width="150" align="right" sortable />
+                <el-table-column prop="traffic" label="累计流量" width="150" align="right" sortable />
+              </AppTable>
+            </el-tab-pane>
+          </el-tabs>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 
 const router = useRouter()
 const activeTopTab = ref('monitor')
-const handleTopTab = tab => {
-  const name = typeof tab === 'string' ? tab : tab?.paneName
-  const map = {
-    list: '/forward/list',
-    groups: '/forward/groups',
-    default: '/forward/default',
-    monitor: '/forward/monitor'
-  }
-  const path = map[name]
-  if (path) {
-    router.push(path)
-  }
-}
 const activeTab = ref('traffic')
 const range = ref('1h')
-const rankRange = ref('10m')
 const query = reactive({ keyword: '' })
 const ranking = ref([])
 
 let bandwidthChart = null
 let trafficChart = null
 
-const buildSeries = (name, color) => ({
-  name,
-  type: 'line',
-  smooth: true,
-  symbol: 'circle',
-  symbolSize: 4,
-  itemStyle: { color },
-  lineStyle: { color },
-  areaStyle: {
-    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-      { offset: 0, color: 'rgba(64,158,255,0.25)' },
-      { offset: 1, color: 'rgba(64,158,255,0.05)' }
-    ])
+const handleTopTab = (name) => {
+  const map = {
+    list: '/forward/list',
+    default: '/forward/default',
+    monitor: '/forward/monitor'
   }
+  const path = map[name]
+  if (path && name !== 'monitor') router.push(path)
+}
+
+const buildChartOption = (title, color, data) => ({
+  title: { show: false },
+  tooltip: { trigger: 'axis' },
+  grid: { left: '3%', right: '4%', top: '5%', bottom: '3%', containLabel: true },
+  xAxis: { type: 'category', boundaryGap: false, data: data.times },
+  yAxis: { type: 'value' },
+  series: [{
+    name: title,
+    type: 'line',
+    smooth: true,
+    showSymbol: false,
+    itemStyle: { color },
+    areaStyle: {
+      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: color + '40' },
+        { offset: 1, color: color + '05' }
+      ])
+    },
+    data: data.values
+  }]
 })
 
-const renderCharts = () => {
-  const times = Array.from({ length: 12 }).map((_, i) => `12-22 19:${String(i * 2).padStart(2, '0')}`)
-  const bandwidth = times.map(() => Number((Math.random() * 5).toFixed(2)))
-  const traffic = times.map(() => Number((Math.random() * 3).toFixed(2)))
+const initCharts = () => {
+  if (!bandwidthChart) bandwidthChart = echarts.init(document.getElementById('bandwidthChart'))
+  if (!trafficChart) trafficChart = echarts.init(document.getElementById('trafficChart'))
 
-  if (!bandwidthChart) {
-    bandwidthChart = echarts.init(document.getElementById('bandwidthChart'))
-  }
-  if (!trafficChart) {
-    trafficChart = echarts.init(document.getElementById('trafficChart'))
+  const data = {
+    times: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+    bwValues: Array.from({ length: 24 }, () => (Math.random() * 100).toFixed(2)),
+    trValues: Array.from({ length: 24 }, () => (Math.random() * 10).toFixed(2))
   }
 
-  bandwidthChart.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 20, top: 20, bottom: 30 },
-    xAxis: { type: 'category', data: times },
-    yAxis: { type: 'value' },
-    series: [{ ...buildSeries('带宽', '#409eff'), data: bandwidth }]
-  })
-
-  trafficChart.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 20, top: 20, bottom: 30 },
-    xAxis: { type: 'category', data: times },
-    yAxis: { type: 'value' },
-    series: [{ ...buildSeries('流量', '#67c23a'), data: traffic }]
-  })
+  bandwidthChart.setOption(buildChartOption('带宽', '#409eff', { times: data.times, values: data.bwValues }))
+  trafficChart.setOption(buildChartOption('流量', '#67c23a', { times: data.times, values: data.trValues }))
 }
+
+const reload = () => { nextTick(initCharts) }
 
 const loadRanking = () => {
-  ranking.value = Array.from({ length: 8 }).map((_, idx) => ({
-    rank: idx + 1,
-    port: ['88/tcp', '99/udp', '443/tcp', '10001/tcp'][idx % 4],
-    connections: Math.floor(Math.random() * 5000),
-    traffic: `${(Math.random() * 12).toFixed(2)} MB`
-  }))
+    ranking.value = Array.from({ length: 10 }, (_, i) => ({
+        port: `${8000 + i}/TCP`,
+        connections: Math.floor(Math.random() * 1000),
+        traffic: (Math.random() * 50).toFixed(2) + ' GB'
+    }))
 }
 
-const setRange = val => {
-  range.value = val
-  reload()
-}
+const reloadRanking = () => loadRanking()
 
-const setRankRange = val => {
-  rankRange.value = val
-  reloadRanking()
-}
+const setRange = (val) => { range.value = val; reload() }
 
-const reload = () => {
-  nextTick(renderCharts)
-}
-
-const reloadRanking = () => {
-  loadRanking()
+const handleResize = () => {
+    bandwidthChart?.resize()
+    trafficChart?.resize()
 }
 
 onMounted(() => {
-  renderCharts()
-  loadRanking()
-  window.addEventListener('resize', () => {
-    bandwidthChart && bandwidthChart.resize()
-    trafficChart && trafficChart.resize()
-  })
+    initCharts()
+    loadRanking()
+    window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+    window.removeEventListener('resize', handleResize)
+    bandwidthChart?.dispose()
+    trafficChart?.dispose()
 })
 </script>
 
 <style scoped>
-.filter-container {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.chart {
-  height: 260px;
-}
-.chart-title {
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: #606266;
-}
+.app-container { padding: 20px; }
+.layout-card { border: none; }
+.custom-tabs :deep(.el-tabs__item) { font-weight: 600; }
+.monitor-inner-tabs { margin-top: 10px; }
+.filter-container { margin-bottom: 20px; display: flex; align-items: center; }
+.chart-box { background: #fcfcfc; border: 1px solid #f0f0f0; border-radius: 4px; padding: 15px; margin-bottom: 20px; }
+.chart-header { font-size: 14px; font-weight: 600; color: #606266; margin-bottom: 15px; }
+.chart-body { height: 300px; }
 </style>
-
-

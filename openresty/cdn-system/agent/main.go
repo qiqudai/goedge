@@ -176,6 +176,7 @@ func initEnvironment() {
 		filepath.Join(WorkDir, "cache"),
 		filepath.Join(WorkDir, "cert"),
 		filepath.Join(WorkDir, "cert", "acme"),
+		filepath.Join(WorkDir, "data"),
 	}
 	for _, d := range dirs {
 		os.MkdirAll(d, 0755)
@@ -216,16 +217,21 @@ func initEnvironment() {
 		os.Chmod(NginxBinPath, 0755)
 	}
 
-	// 2. Unpack Configs & Lua Scripts (Recursive)
+	// 2. Unpack Configs & Lua Scripts & Data (Recursive)
 	restoreDir("assets/conf", filepath.Join(WorkDir, "conf"))
 	restoreDir("assets/lua", filepath.Join(WorkDir, "lua"))
+	restoreDir("assets/data", filepath.Join(WorkDir, "data"))
 
 	// 3. Patch nginx.conf
 	confFile := filepath.Join(WorkDir, "conf", "nginx.conf")
 	if data, err := ioutil.ReadFile(confFile); err == nil {
 		content := string(data)
 		absCache, _ := filepath.Abs(filepath.Join(WorkDir, "cache"))
+		// Dynamically resolve data dir for ip2region
+		absData, _ := filepath.Abs(filepath.Join(WorkDir, "data", "ip2region.xdb"))
 		content = strings.ReplaceAll(content, "/var/cache/nginx", filepath.ToSlash(absCache))
+		// Patch ip2region path
+		content = strings.ReplaceAll(content, "/opt/cdn-agent/data/ip2region.xdb", filepath.ToSlash(absData))
 		ioutil.WriteFile(confFile, []byte(content), 0644)
 	}
 	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "http.conf"))
@@ -610,7 +616,7 @@ func startConfigPull() {
 	// Pull every minute or use HTTP Long-Polling / Websocket in production
 	ticker := time.NewTicker(60 * time.Second)
 	for range ticker.C {
-		pullConfig()
+		_ = pullConfig()
 	}
 }
 
@@ -721,14 +727,14 @@ func shipMetrics() {
 	debugLogInteraction("POST", postReq.URL.String(), status, jsonBody, respBody)
 }
 
-func pullConfig() {
+func pullConfig() error {
 	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/config?node_id="+NodeID, nil)
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 
 	body, status, err := doRequest(req, 10*time.Second, true)
 	if err != nil {
 		log.Printf("[Error] Config Pull Failed: %v", err)
-		return
+		return err
 	}
 
 	if status == 200 {
@@ -738,17 +744,17 @@ func pullConfig() {
 		currentVersion := readLocalVersion()
 		if newVersion != 0 && newVersion <= currentVersion {
 			log.Printf("[Info] Config unchanged (version=%d). Skipping reload.", currentVersion)
-			return
+			return nil
 		}
 
 		if err := writeConfigWithBackup(body); err != nil {
 			log.Printf("[Error] Failed to write config file: %v", err)
-			return
+			return err
 		}
 
 		if err := generateDynamicConfigs(body); err != nil {
 			log.Printf("[Error] Failed to generate dynamic configs: %v", err)
-			return
+			return err
 		}
 
 		log.Printf("[Info] Config Updated (version=%d, %d bytes). Reloading Nginx...", newVersion, len(body))
@@ -756,18 +762,21 @@ func pullConfig() {
 			log.Printf("[Error] Reload Nginx Failed: %v", err)
 			if restoreErr := restoreBackup(); restoreErr != nil {
 				log.Printf("[Error] Failed to restore backup: %v", restoreErr)
-				return
+				return fmt.Errorf("reload failed and restore failed: %v", restoreErr)
 			}
 			if retryErr := executeReload(); retryErr != nil {
 				log.Printf("[Error] Reload after rollback failed: %v", retryErr)
+				return fmt.Errorf("reload failed and rollback reload failed: %v", retryErr)
 			} else {
 				log.Println("[Warn] Rolled back to previous config")
 			}
+			return err
 		}
-		return
+		return nil
 	}
 
 	debugLogInteraction("GET", req.URL.String(), status, nil, nil)
+	return fmt.Errorf("config pull status: %d", status)
 }
 
 func pullTasks() {
@@ -818,13 +827,15 @@ func processTask(id int64, taskType string, data string) error {
 		return preheatURLs(splitLines(data))
 	case "issue_cert":
 		return issueCertTask(id, data)
+	case "config_sync":
+		return pullConfig()
 	default:
 		return fmt.Errorf("unknown task type: %s", taskType)
 	}
 }
 
 type issueCertItem struct {
-	CertID  int64    `json:"cert_id"`
+CertID  int64    `json:"cert_id"`
 	Domains []string `json:"domains"`
 }
 

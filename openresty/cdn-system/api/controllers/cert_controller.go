@@ -281,13 +281,7 @@ type certDefaultSettings struct {
 	DNSAPI int    `json:"dnsapi"`
 }
 
-func isUserRequest(c *gin.Context) bool {
-	path := c.FullPath()
-	if strings.HasPrefix(path, "/api/v1/user/") {
-		return true
-	}
-	return strings.HasPrefix(c.Request.URL.Path, "/api/v1/user/")
-}
+
 
 func loadCertDefaultSettings(scopeType, scopeName string, scopeID int) (*certDefaultSettings, error) {
 	var sys models.SysConfig
@@ -587,18 +581,4 @@ func normalizeCertType(value string) string {
 	return value
 }
 
-func parseUserID(value interface{}) int64 {
-	switch v := value.(type) {
-	case float64:
-		return int64(v)
-	case int:
-		return int64(v)
-	case int64:
-		return v
-	case string:
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return id
-		}
-	}
-	return 0
-}
+

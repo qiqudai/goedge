@@ -1,0 +1,239 @@
+<template>
+  <div class="advanced-config">
+    <el-form label-width="150px" class="config-form">
+      <div class="section-title">上传大小限制</div>
+      <el-form-item label="大小限制">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <el-radio-group v-model="advancedSettings.uploadLimitMode">
+            <el-radio value="none">不限制</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+          <el-input 
+            v-if="advancedSettings.uploadLimitMode === 'custom'" 
+            v-model="advancedSettings.uploadLimitValue" 
+            style="width: 150px" 
+            placeholder="100"
+          >
+            <template #append>MB</template>
+          </el-input>
+        </div>
+      </el-form-item>
+
+      <div class="divider"></div>
+      <div class="section-title">压缩设置</div>
+      <el-form-item label="Gzip压缩">
+        <el-switch v-model="advancedSettings.gzip" />
+      </el-form-item>
+
+      <div class="divider"></div>
+
+      <div class="section-title">Websocket设置</div>
+      <el-form-item label="Websocket">
+        <el-switch v-model="advancedSettings.websocket" />
+      </el-form-item>
+
+      <div class="divider"></div>
+
+      <div class="section-title">搜索引擎回源配置</div>
+      <el-form-item label="开关">
+        <el-switch v-model="advancedSettings.searchEngineOrigin" />
+      </el-form-item>
+
+      <div class="divider"></div>
+
+      <div class="section-title">URL转向设置</div>
+      <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openRedirectDialog()">新增转向</el-button>
+      <el-table :data="advancedSettings.urlRedirects" border size="small">
+        <el-table-column label="域名端口" prop="domain" />
+        <el-table-column label="匹配" prop="match" />
+        <el-table-column label="转向到" prop="redirect" />
+        <el-table-column label="响应码" prop="code" width="100" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row, $index }">
+            <el-button link type="primary" size="small" @click="openRedirectDialog(row, $index)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="removeRedirect($index)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="form-helper">这里的转向可以设置301，302转向到地址，也可以对uri重写再回源</div>
+
+      <div class="divider"></div>
+      
+      <div class="section-title">请求头设置</div>
+      <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openHeaderDialog('req')">新增请求头</el-button>
+      <el-table :data="advancedSettings.reqHeaders" border size="small">
+        <el-table-column label="名称" prop="name" />
+        <el-table-column label="值" prop="value" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row, $index }">
+            <el-button link type="primary" size="small" @click="openHeaderDialog('req', row, $index)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="removeHeader('req', $index)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="divider"></div>
+
+      <div class="section-title">CDN响应头设置</div>
+      <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openHeaderDialog('res')">新增响应头</el-button>
+      <el-table :data="advancedSettings.resHeaders" border size="small">
+        <el-table-column label="名称" prop="name" />
+        <el-table-column label="值" prop="value" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row, $index }">
+            <el-button link type="primary" size="small" @click="openHeaderDialog('res', row, $index)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="removeHeader('res', $index)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="divider"></div>
+      
+      <div class="section-title">访问日志</div>
+      <el-form-item label="记录请求头">
+        <el-switch v-model="advancedSettings.logRequestHeader" />
+        <div class="form-helper">开启只会增加硬盘空间占用，可长期开启</div>
+      </el-form-item>
+      <el-form-item label="记录响应头">
+        <el-switch v-model="advancedSettings.logResponseHeader" />
+        <div class="form-helper">建议只在调试时开启，始终开启会增加cpu, 硬盘的占用</div>
+      </el-form-item>
+      <el-form-item label="记录请求体">
+        <el-switch v-model="advancedSettings.logRequestBody" />
+        <div class="form-helper">建议只在调试时开启，始终开启对节点性能消耗较大</div>
+      </el-form-item>
+      <el-form-item label="请求体大小限制">
+        <el-input v-model="advancedSettings.logRequestBodySizeLimit" placeholder="16" style="width: 200px;">
+          <template #append>KB</template>
+        </el-input>
+      </el-form-item>
+
+      <div class="divider"></div>
+
+      <div class="section-title">其它</div>
+      <el-form-item label="源站证书">
+        <el-switch v-model="advancedSettings.originCert" />
+        <div class="form-helper">用于回源连接（HTTPS）验证源站证书</div>
+      </el-form-item>
+      <el-form-item label="数据实时鉴别">
+        <el-switch v-model="advancedSettings.realtimeIdentify" />
+      </el-form-item>
+      <el-form-item label="数据实时发送">
+        <el-switch v-model="advancedSettings.realtimeSend" />
+      </el-form-item>
+    </el-form>
+
+    <!-- 转向规则弹窗 -->
+    <RedirectRuleDialog
+      v-model="redirectDialogVisible"
+      :rule="editingRedirectRule"
+      @submit="handleRedirectSubmit"
+    />
+  </div>
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
+
+const props = defineProps({
+  modelValue: { 
+    type: Object, 
+    required: true 
+  }
+})
+
+const emit = defineEmits([
+  'update:modelValue', 
+  'open-header-dialog',
+  'remove-header'
+])
+
+const advancedSettings = computed({
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val)
+})
+
+// 转向规则弹窗状态
+const redirectDialogVisible = ref(false)
+const editingRedirectRule = ref(null)
+const editingRedirectIndex = ref(-1)
+
+const openRedirectDialog = (rule = null, index = -1) => {
+  editingRedirectRule.value = rule
+  editingRedirectIndex.value = index
+  redirectDialogVisible.value = true
+}
+
+const handleRedirectSubmit = (ruleData) => {
+  const urlRedirects = advancedSettings.value.urlRedirects || []
+  
+  if (editingRedirectIndex.value >= 0) {
+    // 编辑模式
+    urlRedirects[editingRedirectIndex.value] = {
+      ...urlRedirects[editingRedirectIndex.value],
+      ...ruleData
+    }
+  } else {
+    // 新增模式
+    urlRedirects.push({
+      domain: '', // 默认空，可以后续编辑
+      ...ruleData
+    })
+  }
+  
+  advancedSettings.value = {
+    ...advancedSettings.value,
+    urlRedirects
+  }
+  
+  // 重置状态
+  editingRedirectRule.value = null
+  editingRedirectIndex.value = -1
+}
+
+const removeRedirect = (index) => {
+  const urlRedirects = advancedSettings.value.urlRedirects || []
+  urlRedirects.splice(index, 1)
+  advancedSettings.value = {
+    ...advancedSettings.value,
+    urlRedirects
+  }
+}
+
+const openHeaderDialog = (type, rule = null, index = -1) => {
+  emit('open-header-dialog', type, rule, index)
+}
+
+const removeHeader = (type, index) => {
+  emit('remove-header', type, index)
+}
+</script>
+
+<style scoped>
+.advanced-config {
+  padding: 16px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 20px;
+  padding-left: 10px;
+  border-left: 3px solid #409eff;
+}
+
+.divider {
+  height: 1px;
+  background-color: #ebeef5;
+  margin: 24px 0;
+}
+
+.form-helper {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+</style>

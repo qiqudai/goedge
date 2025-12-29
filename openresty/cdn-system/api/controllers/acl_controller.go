@@ -13,6 +13,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func parseInt64(v interface{}) int64 {
+	switch t := v.(type) {
+	case float64:
+		return int64(t)
+	case int:
+		return int64(t)
+	case int64:
+		return t
+	case string:
+		if i, err := strconv.ParseInt(t, 10, 64); err == nil {
+			return i
+		}
+	}
+	return 0
+}
+
+func mustGet(c *gin.Context, key string) interface{} {
+	if val, ok := c.Get(key); ok {
+		return val
+	}
+	return nil
+}
+
 type ACLController struct{}
 
 type aclRuleItem struct {

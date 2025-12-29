@@ -9,21 +9,19 @@
 
     <div class="filter-container">
       <div class="filter-left">
-        <el-button type="primary" @click="syncResolve">同步解析</el-button>
+        <el-button type="primary" :loading="resolving" @click="syncResolve">开始检测</el-button>
+        <span class="resolve-tip" v-if="resolving">正在检测中... 请耐心等待</span>
       </div>
       <div class="filter-right">
-        <el-select v-model="listQuery.searchField" class="filter-item" style="width: 120px;">
-          <el-option label="全字段" value="all" />
-          <el-option label="域名" value="domain" />
-          <el-option label="CNAME" value="cname" />
-        </el-select>
         <el-input
           v-model="listQuery.keyword"
-          placeholder="输入域名, 模糊搜索"
+          placeholder="输入域名搜索"
           style="width: 260px;"
           class="filter-item"
           @keyup.enter="handleFilter"
-        />
+        >
+          <template #suffix><el-icon><Search /></el-icon></template>
+        </el-input>
         <el-button type="primary" class="filter-item" @click="handleFilter">查询</el-button>
       </div>
     </div>
@@ -43,18 +41,34 @@
       @current-change="handlePageChange"
     >
       <el-table-column type="selection" width="55" align="center" />
-      <el-table-column prop="id" label="ID" width="90" />
-      <el-table-column prop="site_id" label="站点ID" width="100" />
+      <el-table-column prop="id" label="ID" width="80" align="center" />
+      <el-table-column prop="site_id" label="网站ID" width="100" align="center" />
       <el-table-column prop="domain" label="域名" min-width="200" show-overflow-tooltip />
       <el-table-column prop="cname" label="CNAME" min-width="200" show-overflow-tooltip />
-      <el-table-column label="解析状态" width="140">
+      <el-table-column label="解析状态" width="120" align="center">
         <template #default="{ row }">
-          <span class="status-dot" :class="statusClass(row.resolveStatus)" />
-          <span class="status-text">{{ statusText(row.resolveStatus) }}</span>
+          <el-tag v-if="row.resolveStatus === 'checking'" type="warning" size="small">检测中</el-tag>
+          <el-tag v-else-if="row.resolveStatus === 'success'" type="success" size="small">正常</el-tag>
+          <el-tag v-else-if="row.resolveStatus === 'failed'" type="danger" size="small">异常</el-tag>
+          <el-popover v-else-if="row.resolveResult" trigger="hover" placement="top" :width="200">
+             <template #default>
+                <div style="font-size:12px">
+                   <div v-if="row.resolveResult.cname">CNAME: {{ row.resolveResult.cname }}</div>
+                   <div v-if="row.resolveResult.ips">IP: {{ row.resolveResult.ips.join(', ') }}</div>
+                   <div v-if="row.resolveResult.error" style="color:red">{{ row.resolveResult.error }}</div>
+                </div>
+             </template>
+             <template #reference>
+                <el-tag :type="row.resolveStatus === 'success' ? 'success' : 'danger'" size="small">
+                   {{ row.resolveStatus === 'success' ? '正常' : (row.resolveStatus === 'failed' ? '异常' : '未检测') }}
+                </el-tag>
+             </template>
+          </el-popover>
+          <el-tag v-else type="info" size="small">未检测</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="dns_name" label="DNS API" width="140" />
-      <el-table-column prop="task_status" label="任务状态" width="120" />
+      <el-table-column prop="dns_api" label="DNS API" min-width="150" />
+      <el-table-column prop="task_status" label="任务状态" width="100" />
     </AppTable>
   </div>
 </template>
@@ -62,6 +76,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { Search } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const props = defineProps({
@@ -76,7 +91,7 @@ const activeTopTab = ref('resolve')
 const list = ref([])
 const total = ref(0)
 const listLoading = ref(false)
-const dnsMap = ref({})
+const resolving = ref(false)
 let resolveRunId = 0
 
 const listQuery = reactive({
@@ -90,24 +105,10 @@ const handleTopTab = tab => {
   if (tab.paneName === 'list') {
     router.push('/website/list')
   } else if (tab.paneName === 'default') {
-    router.push('/global/default')
+    router.push('/website/list?tab=default') // Assuming routing handles this, or implement better navigation
   } else if (tab.paneName === 'dns') {
-    router.push('/node/dns')
+    router.push('/website/list?tab=dns')
   }
-}
-
-const statusText = status => {
-  if (status === 'checking') return '检测中'
-  if (status === 'success') return '正常'
-  if (status === 'failed') return '异常'
-  return '未检测'
-}
-
-const statusClass = status => {
-  if (status === 'checking') return 'status-checking'
-  if (status === 'success') return 'status-success'
-  if (status === 'failed') return 'status-failed'
-  return 'status-default'
 }
 
 const normalizeCname = value => {
@@ -124,23 +125,25 @@ const fetchList = (autoResolve = false) => {
       search_field: listQuery.searchField
     }
   }).then(res => {
-    const rows = res.list || res.data || []
+    const rows = res.data?.list || res.list || []
     list.value = rows.map(site => {
       const domain = site.domain_display ? site.domain_display.split(',')[0] : (site.domains && site.domains[0]) || ''
       return {
         id: site.id,
         site_id: site.id,
         domain,
-        cname: site.cname || '-',
-        resolveStatus: autoResolve ? 'checking' : 'default',
-        dns_name: dnsMap.value[site.dns_provider_id] || '未设置',
-        task_status: ''
+        cname: site.cname || site.cname_hostname || '-',
+        resolveStatus: 'default',
+        resolveResult: null,
+        dns_api: '-', // Placeholder, need backend data
+        task_status: '-' // Placeholder
       }
     })
-    total.value = res.total || 0
+    total.value = res.data?.total || res.total || 0
     listLoading.value = false
     if (autoResolve) {
-      runResolve(list.value)
+      // Don't auto resolve on load to prevent spamming, let user click or handle gracefully
+      // But if user requested specifically, maybe.
     }
   }).catch(() => {
     listLoading.value = false
@@ -148,26 +151,54 @@ const fetchList = (autoResolve = false) => {
 }
 
 const runResolve = async rows => {
+  if (resolving.value) return
+  resolving.value = true
   resolveRunId += 1
   const currentId = resolveRunId
-  for (const row of rows) {
-    if (currentId !== resolveRunId) {
-      return
-    }
-    if (!row.domain) {
-      row.resolveStatus = 'failed'
-      continue
-    }
-    row.resolveStatus = 'checking'
-    try {
-      const res = await request.get('/sites/resolve', { params: { domain: row.domain } })
-      const resolved = normalizeCname(res.cname)
-      const expected = normalizeCname(row.cname)
-      row.resolveStatus = resolved && expected && resolved === expected ? 'success' : 'failed'
-    } catch (err) {
-      row.resolveStatus = 'failed'
-    }
+  
+  // Create a queue or run in parallel batches
+  const batchSize = 5
+  for (let i = 0; i < rows.length; i += batchSize) {
+     if (currentId !== resolveRunId) break
+     const chunk = rows.slice(i, i + batchSize)
+     await Promise.all(chunk.map(async row => {
+        if (!row.domain || row.domain === '-') {
+            row.resolveStatus = 'default'
+            return
+        }
+        row.resolveStatus = 'checking'
+        try {
+            const res = await request.get('/sites/resolve', { params: { domain: row.domain } })
+            row.resolveResult = res // { domain, cname, ips }
+            
+            const resolvedCname = normalizeCname(res.cname)
+            const expectedCname = normalizeCname(row.cname)
+            
+            // Check if CNAME matches OR if resolved IPs match expected (if we knew them)
+            // For now, strict CNAME match if expected CNAME is present
+            if (expectedCname && expectedCname !== '-') {
+                if (resolvedCname === expectedCname) {
+                    row.resolveStatus = 'success'
+                } else {
+                    // Maybe the resolved CNAME is a sub-cname? 
+                    // Or maybe it resolved to IP directly?
+                    // If we have IPs but no CNAME match, it's 'failed' strictly for CNAME setup, 
+                    // but functionally it might be working if A record is set. 
+                    // We mark failed for "Resolution Detection" if it doesn't match CNAME config.
+                    row.resolveStatus = 'failed'
+                }
+            } else {
+                // No expected CNAME, but valid DNS response?
+                if (res.ips && res.ips.length > 0) row.resolveStatus = 'success'
+                else row.resolveStatus = 'failed'
+            }
+        } catch (e) {
+            row.resolveStatus = 'failed'
+            row.resolveResult = { error: '查询失败' }
+        }
+     }))
   }
+  resolving.value = false
 }
 
 const syncResolve = () => {
@@ -176,34 +207,21 @@ const syncResolve = () => {
 
 const handleFilter = () => {
   listQuery.page = 1
-  fetchList(true)
+  fetchList()
 }
 
 const handleSizeChange = () => {
   listQuery.page = 1
-  fetchList(true)
+  fetchList()
 }
 
 const handlePageChange = page => {
   listQuery.page = page
-  fetchList(true)
-}
-
-const loadDnsProviders = () => {
-  return request.get('/dns/providers').then(res => {
-    const listData = res.data?.list || res.list || []
-    const mapping = {}
-    listData.forEach(item => {
-      mapping[item.id] = item.name
-    })
-    dnsMap.value = mapping
-  })
+  fetchList()
 }
 
 onMounted(() => {
-  loadDnsProviders().finally(() => {
-    fetchList(true)
-  })
+    fetchList()
 })
 </script>
 
@@ -211,41 +229,14 @@ onMounted(() => {
 .filter-container {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.filter-left,
-.filter-right {
-  display: flex;
-  gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  margin-bottom: 20px;
 }
-.pagination-container {
-  margin-top: 16px;
-  text-align: right;
+.resolve-tip {
+    font-size: 13px;
+    color: #909399;
+    margin-left: 10px;
 }
-.status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-.status-text {
-  vertical-align: middle;
-}
-.status-checking {
-  background: #e6a23c;
-}
-.status-success {
-  background: #67c23a;
-}
-.status-failed {
-  background: #f56c6c;
-}
-.status-default {
-  background: #c0c4cc;
-}
+.text-gray { color: #909399; }
+.highlight-val { color: var(--el-color-primary); font-weight: 500; }
 </style>

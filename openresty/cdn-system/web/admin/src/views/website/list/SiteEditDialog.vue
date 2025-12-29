@@ -1,0 +1,396 @@
+<template>
+  <el-dialog
+    v-model="visible"
+    :title="form.id ? '编辑网站' : '添加网站'"
+    width="680px"
+    @closed="handleClosed"
+    :close-on-click-modal="false"
+  >
+    <el-tabs v-if="!form.id" v-model="activeTab" type="card">
+      <el-tab-pane label="单个添加" name="single" />
+      <el-tab-pane label="批量添加" name="batch" />
+    </el-tabs>
+
+    <div style="margin-top: 10px;">
+      <!-- Single Mode Form -->
+      <el-form v-if="activeTab === 'single'" :model="form" label-width="120px" ref="singleFormRef" :rules="rules">
+        <el-form-item v-if="isAdmin" label="所属用户" prop="user_id">
+          <el-select 
+            v-model="form.user_id" 
+            placeholder="搜索用户 (默认管理员)" 
+            style="width: 100%" 
+            filterable 
+            remote 
+            :remote-method="searchUsers"
+            :loading="userLoading"
+            @change="handleUserChange"
+            clearable
+          >
+            <el-option v-for="u in users" :key="u.id" :label="u.name + ' (' + u.username + ')'" :value="u.id" />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="网站域名" prop="domains">
+          <el-input
+            v-model="form.domains"
+            placeholder="每行一个域名，支持泛域名如 *.example.com"
+          />
+        </el-form-item>
+
+        <el-form-item label="源站地址" prop="origins">
+          <el-input
+            v-model="form.origins"
+            placeholder="每行一个，如: 1.1.1.1 或 1.1.1.1:8080"
+          />
+        </el-form-item>
+
+        <el-form-item label="网站套餐" prop="user_package_id">
+          <el-select v-model="form.user_package_id" placeholder="选择套餐 (可选)" style="width: 100%" clearable>
+            <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="加速类型">
+           <el-radio-group v-model="form.site_type">
+             <el-radio value="website">网页加速</el-radio>
+             <el-radio value="api">API加速</el-radio>
+             <el-radio value="download">下载加速</el-radio>
+           </el-radio-group>
+        </el-form-item>
+
+        <div class="expand-more" @click="expandMore = !expandMore">
+            <span>{{ expandMore ? '收起更多' : '展开更多' }}</span>
+            <el-icon><component :is="expandMore ? 'ArrowUp' : 'ArrowDown'" /></el-icon>
+        </div>
+
+        <div v-show="expandMore" class="extra-fields">
+            <el-form-item label="网站分组">
+                <el-select v-model="form.group_ids" placeholder="选择分组" style="width: 100%" clearable multiple>
+                <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+                </el-select>
+            </el-form-item>
+            <el-form-item label="DNS API">
+                <el-select v-model="form.dns_provider_id" placeholder="自动添加解析记录 (可选)" style="width: 100%" clearable>
+                <el-option v-for="d in dnsProviders" :key="d.id" :label="d.name" :value="d.id" />
+                </el-select>
+            </el-form-item>
+            <el-form-item label="备注">
+                <el-input v-model="form.remark" placeholder="可选备注信息" />
+            </el-form-item>
+        </div>
+      </el-form>
+
+      <!-- Batch Mode Form -->
+      <el-form v-if="activeTab === 'batch'" :model="batchForm" label-width="120px" ref="batchFormRef">
+        <el-form-item v-if="isAdmin" label="所属用户">
+           <el-select 
+            v-model="batchForm.user_id" 
+            placeholder="搜索用户" 
+            style="width: 100%" 
+            filterable 
+            remote 
+            :remote-method="searchUsers"
+            :loading="userLoading"
+            @change="handleBatchUserChange"
+            clearable
+          >
+            <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="网站套餐">
+           <el-select v-model="batchForm.user_package_id" placeholder="选择套餐" style="width: 100%" clearable>
+            <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="网站数据" required>
+           <el-input
+            v-model="batchForm.data"
+            type="textarea"
+            :rows="8"
+            placeholder="格式: domain=域名|ip=源IP
+示例:
+domain=example.com,www.example.com|ip=1.1.1.1
+domain=test.com|ip=2.2.2.2,3.3.3.3
+"
+           />
+        </el-form-item>
+        <el-form-item label="选项">
+            <el-checkbox v-model="batchForm.ignore_error">忽略错误</el-checkbox>
+        </el-form-item>
+        
+        <el-form-item label="网站分组">
+             <el-select v-model="batchForm.group_id" placeholder="选择分组" style="width: 100%" clearable>
+             <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+             </el-select>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <template #footer>
+      <el-button @click="visible = false">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup>
+import { ref, reactive, watch, nextTick } from 'vue'
+import { ElMessage } from 'element-plus'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+import request from '@/utils/request'
+
+const props = defineProps({
+  modelValue: Boolean,
+  data: Object,
+  isAdmin: Boolean
+})
+
+const emit = defineEmits(['update:modelValue', 'success'])
+
+const visible = ref(false)
+const submitting = ref(false)
+const activeTab = ref('single')
+const expandMore = ref(false)
+const singleFormRef = ref(null)
+const batchFormRef = ref(null)
+
+const users = ref([])
+const userLoading = ref(false)
+const userPackages = ref([])
+const groups = ref([])
+const dnsProviders = ref([])
+
+const form = reactive({
+  id: 0,
+  user_id: '',
+  domains: '',
+  origins: '',
+  user_package_id: '',
+  group_id: '',
+  dns_provider_id: '',
+  site_type: 'website',
+  remark: ''
+})
+
+const batchForm = reactive({
+  user_id: '',
+  user_package_id: '',
+  group_id: '',
+  data: '',
+  ignore_error: false
+})
+
+const rules = {
+  domains: [
+    { required: true, message: '请输入域名', trigger: 'blur' },
+    { 
+      validator: (rule, value, callback) => {
+        if (!value) return callback(new Error('请输入域名'))
+        const lines = value.split('\n').map(s => s.trim()).filter(Boolean)
+        const domainRegex = /^(?:\*\.)?(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/
+        for (const line of lines) {
+           if (!domainRegex.test(line) && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(line)) {
+               return callback(new Error(`"${line}" 不是有效的域名格式`))
+           }
+        }
+        callback()
+      }, 
+      trigger: 'blur' 
+    }
+  ],
+  origins: [{ required: true, message: '请输入源站地址', trigger: 'blur' }],
+}
+
+watch(() => props.modelValue, (val) => {
+  visible.value = val
+  if (val) {
+    if (props.data) {
+      activeTab.value = 'single'
+      // Editing mode
+      const data = { ...props.data }
+      if (Array.isArray(data.domains)) data.domains = data.domains.join('\n')
+      if (Array.isArray(data.origins)) data.origins = data.origins.map(o => o.address || o).join('\n')
+      // Map legacy fields if necessary
+      Object.assign(form, {
+          id: data.id,
+          user_id: data.user_id,
+          domains: data.domains,
+          origins: data.origins,
+          user_package_id: data.user_package_id,
+          group_ids: data.group_ids || (data.group_id ? [data.group_id] : []),
+          group_id: data.group_id, // Need to make sure relation is loaded
+          dns_provider_id: data.dns_provider_id,
+          site_type: data.type || 'website', // assuming 'type' field
+          remark: data.remark
+      })
+      
+      // Load dependencies for this user
+      if (data.user_id) handleUserChange(data.user_id)
+    } else {
+      activeTab.value = 'single'
+      resetForm()
+    }
+    loadCommonData()
+  }
+})
+
+watch(() => visible.value, (val) => {
+  emit('update:modelValue', val)
+})
+
+const loadCommonData = async () => {
+    // Load things that don't depend on user
+    if (props.isAdmin) {
+        searchUsers('') 
+    }
+}
+
+const searchUsers = async (query) => {
+    if (!props.isAdmin) return
+    userLoading.value = true
+    try {
+        const res = await request.get('/users', { params: { keyword: query, pageSize: 20 } })
+        users.value = (res.data?.list || []).map(u => ({...u, username: u.username || u.email}))
+    } finally {
+        userLoading.value = false
+    }
+}
+
+const handleUserChange = async (uid) => {
+    if (!uid) {
+        userPackages.value = []
+        groups.value = []
+        dnsProviders.value = []
+        return
+    }
+    
+    // For admins, we might want to see ALL groups to allow assigning shared groups
+    // For users, we only show their own groups
+    const groupParams = { pageSize: 1000 }
+    if (!props.isAdmin) {
+        groupParams.user_id = uid
+    }
+
+    const [pkgRes, groupRes, dnsRes] = await Promise.all([
+        request.get('/user_packages', { params: { user_id: uid, pageSize: 1000 } }),
+        request.get('/site_groups', { params: groupParams }),
+        request.get('/dnsapi', { params: { user_id: uid, pageSize: 1000 } })
+    ])
+    
+    // safe data mapping
+    userPackages.value = pkgRes.data?.list || pkgRes.list || []
+    groups.value = groupRes.data?.list || groupRes.list || []
+    dnsProviders.value = dnsRes.data?.list || dnsRes.list || []
+
+    // 1. Auto-select first package
+    if (userPackages.value.length > 0) {
+        // Use the first one
+        const firstPkgId = userPackages.value[0].id
+        if (activeTab.value === 'single' && !form.user_package_id) {
+            form.user_package_id = firstPkgId
+        } else if (activeTab.value === 'batch' && !batchForm.user_package_id) {
+            batchForm.user_package_id = firstPkgId
+        }
+    }
+}
+
+const handleBatchUserChange = (uid) => {
+    handleUserChange(uid)
+}
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: 0,
+    user_id: '',
+    domains: '',
+    origins: '',
+    user_package_id: '',
+    group_ids: [],
+    group_id: '', // keep for legacy compatibility if needed or just remove, sticking to group_ids for UI
+    dns_provider_id: '',
+    site_type: 'website',
+    remark: ''
+  })
+  Object.assign(batchForm, {
+      user_id: '',
+      user_package_id: '',
+      group_id: '',
+      data: '',
+      ignore_error: false
+  })
+}
+
+const handleClosed = () => {
+  singleFormRef.value?.resetFields()
+}
+
+const handleSubmit = async () => {
+  submitting.value = true
+  try {
+    if (activeTab.value === 'single') {
+        await singleFormRef.value?.validate()
+        const payload = { 
+            ...form,
+            user_id: Number(form.user_id),
+            user_package_id: Number(form.user_package_id) || 0,
+            dns_provider_id: Number(form.dns_provider_id) || 0,
+            group_id: 0, // Explicitly zero out as we use group_ids now. Fixes "invalid request" string vs int
+            domains: form.domains.split('\n').map(s => s.trim()).filter(Boolean),
+            backends: form.origins.split('\n').map(s => s.trim()).filter(Boolean),
+            group_ids: Array.isArray(form.group_ids) ? form.group_ids : (form.group_ids ? [form.group_ids] : [])
+        }
+        // Remove 'origins' to avoid confusion, though Go ignores strict extra fields usually
+        delete payload.origins 
+        
+        if (form.id) {
+          await request.put(`/sites/${form.id}`, payload)
+        } else {
+          await request.post('/sites', payload)
+        }
+    } else {
+        if (!batchForm.data) {
+            ElMessage.error('请输入网站数据')
+            return
+        }
+        // Sanitize batch form
+        const payload = {
+            ...batchForm,
+            user_id: Number(batchForm.user_id),
+            user_package_id: Number(batchForm.user_package_id) || 0,
+            group_id: Number(batchForm.group_id) || 0,
+            dns_provider_id: 0, 
+        }
+        await request.post('/sites/batch', payload)
+    }
+    
+    ElMessage.success('操作成功')
+    emit('success')
+    visible.value = false
+  } catch(e) {
+      console.error(e)
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+
+<style scoped>
+.expand-more {
+  text-align: center;
+  margin: 10px 0;
+  cursor: pointer;
+  color: var(--el-color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.expand-more:hover { opacity: 0.8; }
+.extra-fields {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+</style>

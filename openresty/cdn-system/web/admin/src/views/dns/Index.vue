@@ -28,7 +28,7 @@
               <el-switch v-model="form.ip_weight" />
             </el-form-item>
             <el-form-item label="DNS错误">
-              <span class="dns-error">{ dnsError }</span>
+              <span class="dns-error">{{ dnsError }}</span>
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="submitForm" :loading="submitting">保存</el-button>
@@ -115,22 +115,14 @@ import { ref, onMounted, computed, reactive, watch } from 'vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+import { DNS_PROVIDER_LABEL_MAP, DNS_API_FIELD_LABELS } from '@/constants/dns'
 
 const activeTab = ref('dns')
 
 const loading = ref(false)
 const providers = ref([])
 const providerTypes = ref([])
-const providerLabelMap = {
-  aliyun: 'Aliyun (aliyun.com,alidns.aliyun.com)',
-  huawei: 'Huawei (huaweicloud.com)',
-  dnsla: 'DNSLA (dns.la)',
-  dnspod: 'DNSPod (dnspod.cn)',
-  dnspod_intl: 'DNSPod Intl (dnspod.com)',
-  '51dns': '51DNS (51dns.com)',
-  cloudflare: 'Cloudflare (cloudflare.com)',
-  godaddy: 'GoDaddy (godaddy.com)'
-}
+const providerLabelMap = DNS_PROVIDER_LABEL_MAP
 
 const submitting = ref(false)
 
@@ -145,16 +137,7 @@ const form = ref({
   ip_weight: true
 })
 
-const labelMaps = {
-  aliyun: { access_key_id: 'AccessKey ID', access_key_secret: 'AccessKey Secret' },
-  huawei: { id: 'Access Key Id', secret: 'Secret Access Key' },
-  dnsla: { id: 'APIID', secret: 'API Key' },
-  dnspod: { id: 'ID', token: 'Token' },
-  dnspod_intl: { secret_id: 'SecretId', secret_key: 'SecretKey' },
-  '51dns': { id: 'API Key', secret: 'API Secret' },
-  cloudflare: { email: 'Email', api_key: 'API Key' },
-  godaddy: { key: 'Key', secret: 'Secret' }
-}
+const labelMaps = DNS_API_FIELD_LABELS
 
 const getDynamicLabel = (type, field) => {
   if (labelMaps[type] && labelMaps[type][field]) {

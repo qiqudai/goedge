@@ -4,6 +4,7 @@
       <div class="filter-container">
         <div class="filter-left">
           <el-button type="primary" @click="openCreate">添加分组</el-button>
+          <el-button type="danger" :disabled="!selectedRows.length" @click="batchDelete">删除分组</el-button>
         </div>
         <div class="filter-right">
           <el-input
@@ -29,7 +30,9 @@
         :total="total"
         @size-change="handleFilter"
         @current-change="handleFilter"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="50" align="center" />
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="分组名称" min-width="200" />
         <el-table-column prop="remark" label="备注" min-width="200" />
@@ -69,6 +72,7 @@ const total = ref(0)
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(0)
+const selectedRows = ref([])
 const form = reactive({
   name: '',
   remark: ''
@@ -149,17 +153,40 @@ const removeGroup = row => {
   })
 }
 
+const handleSelectionChange = rows => {
+  selectedRows.value = rows
+}
+
+const batchDelete = () => {
+  if (selectedRows.value.length === 0) return
+  ElMessageBox.confirm(`确认删除选中的 ${selectedRows.value.length} 个分组?`, '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    try {
+      const promises = selectedRows.value.map(row => request.delete(`/site_groups/${row.id}`))
+      await Promise.all(promises)
+      ElMessage.success('批量删除成功')
+      fetchGroups()
+      selectedRows.value = []
+    } catch (err) {
+      //
+    }
+  })
+}
+
 onMounted(fetchGroups)
 </script>
 
 <style scoped>
 .filter-container {
   display: flex;
-  justify-content: space-between;
+  gap: 12px;
   align-items: center;
   margin-bottom: 20px;
 }
-.filter-right {
+.filter-left, .filter-right {
   display: flex;
   gap: 10px;
 }
