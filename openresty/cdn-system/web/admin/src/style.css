@@ -427,3 +427,8 @@ a:hover {
 .el-tabs__nav-scroll {
   padding-left: 10px;
 }
+
+:root[data-theme="dark"] .el-divider__text {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}

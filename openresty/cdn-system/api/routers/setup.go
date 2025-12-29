@@ -159,6 +159,7 @@ func Setup(r *gin.Engine) {
 			admin.POST("/sites/apply_cert", siteCtr.AdminApplyCert)
 			admin.GET("/sites/export", siteCtr.AdminExport)
 			admin.GET("/sites/resolve", siteCtr.AdminResolve)
+			admin.GET("/sites/:id", siteCtr.AdminGet)
 
 			siteGroupCtr := &controllers.SiteGroupController{}
 			admin.GET("/site_groups", siteGroupCtr.List)

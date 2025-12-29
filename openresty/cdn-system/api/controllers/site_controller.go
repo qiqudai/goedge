@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/publicsuffix"
 	"gorm.io/gorm"
 )
 
@@ -81,6 +82,27 @@ func (ctrl *SiteController) AdminList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"list": items, "total": result.Total})
+}
+
+func (ctrl *SiteController) AdminGet(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var site models.Site
+	if err := db.DB.Where("id = ?", id).First(&site).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch site"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"site": site}})
 }
 
 // AdminCreate handles site creation for admin
@@ -562,6 +584,18 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
+	if pkgErr := db.DB.Select("cname_domain").Where("id = ?", req.UserPackageID).First(&models.UserPackage{}).Error; pkgErr == nil {
+	}
+	var pkg models.UserPackage
+	if err := db.DB.Select("cname_domain").Where("id = ?", req.UserPackageID).First(&pkg).Error; err == nil {
+		cnameDomain := strings.TrimSpace(pkg.CnameDomain)
+		if cnameDomain != "" {
+			site.CnameDomain = cnameDomain
+			if hostname := buildSiteCname(domains[0], cnameDomain); hostname != "" {
+				site.CnameHostname = hostname
+			}
+		}
+	}
 	if site.CnameHostname == "" && len(domains) > 0 {
 		site.CnameHostname = domains[0] + ".cdn.node.com"
 	}
@@ -911,7 +945,16 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 
 		cname := strings.TrimSpace(site.CnameHostname)
 		if cname == "" && len(domains) > 0 && site.CnameDomain != "" {
-			cname = domains[0] + "." + site.CnameDomain
+			domain := domains[0]
+			if net.ParseIP(domain) == nil {
+				if base, err := publicsuffix.EffectiveTLDPlusOne(domain); err == nil {
+					cname = strings.TrimSuffix(domain, base) + site.CnameDomain
+				} else {
+					cname = domains[0] + "." + site.CnameDomain
+				}
+			} else {
+				cname = domains[0] + "." + site.CnameDomain
+			}
 		}
 		if cname == "" {
 			cname = "-"
@@ -1233,4 +1276,18 @@ func splitByComma(input string) []string {
 		}
 	}
 	return out
+}
+
+func buildSiteCname(domain string, cnameDomain string) string {
+	if domain == "" || cnameDomain == "" {
+		return ""
+	}
+	if net.ParseIP(domain) != nil {
+		return domain + "." + cnameDomain
+	}
+	base, err := publicsuffix.EffectiveTLDPlusOne(domain)
+	if err != nil {
+		return domain + "." + cnameDomain
+	}
+	return strings.TrimSuffix(domain, base) + cnameDomain
 }

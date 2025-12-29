@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,11 @@ type userPackageRow struct {
 	models.UserPackage
 	IPv6   bool   `json:"ipv6"`
 	Status string `json:"status"`
+    // Explicitly expose these fields to debug visibility issue
+    CnameDomain   string `json:"cname_domain"`
+    CnameHostname string `json:"cname_hostname"`
+    CnameMode     string `json:"cname_mode"`
+    RecordID      string `json:"record_id"`
 }
 
 // ListUserPackages - GET /api/v1/admin/user_packages?user_id=xx
@@ -52,10 +58,15 @@ func (ctr *UserPackageController) ListUserPackages(c *gin.Context) {
 		if !pack.EndAt.IsZero() && pack.EndAt.Before(now) {
 			status = "expired"
 		}
+        // Force strings.TrimSpace to ensure no whitespace hiding
 		list = append(list, userPackageRow{
-			UserPackage: pack,
-			IPv6:        ipv6Map[pack.ID],
-			Status:      status,
+			UserPackage:   pack,
+			IPv6:          ipv6Map[pack.ID],
+			Status:        status,
+            CnameDomain:   strings.TrimSpace(pack.CnameDomain),
+            CnameHostname: strings.TrimSpace(pack.CnameHostname),
+            CnameMode:     pack.CnameMode,
+            RecordID:      pack.RecordID,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list}})
@@ -70,8 +81,27 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	}
 
 	var req struct {
-		Name string `json:"name"`
-		IPv6 *bool  `json:"ipv6"`
+		Name          string  `json:"name"`
+		IPv6          *bool   `json:"ipv6"`
+		EndAt         string  `json:"end_at"`
+		RegionID      int64   `json:"region_id"`
+		NodeGroupID   int64   `json:"node_group_id"`
+		BackupGroupID int64   `json:"backup_group_id"`
+		Traffic       string  `json:"traffic"`
+		Bandwidth     *string `json:"bandwidth"` // Pointer to distinguish empty vs unchanged if needed, or just string
+		Connection    *string `json:"connection"`
+		Domain        *string `json:"domain"`
+		HttpPort      *string `json:"http_port"`
+		StreamPort    *string `json:"stream_port"`
+		CustomCCRule  *bool   `json:"custom_cc_rule"`
+		Websocket     *bool   `json:"websocket"`
+		PriceMonthly  float64 `json:"price_monthly"`
+		PriceQuarterly float64 `json:"price_quarterly"`
+		PriceYearly   float64 `json:"price_yearly"`
+		CnameHostname string  `json:"cname_hostname"`
+		CnameDomain   string  `json:"cname_domain"`
+		CnameMode     string  `json:"cname_mode"`
+		Http3Enabled  *bool   `json:"http3_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Params"})
@@ -92,6 +122,43 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	if name := strings.TrimSpace(req.Name); name != "" {
 		updates["name"] = name
 	}
+	if req.EndAt != "" {
+		if t, err := time.Parse(time.DateTime, req.EndAt); err == nil {
+			updates["end_at"] = t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", req.EndAt); err == nil {
+			updates["end_at"] = t
+		}
+	}
+
+	// Groups
+	updates["region_id"] = req.RegionID
+	updates["node_group_id"] = req.NodeGroupID
+	updates["backup_node_group"] = req.BackupGroupID
+
+	// Resources - Handle "limited" vs "unlimited" (empty string or -1 usually)
+	// Frontend sends string or number.
+	updates["traffic"] = req.Traffic
+	if req.Bandwidth != nil { updates["bandwidth"] = *req.Bandwidth }
+	if req.Connection != nil { updates["connection"] = *req.Connection }
+	if req.Domain != nil { updates["domain"] = *req.Domain }
+	if req.HttpPort != nil { updates["http_port"] = *req.HttpPort }
+	if req.StreamPort != nil { updates["stream_port"] = *req.StreamPort }
+	if req.CustomCCRule != nil { updates["custom_cc_rule"] = *req.CustomCCRule }
+	if req.Websocket != nil { updates["websocket"] = *req.Websocket }
+
+	// Price
+	updates["month_price"] = req.PriceMonthly
+	updates["quarter_price"] = req.PriceQuarterly
+	updates["year_price"] = req.PriceYearly
+
+	// CNAME
+	updates["cname_hostname"] = strings.TrimSpace(req.CnameHostname)
+	updates["cname_domain"] = strings.TrimSpace(req.CnameDomain)
+	updates["cname_mode"] = req.CnameMode
+
+	// DEBUG LOG
+	fmt.Printf("[DEBUG] UpdateUserPackage ID=%d ReqDomain=%s UpdatesDomain=%v\n", id, req.CnameDomain, updates["cname_domain"])
+
 	if len(updates) > 0 {
 		if err := query.Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed"})
@@ -101,6 +168,12 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 
 	if req.IPv6 != nil {
 		if err := saveUserPackageBoolConfig(id, "ipv6", *req.IPv6); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Config Update Failed"})
+			return
+		}
+	}
+	if req.Http3Enabled != nil {
+		if err := saveUserPackageBoolConfig(id, "http3_enabled", *req.Http3Enabled); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Config Update Failed"})
 			return
 		}

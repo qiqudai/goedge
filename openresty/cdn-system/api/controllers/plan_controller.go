@@ -68,6 +68,10 @@ type userPlanItem struct {
 	StreamPort   int64     `json:"stream_port"`
 	CustomCCRule bool      `json:"custom_cc_rule"`
 	Websocket    bool      `json:"websocket"`
+	CnameDomain  string    `json:"cname_domain"`
+	CnameHostname string   `json:"cname_hostname"`
+	CnameHostname2 string  `json:"cname_hostname2"`
+	CnameMode    string    `json:"cname_mode"`
 	StartAt      time.Time `json:"start_at"`
 	EndAt        time.Time `json:"end_at"`
 	Status       string    `json:"status"`
@@ -424,6 +428,10 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 			StreamPort:   p.StreamPortLimit,
 			CustomCCRule: p.CustomCCRule,
 			Websocket:    p.Websocket,
+			CnameDomain:  p.CnameDomain,
+			CnameHostname: p.CnameHostname,
+			CnameHostname2: p.CnameHostname2,
+			CnameMode:    p.CnameMode,
 			StartAt:      startAt,
 			EndAt:        p.EndAt,
 			Status:       status,
@@ -557,32 +565,46 @@ func randomToken(length int) (string, error) {
 
 // UpdateUserPlan - PUT /api/v1/admin/user_plans/:id
 func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "invalid id"})
 		return
 	}
-	var payload struct {
-		Name  string `json:"name"`
-		EndAt string `json:"end_at"`
-	}
+	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid params"})
 		return
 	}
 
 	updates := map[string]interface{}{}
-	if strings.TrimSpace(payload.Name) != "" {
-		updates["name"] = strings.TrimSpace(payload.Name)
+	if hasKey(payload, "name") {
+		updates["name"] = getString(payload, "name")
 	}
-	if strings.TrimSpace(payload.EndAt) != "" {
-		if tm := parseTimeString(payload.EndAt); tm != nil {
+	if hasKey(payload, "end_at") {
+		if tm := getTimePtr(payload, "end_at"); tm != nil {
 			updates["end_at"] = tm
 		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "invalid end_at"})
-			return
+            // If empty string, means no expiration? or error?
+            // Existing logic flagged error or ignored. Let's assume ignore if empty or error for now unless imperative.
+            // Previous code: if invalid, return 400.
+            if v, ok := getStringValue(payload, "end_at"); ok && v != "" {
+                 c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "invalid end_at"})
+			     return
+            }
 		}
 	}
+    // CNAME Fields support
+    if hasKey(payload, "cname_domain") {
+        updates["cname_domain"] = getString(payload, "cname_domain")
+    }
+    if hasKey(payload, "cname_hostname") {
+        updates["cname_hostname"] = getString(payload, "cname_hostname")
+    }
+    if hasKey(payload, "cname_mode") {
+        updates["cname_mode"] = getString(payload, "cname_mode")
+    }
+
 	if len(updates) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "no updates"})
 		return

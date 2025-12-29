@@ -63,6 +63,7 @@ export const asyncRoutes = [
           { path: 'list', name: 'SiteList', component: () => import('../views/website/List.vue'), meta: { title: '网站列表' } },
           { path: 'groups', name: 'SiteGroups', component: () => import('../views/website/Groups.vue'), meta: { title: '网站分组', roles: ['admin', 'user'] } },
           { path: 'resolve', name: 'SiteResolve', component: () => import('../views/website/Resolve.vue'), meta: { title: '解析检测', roles: ['admin'], hidden: true } },
+          { path: 'manage', name: 'SiteManage', component: () => import('../views/website/Manage.vue'), meta: { title: '网站配置', roles: ['admin'], hidden: true } },
           { path: 'certs', name: 'CertManagement', component: () => import('../views/website/Certs.vue'), meta: { title: '证书管理' } },
           { path: 'purge', name: 'CachePurge', component: () => import('../views/website/Purge.vue'), meta: { title: '刷新预热' } },
           { path: 'rules', name: 'RuleManagement', component: () => import('../views/website/Rules.vue'), meta: { title: '规则管理' } },
@@ -160,4 +161,3 @@ router.beforeEach((to, from, next) => {
 })
 
 export default router
-

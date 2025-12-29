@@ -98,21 +98,23 @@
       <el-table-column prop="created_at" label="添加时间" width="180" />
       <el-table-column label="操作" width="150" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleManage(row)">管理</el-button>
-          <el-dropdown trigger="click">
-            <span class="link-more">
-              更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="handleRowAction('enable', row)">启用</el-dropdown-item>
-                <el-dropdown-item @click="handleRowAction('disable', row)">禁用</el-dropdown-item>
-                <el-dropdown-item @click="handleRowAction('delete', row)">删除</el-dropdown-item>
-                <el-dropdown-item @click="handleRowAction('unlock', row)">解除黑名单</el-dropdown-item>
-                <el-dropdown-item @click="handleRowAction('clear_cache', row)">清空缓存</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <el-button link type="primary" size="small" @click="handleManage(row)">管理</el-button>
+            <el-dropdown trigger="click">
+              <span class="link-more" style="cursor: pointer; display: flex; align-items: center; color: var(--el-color-primary); font-size: 12px;">
+                更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="handleRowAction('enable', row)">启用</el-dropdown-item>
+                  <el-dropdown-item @click="handleRowAction('disable', row)">禁用</el-dropdown-item>
+                  <el-dropdown-item @click="handleRowAction('delete', row)">删除</el-dropdown-item>
+                  <el-dropdown-item @click="handleRowAction('unlock', row)">解除黑名单</el-dropdown-item>
+                  <el-dropdown-item @click="handleRowAction('clear_cache', row)">清空缓存</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -306,7 +308,7 @@
               <el-input
                 v-model="batchForm.data"
                 type="textarea"
-                rows="5"
+                :rows="5"
                 placeholder="数据格式以key=value的方式，一行一个网站配置&#10;domain=www.abc.com,abc.com|ip=1.1.1.1&#10;domain=www.qq.com|ip=1.1.1.1,2.2.2.2"
               />
               <div class="help-text">
@@ -434,7 +436,7 @@
             v-else-if="defaultOptionType === 'lines'"
             v-model="defaultForm.textValue"
             type="textarea"
-            rows="4"
+            :rows="4"
             placeholder="一行一个"
           />
           <div v-else-if="defaultOptionType === 'headers'" class="header-list">
@@ -2073,6 +2075,65 @@ const openBatchEdit = () => {
 
 const handleCreateSubmit = () => {
   if (createTab.value === 'single') {
+    if (createForm.backends_input) {
+      const backends = createForm.backends_input.split(/[\s,]+/).filter(item => item.trim() !== '')
+      for (const backend of backends) {
+        if (/^https?:\/\//i.test(backend)) {
+          ElMessage.error('源站地址不能包含 http:// 或 https:// 前缀: ' + backend)
+          return
+        }
+
+        // Extract host (remove port if present)
+        // Simple port removal for IPv4/Hostname: remove after last colon if present
+        let host = backend
+        if (backend.includes(':') && !backend.startsWith('[')) {
+             host = backend.split(':')[0]
+        }
+        
+        // Strict Validation Rule from User:
+        // "只要时纯数字 那么就一定是IP" (If strictly numbers/dots, must be IP)
+        // "非纯数字才是域名" (Non-pure numbers are domains)
+        
+        if (/^[0-9.]+$/.test(host)) {
+             // Must be a valid IPv4 (x.x.x.x)
+             const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
+             if (!ipv4Regex.test(host)) {
+                 ElMessage.error('无效的 IP 地址 (纯数字格式必须为正规 IPv4, 如 1.1.1.1): ' + host)
+                 return
+             }
+             // Optional: validate octet range 0-255
+             const parts = host.split('.')
+             for (const part of parts) {
+                 if (parseInt(part) > 255) {
+                     ElMessage.error('IP 地址数值超出范围 (0-255): ' + host)
+                     return
+                 }
+             }
+        } else {
+             // Treat as Hostname
+             // Simple hostname regex: allowed chars, distinct segments
+             // Not starting/ending with - or .
+             const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+             if (!hostnameRegex.test(host)) {
+                  // Check if it's IPv6 (contains colons)
+                  const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/ // Simplified
+                  if (backend.includes(':') && !ipv6Regex.test(host)) { 
+                      // It might be IPv6 or just invalid hostname
+                      // Pass if it looks like a domain generally
+                  } else {
+                       // ElMessage.error('源站地址格式不正确 (无效的域名或IP): ' + host)
+                       // return
+                  }
+                  // Actually, just apply general domain check
+                  if (!/^[a-zA-Z0-9.-]+$/.test(host)) {
+                      ElMessage.error('源站地址包含非法字符: ' + host)
+                      return
+                  }
+             }
+        }
+      }
+    }
+
     const payload = {
       user_id: createForm.user_id || undefined,
       user_package_id: createForm.user_package_id || undefined,
@@ -2237,6 +2298,14 @@ const handleBatchAction = action => {
     return
   }
   const ids = selectedRows.value.map(row => row.id)
+
+  if (action === 'delete') {
+    const enabledSites = selectedRows.value.filter(row => row.status)
+    if (enabledSites.length > 0) {
+       ElMessage.error(`无法删除: 存在已启用的网站 (${enabledSites.length} 个)，请先禁用后再试`)
+       return
+    }
+  }
   ElMessageBox.confirm(`确定执行${action}操作?`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
@@ -2287,7 +2356,7 @@ const handleExport = () => {
 }
 
 const handleManage = row => {
-  router.push({ path: '/website/rules', query: { site_id: row.id } })
+  router.push({ path: '/website/manage', query: { site_id: row.id } })
 }
 
 const applyAdvancedFilter = () => {

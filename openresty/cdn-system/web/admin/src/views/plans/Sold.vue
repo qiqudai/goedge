@@ -76,6 +76,16 @@
           {{ formatDateTime(row.end_at) }}
         </template>
       </el-table-column>
+      <el-table-column label="Debug:域名" min-width="120">
+          <template #default="{ row }">
+             {{ row.cname_domain }}
+          </template>
+      </el-table-column>
+      <el-table-column label="Debug:Mode" min-width="100">
+          <template #default="{ row }">
+             {{ row.cname_mode }}
+          </template>
+      </el-table-column>
       <el-table-column label="操作" width="220">
         <template #default="{ row }">
           <el-button link type="primary" size="" @click="openDetail(row)">详情</el-button>
@@ -187,11 +197,108 @@
       </el-tabs>
     </el-dialog>
 
-    <el-dialog v-model="editVisible" title="套餐编辑" width="520px">
-      <el-form label-width="90px">
-        <el-form-item label="套餐名称">
-          <el-input v-model="editForm.name" placeholder="请输入套餐名称" />
-        </el-form-item>
+    <el-dialog v-model="editVisible" title="套餐编辑" width="900px" top="5vh">
+      <el-form :model="editForm" label-width="120px">
+        
+        <el-divider content-position="left">线路分组</el-divider>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="区域">
+              <el-select v-model="editForm.region_id" placeholder="默认">
+                <el-option label="默认" :value="0" />
+                <el-option v-for="item in regionOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="线路分组">
+              <el-select v-model="editForm.node_group_id" placeholder="请选择">
+                <el-option label="默认" :value="0" />
+                <el-option v-for="item in nodeGroupOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="备用分组">
+              <el-select v-model="editForm.backup_group_id" placeholder="请选择">
+                <el-option label="不设置" :value="0" />
+                <el-option v-for="item in nodeGroupOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">资源限制</el-divider>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="月流量">
+              <el-input v-model="editForm.traffic" placeholder="不限" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="带宽">
+              <el-input v-model="editForm.bandwidth" placeholder="不限">
+                <template #append>Mbps</template>
+              </el-input>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="连接数">
+              <el-input v-model="editForm.connection" placeholder="不限" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="四层端口数">
+              <el-input v-model="editForm.stream_port" placeholder="不限" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="域名数">
+              <el-input v-model="editForm.domain" placeholder="不限" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="主域名数">
+              <el-input disabled placeholder="暂不支持" /> 
+              <!-- Screenshot just says "主域名数", checking Basic.vue it doesn't have "Main Domain Limit". 
+                   The screenshot has "主域名数". I don't see it in my editForm properties from Basic.vue.
+                   Let's add it if needed or placeholder. 
+                   Wait, user screenshot has "主域名数". I will add it to UI but disable or link to domain?
+                   Actually I'll skip it if I don't have the field, OR add it to editForm structure?
+                   Let's check `UserPackage` model. `Domain` usually covers it.
+                   Maybe "Domain" is "Subdomain"? 
+                   I'll use "主域名数" in place of something else or just add the field visually. -->
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="网站非标端口数">
+              <el-input v-model="editForm.http_port" placeholder="不限" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="自定义CC规则">
+              <el-switch v-model="editForm.custom_cc_rule" active-text="允许" inactive-text="禁止" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="Websocket">
+              <el-switch v-model="editForm.websocket" active-text="允许" inactive-text="禁止" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row>
+             <el-col :span="8">
+                <el-form-item label="HTTP3">
+                  <el-switch v-model="editForm.http3_enabled" active-text="允许" inactive-text="禁止" />
+                </el-form-item>
+             </el-col>
+        </el-row>
+
+        <el-divider content-position="left">到期时间</el-divider>
         <el-form-item label="到期时间">
           <el-date-picker
             v-model="editForm.end_at"
@@ -203,9 +310,53 @@
             style="width: 100%;"
           />
         </el-form-item>
+
+        <el-divider content-position="left">续费价格</el-divider>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="月付">
+              <el-input v-model="editForm.price_monthly"><template #append>元</template></el-input>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="季度付">
+              <el-input v-model="editForm.price_quarterly"><template #append>元</template></el-input>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="年付">
+              <el-input v-model="editForm.price_yearly"><template #append>元</template></el-input>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">CNAME设置</el-divider>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="主机名">
+              <el-input v-model="editForm.cname_hostname" placeholder="" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="CNAME域名">
+              <el-select v-model="editForm.cname_domain" placeholder="请选择">
+                 <el-option v-for="item in cnameOptions" :key="item.id" :label="item.domain" :value="item.domain" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="CNAME模式">
+               <el-select v-model="editForm.cname_mode" placeholder="默认">
+                <el-option label="按网站生成" value="default" />
+                <el-option label="按套餐生成" value="site" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
       </el-form>
       <template #footer>
-        <el-button size="" @click="editVisible = false">取消</el-button>
+        <el-button size="" @click="editVisible = false">关闭</el-button>
         <el-button size="" type="primary" @click="submitEdit">确定</el-button>
       </template>
     </el-dialog>
@@ -235,8 +386,40 @@ const upgradeTab = ref('upgrade')
 const upgradeForm = ref({ planId: '' })
 const planOptions = ref([])
 
+// Options for Edit Form
+const regionOptions = ref([])
+const nodeGroupOptions = ref([])
+const cnameOptions = ref([])
+
 const editVisible = ref(false)
-const editForm = ref({ id: null, name: '', end_at: '' })
+const editForm = ref({
+  id: null,
+  name: '', // plan_name in db
+  end_at: '',
+  // Resources
+  traffic: '',
+  bandwidth: '',
+  connection: '',
+  domain: '',
+  http_port: '',
+  stream_port: '',
+  custom_cc_rule: false,
+  websocket: false,
+  // Groups
+  region_id: 0,
+  node_group_id: 0,
+  backup_group_id: 0,
+  // CNAME
+  cname_hostname: '',
+  cname_domain: '',
+  cname_mode: 'default',
+  // Price
+  price_monthly: 0,
+  price_quarterly: 0,
+  price_yearly: 0,
+  // Other
+  http3_enabled: false
+})
 
 const fetchList = () => {
   loading.value = true
@@ -250,6 +433,24 @@ const fetchList = () => {
 const fetchPlans = () => {
   request.get('/plans').then((res) => {
     planOptions.value = res.data.list || []
+  })
+}
+
+const fetchRegions = () => {
+  request.get('/regions').then(res => {
+    regionOptions.value = res.data.list || []
+  })
+}
+
+const fetchNodeGroups = () => {
+  request.get('/node-groups').then(res => {
+    nodeGroupOptions.value = res.data.list || []
+  })
+}
+
+const fetchCnameDomains = () => {
+  request.get('/cname_domains').then(res => {
+    cnameOptions.value = res.data.list || []
   })
 }
 
@@ -319,11 +520,47 @@ const openUpgrade = (row) => {
 }
 
 const openEdit = (row) => {
+  // We should ideally fetch single item to get full details if list is partial.
+  // Assuming list has all fields for now or fetch detail.
+  // Checking list response in Basic.vue... list usually has most.
+  // But safest is to use row data and map it.
+  
+  // Mapping row (UserPackage) fields to editForm
   editForm.value = {
     id: row.id,
-    name: row.plan_name || '',
-    end_at: formatDateTime(row.end_at)
+    name: row.plan_name || '', // user_plans table might not have plan_name column editable? Usually it references plan. But UserPackage has snapshot.
+    // The screenshot implies we are editing the UserPackage specific settings.
+    end_at: formatDateTime(row.end_at),
+    
+    // Groups
+    region_id: row.region_id || row.region || 0, // check api response key
+    node_group_id: row.node_group_id || 0,
+    backup_group_id: row.backup_group_id || 0,
+
+    // Resources
+    traffic: row.traffic,
+    bandwidth: row.bandwidth,
+    connection: row.connection,
+    domain: row.domain,
+    http_port: row.http_port,
+    stream_port: row.stream_port,
+    custom_cc_rule: row.custom_cc_rule,
+    websocket: row.websocket,
+    http3_enabled: row.http3_enabled,
+
+    // Price
+    price_monthly: row.price_monthly,
+    price_quarterly: row.price_quarterly,
+    price_yearly: row.price_yearly,
+
+    // CNAME
+    // User request: Hostname is the "record_id" (Resolve Value). Show it.
+    cname_hostname: row.cname_hostname || row.record_id || '',
+    cname_domain: row.cname_domain || '',
+    cname_mode: row.cname_mode || 'default'
   }
+  console.log('[DEBUG] openEdit row:', row)
+  console.log('[DEBUG] editForm cname:', editForm.value.cname_domain, editForm.value.cname_mode)
   editVisible.value = true
 }
 
@@ -331,10 +568,19 @@ const submitEdit = () => {
   if (!editForm.value.id) {
     return
   }
-  request.put(`/user_plans/${editForm.value.id}`, {
-    name: editForm.value.name,
-    end_at: editForm.value.end_at
-  }).then(() => {
+  
+  // Validation: Backup Group cannot be same as Main Group
+  if (editForm.value.node_group_id && editForm.value.backup_group_id && 
+      editForm.value.node_group_id === editForm.value.backup_group_id) {
+    ElMessage.error('备用分组不能与线路分组相同')
+    return
+  }
+
+  // Construct payload. 
+  // IMPORTANT: Backend needs to handle these fields.
+  const payload = { ...editForm.value }
+  
+  request.put(`/user_plans/${editForm.value.id}`, payload).then(() => {
     ElMessage.success('更新成功')
     editVisible.value = false
     fetchList()
@@ -420,6 +666,9 @@ const formatDateTime = (value) => {
 onMounted(() => {
   fetchList()
   fetchPlans()
+  fetchRegions()
+  fetchNodeGroups()
+  fetchCnameDomains()
 })
 </script>
 

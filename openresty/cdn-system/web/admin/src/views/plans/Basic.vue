@@ -25,11 +25,13 @@
           <el-tag :type="row.status ? 'success' : 'info'">{{ row.status ? '启用' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200">
+      <el-table-column label="操作" width="220" align="center">
         <template #default="scope">
-          <el-button size="" @click="handleEdit(scope.row)">管理</el-button>
-          <el-button size="" type="success" @click="handleAssign(scope.row)">分配</el-button>
-          <el-button size="" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap;">
+            <el-button size="small" @click="handleEdit(scope.row)">管理</el-button>
+            <el-button size="small" type="success" @click="handleAssign(scope.row)">分配</el-button>
+            <el-button size="small" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </AppTable>
@@ -188,8 +190,8 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="CNAME域名">
-              <el-select v-model="temp.cname_domain" placeholder="cdnfly.com">
-                <el-option label="cdnfly.com" value="cdnfly.com" />
+              <el-select v-model="temp.cname_domain" placeholder="请选择">
+                <el-option v-for="item in cnameOptions" :key="item.id" :label="item.domain" :value="item.domain" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -198,8 +200,8 @@
           <el-col :span="12">
             <el-form-item label="CNAME模式">
               <el-select v-model="temp.cname_mode" placeholder="默认">
-                <el-option label="默认" value="default" />
-                <el-option label="站点生成" value="site" />
+                <el-option label="按网站生成(默认)" value="default" />
+                <el-option label="按套餐生成" value="site" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -344,6 +346,7 @@ const assignForm = ref({
 })
 const regionOptions = ref([])
 const nodeGroupOptions = ref([])
+const cnameOptions = ref([])
 const temp = ref({
     status: true
 })
@@ -369,9 +372,20 @@ const fetchNodeGroups = () => {
     })
 }
 
+const fetchCnameDomains = () => {
+    request.get('/cname_domains').then(res => {
+        cnameOptions.value = res.data.list || []
+    })
+}
+
 const handleCreate = () => {
     dialogStatus.value = 'create'
-    temp.value = { status: true }
+    temp.value = { 
+        status: true,
+        websocket: true,        // Default enabled
+        custom_cc_rules: true, // Default enabled
+        domain_limit: 100      // Default 100
+    }
     dialogVisible.value = true
 }
 
@@ -395,6 +409,11 @@ const handleDelete = (row) => {
 }
 
 const saveData = () => {
+    if (!temp.value.cname_domain) {
+        ElMessage.error('CNAME域名必须选择，否则无法添加套餐')
+        return
+    }
+
     const method = dialogStatus.value === 'create' ? 'post' : 'put'
     const url = dialogStatus.value === 'create' ? '/plans' : `/plans/${temp.value.id}`
     
@@ -471,5 +490,6 @@ onMounted(() => {
     fetchList()
     fetchRegions()
     fetchNodeGroups()
+    fetchCnameDomains()
 })
 </script>
