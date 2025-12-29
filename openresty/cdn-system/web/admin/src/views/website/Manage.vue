@@ -35,20 +35,18 @@
 
             <div class="section-title">基本设置</div>
              <el-form-item label="套餐" style="width: 520px">
-               <el-select v-model="siteSettings.basic.planName" disabled placeholder="请选择套餐">
-                   <el-option value="请选择套餐" label="请选择套餐" />
+               <el-select v-model="siteSettings.basic.userPackageId" placeholder="请选择套餐" clearable>
+                   <el-option v-for="pkg in userPackages" :key="pkg.id" :label="pkg.name || pkg.user_plan_name || ('套餐 ' + pkg.id)" :value="pkg.id" />
                </el-select>
                <div class="form-helper">变更套餐不会导致CNAME地址变动，只会应用新的套餐权益</div>
             </el-form-item>
              <el-form-item label="所属分组" style="width: 520px">
-               <el-select v-model="siteSettings.basic.groupName" placeholder="请选择">
-                 <!-- TODO: Load groups -->
-               </el-select>
+               <SiteGroupSelect v-model="siteSettings.basic.groupId" />
                <div class="form-helper">网站的分组标识，方便为了分类和管理</div>
             </el-form-item>
-             <el-form-item label="地区" style="width: 520px">
-               <el-input v-model="siteSettings.basic.regionName" disabled />
-               <div class="form-helper">本个域名分配的地区，中文域名会自动转为Punycode。 <a href="#" style="color: #409eff">查看节点</a></div>
+             <el-form-item label="域名" style="width: 520px">
+               <el-input v-model="siteSettings.basic.domain" type="textarea" :rows="3" />
+               <div class="form-helper">多个域名以空格分隔，中文域名及其它IDN域名需要转成Punycode，<a href="https://tool.cccyun.cc/punycode/" target="_blank" style="color: #409eff">转换工具</a></div>
             </el-form-item>
 
             <div class="divider"></div>
@@ -456,6 +454,13 @@
             </el-form-item>
 
             <div class="divider"></div>
+            
+            <div class="section-title">区域屏蔽</div>
+            <el-form-item label-width="0">
+               <RegionConfig v-model="siteSettings.access.regionBlock" />
+            </el-form-item>
+
+            <div class="divider"></div>
 
             <div class="section-title">防盗链设置</div>
             <el-form-item label="开关">
@@ -730,6 +735,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CountrySelector from '@/components/CountrySelector.vue'
+import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
+import RegionConfig from '@/components/RegionConfig.vue'
 import request from '@/utils/request'
 import { debounce } from 'lodash-es'
 
@@ -739,6 +746,7 @@ const activeTab = ref('basic')
 const loading = ref(false)
 const cacheQuickPreset = ref('')
 const certList = ref([])
+const userPackages = ref([])
 const site = ref(null)
 const sslProtocolOptions = ['SSLv2', 'SSLv3', 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3']
 const defaultSslProtocols = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3']
@@ -766,7 +774,11 @@ const siteSettings = reactive({
     httpEnable: true,
     httpPorts: '80',
     regionName: 'Global',
-    expireTime: '-' // Added
+    expireTime: '-', // Added
+    regionName: 'Global',
+    expireTime: '-', // Added
+    userPackageId: null, // Added
+    groupId: null // Added
   },
   origin: {
     list: [],
@@ -828,8 +840,11 @@ const siteSettings = reactive({
       allowMethods: '*',
       allowHeaders: '*',
       exposeHeaders: '*',
-      allowCredentials: true,
       maxAge: 1728000
+    },
+    regionBlock: {
+      mode: 'disabled',
+      countries: []
     }
   },
   advanced: {
@@ -1076,6 +1091,12 @@ function loadCerts() {
   })
 }
 
+function loadUserPackages() {
+  request.get('/user_packages').then(res => {
+    userPackages.value = res.data?.list || res.list || []
+  })
+}
+
 function normalizeOriginCondition(item) {
   if (!item) return null
   return {
@@ -1094,7 +1115,9 @@ function applySiteData(data) {
   const settings = data.settings || {}
 
   // Basic
+  siteSettings.basic.userPackageId = data.user_package_id || null
   siteSettings.basic.planName = data.user_package_id ? `套餐ID ${data.user_package_id}` : '商业版(飞扬)'
+  siteSettings.basic.groupId = data.group_id || null
   siteSettings.basic.groupName = data.group_id ? `分组ID ${data.group_id}` : ''
   siteSettings.basic.nodeGroupName = data.node_group_id ? `集群ID ${data.node_group_id}` : ''
   siteSettings.basic.domain = (data.domains || []).join('\n')
@@ -1177,6 +1200,10 @@ function applySiteData(data) {
     }
     if (settings.access.cors) {
       Object.assign(siteSettings.access.cors, settings.access.cors)
+    }
+    if (settings.access.region_block) {
+       siteSettings.access.regionBlock.mode = settings.access.region_block.mode || 'disabled'
+       siteSettings.access.regionBlock.countries = settings.access.region_block.countries || []
     }
   }
 
@@ -1482,7 +1509,11 @@ function buildSettingsPayload() {
     access: {
       acl: siteSettings.access.acl,
       hotlink: siteSettings.access.hotlink,
-      cors: siteSettings.access.cors
+      cors: siteSettings.access.cors,
+      region_block: {
+        mode: siteSettings.access.regionBlock.mode,
+        countries: siteSettings.access.regionBlock.countries
+      }
     },
     // Flattened / Specific keys for backend
     origin_host: siteSettings.origin.host === 'custom' ? siteSettings.origin.hostValue : siteSettings.origin.host,
@@ -1511,7 +1542,10 @@ function saveSettings() {
     http_listen: siteSettings.basic.httpEnable ? splitStr(siteSettings.basic.httpPorts) : [],
     https_listen: siteSettings.https.enable ? splitStr(siteSettings.https.listenPorts) : [],
     backend_protocol: siteSettings.origin.protocol,
-    cert_id: siteSettings.https.certId
+    cert_id: siteSettings.https.certId,
+    user_package_id: siteSettings.basic.userPackageId || 0,
+    group_id: siteSettings.basic.groupId || 0,
+    domains: splitStr(siteSettings.basic.domain)
   }
   
   if (siteSettings.basic.httpEnable && payload.http_listen.length === 0) {
@@ -1633,6 +1667,7 @@ onMounted(() => {
   loadAcls()
   loadSite()
   loadCerts()
+  loadUserPackages()
 })
 </script>
 <style scoped>

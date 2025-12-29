@@ -137,9 +137,12 @@
             </div>
             <div v-if="createMore" class="extra-fields">
               <el-form-item label="所属分组">
-                <el-select v-model="createForm.group_id" clearable placeholder="转发分组, 可不选" style="width: 100%;">
-                  <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
-                </el-select>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                  <el-select v-model="createForm.group_id" clearable placeholder="转发分组, 可不选" style="flex: 1;">
+                    <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+                  </el-select>
+                  <el-button :icon="Plus" circle @click="openCreateGroupDialog" />
+                </div>
               </el-form-item>
               <el-form-item label="备注">
                 <el-input v-model="createForm.remark" placeholder="输入备注信息" />
@@ -175,7 +178,7 @@
               <el-input
                 v-model="batchForm.data"
                 type="textarea"
-                rows="5"
+                :rows="5"
                 placeholder="格式为: 监听端口|IP|回源端口&#10;88|1.2.3.4|8080&#10;77|6.6.8.8|8080"
               />
             </el-form-item>
@@ -189,9 +192,12 @@
             </div>
             <div v-if="batchMore" class="extra-fields">
               <el-form-item label="所属分组">
-                <el-select v-model="batchForm.group_id" clearable placeholder="转发分组, 可不选" style="width: 100%;">
-                  <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
-                </el-select>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                  <el-select v-model="batchForm.group_id" clearable placeholder="转发分组, 可不选" style="flex: 1;">
+                    <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+                  </el-select>
+                  <el-button :icon="Plus" circle @click="openCreateGroupDialog" />
+                </div>
               </el-form-item>
               <el-form-item label="备注">
                 <el-input v-model="batchForm.remark" placeholder="输入备注信息" />
@@ -220,9 +226,12 @@
               </div>
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.group_id">所属分组</el-checkbox>
-                <el-select v-model="batchEditForm.group_id" clearable placeholder="请选择" style="width: 70%;">
-                  <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
-                </el-select>
+                <div style="display: flex; gap: 8px; width: 70%;">
+                  <el-select v-model="batchEditForm.group_id" clearable placeholder="请选择" style="flex: 1;">
+                    <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+                  </el-select>
+                  <el-button :icon="Plus" circle @click="openCreateGroupDialog" />
+                </div>
               </div>
               <div class="batch-action">
                 <el-button type="primary" @click="submitBatchEdit">批量修改</el-button>
@@ -314,16 +323,8 @@
 
               <div class="batch-row" style="margin-top: 16px;">
                 <el-checkbox v-model="batchEditChecks.region_block">区域屏蔽</el-checkbox>
-                <el-radio-group v-model="batchEditForm.region_mode">
-                  <el-radio value="none">不设置</el-radio>
-                  <el-radio value="overseas_without_hk">国外(不包括港澳台)</el-radio>
-                  <el-radio value="overseas_with_hk">国外(包括港澳台)</el-radio>
-                  <el-radio value="china_with_hk">中国(包括港澳台)</el-radio>
-                  <el-radio value="china_without_hk">中国(不包括港澳台)</el-radio>
-                  <el-radio value="custom">自定义</el-radio>
-                </el-radio-group>
               </div>
-              <country-selector v-if="batchEditForm.region_mode === 'custom'" v-model="batchEditForm.region_custom" />
+              <country-selector v-if="batchEditChecks.region_block" v-model="batchEditForm.region_custom" />
 
               <div class="batch-row">
                 <el-checkbox v-model="batchEditChecks.ipv6">IPv6开启</el-checkbox>
@@ -395,6 +396,20 @@
         <el-button type="primary" @click="applyAdvancedFilter">确认</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="createGroupVisible" title="添加分组" width="400px">
+      <el-form :model="createGroupForm" label-width="80px">
+        <el-form-item label="名称">
+          <el-input v-model="createGroupForm.name" placeholder="请输入分组名称" @keyup.enter="submitCreateGroup" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="createGroupForm.remark" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createGroupVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitCreateGroup">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -402,7 +417,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import CountrySelector from '@/components/CountrySelector.vue'
 
@@ -474,7 +489,6 @@ const batchEditForm = reactive({
   origins: [],
   acl_default: 'allow',
   acl_rules: [],
-  region_mode: 'none',
   region_custom: [],
   ipv6: false
 })
@@ -599,7 +613,7 @@ const submitBatchEdit = () => {
     settings.access = {
       acl_default: batchEditForm.acl_default,
       acl_rules: batchEditForm.acl_rules,
-      region_mode: batchEditForm.region_mode,
+      region_mode: 'custom',
       region_custom: batchEditForm.region_custom,
       ipv6: batchEditForm.ipv6
     }
@@ -695,6 +709,27 @@ const addAclRule = () => {
 
 const removeAclRule = index => {
   batchEditForm.acl_rules.splice(index, 1)
+}
+
+const createGroupVisible = ref(false)
+const createGroupForm = reactive({ name: '', remark: '' })
+
+const openCreateGroupDialog = () => {
+  createGroupForm.name = ''
+  createGroupForm.remark = ''
+  createGroupVisible.value = true
+}
+
+const submitCreateGroup = () => {
+  if (!createGroupForm.name) {
+    ElMessage.warning('请输入分组名称')
+    return
+  }
+  request.post('/forward_groups', createGroupForm).then(() => {
+    ElMessage.success('添加成功')
+    createGroupVisible.value = false
+    loadGroups()
+  })
 }
 
 const applyAdvancedFilter = () => {

@@ -329,7 +329,7 @@
               />
               <div class="help-text">
                 domain是网站域名，ip源站地址，配置项以 | 分隔。
-                <el-link type="primary" :underline="false">了解更多</el-link>
+                <el-link type="primary" underline="never">了解更多</el-link>
               </div>
             </el-form-item>
             <el-form-item label="忽略错误">

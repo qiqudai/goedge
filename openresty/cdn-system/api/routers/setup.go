@@ -160,6 +160,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/sites/export", siteCtr.AdminExport)
 			admin.GET("/sites/resolve", siteCtr.AdminResolve)
 			admin.GET("/sites/:id", siteCtr.AdminGet)
+			admin.PUT("/sites/:id", siteCtr.AdminUpdate)
 
 			siteGroupCtr := &controllers.SiteGroupController{}
 			admin.GET("/site_groups", siteGroupCtr.List)

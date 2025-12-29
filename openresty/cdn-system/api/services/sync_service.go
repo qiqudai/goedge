@@ -77,5 +77,14 @@ func GetConfigVersion() int64 {
 
 // NotifyConfigChanged is a no-op (sync is handled by agent pull over API).
 func NotifyConfigChanged(change ConfigChange) {
-	_, _ = json.Marshal(change)
+	data, _ := json.Marshal(change)
+	task := models.Task{
+		Type:      "config_sync",
+		State:     "waiting",
+		Enable:    true,
+		Data:      string(data),
+		CreateAt:  time.Now(),
+		RetryAt:   time.Now(), // Ensure it's picked up immediately
+	}
+	db.DB.Create(&task)
 }

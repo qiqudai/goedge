@@ -105,6 +105,112 @@ func (ctrl *SiteController) AdminGet(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"site": site}})
 }
 
+// AdminUpdate updates a single site config
+func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		IDs             []int64                `json:"ids"`
+		UserPackageID   *int64                 `json:"user_package_id"`
+		GroupID         *int64                 `json:"group_id"`
+		DNSProviderID   *int64                 `json:"dns_provider_id"`
+		HttpListen      *[]string              `json:"http_listen"`
+		HttpsListen     *[]string              `json:"https_listen"`
+		BalanceWay      *string                `json:"balance_way"`
+		BackendProtocol *string                `json:"backend_protocol"`
+		CertID          *int64                 `json:"cert_id"`
+		Domains         *[]string              `json:"domains"`
+		Enable          *bool                  `json:"enable"`
+		Settings        map[string]interface{} `json:"settings"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{}
+		if req.UserPackageID != nil && *req.UserPackageID > 0 {
+			updates["user_package"] = *req.UserPackageID
+		}
+		if req.DNSProviderID != nil && tx.Migrator().HasColumn(&models.Site{}, "dns_provider_id") {
+			updates["dns_provider_id"] = *req.DNSProviderID
+		}
+		if req.HttpListen != nil {
+			updates["http_listen"] = encodeList(*req.HttpListen)
+		}
+		if req.HttpsListen != nil {
+			updates["https_listen"] = encodeList(*req.HttpsListen)
+		}
+		if req.BalanceWay != nil {
+			updates["balance_way"] = *req.BalanceWay
+		}
+		if req.BackendProtocol != nil {
+			updates["backend_protocol"] = *req.BackendProtocol
+		}
+		if req.CertID != nil {
+			if *req.CertID < 0 {
+				updates["cert_id"] = 0
+			} else {
+				updates["cert_id"] = *req.CertID
+			}
+		}
+		if req.Domains != nil && len(*req.Domains) > 0 {
+			updates["domain"] = encodeList(*req.Domains)
+		}
+		if req.Enable != nil {
+			updates["enable"] = *req.Enable
+			if *req.Enable {
+				updates["state"] = "running"
+			} else {
+				updates["state"] = "stop"
+			}
+		}
+		
+		if req.Settings != nil {
+			b, _ := json.Marshal(req.Settings)
+			if tx.Migrator().HasColumn(&models.Site{}, "settings") {
+				updates["settings"] = string(b)
+			} else {
+				updates["SettingsRaw"] = string(b)
+			}
+		}
+		
+		updates["updated_at"] = time.Now()
+
+		if err := tx.Model(&models.Site{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if req.GroupID != nil {
+			if err := tx.Where("site_id = ?", id).Delete(&models.SiteGroupRelation{}).Error; err != nil {
+				return err
+			}
+			if *req.GroupID != 0 {
+				rel := models.SiteGroupRelation{SiteID: id, GroupID: *req.GroupID}
+				if err := tx.Create(&rel).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed: " + err.Error()})
+		return
+	}
+
+	services.BumpConfigVersion("site", []int64{id})
+	c.JSON(http.StatusOK, gin.H{"message": "Site updated"})
+}
+
 // AdminCreate handles site creation for admin
 func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 	site, groupID, err := parseSiteCreateRequest(c, true)

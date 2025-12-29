@@ -10,7 +10,7 @@ type Task struct {
 	Name      string    `json:"name"`
 	Type      string    `json:"type"` // refresh_url, refresh_dir, preheat
 	Res       string    `json:"res"`
-	Data      string    `json:"data"` // URLs
+	Data      string    `json:"data" gorm:"type:longtext"` // URLs or JSON payload
 	Depend    string    `json:"depend"`
 	CreateAt  time.Time `json:"create_at" gorm:"column:create_at"`
 	StartAt   time.Time `json:"start_at" gorm:"column:start_at"`
