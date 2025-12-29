@@ -34,19 +34,19 @@
             <div class="divider"></div>
 
             <div class="section-title">基本设置</div>
-             <el-form-item label="套餐">
+             <el-form-item label="套餐" style="width: 520px">
                <el-select v-model="siteSettings.basic.planName" disabled placeholder="请选择套餐">
                    <el-option value="请选择套餐" label="请选择套餐" />
                </el-select>
                <div class="form-helper">变更套餐不会导致CNAME地址变动，只会应用新的套餐权益</div>
             </el-form-item>
-             <el-form-item label="所属分组">
+             <el-form-item label="所属分组" style="width: 520px">
                <el-select v-model="siteSettings.basic.groupName" placeholder="请选择">
                  <!-- TODO: Load groups -->
                </el-select>
                <div class="form-helper">网站的分组标识，方便为了分类和管理</div>
             </el-form-item>
-             <el-form-item label="地区">
+             <el-form-item label="地区" style="width: 520px">
                <el-input v-model="siteSettings.basic.regionName" disabled />
                <div class="form-helper">本个域名分配的地区，中文域名会自动转为Punycode。 <a href="#" style="color: #409eff">查看节点</a></div>
             </el-form-item>
@@ -58,14 +58,13 @@
               <el-switch v-model="siteSettings.basic.httpEnable" />
               <div class="form-helper">如果关闭，网站将完全拒绝HTTP访问</div>
             </el-form-item>
-             <el-form-item label="监听端口">
+             <el-form-item label="监听端口" style="width: 520px">
               <el-input v-model="siteSettings.basic.httpPorts" />
               <div class="form-helper">多个端口空格分隔。如需兼容http://www.example.com和http://www.example.com:888访问，则填80 888</div>
             </el-form-item>
           </el-form>
-        </el-tab-pane>
 
-        <el-tab-pane label="回源设置" name="origin">
+          <div class="divider"></div>
           <div class="section-title">源站列表</div>
           <el-table :data="siteSettings.origin.list" border size="small" style="margin-bottom: 12px;">
             <el-table-column prop="address" label="源地址">
@@ -168,17 +167,73 @@
             <el-form-item label="启用健康检查">
               <el-switch v-model="siteSettings.origin.healthCheckEnabled" />
             </el-form-item>
-            <el-form-item label="检查地址">
+            <el-form-item label="检查地址" style="width: 520px">
               <el-input v-model="siteSettings.origin.healthCheckHost" placeholder="域名或 IP" />
             </el-form-item>
-            <el-form-item label="检查路径">
+            <el-form-item label="检查路径" style="width: 520px">
               <el-input v-model="siteSettings.origin.healthCheckPath" placeholder="/" />
             </el-form-item>
-            <el-form-item label="有效状态码">
+            <el-form-item label="有效状态码" style="width: 520px">
               <el-input v-model="siteSettings.origin.healthCheckStatus" placeholder="200 301 302" />
             </el-form-item>
-            <el-form-item label="检测间隔(秒)">
+            <el-form-item label="检测间隔(秒)" style="width: 520px">
               <el-input v-model="siteSettings.origin.healthCheckInterval" placeholder="60" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <el-tab-pane label="回源设置" name="origin">
+          <el-form label-width="150px" class="config-form">
+            <div class="section-title">回源协议与端口</div>
+            <el-form-item label="回源协议">
+              <el-radio-group v-model="siteSettings.origin.protocol">
+                <el-radio value="http">HTTP</el-radio>
+                <el-radio value="https">HTTPS</el-radio>
+                <el-radio value="follow">跟随协议</el-radio>
+                <el-radio value="follow_port">跟随端口和协议</el-radio>
+              </el-radio-group>
+              <div class="form-helper">
+                1. 当选择HTTP，即节点与源的连接使用HTTP协议；<br/>
+                2. 当选择HTTPS时，节点使用HTTPS连接；<br/>
+                3. 当选择跟随协议时，当用户使用HTTP访问你在cdn上的网站时，节点也使用HTTP连接源，用户使用HTTPS访问时，节点也使用HTTPS连接源；<br/>
+                4. 当选择跟随端口和协议时，即用户访问的协议和端口，节点也使用同样的协议和端口与源连接，一般用于当监听多个端口时，也希望以同样的访问端口回源
+              </div>
+            </el-form-item>
+            <el-form-item  label="HTTP回源端口" v-if="['http', 'follow'].includes(siteSettings.origin.protocol)" style="width: 520px">
+              <el-input v-model="siteSettings.origin.httpPort" />
+              <div class="form-helper">当节点与源使用HTTP连接时所使用的端口</div>
+            </el-form-item>
+            <el-form-item label="HTTPS回源端口" v-if="['https', 'follow'].includes(siteSettings.origin.protocol)" style="width: 520px">
+              <el-input v-model="siteSettings.origin.httpsPort" />
+              <div class="form-helper">当节点与源使用HTTPS连接时所使用的端口</div>
+            </el-form-item>
+
+            <div class="divider"></div>
+
+            <div class="section-title">回源域名</div>
+            <el-form-item label="回源域名">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <el-radio-group v-model="siteSettings.origin.host">
+                  <el-radio value="follow">访问域名</el-radio>
+                  <el-radio value="follow_port">访问域名:访问端口</el-radio>
+                  <el-radio value="custom">自定义</el-radio>
+                </el-radio-group>
+                <el-input v-if="siteSettings.origin.host === 'custom'" v-model="siteSettings.origin.hostValue" placeholder="请输入回源域名" style="width: 250px;" />
+              </div>
+            </el-form-item>
+
+            <div class="divider"></div>
+
+            <div class="section-title">回源超时</div>
+            <el-form-item label="回源超时" style="width: 320px">
+              <el-input v-model="siteSettings.origin.timeout">
+                <template #append>秒</template>
+              </el-input>
+            </el-form-item>
+            <el-form-item label="连接超时" style="width: 320px">
+              <el-input style="width: 320px" v-model="siteSettings.origin.connTimeout">
+                <template #append>秒</template>
+              </el-input>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -190,8 +245,8 @@
                 <el-switch v-model="siteSettings.https.enable" />
              </el-form-item>
               <template v-if="siteSettings.https.enable">
-                 <el-form-item label="证书选择">
-                    <el-select v-model="siteSettings.https.certId" placeholder="请选择证书" style="width: 100%">
+                 <el-form-item label="证书选择" style="width: 520px">
+                    <el-select v-model="siteSettings.https.certId" placeholder="请选择证书">
                          <el-option v-for="cert in certList" :key="cert.id" :label="cert.name" :value="cert.id">
                             <span style="float: left">{{ cert.name }}</span>
                             <span style="float: right; color: #8492a6; font-size: 13px">{{ cert.domains }}</span>
@@ -202,7 +257,7 @@
                     </div>
                     <div class="form-helper" v-else>请选择或上传证书</div>
                  </el-form-item>
-                 <el-form-item label="监听端口">
+                 <el-form-item label="监听端口" style="width: 520px">
                     <el-input v-model="siteSettings.https.listenPorts" placeholder="443" />
                     <div class="form-helper">多个端口空格分隔。如果需要https://www.example.com和https://www.example.com:8433访问，则填443 8433</div>
                  </el-form-item>
@@ -214,7 +269,7 @@
                     <el-switch v-model="siteSettings.https.force" />
                     <div class="form-helper">开启后，访问http将会301跳转到https</div>
                  </el-form-item>
-                 <el-form-item label="跳转端口" v-if="siteSettings.https.force">
+                 <el-form-item label="跳转端口" v-if="siteSettings.https.force" style="width: 320px">
                     <el-select v-model="siteSettings.https.forcePort" placeholder="443">
                         <el-option label="443" value="443" />
                          <!-- TODO: Dynamic ports if needed -->
@@ -270,7 +325,7 @@
         <el-tab-pane label="安全设置" name="security">
            <div class="section-title">CC 防护</div>
            <el-form label-width="120px" class="config-form">
-              <el-form-item label="默认规则">
+              <el-form-item label="默认规则" style="width: 720px">
                  <el-radio-group v-model="siteSettings.security.cc.mode">
                      <el-radio :value="10002">关闭</el-radio>
                      <el-radio :value="10003">宽松</el-radio>
@@ -278,7 +333,7 @@
                      <el-radio :value="10005">严格</el-radio>
                      <el-radio :value="10006">JS验证</el-radio>
                      <el-radio :value="10008">验证码</el-radio>
-                     <!-- <el-radio :value="10009">自定义</el-radio> -->
+                     <el-radio :value="10009">自定义</el-radio>
                  </el-radio-group>
                  <div class="form-helper">不同模式对应不同的防御级别</div>
               </el-form-item>
@@ -388,7 +443,7 @@
         <el-tab-pane label="访问控制" name="access">
           <el-form label-width="150px" class="config-form">
             <div class="section-title">ACL设置</div>
-            <el-form-item label="ACL选择">
+            <el-form-item label="ACL选择" style="width: 520px">
               <el-select v-model="siteSettings.access.acl" placeholder="请选择" style="width: 100%" clearable>
                 <el-option
                   v-for="item in aclList"
@@ -429,7 +484,7 @@
                   <el-radio :value="false">不允许</el-radio>
                 </el-radio-group>
               </el-form-item>
-              <el-form-item label="额外允许域名">
+              <el-form-item label="额外允许域名" style="width: 520px">
                 <el-input v-model="siteSettings.access.hotlink.domains" placeholder="请输入除当前网站域名之外的域名 多个域名空格分隔" />
               </el-form-item>
             </template>
@@ -446,25 +501,25 @@
               </div>
               
               <div v-show="corsExpanded">
-                <el-form-item label="allow_origin">
+                <el-form-item label="allow_origin" style="width: 520px">
                   <el-input v-model="siteSettings.access.cors.allowOrigin" />
                 </el-form-item>
-                <el-form-item label="allow_methods">
+                <el-form-item label="allow_methods" style="width: 520px">
                   <el-input v-model="siteSettings.access.cors.allowMethods" />
                 </el-form-item>
-                <el-form-item label="allow_headers">
+                <el-form-item label="allow_headers" style="width: 520px">
                   <el-input v-model="siteSettings.access.cors.allowHeaders" />
                 </el-form-item>
-                <el-form-item label="expose_headers">
+                <el-form-item label="expose_headers" style="width: 520px">
                   <el-input v-model="siteSettings.access.cors.exposeHeaders" />
                 </el-form-item>
-                <el-form-item label="allow_credentials">
+                <el-form-item label="allow_credentials" style="width: 520px">
                   <el-radio-group v-model="siteSettings.access.cors.allowCredentials">
                     <el-radio :value="true">允许</el-radio>
                     <el-radio :value="false">不允许</el-radio>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="max_age">
+                <el-form-item label="max_age" style="width: 520px">
                   <el-input v-model="siteSettings.access.cors.maxAge" />
                 </el-form-item>
               </div>
@@ -474,6 +529,25 @@
 
         <el-tab-pane label="高级设置" name="advanced">
            <el-form label-width="150px" class="config-form">
+               <div class="section-title">上传大小限制</div>
+               <el-form-item label="大小限制">
+                 <div style="display: flex; align-items: center; gap: 10px;">
+                   <el-radio-group v-model="siteSettings.advanced.uploadLimitMode">
+                      <el-radio value="none">不限制</el-radio>
+                      <el-radio value="custom">自定义</el-radio>
+                   </el-radio-group>
+                   <el-input 
+                     v-if="siteSettings.advanced.uploadLimitMode === 'custom'" 
+                     v-model="siteSettings.advanced.uploadLimitValue" 
+                     style="width: 150px" 
+                     placeholder="100"
+                   >
+                     <template #append>MB</template>
+                   </el-input>
+                 </div>
+               </el-form-item>
+
+               <div class="divider"></div>
                <div class="section-title">压缩设置</div>
                <el-form-item label="Gzip压缩">
                    <el-switch v-model="siteSettings.advanced.gzip" />
@@ -510,7 +584,7 @@
 
                <div class="divider"></div>
                
-               <div class="section-title">公共请求头设置</div>
+               <div class="section-title">请求头设置</div>
                <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openHeaderDialog('req', 'create')">新增请求头</el-button>
                 <el-table :data="siteSettings.advanced.reqHeaders" border size="small">
                    <el-table-column label="名称" prop="name" />
@@ -538,7 +612,28 @@
 
                <div class="divider"></div>
                
-               <div class="section-title">其它</div>
+                <div class="section-title">访问日志</div>
+                <el-form-item label="记录请求头">
+                    <el-switch v-model="siteSettings.advanced.logRequestHeader" />
+                    <div class="form-helper">开启只会增加硬盘空间占用，可长期开启</div>
+                </el-form-item>
+                <el-form-item label="记录响应头">
+                    <el-switch v-model="siteSettings.advanced.logResponseHeader" />
+                    <div class="form-helper">建议只在调试时开启，始终开启会增加cpu, 硬盘的占用</div>
+                </el-form-item>
+                <el-form-item label="记录请求体">
+                    <el-switch v-model="siteSettings.advanced.logRequestBody" />
+                    <div class="form-helper">建议只在调试时开启，始终开启对节点性能消耗较大</div>
+                </el-form-item>
+                <el-form-item label="请求体大小限制">
+                    <el-input v-model="siteSettings.advanced.logRequestBodySizeLimit" placeholder="16" style="width: 200px;">
+                        <template #append>KB</template>
+                    </el-input>
+                </el-form-item>
+
+                <div class="divider"></div>
+
+                <div class="section-title">其它</div>
                <el-form-item label="源站证书">
                    <el-switch v-model="siteSettings.advanced.originCert" />
                    <div class="form-helper">用于回源连接（HTTPS）验证源站证书</div>
@@ -677,7 +772,9 @@ const siteSettings = reactive({
     list: [],
     conditions: [],
     protocol: 'follow', // http, https, follow, follow_port
-    host: 'follow', // custom, follow
+    httpPort: '80',
+    httpsPort: '443',
+    host: 'follow', // follow, follow_port, custom
     hostValue: '',
     timeout: 60,
     connTimeout: 10,
@@ -736,14 +833,8 @@ const siteSettings = reactive({
     }
   },
   advanced: {
-      gzip: { enable: false, level: 1, minLength: '1k' }, // Updated structure if needed, or keep simple bool if screenshot implies simple switch. Screenshot shows simple switch.
-      // Let's stick to simple props matching the UI first, allow complex if backend data requires it.
-      // Screenshot: Gzip switch, Websocket switch, SearchEngine switch
-      // URL Rewrite list
-      // Req Header list
-      // Resp Header list
-      // Others: Origin Cert switch, Realtime Data switch
-      
+      uploadLimitMode: 'none',
+      uploadLimitValue: 100,
       gzip: false,
       websocket: false,
       searchEngineOrigin: false, // 搜索引擎回源
@@ -754,7 +845,13 @@ const siteSettings = reactive({
       
       originCert: false, // 源站证书
       realtimeIdentify: false, // 数据实时鉴别
-      realtimeSend: false // 数据实时发送
+      realtimeSend: false, // 数据实时发送
+
+      // 访问日志
+      logRequestHeader: false,
+      logResponseHeader: false,
+      logRequestBody: false,
+      logRequestBodySizeLimit: 16
   }
 })
 
@@ -1016,11 +1113,18 @@ function applySiteData(data) {
       enable: true
   }))
   siteSettings.origin.protocol = data.backend_protocol || 'follow'
-  siteSettings.origin.host = 'follow'
-  if (settings.origin_host) {
-      siteSettings.origin.host = settings.origin_host === 'follow' ? 'follow' : 'custom'
-      siteSettings.origin.hostValue = settings.origin_host === 'follow' ? '' : settings.origin_host
+  siteSettings.origin.httpPort = settings.origin_http_port || '80'
+  siteSettings.origin.httpsPort = settings.origin_https_port || '443'
+  
+  siteSettings.origin.host = settings.origin_host || 'follow'
+  if (siteSettings.origin.host !== 'follow' && siteSettings.origin.host !== 'follow_port' && siteSettings.origin.host !== '') {
+      siteSettings.origin.hostValue = settings.origin_host
+      siteSettings.origin.host = 'custom'
+  } else {
+      if (siteSettings.origin.host === '') siteSettings.origin.host = 'follow'
+      siteSettings.origin.hostValue = ''
   }
+
   siteSettings.origin.timeout = settings.origin_timeout || 60
   siteSettings.origin.connTimeout = settings.origin_conn_timeout || 10
   siteSettings.origin.balanceWay = data.balance_way || 'rr'
@@ -1075,6 +1179,31 @@ function applySiteData(data) {
       Object.assign(siteSettings.access.cors, settings.access.cors)
     }
   }
+
+  // Advanced
+  siteSettings.advanced.gzip = parseBool(settings.gzip, false)
+  siteSettings.advanced.websocket = parseBool(settings.websocket, false)
+  siteSettings.advanced.searchEngineOrigin = parseBool(settings.search_engine_origin, false)
+  siteSettings.advanced.urlRewrites = settings.url_rewrites || []
+  siteSettings.advanced.reqHeaders = settings.req_headers || []
+  siteSettings.advanced.resHeaders = settings.res_headers || []
+  siteSettings.advanced.originCert = parseBool(settings.origin_cert, false)
+  siteSettings.advanced.realtimeIdentify = parseBool(settings.realtime_identify, false)
+  siteSettings.advanced.realtimeSend = parseBool(settings.realtime_send, false)
+  
+  const uploadLimit = parseInt(settings.upload_limit || 0)
+  if (uploadLimit > 0) {
+      siteSettings.advanced.uploadLimitMode = 'custom'
+      siteSettings.advanced.uploadLimitValue = uploadLimit
+  } else {
+      siteSettings.advanced.uploadLimitMode = 'none'
+      siteSettings.advanced.uploadLimitValue = 100
+  }
+
+  siteSettings.advanced.logRequestHeader = parseBool(settings.log_request_header, false)
+  siteSettings.advanced.logResponseHeader = parseBool(settings.log_response_header, false)
+  siteSettings.advanced.logRequestBody = parseBool(settings.log_request_body, false)
+  siteSettings.advanced.logRequestBodySizeLimit = settings.log_request_body_size_limit || 16
   
   if (aclList.value.length === 0) {
     loadAcls()
@@ -1344,6 +1473,11 @@ function buildSettingsPayload() {
     origin_cert: siteSettings.advanced.originCert,
     realtime_identify: siteSettings.advanced.realtimeIdentify,
     realtime_send: siteSettings.advanced.realtimeSend,
+    upload_limit: siteSettings.advanced.uploadLimitMode === 'none' ? 0 : parseInt(siteSettings.advanced.uploadLimitValue || 0),
+    log_request_header: siteSettings.advanced.logRequestHeader,
+    log_response_header: siteSettings.advanced.logResponseHeader,
+    log_request_body: siteSettings.advanced.logRequestBody,
+    log_request_body_size_limit: parseInt(siteSettings.advanced.logRequestBodySizeLimit || 16),
     
     access: {
       acl: siteSettings.access.acl,
@@ -1351,8 +1485,10 @@ function buildSettingsPayload() {
       cors: siteSettings.access.cors
     },
     // Flattened / Specific keys for backend
-    origin_host: siteSettings.origin.host === 'custom' ? siteSettings.origin.hostValue : 'follow',
+    origin_host: siteSettings.origin.host === 'custom' ? siteSettings.origin.hostValue : siteSettings.origin.host,
     origin_timeout: siteSettings.origin.timeout,
+    origin_http_port: siteSettings.origin.httpPort,
+    origin_https_port: siteSettings.origin.httpsPort,
     backend_protocol: siteSettings.origin.protocol
   }
 }
