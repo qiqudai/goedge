@@ -148,8 +148,9 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 	}
 	services.ApplySiteDefaults(site, defaults)
 
-	// Force HTTPS OFF by default
-	site.HttpsListen = []string{}
+	// Force HTTPS OFF by default - REMOVED to allow ApplySiteDefaults to work
+	// site.HttpsListen = []string{}
+
 
 	// Handle GroupIDs
 	groupIDs := req.GroupIDs

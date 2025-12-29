@@ -338,19 +338,25 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 // AdminBatchUpdate updates fields for selected sites
 func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	var req struct {
-		IDs             []int64                `json:"ids"`
-		UserPackageID   *int64                 `json:"user_package_id"`
-		GroupID         *int64                 `json:"group_id"`
-		DNSProviderID   *int64                 `json:"dns_provider_id"`
-		HttpListen      *[]string              `json:"http_listen"`
-		HttpsListen     *[]string              `json:"https_listen"`
-		BalanceWay      *string                `json:"balance_way"`
-		BackendProtocol *string                `json:"backend_protocol"`
-		CcDefaultRule   *int64                 `json:"cc_default_rule"`
-		BlackIP         *string                `json:"black_ip"`
-		WhiteIP         *string                `json:"white_ip"`
-		BlockRegion     *string                `json:"block_region"`
-		Settings        map[string]interface{} `json:"settings"`
+		IDs               []int64                `json:"ids"`
+		UserPackageID     *int64                 `json:"user_package_id"`
+		GroupID           *int64                 `json:"group_id"`
+		DNSProviderID     *int64                 `json:"dns_provider_id"`
+		HttpListen        *[]string              `json:"http_listen"`
+		HttpsListen       *[]string              `json:"https_listen"`
+		BalanceWay        *string                `json:"balance_way"`
+		BackendProtocol   *string                `json:"backend_protocol"`
+		CcDefaultRule     *int64                 `json:"cc_default_rule"`
+		BlackIP           *string                `json:"black_ip"`
+		WhiteIP           *string                `json:"white_ip"`
+		BlockRegion       *string                `json:"block_region"`
+		Settings          map[string]interface{} `json:"settings"`
+		CnameDomain       *string                `json:"cname_domain"`
+		CnameMode         *string                `json:"cname_mode"`
+		RegionID          *int64                 `json:"region_id"`
+		NodeGroupID       *int64                 `json:"node_group_id"`
+		BackupNodeGroupID *int64                 `json:"backup_node_group_id"`
+		EnableBackupGroup *bool                  `json:"enable_backup_group"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -393,6 +399,24 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		if req.BlockRegion != nil {
 			updates["block_region"] = *req.BlockRegion
 		}
+		if req.CnameDomain != nil {
+			updates["cname_domain"] = *req.CnameDomain
+		}
+		if req.CnameMode != nil {
+			updates["cname_mode"] = *req.CnameMode
+		}
+		if req.RegionID != nil {
+			updates["region_id"] = *req.RegionID
+		}
+		if req.NodeGroupID != nil {
+			updates["node_group_id"] = *req.NodeGroupID
+		}
+		if req.BackupNodeGroupID != nil {
+			updates["backup_node_group"] = *req.BackupNodeGroupID
+		}
+		if req.EnableBackupGroup != nil {
+			updates["enable_backup_group"] = *req.EnableBackupGroup
+		}
 		if req.Settings != nil {
 			b, _ := json.Marshal(req.Settings)
 			updates["settings"] = string(b)
@@ -427,6 +451,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Batch update completed"})
 }
+
 
 // AdminBatchAction handles enable/disable/delete etc
 func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {

@@ -5,7 +5,7 @@ import "time"
 // Task 对应数据库中的 `task` 表
 type Task struct {
 	ID        int64     `json:"id" gorm:"primaryKey"`
-	PID       int64     `json:"pid"`
+	PID       int64     `json:"pid" gorm:"column:pid"`
 	Pry       int       `json:"pry"`
 	Name      string    `json:"name"`
 	Type      string    `json:"type"` // refresh_url, refresh_dir, preheat

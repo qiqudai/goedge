@@ -47,6 +47,12 @@ func GetSiteDefaultMapWithGroup(userID, groupID int64) (map[string]string, error
 	if err != nil {
 		return nil, err
 	}
+	// Load Cert Defaults (Global)
+	certGlobal, err := LoadConfigMap("cert_default_config", "global", 0)
+	if err == nil {
+		global = MergeConfigMap(global, certGlobal)
+	}
+
 	legacyUser, err := LoadConfigMap("site_default_config", "user", userID)
 	if err != nil {
 		return global, nil
@@ -145,6 +151,18 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(httpsCfg, "ssl_ciphers", defaults["https_listen-ssl_ciphers"])
 	setIfMissing(httpsCfg, "ssl_prefer_server_ciphers", defaults["https_listen-ssl_prefer_server_ciphers"])
 
+	// Apply Cert defaults
+	certCfg := getSubMap(site.Settings, "cert")
+	setIfMissing(certCfg, "type", defaults["cert_default_type"])
+	setIfMissing(certCfg, "dnsapi_type", defaults["cert_default_dnsapi_type"])
+	// We might store data json string directly or parse it
+	if v := defaults["cert_default_dnsapi_data"]; v != "" {
+		var dataMap map[string]interface{}
+		if json.Unmarshal([]byte(v), &dataMap) == nil {
+			setIfMissing(certCfg, "dnsapi_data", dataMap)
+		}
+	}
+
 	backsourceCfg := getSubMap(site.Settings, "backsource")
 	setIfMissing(backsourceCfg, "protocol", defaults["backend_protocol"])
 	setIfMissing(backsourceCfg, "http_port", defaults["backend_http_port"])
@@ -219,6 +237,7 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 		setIfMissing(advCfg, "origin_headers", parseHeaderList(v))
 	}
 }
+
 
 func ApplyForwardDefaults(forward *models.Forward, defaults map[string]string) {
 	if forward == nil || defaults == nil {

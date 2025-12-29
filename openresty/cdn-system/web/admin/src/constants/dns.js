@@ -32,16 +32,17 @@ export const DNS_PROVIDER_LABEL_MAP = {
 
 export const DNS_API_FIELD_LABELS = {
   aliyun: { access_key_id: 'AccessKey ID', access_key_secret: 'AccessKey Secret' },
-  huawei: { access_key_id: 'Access Key ID', secret_access_key: 'Secret Access Key', id: 'Access Key ID', secret: 'Secret Access Key' },
-  dnsla: { api_id: 'API ID', api_pass: 'API Password', id: 'API ID', secret: 'API Password' },
+  huawei: { id: 'Access Key ID', secret: 'Secret Access Key' },
+  dnsla: { id: 'API ID', secret: 'API Password' },
   dnspod: { id: 'ID', token: 'Token' },
-  dnspod_intl: { id: 'ID', token: 'Token', secret_id: 'SecretId', secret_key: 'SecretKey' },
-  '51dns': { app_id: 'App ID', app_secret: 'App Secret', id: 'App ID', secret: 'App Secret' },
-  cloudflare: { email: 'Email', api_key: 'API Key', key: 'API Key' },
-  godaddy: { api_key: 'API Key', api_secret: 'API Secret', key: 'API Key', secret: 'API Secret' },
+  dnspod_intl: { secret_id: 'SecretId', secret_key: 'SecretKey' },
+  '51dns': { id: 'App ID', secret: 'App Secret' },
+  cloudflare: { email: 'Email', key: 'API Key' },
+  godaddy: { key: 'API Key', secret: 'API Secret' },
   cloudns: { auth_id: 'Auth ID', auth_password: 'Auth Password' },
   namecom: { username: 'Username', api_token: 'API Token' },
   namecheap: { user: 'User', api_key: 'API Key', ip: 'Client IP' },
   jdcloud: { access_key: 'Access Key', secret_key: 'Secret Key' },
   namesilo: { api_key: 'API Key' }
 }
+

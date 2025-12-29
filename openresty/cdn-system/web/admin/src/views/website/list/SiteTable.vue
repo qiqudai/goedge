@@ -15,6 +15,9 @@
             <el-dropdown-item command="delete">删除</el-dropdown-item>
             <el-dropdown-item command="unlock">解除黑名单</el-dropdown-item>
             <el-dropdown-item command="clear_cache">清空缓存</el-dropdown-item>
+            <el-dropdown-item v-if="isAdmin" divided command="cname-domain">CNAME域名</el-dropdown-item>
+            <el-dropdown-item v-if="isAdmin" command="cname-mode">CNAME模式</el-dropdown-item>
+            <el-dropdown-item v-if="isAdmin" command="node-group">线路分组</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -46,6 +49,12 @@
     border
     fit
     storage-key="website-site-list"
+    :total="total"
+    v-model:current-page="query.page"
+    v-model:page-size="query.pageSize"
+    layout="total, sizes, prev, pager, next"
+    @size-change="handleSearch"
+    @current-change="handleSearch"
     @selection-change="(rows) => $emit('selection-change', rows)"
   >
     <el-table-column type="selection" width="55" align="center" />
@@ -106,17 +115,6 @@
       </template>
     </el-table-column>
   </AppTable>
-
-  <div class="pagination-container">
-    <el-pagination
-      v-model:current-page="query.page"
-      v-model:page-size="query.pageSize"
-      layout="total, sizes, prev, pager, next"
-      :total="total"
-      @size-change="handleSearch"
-      @current-change="handleSearch"
-    />
-  </div>
 </template>
 
 <script setup>

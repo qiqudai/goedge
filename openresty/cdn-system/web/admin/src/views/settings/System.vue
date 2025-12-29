@@ -12,6 +12,54 @@
           <el-form-item label="底部文字"><el-input v-model="form.footer_text" /></el-form-item>
           <el-form-item label="全站JS"><el-input v-model="form.global_js" type="textarea" :rows="4" /></el-form-item>
 
+          <el-row :gutter="20">
+            <el-col :span="8">
+              <el-form-item label="favicon (ico文件)">
+                 <el-upload
+                   class="avatar-uploader"
+                   :action="uploadUrl"
+                   :headers="uploadHeaders"
+                   :show-file-list="false"
+                   :on-success="(res) => handleUploadSuccess(res, 'favicon_file')"
+                   accept=".ico,.png"
+                 >
+                   <img v-if="form.favicon_file" :src="form.favicon_file" class="avatar" style="width: 32px; height: 32px; object-fit: contain;" />
+                   <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+                 </el-upload>
+              </el-form-item>
+            </el-col>
+             <el-col :span="8">
+              <el-form-item label="logo (png文件)">
+                 <el-upload
+                   class="avatar-uploader"
+                   :action="uploadUrl"
+                   :headers="uploadHeaders"
+                   :show-file-list="false"
+                   :on-success="(res) => handleUploadSuccess(res, 'logo_file')"
+                   accept=".png,.jpg,.jpeg,.svg"
+                 >
+                   <img v-if="form.logo_file" :src="form.logo_file" class="avatar" style="height: 40px; object-fit: contain;" />
+                   <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+                 </el-upload>
+              </el-form-item>
+            </el-col>
+             <el-col :span="8">
+              <el-form-item label="登录页广告 (jpg文件)">
+                 <el-upload
+                   class="avatar-uploader"
+                   :action="uploadUrl"
+                   :headers="uploadHeaders"
+                   :show-file-list="false"
+                   :on-success="(res) => handleUploadSuccess(res, 'login_ad_file')"
+                   accept=".jpg,.jpeg,.png"
+                 >
+                   <img v-if="form.login_ad_file" :src="form.login_ad_file" class="avatar" style="height: 60px; object-fit: contain;" />
+                   <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+                 </el-upload>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
           <el-divider>套餐相关</el-divider>
           <el-form-item label="套餐到期关闭"><el-switch v-model="form.expire_close_site" /></el-form-item>
           <el-form-item label="流量超限关闭"><el-switch v-model="form.traffic_close_site" /></el-form-item>
@@ -127,9 +175,23 @@
 import { ref, onMounted } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 
 const activeTab = ref('system')
 const form = ref({})
+const uploadUrl = '/api/v1/admin/upload/image'
+const uploadHeaders = {
+    Authorization: 'Bearer ' + localStorage.getItem('admin_token')
+}
+
+const handleUploadSuccess = (res, field) => {
+    if (res.code === 0) {
+        form.value[field] = res.url
+        ElMessage.success('上传成功')
+    } else {
+        ElMessage.error(res.msg || '上传失败')
+    }
+}
 
 const loadData = () => {
   request.get('/system_info').then(res => {
@@ -151,5 +213,30 @@ onMounted(() => {
 <style scoped>
 .mb-20 {
   margin-bottom: 20px;
+}
+.avatar-uploader .el-upload {
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+}
+.avatar-uploader .el-upload:hover {
+  border-color: var(--el-color-primary);
+}
+.avatar-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 100px;
+  height: 100px;
+  text-align: center;
+  line-height: 100px; /* Vertically center */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.avatar {
+  display: block;
 }
 </style>

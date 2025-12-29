@@ -84,6 +84,7 @@ func main() {
 		&models.Forward{},
 		&models.ForwardGroup{},
 		&models.ForwardGroupRelation{},
+		&models.Task{},
 	)
 
 	// Custom Migration Fixes

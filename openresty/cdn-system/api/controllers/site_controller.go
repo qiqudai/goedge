@@ -25,6 +25,8 @@ type siteListItem struct {
 	GroupName       string    `json:"group_name"`
 	NodeGroupID     int64     `json:"node_group_id"`
 	NodeGroupName   string    `json:"node_group_name"`
+	RegionID        int64     `json:"region_id"`
+	RegionName      string    `json:"region_name"`
 	Status          bool      `json:"status"`
 	State           string    `json:"state"`
 	CreatedAt       time.Time `json:"created_at"`

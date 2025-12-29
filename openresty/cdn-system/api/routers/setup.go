@@ -14,6 +14,8 @@ func Setup(r *gin.Engine) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "node": "server-1"})
 	})
+	r.Static("/uploads", "./uploads")
+
 	acmeCtr := &controllers.AcmeController{}
 	r.GET("/.well-known/acme-challenge/:token", acmeCtr.ServeChallenge)
 
@@ -40,13 +42,13 @@ func Setup(r *gin.Engine) {
 			admin.PUT("/nodes/:id", nodeCtr.UpdateNode)
 			admin.POST("/nodes/batch", nodeCtr.BatchAction)
 			ngCtr := &controllers.NodeGroupController{}
-			admin.GET("/node-groups", ngCtr.ListNodeGroups)
-			admin.POST("/node-groups", ngCtr.CreateNodeGroup)
-			admin.PUT("/node-groups/:id", ngCtr.UpdateNodeGroup)
-			admin.DELETE("/node-groups/:id", ngCtr.DeleteNodeGroup)
-			admin.GET("/node-groups/:id/resolution", ngCtr.GetResolution)
-			admin.POST("/node-groups/:id/resolution/assign", ngCtr.AssignResolutionLines)
-			admin.POST("/node-groups/:id/resolution/action", ngCtr.LineResolutionAction)
+			admin.GET("/node_groups", ngCtr.ListNodeGroups)
+			admin.POST("/node_groups", ngCtr.CreateNodeGroup)
+			admin.PUT("/node_groups/:id", ngCtr.UpdateNodeGroup)
+			admin.DELETE("/node_groups/:id", ngCtr.DeleteNodeGroup)
+			admin.GET("/node_groups/:id/resolution", ngCtr.GetResolution)
+			admin.POST("/node_groups/:id/resolution/assign", ngCtr.AssignResolutionLines)
+			admin.POST("/node_groups/:id/resolution/action", ngCtr.LineResolutionAction)
 			regionCtr := &controllers.RegionController{}
 			admin.GET("/regions", regionCtr.ListRegions)
 			admin.POST("/regions", regionCtr.CreateRegion)
@@ -135,6 +137,8 @@ func Setup(r *gin.Engine) {
 			// System
 			admin.GET("/system_info", (&controllers.SystemController{}).GetInfo)
 			admin.POST("/system_info", (&controllers.SystemController{}).UpdateInfo)
+			admin.POST("/upload/image", (&controllers.UploadController{}).UploadImage)
+
 
 			// Domain Management
 			userDomainCtr := &controllers.UserDomainController{}

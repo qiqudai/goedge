@@ -54,6 +54,13 @@
       :is-admin="isAdmin"
       @success="fetchSites"
     />
+
+    <BatchEditDialog
+      v-model="batchEditVisible"
+      :mode="batchEditMode"
+      :ids="batchEditIds"
+      @success="fetchSites"
+    />
   </div>
 </template>
 
@@ -65,6 +72,7 @@ import request from '@/utils/request'
 
 import SiteTable from './list/SiteTable.vue'
 import SiteEditDialog from './list/SiteEditDialog.vue'
+import BatchEditDialog from './list/BatchEditDialog.vue'
 import DefaultSettings from './list/DefaultSettings.vue'
 import DnsApiList from './list/DnsApiList.vue'
 import ResolvePage from './Resolve.vue'
@@ -82,6 +90,10 @@ const siteQuery = reactive({ page: 1, pageSize: 10, keyword: '', searchField: 'a
 
 const siteEditVisible = ref(false)
 const siteEditData = ref(null)
+
+const batchEditVisible = ref(false)
+const batchEditMode = ref('')
+const batchEditIds = ref([])
 
 const advancedVisible = ref(false)
 const advQuery = reactive({ status: '' })
@@ -118,20 +130,45 @@ const handleSiteAction = async (type, data) => {
     return
   }
 
+  // Handle batch edit dialogs
+  if (type === 'batch-cname-domain' || type === 'batch-cname-mode' || type === 'batch-node-group') {
+     const ids = selectedSites.value.map(s => s.id)
+     if (ids.length === 0) {
+         ElMessage.warning('请先选择站点')
+         return
+     }
+     batchEditMode.value = type.replace('batch-', '')
+     batchEditIds.value = ids
+     batchEditVisible.value = true
+     return
+  }
+
   const ids = data ? [data.id] : selectedSites.value.map(s => s.id)
+  if (ids.length === 0) {
+      ElMessage.warning('请先选择站点')
+      return
+  }
+  
   if (type.endsWith('delete')) {
     await ElMessageBox.confirm('确定删除吗？', '提示')
     await request.post('/sites/batch_action', { action: 'delete', ids })
   } else if (type.endsWith('enable') || type.endsWith('disable')) {
     const action = type.split('-').pop()
     await request.post('/sites/batch_action', { action, ids })
+  } else if (type.endsWith('unlock')) {
+     await request.post('/sites/batch_action', { action: 'unlock', ids })
+  } else if (type.endsWith('clear_cache')) {
+     // TODO: Implement clear cache
+     ElMessage.info('暂未实现')
+     return
   }
   ElMessage.success('操作成功')
   fetchSites()
 }
 
+
 const handleExport = () => {
-  // export logic
+  window.open(`${request.defaults.baseURL}/sites/export`, '_blank')
 }
 
 const applyAdvancedSearch = () => {

@@ -295,8 +295,9 @@ const isAdmin = ref((localStorage.getItem('role') || 'user') === 'admin')
 const userOptions = ref([])
 const userLoading = ref(false)
 const selectedDefaultUser = ref(0)
-const adminDefaultDnsapiOptions = ref([])
 const dnsapiForm = reactive({
+
+
   id: 0,
   name: '',
   remark: '',
@@ -307,9 +308,7 @@ const defaultForm = reactive({
   type: 'system',
   dnsapi: ''
 })
-const defaultDnsapiOptions = computed(() => (
-  isAdmin.value ? adminDefaultDnsapiOptions.value : dnsapiOptions.value
-))
+const defaultDnsapiOptions = computed(() => dnsapiOptions.value)
 
 const listQuery = reactive({
   page: 1,
@@ -317,6 +316,7 @@ const listQuery = reactive({
   keyword: '',
   searchField: 'domain'
 })
+
 
 const dialogVisible = ref(false)
 const dialogTab = ref('single')
@@ -614,16 +614,6 @@ const loadUsers = query => {
   }
 }
 
-const loadDefaultDnsapiList = (userId) => {
-  if (!userId) {
-    adminDefaultDnsapiOptions.value = []
-    return
-  }
-  request.get('/dnsapi', { params: { user_id: userId } }).then(res => {
-    adminDefaultDnsapiOptions.value = res.data?.list || res.list || []
-  })
-}
-
 const loadDefaultSettings = (userId) => {
   const params = userId ? { user_id: userId } : undefined
   request.get('/certs/default_settings', { params }).then(res => {
@@ -640,8 +630,8 @@ const handleDefaultUserChange = (userId) => {
   defaultForm.type = 'system'
   defaultForm.dnsapi = ''
   loadDefaultSettings(userId)
-  loadDefaultDnsapiList(userId)
 }
+
 
 const saveDefaultSettings = () => {
   if (isAdmin.value && !selectedDefaultUser.value) {

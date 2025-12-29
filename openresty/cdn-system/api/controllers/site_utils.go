@@ -188,7 +188,136 @@ func findSiteIDsByGroupIDs(groupIDs []int64) ([]int64, error) {
 	return siteIDs, nil
 }
 
-func uniqueIDs(sites []models.Site, getter func(models.Site) int64) []int64 {
+func loadRegions(sites []models.Site) (map[int64]string, error) {
+	ids := uniqueIDs(sites, func(s models.Site) int64 { return s.RegionID })
+	result := map[int64]string{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var regions []models.Region
+	if err := db.DB.Where("id IN ?", ids).Find(&regions).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range regions {
+		result[r.ID] = r.Name
+	}
+	return result, nil
+}
+
+func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
+	userMap, err := loadUsers(sites)
+	if err != nil {
+		return nil, err
+	}
+	pkgMap, err := loadUserPackages(sites)
+	if err != nil {
+		return nil, err
+	}
+	groupMap, relMap, err := loadSiteGroups(sites)
+	if err != nil {
+		return nil, err
+	}
+	nodeGroupMap, err := loadNodeGroups(sites)
+	if err != nil {
+		return nil, err
+	}
+	regionMap, err := loadRegions(sites)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]siteListItem, 0, len(sites))
+	for _, site := range sites {
+		domains := site.Domains
+		domainDisplay := strings.Join(domains, ",")
+		if domainDisplay == "" && site.DomainRaw != "" {
+			domainDisplay = site.DomainRaw
+		}
+		originDisplay := strings.Join(site.Backends, ",")
+		if originDisplay == "" && site.BackendRaw != "" {
+			originDisplay = strings.Trim(site.BackendRaw, "\"")
+		}
+		httpsOn := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
+		httpPorts := parseListenPorts(site.HttpListen, site.HttpListenRaw, "80")
+		httpsPorts := parseListenPorts(site.HttpsListen, site.HttpsListenRaw, "")
+		
+		var listenParts []string
+		if len(httpPorts) > 0 {
+			listenParts = append(listenParts, "HTTP:"+strings.Join(httpPorts, ","))
+		}
+		if httpsOn && len(httpsPorts) > 0 {
+			listenParts = append(listenParts, "HTTPS:"+strings.Join(httpsPorts, ","))
+		}
+		listenPorts := strings.Join(listenParts, " ")
+
+		cname := strings.TrimSpace(site.CnameHostname)
+		pkg := pkgMap[site.UserPackageID]
+		
+		// Priority: Site Mode > Package Mode > Default
+		siteMode := strings.TrimSpace(site.CnameMode)
+		pkgMode := strings.TrimSpace(pkg.CnameMode)
+
+		isPkgMode := siteMode == "package" || (siteMode == "" && pkgMode == "package")
+
+		if isPkgMode && pkg.CnameHostname != "" {
+			cname = pkg.CnameHostname
+			if pkg.CnameDomain != "" {
+				cname += "." + pkg.CnameDomain
+			} else if site.CnameDomain != "" {
+				cname += "." + site.CnameDomain
+			} else {
+				cname += ".cdn.node.com"
+			}
+		} else {
+			// Custom or Default mode
+			// Reconstruct CNAME to ensure it reflects current CnameDomain (important for batch updates)
+			if len(domains) > 0 && site.CnameDomain != "" {
+				cname = buildSiteCname(domains[0], site.CnameDomain)
+			}
+		}
+		if cname == "" {
+			cname = "-"
+		}
+
+		item := siteListItem{
+			ID:              site.ID,
+			UserID:          site.UserID,
+			UserName:        userMap[site.UserID],
+			Domains:         domains,
+			DomainDisplay:   domainDisplay,
+			ListenPorts:     listenPorts,
+			OriginDisplay:   originDisplay,
+			CNAME:           cname,
+			HTTPS:           httpsOn,
+			UserPackageID:   site.UserPackageID,
+			UserPackageName: pkg.Name,
+			DNSProviderID:   site.DNSProviderID,
+			GroupID:         0,
+			GroupIDs:        relMap[site.ID],
+			GroupName:       "",
+			NodeGroupID:     site.NodeGroupID,
+			NodeGroupName:   nodeGroupMap[site.NodeGroupID],
+			RegionID:        site.RegionID,
+			RegionName:      regionMap[site.RegionID],
+			Status:          site.Enable,
+			State:           site.State,
+			CreatedAt:       site.CreatedAt,
+		}
+		if len(item.GroupIDs) > 0 {
+			item.GroupID = item.GroupIDs[0]
+			item.GroupName = groupMap[item.GroupIDs[0]]
+			names := make([]string, 0, len(item.GroupIDs))
+			for _, gid := range item.GroupIDs {
+				if name, ok := groupMap[gid]; ok {
+					names = append(names, name)
+				}
+			}
+			if len(names) > 0 {
+				item.GroupName = strings.Join(names, ", ")
+			}
+		}
+		items = append(items, item)
+func uniqueIDs(sites []models.Site, getter func(s models.Site) int64) []int64 {
 	seen := map[int64]struct{}{}
 	for _, s := range sites {
 		id := getter(s)
