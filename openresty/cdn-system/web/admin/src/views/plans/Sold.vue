@@ -347,8 +347,8 @@
           <el-col :span="8">
             <el-form-item label="CNAME模式">
                <el-select v-model="editForm.cname_mode" placeholder="默认">
-                <el-option label="按网站生成" value="default" />
-                <el-option label="按套餐生成" value="site" />
+                <el-option label="按网站生成(默认)" value="domain" />
+                <el-option label="按套餐生成" value="package" />
               </el-select>
             </el-form-item>
           </el-col>

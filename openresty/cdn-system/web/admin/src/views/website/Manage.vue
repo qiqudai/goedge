@@ -12,7 +12,7 @@
     <el-card class="page-card" v-loading="loading">
       <el-tabs v-model="activeTab" class="manage-tabs" type="border-card">
         <el-tab-pane label="基本信息" name="basic">
-          <el-descriptions border column="3" class="mb-16">
+          <el-descriptions border :column="3" class="mb-16">
             <el-descriptions-item label="域名" :span="2">
               {{ siteSettings.basic.domain || '未配置' }}
             </el-descriptions-item>
@@ -42,9 +42,7 @@
             <el-form-item label="所属分组">
               <el-input v-model="siteSettings.basic.groupName" disabled />
             </el-form-item>
-            <el-form-item label="区域/线路">
-              <el-input v-model="siteSettings.basic.nodeGroupName" disabled />
-            </el-form-item>
+
           </el-form>
         </el-tab-pane>
 
@@ -68,7 +66,7 @@
             </el-table-column>
             <el-table-column label="操作" width="80">
               <template #default="{ $index }">
-                <el-button type="text" size="small" @click="removeOrigin($index)">删除</el-button>
+                <el-button link type="danger" size="small" @click="removeOrigin($index)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -139,7 +137,7 @@
             </el-table-column>
             <el-table-column label="操作" width="100">
               <template #default="{ $index }">
-                <el-button type="text" size="small" @click="removeConditionOrigin($index)">删除</el-button>
+                <el-button link type="danger" size="small" @click="removeConditionOrigin($index)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -200,7 +198,7 @@
               </el-form-item>
               <el-form-item label="SSL 协议" style="max-width: 600px;">
                 <el-checkbox-group v-model="siteSettings.https.sslProtocols">
-                  <el-checkbox v-for="proto in sslProtocolOptions" :key="proto" :label="proto">
+                  <el-checkbox v-for="proto in sslProtocolOptions" :key="proto" :label="proto" :value="proto">
                     {{ proto }}
                   </el-checkbox>
                 </el-checkbox-group>
@@ -329,8 +327,8 @@
             <el-table-column label="TTL(秒)" width="120" prop="ttl" />
             <el-table-column label="操作" width="140">
               <template #default="{ row, $index }">
-                <el-button type="text" size="small" @click="openCacheRuleDialog('edit', row, $index)">编辑</el-button>
-                <el-button type="text" size="small" @click="removeCacheRule($index)">删除</el-button>
+                <el-button link type="primary" size="small" @click="openCacheRuleDialog('edit', row, $index)">编辑</el-button>
+                <el-button link type="danger" size="small" @click="removeCacheRule($index)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>

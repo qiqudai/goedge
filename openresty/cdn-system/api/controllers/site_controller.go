@@ -8,6 +8,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/net/publicsuffix"
 	"gorm.io/gorm"
 )
 
@@ -584,27 +584,39 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, int64, er
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
-	if pkgErr := db.DB.Select("cname_domain").Where("id = ?", req.UserPackageID).First(&models.UserPackage{}).Error; pkgErr == nil {
-	}
-	var pkg models.UserPackage
-	if err := db.DB.Select("cname_domain").Where("id = ?", req.UserPackageID).First(&pkg).Error; err == nil {
-		cnameDomain := strings.TrimSpace(pkg.CnameDomain)
-		if cnameDomain != "" {
-			site.CnameDomain = cnameDomain
-			if hostname := buildSiteCname(domains[0], cnameDomain); hostname != "" {
-				site.CnameHostname = hostname
+	var userPkg models.UserPackage
+	if err := db.DB.First(&userPkg, req.UserPackageID).Error; err == nil {
+		fmt.Printf("[DEBUG] CreateSite PkgID=%d Mode='%s' Host='%s' Dom='%s'\n", req.UserPackageID, userPkg.CnameMode, userPkg.CnameHostname, userPkg.CnameDomain)
+		if strings.TrimSpace(userPkg.CnameMode) == "package" && userPkg.CnameHostname != "" {
+			fmt.Println("[DEBUG] Using Package CNAME Mode")
+			site.CnameHostname = userPkg.CnameHostname
+			if userPkg.CnameDomain != "" {
+				site.CnameHostname += "." + userPkg.CnameDomain
+			}
+		} else {
+			fmt.Println("[DEBUG] Using Default CNAME Mode")
+			if userPkg.CnameDomain != "" {
+				site.CnameDomain = userPkg.CnameDomain
+			} else {
+				// Fallback to default
+				site.CnameDomain = "cdn.node.com"
+			}
+			if len(domains) > 0 {
+				site.CnameHostname = buildSiteCname(domains[0], site.CnameDomain)
 			}
 		}
-	}
-	if site.CnameHostname == "" && len(domains) > 0 {
-		site.CnameHostname = domains[0] + ".cdn.node.com"
-	}
+	} else {
+        fmt.Printf("[DEBUG] CreateSite Failed to load pkg: %v\n", err)
+    }
 
 	defaults, err := services.GetSiteDefaultMapWithGroup(userID, req.GroupID)
 	if err != nil {
 		return nil, 0, err
 	}
 	services.ApplySiteDefaults(site, defaults)
+
+	// Force HTTPS OFF by default
+	site.HttpsListen = []string{}
 
 	return site, req.GroupID, nil
 }
@@ -634,7 +646,7 @@ func createSiteWithGroup(site *models.Site, groupID int64) error {
 		}
 		tx.Model(&models.Site{}).Where("domain LIKE ?", "%"+site.Domains[0]+"%").Count(&count)
 		if count > 0 {
-			return errors.New("domain already exists")
+			return errors.New("域名已存在")
 		}
 		omitColumns := siteMissingColumns(tx)
 		dbTx := tx
@@ -944,16 +956,23 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		listenPorts := buildListenDisplay(httpPorts, httpsPorts)
 
 		cname := strings.TrimSpace(site.CnameHostname)
-		if cname == "" && len(domains) > 0 && site.CnameDomain != "" {
-			domain := domains[0]
-			if net.ParseIP(domain) == nil {
-				if base, err := publicsuffix.EffectiveTLDPlusOne(domain); err == nil {
-					cname = strings.TrimSuffix(domain, base) + site.CnameDomain
-				} else {
-					cname = domains[0] + "." + site.CnameDomain
-				}
+		pkg := pkgMap[site.UserPackageID]
+		fmt.Printf("[DEBUG] SiteID: %d Mode: '%s' PkgHost: '%s' PkgDomain: '%s'\n", site.ID, pkg.CnameMode, pkg.CnameHostname, pkg.CnameDomain)
+		// Check if mode is package OR if the current cname matches the package hostname (partial cname bug fix)
+		isHubCNAME := strings.TrimSpace(pkg.CnameMode) == "package" || (cname != "" && cname == pkg.CnameHostname)
+		
+		if isHubCNAME && pkg.CnameHostname != "" {
+			cname = pkg.CnameHostname
+			if pkg.CnameDomain != "" {
+				cname += "." + pkg.CnameDomain
+			} else if site.CnameDomain != "" {
+				cname += "." + site.CnameDomain
 			} else {
-				cname = domains[0] + "." + site.CnameDomain
+				cname += ".cdn.node.com"
+			}
+		} else {
+			if cname == "" && len(domains) > 0 && site.CnameDomain != "" {
+				cname = buildSiteCname(domains[0], site.CnameDomain)
 			}
 		}
 		if cname == "" {
@@ -971,7 +990,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			CNAME:           cname,
 			HTTPS:           httpsOn,
 			UserPackageID:   site.UserPackageID,
-			UserPackageName: pkgMap[site.UserPackageID],
+			UserPackageName: pkg.Name,
 			DNSProviderID:   site.DNSProviderID,
 			GroupID:         relMap[site.ID],
 			GroupName:       groupMap[relMap[site.ID]],
@@ -1047,9 +1066,9 @@ func loadUsers(sites []models.Site) (map[int64]string, error) {
 	return result, nil
 }
 
-func loadUserPackages(sites []models.Site) (map[int64]string, error) {
+func loadUserPackages(sites []models.Site) (map[int64]models.UserPackage, error) {
 	ids := uniqueIDs(sites, func(s models.Site) int64 { return s.UserPackageID })
-	result := map[int64]string{}
+	result := map[int64]models.UserPackage{}
 	if len(ids) == 0 {
 		return result, nil
 	}
@@ -1058,7 +1077,7 @@ func loadUserPackages(sites []models.Site) (map[int64]string, error) {
 		return nil, err
 	}
 	for _, p := range pkgs {
-		result[p.ID] = p.Name
+		result[p.ID] = p
 	}
 	return result, nil
 }
@@ -1285,9 +1304,6 @@ func buildSiteCname(domain string, cnameDomain string) string {
 	if net.ParseIP(domain) != nil {
 		return domain + "." + cnameDomain
 	}
-	base, err := publicsuffix.EffectiveTLDPlusOne(domain)
-	if err != nil {
-		return domain + "." + cnameDomain
-	}
-	return strings.TrimSuffix(domain, base) + cnameDomain
+	// Full Domain + Suffix (Requirement: 全域名 + 套餐cname)
+	return domain + "." + cnameDomain
 }

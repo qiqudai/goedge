@@ -227,17 +227,7 @@
                 <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item v-if="isAdmin" label="线路组">
-              <el-select
-                v-model.number="createForm.node_group_id"
-                clearable
-                placeholder="请选择线路组"
-                style="width: 100%;"
-                :loading="nodeGroupLoading">
-                <el-option label="默认" :value="0" />
-                <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
-              </el-select>
-            </el-form-item>
+
             <el-form-item label="网站域名">
               <el-input v-model="createForm.domains_input" placeholder="www.abc.com www.abc.com:8080 abc.com:80" />
             </el-form-item>
@@ -293,17 +283,7 @@
                 <el-option v-for="p in packageOptions" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
-            <el-form-item v-if="isAdmin" label="线路组">
-              <el-select
-                v-model.number="batchForm.node_group_id"
-                clearable
-                placeholder="请选择线路组"
-                style="width: 100%;"
-                :loading="nodeGroupLoading">
-                <el-option label="默认" :value="0" />
-                <el-option v-for="g in nodeGroupOptions" :key="g.id" :label="g.name" :value="g.id" />
-              </el-select>
-            </el-form-item>
+
             <el-form-item label="网站数据">
               <el-input
                 v-model="batchForm.data"
@@ -313,7 +293,7 @@
               />
               <div class="help-text">
                 domain是网站域名，ip源站地址，配置项以 | 分隔。
-                <el-link type="primary" underline="never">了解更多</el-link>
+                <el-link type="primary" :underline="false">了解更多</el-link>
               </div>
             </el-form-item>
             <el-form-item label="忽略错误">
@@ -2305,17 +2285,25 @@ const handleBatchAction = action => {
        ElMessage.error(`无法删除: 存在已启用的网站 (${enabledSites.length} 个)，请先禁用后再试`)
        return
     }
+    
+    ElMessageBox.confirm('确定要删除选中的网站吗?', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }).then(() => {
+      executeBatchAction(action, ids)
+    })
+  } else {
+    // No confirmation for other actions (enable, disable, etc.)
+    executeBatchAction(action, ids)
   }
-  ElMessageBox.confirm(`确定执行${action}操作?`, '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
+}
+
+const executeBatchAction = (action, ids) => {
     request.post('/sites/batch_action', { action, ids }).then(res => {
       ElMessage.success(res.message || '操作成功')
       fetchList()
     })
-  })
 }
 
 const handleRowAction = (action, row) => {
