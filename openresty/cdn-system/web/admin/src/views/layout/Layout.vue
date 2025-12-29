@@ -7,6 +7,7 @@
           :default-active="activeMenu"
           class="el-menu-vertical-demo"
           router
+          :unique-opened="true"
           :background-color="menuBackground"
           :text-color="menuTextColor"
           :active-text-color="menuActiveColor"

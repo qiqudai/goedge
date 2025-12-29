@@ -80,10 +80,33 @@
           {{ row.user_name ? `${row.user_name}(${row.user_id})` : row.user_id }}
         </template>
       </el-table-column>
-      <el-table-column prop="domain_display" label="域名" min-width="220" show-overflow-tooltip />
+      <el-table-column label="域名" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">
+          <div v-for="domain in (row.domains || [])" :key="domain" class="domain-item">
+            <span class="clickable-domain" @click="handleManage(row)">{{ domain }}</span>
+            <el-tag size="small" type="info" v-if="row.ports && row.ports.length" class="ml-2">
+               {{ row.ports.join(', ') }}
+            </el-tag>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="listen_ports" label="监听端口" width="110" />
-      <el-table-column prop="origin_display" label="源站" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="cname" label="CNAME" min-width="200" show-overflow-tooltip />
+      <el-table-column label="源站" min-width="200" show-overflow-tooltip>
+        <template #default="{ row }">
+          <div class="flex-row">
+            <span class="link-type" @click="handleFilterOrigin(row.origin_display)">{{ row.origin_display }}</span>
+            <el-icon class="copy-icon" v-if="row.origin_display" @click.stop="copyText(row.origin_display)"><CopyDocument /></el-icon>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="CNAME" min-width="200" show-overflow-tooltip>
+        <template #default="{ row }">
+          <div class="flex-row">
+            <span>{{ row.cname }}</span>
+            <el-icon class="copy-icon" v-if="row.cname" @click.stop="copyText(row.cname)"><CopyDocument /></el-icon>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="HTTPS" width="80" align="center">
         <template #default="{ row }">
           <el-icon v-if="row.https" color="#67C23A"><CircleCheckFilled /></el-icon>
@@ -1157,7 +1180,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, CircleCheckFilled, CircleCloseFilled, Plus } from '@element-plus/icons-vue'
+import { ArrowDown, CircleCheckFilled, CircleCloseFilled, Plus, CopyDocument } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useRouter } from 'vue-router'
 import CountrySelector from '@/components/CountrySelector.vue'
@@ -1165,6 +1188,17 @@ import ResolvePage from './Resolve.vue'
 import { useTablePersistence } from '@/utils/tablePersistence'
 
 const router = useRouter()
+
+const copyText = async (text) => {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('复制成功')
+  } catch (err) {
+    ElMessage.error('复制失败')
+    console.error('Failed to copy:', err)
+  }
+}
 const isAdmin = ref((localStorage.getItem('role') || 'user') === 'admin')
 const activeTopTab = ref('list')
 const list = ref([])
@@ -2796,6 +2830,15 @@ const submitCreateGroup = () => {
   cursor: pointer;
   font-size: 12px;
   margin-left: 8px;
+}
+
+.clickable-domain {
+  color: #409eff;
+  cursor: pointer;
+}
+
+.clickable-domain:hover {
+  text-decoration: underline;
 }
 </style>
 

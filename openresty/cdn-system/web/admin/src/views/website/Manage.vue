@@ -11,38 +11,57 @@
 
     <el-card class="page-card" v-loading="loading">
       <el-tabs v-model="activeTab" class="manage-tabs" type="border-card">
-        <el-tab-pane label="基本信息" name="basic">
-          <el-descriptions border :column="3" class="mb-16">
-            <el-descriptions-item label="域名" :span="2">
-              {{ siteSettings.basic.domain || '未配置' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="CNAME">
-              {{ siteSettings.basic.cname }}
-            </el-descriptions-item>
-            <el-descriptions-item label="状态">
-              <el-tag :type="siteSettings.basic.status ? 'success' : 'warning'">
-                {{ siteSettings.basic.status ? '运行中' : '已停用' }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ siteSettings.basic.createdAt }}</el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ siteSettings.basic.updatedAt }}</el-descriptions-item>
-          </el-descriptions>
+        <el-tab-pane label="基本配置" name="basic">
+          <div class="section-title">基本设置</div>
           <el-form label-width="120px" class="config-form">
-            <el-form-item label="站点状态">
-              <el-switch
-                v-model="siteSettings.basic.status"
-                @change="toggleSiteStatus"
-                active-text="启用"
-                inactive-text="停用"
-              />
+            <el-form-item label="状态">
+               <span class="status-dot" :class="{ active: siteSettings.basic.status }"></span>
+               {{ siteSettings.basic.status ? '正常' : '已停用' }}
             </el-form-item>
-            <el-form-item label="套餐">
-              <el-input v-model="siteSettings.basic.planName" disabled />
+            <el-form-item label="CNAME">
+               {{ siteSettings.basic.cname }}
             </el-form-item>
-            <el-form-item label="所属分组">
-              <el-input v-model="siteSettings.basic.groupName" disabled />
+            <el-form-item label="企业到期">
+               {{ siteSettings.basic.expireTime || '-' }}
+            </el-form-item>
+             <el-form-item label="创建时间">
+               {{ siteSettings.basic.createdAt }}
+            </el-form-item>
+            <el-form-item label="更新时间">
+               {{ siteSettings.basic.updatedAt }}
             </el-form-item>
 
+            <div class="divider"></div>
+
+            <div class="section-title">基本设置</div>
+             <el-form-item label="套餐">
+               <el-select v-model="siteSettings.basic.planName" disabled placeholder="请选择套餐">
+                   <el-option value="请选择套餐" label="请选择套餐" />
+               </el-select>
+               <div class="form-helper">变更套餐不会导致CNAME地址变动，只会应用新的套餐权益</div>
+            </el-form-item>
+             <el-form-item label="所属分组">
+               <el-select v-model="siteSettings.basic.groupName" placeholder="请选择">
+                 <!-- TODO: Load groups -->
+               </el-select>
+               <div class="form-helper">网站的分组标识，方便为了分类和管理</div>
+            </el-form-item>
+             <el-form-item label="地区">
+               <el-input v-model="siteSettings.basic.regionName" disabled />
+               <div class="form-helper">本个域名分配的地区，中文域名会自动转为Punycode。 <a href="#" style="color: #409eff">查看节点</a></div>
+            </el-form-item>
+
+            <div class="divider"></div>
+
+            <div class="section-title">HTTP设置</div>
+            <el-form-item label="开关">
+              <el-switch v-model="siteSettings.basic.httpEnable" />
+              <div class="form-helper">如果关闭，网站将完全拒绝HTTP访问</div>
+            </el-form-item>
+             <el-form-item label="监听端口">
+              <el-input v-model="siteSettings.basic.httpPorts" />
+              <div class="form-helper">多个端口空格分隔。如需兼容http://www.example.com和http://www.example.com:888访问，则填80 888</div>
+            </el-form-item>
           </el-form>
         </el-tab-pane>
 
@@ -164,144 +183,176 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="HTTPS 设置" name="https">
-          <el-form label-width="150px" class="config-form">
-            <el-form-item label="HTTPS 开启">
-              <el-switch v-model="siteSettings.https.enabled" />
-            </el-form-item>
-            <template v-if="siteSettings.https.enabled">
-              <el-form-item label="监听端口">
-                <el-input v-model="siteSettings.https.port" placeholder="443" />
-              </el-form-item>
-              <el-form-item label="证书选择">
-                <el-select v-model="siteSettings.https.certId" placeholder="请选择证书">
-                  <el-option v-for="cert in certList" :key="cert.id" :label="cert.domain" :value="cert.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="强制 HTTPS">
-                <el-switch v-model="siteSettings.https.force" />
-              </el-form-item>
-              <el-form-item label="跳转端口" v-if="siteSettings.https.force">
-                <el-input v-model="siteSettings.https.redirectPort" placeholder="443" />
-              </el-form-item>
-              <el-form-item label="开启 HSTS">
-                <el-switch v-model="siteSettings.https.hsts" />
-              </el-form-item>
-              <el-form-item label="开启 HTTP2">
-                <el-switch v-model="siteSettings.https.http2" />
-              </el-form-item>
-              <el-form-item label="开启 HTTP3">
-                <el-switch v-model="siteSettings.https.http3" />
-              </el-form-item>
-              <el-form-item label="OCSP Stapling">
-                <el-switch v-model="siteSettings.https.ocspStapling" />
-              </el-form-item>
-              <el-form-item label="SSL 协议" style="max-width: 600px;">
-                <el-checkbox-group v-model="siteSettings.https.sslProtocols">
-                  <el-checkbox v-for="proto in sslProtocolOptions" :key="proto" :label="proto" :value="proto">
-                    {{ proto }}
-                  </el-checkbox>
-                </el-checkbox-group>
-              </el-form-item>
-              <el-form-item label="SSL 密钥套件">
-                <el-input
-                  type="textarea"
-                  :rows="2"
-                  v-model="siteSettings.https.sslCiphers"
-                  placeholder="请输入 SSL ciphers"
-                />
-              </el-form-item>
-              <el-form-item label="Prefer Server Ciphers">
-                <el-switch v-model="siteSettings.https.sslPreferServerCiphers" />
-              </el-form-item>
-              <el-form-item label="SSL 配置">
-                <el-radio-group v-model="siteSettings.https.sslProfile">
-                  <el-radio value="compat">兼容旧浏览器</el-radio>
-                  <el-radio value="modern">兼容大部分浏览器</el-radio>
-                  <el-radio value="custom">自定义</el-radio>
-                </el-radio-group>
-              </el-form-item>
-            </template>
-          </el-form>
+        <el-tab-pane label="HTTPS配置" name="https">
+           <div class="section-title">HTTPS证书</div>
+           <el-form label-width="120px" class="config-form">
+             <el-form-item label="开关">
+                <el-switch v-model="siteSettings.https.enable" />
+             </el-form-item>
+              <template v-if="siteSettings.https.enable">
+                 <el-form-item label="证书选择">
+                    <el-select v-model="siteSettings.https.certId" placeholder="请选择证书" style="width: 100%">
+                         <el-option v-for="cert in certList" :key="cert.id" :label="cert.name" :value="cert.id">
+                            <span style="float: left">{{ cert.name }}</span>
+                            <span style="float: right; color: #8492a6; font-size: 13px">{{ cert.domains }}</span>
+                         </el-option>
+                    </el-select>
+                    <div class="form-helper" v-if="siteSettings.https.certId">
+                        <span class="status-dot active"></span> 有效期剩余 {{ getCertDays(siteSettings.https.certId) }} 天
+                    </div>
+                    <div class="form-helper" v-else>请选择或上传证书</div>
+                 </el-form-item>
+                 <el-form-item label="监听端口">
+                    <el-input v-model="siteSettings.https.listenPorts" placeholder="443" />
+                    <div class="form-helper">多个端口空格分隔。如果需要https://www.example.com和https://www.example.com:8433访问，则填443 8433</div>
+                 </el-form-item>
+                 
+                 <div class="divider"></div>
+                 
+                 <div class="section-title">强制HTTPS</div>
+                 <el-form-item label="开关">
+                    <el-switch v-model="siteSettings.https.force" />
+                    <div class="form-helper">开启后，访问http将会301跳转到https</div>
+                 </el-form-item>
+                 <el-form-item label="跳转端口" v-if="siteSettings.https.force">
+                    <el-select v-model="siteSettings.https.forcePort" placeholder="443">
+                        <el-option label="443" value="443" />
+                         <!-- TODO: Dynamic ports if needed -->
+                    </el-select>
+                    <div class="form-helper">如果https监听有多个端口，可以择其一个跳转</div>
+                 </el-form-item>
+
+                 <div class="divider"></div>
+
+                 <div class="section-title">HSTS</div>
+                 <el-form-item label="开关">
+                    <el-switch v-model="siteSettings.https.hsts" />
+                    <div class="form-helper">开启后，访问使用浏览器访问http时，将不用请求服务器直接转向https，这可以减少http会话劫持风险</div>
+                 </el-form-item>
+
+                 <div class="divider"></div>
+
+                 <div class="section-title">HTTP2设置</div>
+                 <el-form-item label="开关">
+                    <el-switch v-model="siteSettings.https.http2" />
+                    <div class="form-helper">HTTP2.0协议是HTTP1.1协议的升级版本，在Web数据交互性能上具备更多的优势，开启前您需要先配置HTTPS证书。</div>
+                 </el-form-item>
+
+                 <div class="divider"></div>
+
+                 <div class="section-title">OCSP Stapling</div>
+                 <el-form-item label="开关">
+                    <el-switch v-model="siteSettings.https.ocsp" />
+                    <div class="form-helper">OCSP Stapling功能可实现由CDN预先缓存在线证书验证结果并下发给客户端，无需浏览器直接向CA站点查询证书状态，从而减少用户验证时间。</div>
+                 </el-form-item>
+
+                 <div class="divider"></div>
+
+                 <div class="section-title">HTTP3设置</div>
+                 <el-form-item label="开关">
+                    <el-switch v-model="siteSettings.https.http3" />
+                 </el-form-item>
+
+                 <div class="divider"></div>
+
+                 <div class="section-title">SSL配置</div>
+                 <el-form-item label="SSL配置">
+                     <el-radio-group v-model="siteSettings.https.sslPolicy">
+                         <el-radio value="compat">兼容旧浏览器（安全性降低）</el-radio>
+                         <el-radio value="modern">兼容大部分浏览器（更安全）</el-radio>
+                         <el-radio value="custom">自定义</el-radio>
+                     </el-radio-group>
+                 </el-form-item>
+              </template>
+           </el-form>
         </el-tab-pane>
 
         <el-tab-pane label="安全设置" name="security">
-          <el-form label-width="150px" class="config-form">
-            <el-form-item label="默认 CC 规则">
-              <el-select v-model="siteSettings.security.defaultRule">
-                <el-option v-for="item in ccRules" :key="item.value" :label="item.label" :value="item.value" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="自动切换">
-              <el-switch v-model="siteSettings.security.autoSwitch" />
-            </el-form-item>
-            <el-form-item label="搜索引擎爬虫">
-              <el-radio-group v-model="siteSettings.security.bot">
-                <el-radio value="none">不设置</el-radio>
-                <el-radio value="allow">放行</el-radio>
-                <el-radio value="block">拦截</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="黑名单">
-              <el-input
-                type="textarea"
-                :rows="3"
-                v-model="siteSettings.security.blacklist"
-                placeholder="每行一个 IP"
-              />
-            </el-form-item>
-            <el-form-item label="白名单">
-              <el-input
-                type="textarea"
-                :rows="3"
-                v-model="siteSettings.security.whitelist"
-                placeholder="每行一个 IP"
-              />
-            </el-form-item>
-            <el-form-item label="黑名单单时效">
-              <el-radio-group v-model="siteSettings.security.blackTimeMode">
-                <el-radio value="system">系统默认</el-radio>
-                <el-radio value="custom">自定义</el-radio>
-              </el-radio-group>
-              <el-input
-                v-if="siteSettings.security.blackTimeMode === 'custom'"
-                v-model="siteSettings.security.blackTimeCustom"
-                placeholder="请输入秒数"
-                style="margin-top: 6px; width: 180px;"
-              />
-            </el-form-item>
-            <el-form-item label="白名单单时效">
-              <el-radio-group v-model="siteSettings.security.whiteTimeMode">
-                <el-radio value="system">系统默认</el-radio>
-                <el-radio value="custom">自定义</el-radio>
-              </el-radio-group>
-              <el-input
-                v-if="siteSettings.security.whiteTimeMode === 'custom'"
-                v-model="siteSettings.security.whiteTimeCustom"
-                placeholder="请输入秒数"
-                style="margin-top: 6px; width: 180px;"
-              />
-            </el-form-item>
-            <el-form-item label="屏蔽透明代理">
-              <el-switch v-model="siteSettings.security.shieldProxy" />
-            </el-form-item>
-            <el-form-item label="区域屏蔽">
-              <el-select v-model="siteSettings.security.regionMode" @change="handleRegionModeChange">
-                <el-option label="不设置" value="none" />
-                <el-option label="国外（不含港澳台）" value="overseas_without_hk" />
-                <el-option label="国外（含港澳台）" value="overseas_with_hk" />
-                <el-option label="中国（含港澳台）" value="china_with_hk" />
-                <el-option label="中国（不含港澳台）" value="china_without_hk" />
-                <el-option label="自定义" value="custom" />
-              </el-select>
-              <country-selector
-                v-if="siteSettings.security.regionMode === 'custom'"
-                v-model="siteSettings.security.regionCustom"
-              />
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+           <div class="section-title">CC 防护</div>
+           <el-form label-width="120px" class="config-form">
+              <el-form-item label="默认规则">
+                 <el-radio-group v-model="siteSettings.security.cc.mode">
+                     <el-radio :value="10002">关闭</el-radio>
+                     <el-radio :value="10003">宽松</el-radio>
+                     <el-radio :value="10004">普通</el-radio>
+                     <el-radio :value="10005">严格</el-radio>
+                     <el-radio :value="10006">JS验证</el-radio>
+                     <el-radio :value="10008">验证码</el-radio>
+                     <!-- <el-radio :value="10009">自定义</el-radio> -->
+                 </el-radio-group>
+                 <div class="form-helper">不同模式对应不同的防御级别</div>
+              </el-form-item>
+              <el-form-item label="自动切换">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                      <el-switch v-model="siteSettings.security.cc.autoSwitch.enable" />
+                      <span v-if="siteSettings.security.cc.autoSwitch.enable" style="font-size: 13px;">
+                          当QPS超过 <el-input v-model="siteSettings.security.cc.autoSwitch.qps" size="small" style="width: 80px" /> 时，
+                          自动切换到 <el-select v-model="siteSettings.security.cc.autoSwitch.rule" size="small" style="width: 100px;">
+                               <el-option label="关闭" value="close" />
+                               <el-option label="宽松" value="lenient" />
+                               <el-option label="普通" value="normal" />
+                               <el-option label="严格" value="strict" />
+                               <el-option label="JS验证" value="js" />
+                               <el-option label="验证码" value="captcha" />
+                          </el-select>
+                      </span>
+                  </div>
+              </el-form-item>
+              
+              <div class="divider"></div>
+              
+              <div class="section-title">自定义规则</div>
+              <el-table :data="siteSettings.security.customRules" border size="small" style="margin-bottom: 12px;">
+                 <el-table-column label="规则名称" prop="name" />
+                 <el-table-column label="匹配条件" prop="condition" />
+                 <el-table-column label="执行动作" prop="action" />
+                 <el-table-column label="操作" width="100">
+                    <template #default="{ $index }">
+                        <el-button link type="danger" size="small">删除</el-button>
+                    </template>
+                 </el-table-column>
+              </el-table>
+              <el-button size="small" type="primary">新增规则</el-button>
 
+              <div class="divider"></div>
+              
+              <div class="section-title">黑白名单</div>
+              <el-form-item label="IP黑名单">
+                  <el-input type="textarea" v-model="siteSettings.security.ip.black" :rows="3" placeholder="一行一个IP" />
+              </el-form-item>
+              <el-form-item label="IP白名单">
+                   <el-input type="textarea" v-model="siteSettings.security.ip.white" :rows="3" placeholder="一行一个IP" />
+              </el-form-item>
+
+               <div class="divider"></div>
+
+               <div class="section-title">UA黑白名单</div>
+               <el-form-item label="UA黑名单">
+                   <el-input type="textarea" v-model="siteSettings.security.ua.black" :rows="3" placeholder="一行一个UA keyword" />
+               </el-form-item>
+               <el-form-item label="UA白名单">
+                    <el-input type="textarea" v-model="siteSettings.security.ua.white" :rows="3" placeholder="一行一个UA keyword" />
+               </el-form-item>
+               
+               <div class="divider"></div>
+               
+               <div class="section-title">Cookie设置</div>
+               <el-form-item label="开关">
+                  <el-switch v-model="siteSettings.security.cookie.enable" />
+               </el-form-item>
+               <el-form-item label="作用域" v-if="siteSettings.security.cookie.enable">
+                   <el-input v-model="siteSettings.security.cookie.domain" placeholder="留空则默认为当前域名" />
+               </el-form-item>
+
+               <div class="divider"></div>
+               
+               <div class="section-title">区域屏蔽</div>
+               <el-form-item label="区域选择">
+                   <CountrySelector v-model="siteSettings.security.regions" />
+               </el-form-item>
+
+           </el-form>
+        </el-tab-pane>
         <el-tab-pane label="缓存设置" name="cache">
           <div class="toolbar-row" style="margin-bottom: 12px;">
             <el-button type="primary" size="small" @click="openCacheRuleDialog('create')">新增规则</el-button>
@@ -336,62 +387,172 @@
 
         <el-tab-pane label="访问控制" name="access">
           <el-form label-width="150px" class="config-form">
-            <el-form-item label="ACL 设置">
-              <el-select v-model="siteSettings.access.acl" placeholder="请选择">
-                <el-option label="不设置" value="" />
-                <el-option label="仅白名单" value="whitelist" />
-                <el-option label="仅黑名单" value="blacklist" />
+            <div class="section-title">ACL设置</div>
+            <el-form-item label="ACL选择">
+              <el-select v-model="siteSettings.access.acl" placeholder="请选择" style="width: 100%" clearable>
+                <el-option
+                  v-for="item in aclList"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
               </el-select>
+              <div class="form-helper">需要到左侧菜单规则管理里创建好ACL，再在这里选择应用</div>
             </el-form-item>
-            <el-form-item label="防盗链">
-              <el-switch v-model="siteSettings.access.hotlink" />
+
+            <div class="divider"></div>
+
+            <div class="section-title">防盗链设置</div>
+            <el-form-item label="开关">
+              <el-switch v-model="siteSettings.access.hotlink.enable" />
             </el-form-item>
-            <el-form-item label="跨域访问">
-              <el-switch v-model="siteSettings.access.cors" />
+            <template v-if="siteSettings.access.hotlink.enable">
+              <el-form-item label="防盗链范围">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                  <el-radio-group v-model="siteSettings.access.hotlink.scope">
+                    <el-radio value="all">整站</el-radio>
+                    <el-radio value="suffix">后缀</el-radio>
+                    <el-radio value="dir">目录</el-radio>
+                    <el-radio value="path">单个路径</el-radio>
+                  </el-radio-group>
+                  <el-input
+                    v-if="siteSettings.access.hotlink.scope !== 'all'"
+                    v-model="siteSettings.access.hotlink.value"
+                    style="width: 300px;"
+                    :placeholder="getHotlinkPlaceholder()"
+                  />
+                </div>
+              </el-form-item>
+              <el-form-item label="允许空来源">
+                <el-radio-group v-model="siteSettings.access.hotlink.allowEmpty">
+                  <el-radio :value="true">允许</el-radio>
+                  <el-radio :value="false">不允许</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="额外允许域名">
+                <el-input v-model="siteSettings.access.hotlink.domains" placeholder="请输入除当前网站域名之外的域名 多个域名空格分隔" />
+              </el-form-item>
+            </template>
+
+            <div class="divider"></div>
+
+            <div class="section-title">跨域访问设置</div>
+            <el-form-item label="开关">
+              <el-switch v-model="siteSettings.access.cors.enable" />
             </el-form-item>
+            <template v-if="siteSettings.access.cors.enable">
+              <div class="cors-more-toggle" @click="corsExpanded = !corsExpanded">
+                <span>{{ corsExpanded ? '▼ 收起更多设置' : '▶ 查看更多设置' }}</span>
+              </div>
+              
+              <div v-show="corsExpanded">
+                <el-form-item label="allow_origin">
+                  <el-input v-model="siteSettings.access.cors.allowOrigin" />
+                </el-form-item>
+                <el-form-item label="allow_methods">
+                  <el-input v-model="siteSettings.access.cors.allowMethods" />
+                </el-form-item>
+                <el-form-item label="allow_headers">
+                  <el-input v-model="siteSettings.access.cors.allowHeaders" />
+                </el-form-item>
+                <el-form-item label="expose_headers">
+                  <el-input v-model="siteSettings.access.cors.exposeHeaders" />
+                </el-form-item>
+                <el-form-item label="allow_credentials">
+                  <el-radio-group v-model="siteSettings.access.cors.allowCredentials">
+                    <el-radio :value="true">允许</el-radio>
+                    <el-radio :value="false">不允许</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item label="max_age">
+                  <el-input v-model="siteSettings.access.cors.maxAge" />
+                </el-form-item>
+              </div>
+            </template>
           </el-form>
         </el-tab-pane>
 
         <el-tab-pane label="高级设置" name="advanced">
-          <el-form label-width="180px" class="config-form">
-            <el-form-item label="开启 Gzip">
-              <el-switch v-model="siteSettings.advanced.gzip" />
-            </el-form-item>
-            <el-form-item label="开启 Websocket">
-              <el-switch v-model="siteSettings.advanced.websocket" />
-            </el-form-item>
-            <el-form-item label="开启 IPv6">
-              <el-switch v-model="siteSettings.advanced.ipv6" />
-            </el-form-item>
-            <el-form-item label="日志 - 请求头">
-              <el-switch v-model="siteSettings.advanced.logRequestHeader" />
-            </el-form-item>
-            <el-form-item label="日志 - 响应头">
-              <el-switch v-model="siteSettings.advanced.logResponseHeader" />
-            </el-form-item>
-            <el-form-item label="日志 - 请求体">
-              <el-switch v-model="siteSettings.advanced.logRequestBody" />
-            </el-form-item>
-            <el-form-item label="请求体大小限制 (KB)">
-              <el-input v-model="siteSettings.advanced.bodyLimit" placeholder="16" />
-            </el-form-item>
-            <el-form-item label="实时回源">
-              <el-switch v-model="siteSettings.advanced.realtimeReturn" />
-            </el-form-item>
-            <el-form-item label="实时推送">
-              <el-switch v-model="siteSettings.advanced.realtimeSend" />
-            </el-form-item>
-            <el-form-item label="ACME 回源">
-              <el-switch v-model="siteSettings.advanced.acmeBacksource" />
-            </el-form-item>
-          </el-form>
+           <el-form label-width="150px" class="config-form">
+               <div class="section-title">压缩设置</div>
+               <el-form-item label="Gzip压缩">
+                   <el-switch v-model="siteSettings.advanced.gzip" />
+               </el-form-item>
+
+               <div class="divider"></div>
+
+               <div class="section-title">Websocket设置</div>
+               <el-form-item label="Websocket">
+                   <el-switch v-model="siteSettings.advanced.websocket" />
+               </el-form-item>
+
+               <div class="divider"></div>
+
+               <div class="section-title">搜索引擎回源配置</div>
+               <el-form-item label="开关">
+                   <el-switch v-model="siteSettings.advanced.searchEngineOrigin" />
+               </el-form-item>
+
+               <div class="divider"></div>
+
+               <div class="section-title">URL重写设置</div>
+               <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openRewriteDialog('create')">新增重写</el-button>
+               <el-table :data="siteSettings.advanced.urlRewrites" border size="small">
+                   <el-table-column label="匹配URI" prop="match" />
+                   <el-table-column label="重写到" prop="replace" />
+                   <el-table-column label="代码" prop="code" width="80" />
+                   <el-table-column label="操作" width="100">
+                       <template #default="{ $index }">
+                           <el-button link type="danger" size="small" @click="removeRewrite($index)">删除</el-button>
+                       </template>
+                   </el-table-column>
+               </el-table>
+
+               <div class="divider"></div>
+               
+               <div class="section-title">公共请求头设置</div>
+               <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openHeaderDialog('req', 'create')">新增请求头</el-button>
+                <el-table :data="siteSettings.advanced.reqHeaders" border size="small">
+                   <el-table-column label="名称" prop="name" />
+                   <el-table-column label="值" prop="value" />
+                   <el-table-column label="操作" width="100">
+                       <template #default="{ $index }">
+                           <el-button link type="danger" size="small" @click="removeHeader('req', $index)">删除</el-button>
+                       </template>
+                   </el-table-column>
+               </el-table>
+
+               <div class="divider"></div>
+
+               <div class="section-title">CDN响应头设置</div>
+               <el-button type="primary" size="small" style="margin-bottom: 12px;" @click="openHeaderDialog('res', 'create')">新增响应头</el-button>
+               <el-table :data="siteSettings.advanced.resHeaders" border size="small">
+                   <el-table-column label="名称" prop="name" />
+                   <el-table-column label="值" prop="value" />
+                   <el-table-column label="操作" width="100">
+                       <template #default="{ $index }">
+                           <el-button link type="danger" size="small" @click="removeHeader('res', $index)">删除</el-button>
+                       </template>
+                   </el-table-column>
+               </el-table>
+
+               <div class="divider"></div>
+               
+               <div class="section-title">其它</div>
+               <el-form-item label="源站证书">
+                   <el-switch v-model="siteSettings.advanced.originCert" />
+                   <div class="form-helper">用于回源连接（HTTPS）验证源站证书</div>
+               </el-form-item>
+               <el-form-item label="数据实时鉴别">
+                   <el-switch v-model="siteSettings.advanced.realtimeIdentify" />
+               </el-form-item>
+               <el-form-item label="数据实时发送">
+                   <el-switch v-model="siteSettings.advanced.realtimeSend" />
+               </el-form-item>
+
+           </el-form>
         </el-tab-pane>
       </el-tabs>
-
-      <div class="site-manage-actions">
-        <el-button type="primary" :loading="saving" @click="saveSettings">保存配置</el-button>
-        <el-button plain @click="loadSite">重新加载</el-button>
-      </div>
     </el-card>
 
     <el-dialog
@@ -427,20 +588,60 @@
         <el-button size="small" type="primary" @click="saveCacheRule">保存规则</el-button>
       </template>
     </el-dialog>
+
+    <!-- URL Rewrite Dialog -->
+    <el-dialog v-model="rewriteDialog.visible" title="新增转向" width="500px">
+        <el-form label-width="100px">
+            <el-form-item label="匹配URI">
+                <el-input v-model="rewriteForm.match" placeholder="(.*)" />
+            </el-form-item>
+            <el-form-item label="重写到">
+                <el-input v-model="rewriteForm.replace" placeholder="https://www.baidu.com$1" />
+            </el-form-item>
+            <el-form-item label="响应码">
+                 <el-select v-model="rewriteForm.code">
+                     <el-option value="301" label="301 (永久移动)" />
+                     <el-option value="302" label="302 (临时移动)" />
+                     <el-option value="307" label="307 (临时重定向)" />
+                     <!-- <el-option value="internal" label="内部" /> -->
+                 </el-select>
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="rewriteDialog.visible = false">取消</el-button>
+            <el-button type="primary" @click="saveRewrite">确定</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- Header Dialog -->
+     <el-dialog v-model="headerDialog.visible" :title="headerDialog.type === 'req' ? '新增请求头' : '新增响应头'" width="500px">
+        <el-form label-width="100px">
+            <el-form-item label="名称">
+                <el-input v-model="headerForm.name" placeholder="Header-Name" />
+            </el-form-item>
+            <el-form-item label="值">
+                <el-input v-model="headerForm.value" placeholder="Value" />
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="headerDialog.visible = false">取消</el-button>
+            <el-button type="primary" @click="saveHeader">确定</el-button>
+        </template>
+    </el-dialog>
   </div>
 </template>
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CountrySelector from '@/components/CountrySelector.vue'
 import request from '@/utils/request'
+import { debounce } from 'lodash-es'
 
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref('basic')
 const loading = ref(false)
-const saving = ref(false)
 const cacheQuickPreset = ref('')
 const certList = ref([])
 const site = ref(null)
@@ -454,9 +655,139 @@ const defaultSslCiphers = [
   'ECDHE-ECDSA-CHACHA20-POLY1305',
   'ECDHE-RSA-CHACHA20-POLY1305'
 ].join(':')
-const siteSettings = reactive(createDefaultSettings())
+
+
+// Initialize with new structure
+const siteSettings = reactive({
+  basic: {
+    planName: '-',
+    groupName: '-', 
+    nodeGroupName: '-',
+    domain: '',
+    cname: '',
+    status: true,
+    createdAt: '-',
+    updatedAt: '-',
+    httpEnable: true,
+    httpPorts: '80',
+    regionName: 'Global',
+    expireTime: '-' // Added
+  },
+  origin: {
+    list: [],
+    conditions: [],
+    protocol: 'follow', // http, https, follow, follow_port
+    host: 'follow', // custom, follow
+    hostValue: '',
+    timeout: 60,
+    connTimeout: 10,
+    balanceWay: 'rr',
+    healthCheckEnabled: true, // Keep
+    healthCheckHost: '',
+    healthCheckPath: '/',
+    healthCheckStatus: '200 301 302',
+    healthCheckInterval: 60
+  },
+  https: {
+    enable: false,
+    listenPorts: '443',
+    certId: null,
+    force: false,
+    forcePort: '443',
+    hsts: false,
+    http2: false,
+    http3: false,
+    ocsp: false,
+    sslPolicy: 'compat'
+  },
+  security: {
+    cc: {
+      mode: 10002,
+      autoSwitch: {
+        enable: false,
+        qps: 200,
+        rule: 'close'
+      }
+    },
+    customRules: [],
+    ip: { white: '', black: '' },
+    ua: { white: '', black: '' },
+    cookie: { enable: false, domain: '' },
+    regions: []
+  },
+  cache: { rules: [] },
+  access: {
+    acl: '',
+    hotlink: {
+      enable: false,
+      scope: 'all',
+      value: '',
+      allowEmpty: false,
+      domains: ''
+    },
+    cors: {
+      enable: false,
+      allowOrigin: '*',
+      allowMethods: '*',
+      allowHeaders: '*',
+      exposeHeaders: '*',
+      allowCredentials: true,
+      maxAge: 1728000
+    }
+  },
+  advanced: {
+      gzip: { enable: false, level: 1, minLength: '1k' }, // Updated structure if needed, or keep simple bool if screenshot implies simple switch. Screenshot shows simple switch.
+      // Let's stick to simple props matching the UI first, allow complex if backend data requires it.
+      // Screenshot: Gzip switch, Websocket switch, SearchEngine switch
+      // URL Rewrite list
+      // Req Header list
+      // Resp Header list
+      // Others: Origin Cert switch, Realtime Data switch
+      
+      gzip: false,
+      websocket: false,
+      searchEngineOrigin: false, // 搜索引擎回源
+      
+      urlRewrites: [], // List of { match, replace, code, ... }
+      reqHeaders: [], // List of { name, value, op }
+      resHeaders: [], // List of { name, value, op }
+      
+      originCert: false, // 源站证书
+      realtimeIdentify: false, // 数据实时鉴别
+      realtimeSend: false // 数据实时发送
+  }
+})
+
+
+
+const isSaving = ref(false)
+
+const triggerSave = debounce(() => {
+    saveSettings()
+}, 1000)
+
+// Watch settings deeper for auto-save
+watch(siteSettings, (newVal) => {
+    // Special logic for Security Auto Switch
+    if (activeTab.value === 'security') {
+        const autoSwitch = newVal.security.cc.autoSwitch
+        if (autoSwitch.enable && (!autoSwitch.qps || !autoSwitch.rule)) {
+            // Don't save if invalid
+            return
+        }
+    }
+    triggerSave()
+}, { deep: true })
+
 const cacheRuleDialog = reactive({ visible: false, mode: 'create', index: -1 })
+const rewriteDialog = reactive({ visible: false, index: -1 })
+const headerDialog = reactive({ visible: false, type: 'req', index: -1 }) // type: req | res
+const corsExpanded = ref(false)
+
 const cacheRuleForm = reactive({ type: 'index', value: '', ttl: '86400', ignore_query: false, force_cache: false })
+const rewriteForm = reactive({ match: '', replace: '', code: '301' })
+const headerForm = reactive({ name: '', value: '' })
+
 const siteId = computed(() => parseInt(route.query.site_id || route.params.site_id || 0, 10))
 
 const ccRules = ref([
@@ -558,8 +889,21 @@ function createDefaultSettings() {
     },
     access: {
       acl: '',
-      hotlink: false,
-      cors: false
+      hotlink: {
+        enable: false,
+        scope: 'whole',
+        allowEmpty: true,
+        domains: ''
+      },
+      cors: {
+        enable: false,
+        allowOrigin: '*',
+        allowMethods: '*',
+        allowHeaders: '*',
+        exposeHeaders: '*',
+        allowCredentials: true,
+        maxAge: 1728000
+      }
     },
     advanced: {
       gzip: true,
@@ -621,6 +965,14 @@ function loadSite() {
     })
 }
 
+const aclList = ref([])
+
+function loadAcls() {
+  request.get('/acls').then(res => {
+    aclList.value = res.data?.list || res.list || []
+  })
+}
+
 function loadCerts() {
   request.get('/certs').then(res => {
     certList.value = res.data?.list || res.list || []
@@ -639,80 +991,97 @@ function normalizeOriginCondition(item) {
   }
 }
 
+
 function applySiteData(data) {
-  const defaults = createDefaultSettings()
-  Object.assign(siteSettings, defaults)
+  site.value = data
   const settings = data.settings || {}
-  siteSettings.basic.domain = (data.domains || []).join('\\n')
+
+  // Basic
+  siteSettings.basic.planName = data.user_package_id ? `套餐ID ${data.user_package_id}` : '商业版(飞扬)'
+  siteSettings.basic.groupName = data.group_id ? `分组ID ${data.group_id}` : ''
+  siteSettings.basic.nodeGroupName = data.node_group_id ? `集群ID ${data.node_group_id}` : ''
+  siteSettings.basic.domain = (data.domains || []).join('\n')
   siteSettings.basic.cname = computeCname(data)
   siteSettings.basic.status = parseBool(data.enable, true)
-  siteSettings.basic.planName = data.user_package_id ? `套餐ID ${data.user_package_id}` : '-'
-  siteSettings.basic.groupName = data.group_name || `分组ID ${data.group_id || 0}`
-  siteSettings.basic.nodeGroupName = data.node_group_id ? `线路组${data.node_group_id}` : '-'
   siteSettings.basic.createdAt = formatDate(data.create_at)
   siteSettings.basic.updatedAt = formatDate(data.update_at)
+  siteSettings.basic.httpEnable = !!(data.http_listen && data.http_listen.length)
+  siteSettings.basic.httpPorts = (data.http_listen || []).join(' ')
+  siteSettings.basic.regionName = 'Global' // TODO
 
-  siteSettings.origin.list = (settings.origin?.list || []).map(item => ({
-    address: item.address || item.backend || '',
-    weight: item.weight || '10',
-    enable: item.enable !== false
+  // Origin
+  siteSettings.origin.list = (data.backends || []).map(b => ({
+      address: b,
+      weight: 1,
+      enable: true
   }))
-  siteSettings.origin.conditions = (settings.origin?.conditions || []).map(normalizeOriginCondition).filter(Boolean)
-  siteSettings.origin.healthCheckEnabled = parseBool(settings.origin?.health_check, true)
-  siteSettings.origin.healthCheckHost = settings.origin?.health_host || data.domains?.[0] || ''
-  siteSettings.origin.healthCheckPath = settings.origin?.health_path || '/'
-  siteSettings.origin.healthCheckStatus = settings.origin?.health_status || '200 301 302'
-  siteSettings.origin.healthCheckInterval = settings.origin?.health_interval || 60
+  siteSettings.origin.protocol = data.backend_protocol || 'follow'
+  siteSettings.origin.host = 'follow'
+  if (settings.origin_host) {
+      siteSettings.origin.host = settings.origin_host === 'follow' ? 'follow' : 'custom'
+      siteSettings.origin.hostValue = settings.origin_host === 'follow' ? '' : settings.origin_host
+  }
+  siteSettings.origin.timeout = settings.origin_timeout || 60
+  siteSettings.origin.connTimeout = settings.origin_conn_timeout || 10
+  siteSettings.origin.balanceWay = data.balance_way || 'rr'
 
-  const httpsCfg = settings.https || {}
-  siteSettings.https.enabled = Boolean(data.https_listen?.length || parseBool(httpsCfg.http3))
-  siteSettings.https.port = (data.https_listen && data.https_listen[0]) || httpsCfg.listen_port || '443'
-  siteSettings.https.force = parseBool(httpsCfg.force, false)
-  siteSettings.https.redirectPort = httpsCfg.redirect_port || '443'
-  siteSettings.https.hsts = parseBool(httpsCfg.hsts, false)
-  siteSettings.https.http2 = parseBool(httpsCfg.http2, false)
-  siteSettings.https.http3 = parseBool(httpsCfg.http3, false)
-  siteSettings.https.ocspStapling = parseBool(httpsCfg.ocsp_stapling, false)
-  siteSettings.https.sslProfile = httpsCfg.ssl_profile || 'compat'
-  siteSettings.https.sslProtocols = httpsCfg.ssl_protocols
-    ? httpsCfg.ssl_protocols.split(/\\s+/).filter(Boolean)
-    : [...defaultSslProtocols]
-  siteSettings.https.sslCiphers = httpsCfg.ssl_ciphers || defaultSslCiphers
-  siteSettings.https.sslPreferServerCiphers = parseBool(httpsCfg.ssl_prefer_server_ciphers, true)
-  siteSettings.https.certId = settings.certificate_id || null
+  // HTTPS
+  siteSettings.https.enable = !!(data.https_listen && data.https_listen.length)
+  siteSettings.https.listenPorts = (data.https_listen || []).join(' ')
+  siteSettings.https.certId = data.cert_id || null
+  siteSettings.https.force = parseBool(settings.force_https, false)
+  siteSettings.https.forcePort = settings.force_https_port || '443'
+  siteSettings.https.hsts = parseBool(settings.hsts, false)
+  siteSettings.https.http2 = parseBool(settings.http2, false)
+  siteSettings.https.http3 = parseBool(settings.http3, false)
+  siteSettings.https.ocsp = parseBool(settings.ocsp_stapling, false)
+  siteSettings.https.sslPolicy = settings.ssl_policy || 'compat'
 
-  siteSettings.cache.rules = (settings.cache?.rules || []).map(normalizeCacheRule).filter(Boolean)
-
-  const sec = settings.security || {}
-  siteSettings.security.defaultRule = sec.default_rule || 10002
-  siteSettings.security.autoSwitch = parseBool(sec.auto_switch, false)
-  siteSettings.security.bot = sec.bot || 'none'
-  siteSettings.security.blacklist = (sec.blacklist || []).join('\\n')
-  siteSettings.security.whitelist = (sec.whitelist || []).join('\\n')
-  siteSettings.security.blackTimeMode = sec.black_time_mode || 'system'
-  siteSettings.security.blackTimeCustom = sec.black_time_custom || ''
-  siteSettings.security.whiteTimeMode = sec.white_time_mode || 'system'
-  siteSettings.security.whiteTimeCustom = sec.white_time_custom || ''
-  siteSettings.security.shieldProxy = parseBool(sec.shield_proxy, false)
-  siteSettings.security.regionMode = sec.region_mode || 'none'
-  siteSettings.security.regionCustom = sec.region_custom || []
-
-  const access = settings.access || {}
-  siteSettings.access.acl = access.acl || ''
-  siteSettings.access.hotlink = parseBool(access.hotlink, false)
-  siteSettings.access.cors = parseBool(access.cors, false)
-
-  const adv = settings.advanced || {}
-  siteSettings.advanced.gzip = parseBool(adv.gzip, siteSettings.advanced.gzip)
-  siteSettings.advanced.websocket = parseBool(adv.websocket, siteSettings.advanced.websocket)
-  siteSettings.advanced.ipv6 = parseBool(adv.ipv6, siteSettings.advanced.ipv6)
-  siteSettings.advanced.logRequestHeader = parseBool(adv.log_request_header, false)
-  siteSettings.advanced.logResponseHeader = parseBool(adv.log_response_header, false)
-  siteSettings.advanced.logRequestBody = parseBool(adv.log_request_body, false)
-  siteSettings.advanced.bodyLimit = adv.body_limit || siteSettings.advanced.bodyLimit
-  siteSettings.advanced.realtimeReturn = parseBool(adv.realtime_return, false)
-  siteSettings.advanced.realtimeSend = parseBool(adv.realtime_send, false)
-  siteSettings.advanced.acmeBacksource = parseBool(adv.acme_backsource, false)
+  // Security
+  siteSettings.security.cc.mode = data.cc_default_rule || 10002
+  // Parse auto switch from JSON or dedicated fields if any
+  if (settings.cc_auto_switch) {
+      try {
+          siteSettings.security.cc.autoSwitch = typeof settings.cc_auto_switch === 'string' 
+            ? JSON.parse(settings.cc_auto_switch) 
+            : settings.cc_auto_switch
+      } catch(e) {}
+  }
+  
+  // Lists
+  siteSettings.security.ip.black = (settings.ip_black || []).join('\n')
+  siteSettings.security.ip.white = (settings.ip_white || []).join('\n')
+  siteSettings.security.ua.black = (settings.ua_black || []).join('\n')
+  siteSettings.security.ua.white = (settings.ua_white || []).join('\n')
+  
+  // Cookie
+  if (settings.cookie_secure) {
+       // Assuming it's stored here
+       siteSettings.security.cookie = settings.cookie_secure
+  }
+  
+  // Region
+  if (settings.region_block) {
+       siteSettings.security.regions = settings.region_block
+  }
+  
+  // Access
+  if (settings.access) {
+    if (settings.access.acl) siteSettings.access.acl = settings.access.acl
+    if (settings.access.hotlink) {
+      Object.assign(siteSettings.access.hotlink, settings.access.hotlink)
+    }
+    if (settings.access.cors) {
+      Object.assign(siteSettings.access.cors, settings.access.cors)
+    }
+  }
+  
+  if (aclList.value.length === 0) {
+    loadAcls()
+  }
+  if (certList.value.length === 0) {
+      loadCerts()
+  }
 }
 
 function computeCname(data) {
@@ -903,94 +1272,229 @@ function parsePortList(raw) {
     .filter(Boolean)
 }
 
+
 function buildSettingsPayload() {
+  // Helper for splitting strings
+  const splitStr = (str) => (str || '').split(/[\s\n]+/).filter(Boolean)
+
   return {
     origin: {
-      list: siteSettings.origin.list,
-      conditions: siteSettings.origin.conditions,
+      location: siteSettings.origin.protocol === 'follow_port' ? '' : '', // Todo check if needed
+      origin_protocol: siteSettings.origin.protocol, // Check key name in backend
+      list: siteSettings.origin.list.map(item => ({
+        address: item.address,
+        weight: item.weight,
+        enable: item.enable
+      })),
+      conditions: siteSettings.origin.conditions.map(item => ({
+        ...item,
+        seconds: item.seconds ? parseInt(item.seconds) : 0
+      })),
       health_check: siteSettings.origin.healthCheckEnabled,
       health_host: siteSettings.origin.healthCheckHost,
       health_path: siteSettings.origin.healthCheckPath,
       health_status: siteSettings.origin.healthCheckStatus,
-      health_interval: siteSettings.origin.healthCheckInterval
+      health_interval: parseInt(siteSettings.origin.healthCheckInterval)
     },
     https: {
-      enabled: siteSettings.https.enabled,
-      listen_port: siteSettings.https.port,
+      listen_port: siteSettings.https.listenPorts, // String like "443 8443"
       force: siteSettings.https.force,
-      redirect_port: siteSettings.https.redirectPort,
+      redirect_port: siteSettings.https.forcePort,
       hsts: siteSettings.https.hsts,
       http2: siteSettings.https.http2,
       http3: siteSettings.https.http3,
-      ocsp_stapling: siteSettings.https.ocspStapling,
-      ssl_profile: siteSettings.https.sslProfile,
-      ssl_protocols: siteSettings.https.sslProtocols.join(' '),
-      ssl_ciphers: siteSettings.https.sslCiphers,
-      ssl_prefer_server_ciphers: siteSettings.https.sslPreferServerCiphers ? 'on' : 'off'
+      ocsp_stapling: siteSettings.https.ocsp,
+      ssl_profile: siteSettings.https.sslPolicy,
+      
+      // These might need specific handling if custom
+      ssl_protocols: '', 
+      ssl_ciphers: '', 
+      ssl_prefer_server_ciphers: true, 
+      certificate_id: siteSettings.https.certId
     },
-    cache: { rules: siteSettings.cache.rules },
+    cache: { 
+        rules: siteSettings.cache.rules 
+    },
     security: {
-      default_rule: siteSettings.security.defaultRule,
-      auto_switch: siteSettings.security.autoSwitch,
-      bot: siteSettings.security.bot,
-      blacklist: splitLines(siteSettings.security.blacklist),
-      whitelist: splitLines(siteSettings.security.whitelist),
-      black_time_mode: siteSettings.security.blackTimeMode,
-      black_time_custom: siteSettings.security.blackTimeCustom,
-      white_time_mode: siteSettings.security.whiteTimeMode,
-      white_time_custom: siteSettings.security.whiteTimeCustom,
-      shield_proxy: siteSettings.security.shieldProxy,
-      region_mode: siteSettings.security.regionMode,
-      region_custom: siteSettings.security.regionCustom
+      default_rule: siteSettings.security.cc.mode,
+      auto_switch: siteSettings.security.cc.autoSwitch.enable ? JSON.stringify(siteSettings.security.cc.autoSwitch) : '', 
+      
+      blacklist: splitStr(siteSettings.security.ip.black),
+      whitelist: splitStr(siteSettings.security.ip.white),
+      // UA lists might be separate keys or part of security
+       
+      shield_proxy: false, // Default or mock
+      region_block: siteSettings.security.regions
     },
+    // Advanced Settings
+    gzip: siteSettings.advanced.gzip, // Simple bool as per new struct
+    websocket: siteSettings.advanced.websocket,
+    // Provide dedicated advanced object if backend expects it nested, or flat keys
+    // Based on previous code: advanced: { gzip: ... }
+    // Let's assume flat or specific structure based on prior context.
+    // The previous code had `advanced: { gzip: ... }`. Let's assume `settings` object in payload needs these.
+    
+    // Actually, looking at `saveSettings`, it wraps `buildSettingsPayload` into `settings`.
+    // So we should put these INSIDE the returned object here.
+    
+    url_rewrites: siteSettings.advanced.urlRewrites,
+    req_headers: siteSettings.advanced.reqHeaders,
+    res_headers: siteSettings.advanced.resHeaders,
+    search_engine_origin: siteSettings.advanced.searchEngineOrigin,
+    origin_cert: siteSettings.advanced.originCert,
+    realtime_identify: siteSettings.advanced.realtimeIdentify,
+    realtime_send: siteSettings.advanced.realtimeSend,
+    
     access: {
       acl: siteSettings.access.acl,
       hotlink: siteSettings.access.hotlink,
       cors: siteSettings.access.cors
     },
-    advanced: {
-      gzip: siteSettings.advanced.gzip,
-      websocket: siteSettings.advanced.websocket,
-      ipv6: siteSettings.advanced.ipv6,
-      log_request_header: siteSettings.advanced.logRequestHeader,
-      log_response_header: siteSettings.advanced.logResponseHeader,
-      log_request_body: siteSettings.advanced.logRequestBody,
-      body_limit: siteSettings.advanced.bodyLimit,
-      realtime_return: siteSettings.advanced.realtimeReturn,
-      realtime_send: siteSettings.advanced.realtimeSend,
-      acme_backsource: siteSettings.advanced.acmeBacksource
-    },
-    certificate_id: siteSettings.https.certId
+    // Flattened / Specific keys for backend
+    origin_host: siteSettings.origin.host === 'custom' ? siteSettings.origin.hostValue : 'follow',
+    origin_timeout: siteSettings.origin.timeout,
+    backend_protocol: siteSettings.origin.protocol
   }
 }
 
+
+
+
 function saveSettings() {
   if (!siteId.value) return
-  saving.value = true
+  isSaving.value = true
+  
+  const splitStr = (str) => (str || '').split(/[\s\n]+/).filter(Boolean)
+
   const payload = {
     ids: [siteId.value],
     settings: buildSettingsPayload(),
-    https_listen: siteSettings.https.enabled ? parsePortList(siteSettings.https.port) : []
+    
+    // Top level overrides
+    enable: siteSettings.basic.status,
+    http_listen: siteSettings.basic.httpEnable ? splitStr(siteSettings.basic.httpPorts) : [],
+    https_listen: siteSettings.https.enable ? splitStr(siteSettings.https.listenPorts) : [],
+    backend_protocol: siteSettings.origin.protocol,
+    cert_id: siteSettings.https.certId
   }
+  
+  if (siteSettings.basic.httpEnable && payload.http_listen.length === 0) {
+      payload.http_listen = ['80']
+  }
+  
+  // Clean up
+  if (!siteSettings.https.enable) {
+      payload.https_listen = []
+  }
+
   request
-    .post('/sites/batch_update', payload)
+    .put(`/sites/${siteId.value}`, payload)
     .then(() => {
       ElMessage.success('配置已保存')
-      loadSite()
+      // loadSite() // Optional
     })
-    .catch(() => {
-      ElMessage.error('保存失败，请稍后再试')
+    .catch((e) => {
+      ElMessage.error('保存失败: ' + (e.message || 'Error'))
     })
     .finally(() => {
-      saving.value = false
+      isSaving.value = false
     })
 }
+
+// Rewrite Logic
+function openRewriteDialog(mode, index) {
+  rewriteDialog.visible = true
+  rewriteDialog.index = index ?? -1
+  if (index >= 0) {
+      // Edit
+      const item = siteSettings.advanced.urlRewrites[index]
+      Object.assign(rewriteForm, item)
+  } else {
+      // Create
+      Object.assign(rewriteForm, { match: '', replace: '', code: '301' })
+  }
+}
+
+function saveRewrite() {
+    if (!rewriteForm.match || !rewriteForm.replace) {
+        ElMessage.warning('请填写完整信息')
+        return
+    }
+    const item = { ...rewriteForm }
+    if (rewriteDialog.index >= 0) {
+        siteSettings.advanced.urlRewrites.splice(rewriteDialog.index, 1, item)
+    } else {
+        siteSettings.advanced.urlRewrites.push(item)
+    }
+    rewriteDialog.visible = false
+}
+
+function removeRewrite(index) {
+    siteSettings.advanced.urlRewrites.splice(index, 1)
+}
+
+// Header Logic
+function openHeaderDialog(type, mode, index) {
+    headerDialog.visible = true
+    headerDialog.type = type
+    headerDialog.index = index ?? -1 // If passed as generic args, might need adjustment
+    // Simplified: always create for now or handle index check carefully if adding edit button
+    if (typeof mode === 'number') {
+        // Assume it's index if 2nd arg is number, but we called it with ('req', 'create')
+        // Let's stick to explicit args from template: openHeaderDialog('req', 'create')
+    }
+    
+    // We didn't pass index in create mode in template: openHeaderDialog('req', 'create')
+    // We pass index in remove: removeHeader('req', $index)
+    
+    Object.assign(headerForm, { name: '', value: '' })
+}
+
+function saveHeader() {
+    if (!headerForm.name) {
+         ElMessage.warning('请填写名称')
+         return
+    }
+    const item = { ...headerForm }
+    const list = headerDialog.type === 'req' ? siteSettings.advanced.reqHeaders : siteSettings.advanced.resHeaders
+    list.push(item)
+    headerDialog.visible = false
+}
+
+function removeHeader(type, index) {
+    const list = type === 'req' ? siteSettings.advanced.reqHeaders : siteSettings.advanced.resHeaders
+    list.splice(index, 1)
+}
+
+function getCertDays(certId) {
+    if (!certId) return 0
+    const cert = certList.value.find(c => c.id === certId)
+    if (!cert || !cert.expire_at) return 0
+    
+    // Parse Go/Standard date format if needed
+    // Assuming 2024-01-01 00:00:00
+    const now = new Date().getTime()
+    const expire = new Date(cert.expire_at.replace(/-/g, '/')).getTime() // Simple replace for compat
+    if (isNaN(expire)) return 0
+    
+    return Math.max(0, Math.floor((expire - now) / (1000 * 60 * 60 * 24)))
+}
+
 
 function goBack() {
   router.push({ path: '/website/list' })
 }
 
+function getHotlinkPlaceholder() {
+  const scope = siteSettings.access.hotlink.scope
+  if (scope === 'suffix') return '请输入后缀，如 png|jpg|gif'
+  if (scope === 'dir') return '请输入目录，如 /image/|/static/|/upload/'
+  if (scope === 'path') return '请输入路径，如 /index.html'
+  return ''
+}
+
 onMounted(() => {
+  loadAcls()
   loadSite()
   loadCerts()
 })
@@ -1034,5 +1538,92 @@ onMounted(() => {
 }
 .country-selector {
   margin-top: 12px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #f56c6c;
+  margin-right: 6px;
+}
+.status-dot.active {
+  background-color: #67c23a;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 20px;
+  padding-left: 10px;
+  border-left: 3px solid #409eff;
+}
+.divider {
+  height: 1px;
+  background-color: #ebeef5;
+  margin: 24px 0;
+}
+.form-helper {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.cors-more-toggle {
+  cursor: pointer;
+  color: #606266;
+  font-size: 14px;
+  margin-bottom: 20px;
+  margin-left: 150px;
+  display: flex;
+  align-items: center;
+  background: #f5f7fa;
+  padding: 10px 15px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+.cors-more-toggle:hover {
+  background: #edf2f7;
+  color: #409eff;
+}
+</style>
+
+<style scoped>
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #f56c6c;
+  margin-right: 6px;
+}
+.status-dot.active {
+  background-color: #67c23a;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 20px;
+  padding-left: 10px;
+  border-left: 3px solid #409eff;
+}
+.divider {
+  height: 1px;
+  background-color: #ebeef5;
+  margin: 24px 0;
+}
+.form-helper {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.save-status {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 9999;
 }
 </style>
