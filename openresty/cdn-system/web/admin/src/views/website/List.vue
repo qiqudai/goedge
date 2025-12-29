@@ -70,6 +70,8 @@
       highlight-current-row
       style="width: 100%;"
       @selection-change="handleSelectionChange"
+      ref="mainTableRef"
+      @header-dragend="handleMainTableDragend"
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="80" />
@@ -142,7 +144,10 @@
           v-loading="defaultLoading"
           border
           style="width: 100%;"
-          @selection-change="handleDefaultSelection">
+          @selection-change="handleDefaultSelection"
+          ref="defaultTableRef"
+          @header-dragend="handleDefaultTableDragend"
+        >
           <el-table-column type="selection" width="55" align="center" />
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column v-if="isAdmin" prop="user_name" label="用户" min-width="140" />
@@ -170,7 +175,15 @@
         <el-button type="primary" @click="openDnsapiDialog">新增DNS API</el-button>
         <el-button :disabled="!selectedDnsapi.length" @click="removeDnsapiBatch">删除</el-button>
       </div>
-      <el-table v-loading="dnsapiLoading" :data="dnsapiList" border style="width: 100%;" @selection-change="handleDnsapiSelection">
+      <el-table 
+        v-loading="dnsapiLoading" 
+        :data="dnsapiList" 
+        border 
+        style="width: 100%;" 
+        @selection-change="handleDnsapiSelection"
+        ref="dnsapiTableRef"
+        @header-dragend="handleDnsapiTableDragend"
+      >
         <el-table-column type="selection" width="55" align="center" />
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="uid" label="用户" width="120" />
@@ -1149,6 +1162,7 @@ import request from '@/utils/request'
 import { useRouter } from 'vue-router'
 import CountrySelector from '@/components/CountrySelector.vue'
 import ResolvePage from './Resolve.vue'
+import { useTablePersistence } from '@/utils/tablePersistence'
 
 const router = useRouter()
 const isAdmin = ref((localStorage.getItem('role') || 'user') === 'admin')
@@ -1173,6 +1187,15 @@ const advancedForm = reactive({
 })
 
 const createVisible = ref(false)
+
+const mainTableRef = ref(null)
+const defaultTableRef = ref(null)
+const dnsapiTableRef = ref(null)
+
+const { handleHeaderDragend: handleMainTableDragend } = useTablePersistence('site-list-table', mainTableRef)
+const { handleHeaderDragend: handleDefaultTableDragend } = useTablePersistence('site-default-table', defaultTableRef)
+const { handleHeaderDragend: handleDnsapiTableDragend } = useTablePersistence('site-dnsapi-table', dnsapiTableRef)
+
 const createTab = ref('single')
 const createMore = ref(false)
 const batchMore = ref(false)

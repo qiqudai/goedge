@@ -1,6 +1,6 @@
 <template>
   <div class="app-table">
-    <el-table :data="tableData" v-loading="loading" v-bind="tableAttrs">
+    <el-table ref="elTableRef" :data="tableData" v-loading="loading" v-bind="tableAttrs" @header-dragend="handleHeaderDragend">
       <slot />
     </el-table>
     <div v-if="showPaginationComputed" :class="paginationClass">
@@ -25,7 +25,8 @@ export default {
 </script>
 
 <script setup>
-import { computed, ref, useAttrs } from 'vue'
+import { computed, ref, useAttrs, onMounted, nextTick } from 'vue'
+import { useTablePersistence } from '@/utils/tablePersistence'
 import AppPagination from './AppPagination.vue'
 
 const props = defineProps({
@@ -38,7 +39,8 @@ const props = defineProps({
   layout: { type: String, default: 'total, sizes, prev, pager, next, jumper' },
   persistKey: { type: String, default: 'default' },
   showPagination: { type: Boolean, default: true },
-  paginationClass: { type: String, default: 'pagination-container' }
+  paginationClass: { type: String, default: 'pagination-container' },
+  storageKey: { type: String, default: '' }
 })
 
 const emit = defineEmits([
@@ -49,6 +51,7 @@ const emit = defineEmits([
 ])
 
 const attrs = useAttrs()
+const elTableRef = ref(null)
 
 const tableAttrs = computed(() => ({ ...attrs }))
 
@@ -121,4 +124,11 @@ const handleSizeChange = (size) => {
 const handleCurrentChange = (page) => {
   emit('current-change', page)
 }
+
+// Column Persistence
+// Column Persistence
+const { handleHeaderDragend } = useTablePersistence(
+  computed(() => props.storageKey),
+  elTableRef
+)
 </script>
