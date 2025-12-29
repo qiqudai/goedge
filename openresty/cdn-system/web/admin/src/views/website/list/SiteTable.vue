@@ -61,12 +61,14 @@
     <el-table-column prop="listen_ports" label="监听端口" width="120" />
     <el-table-column label="源站" min-width="180">
       <template #default="{ row }">
-        <span class="copyable-text" @click="copyText(row.origin_display)" title="点击复制">{{ row.origin_display }}</span>
+        <span>{{ row.origin_display }}</span>
+        <el-icon class="copy-icon" @click.stop="copyText(row.origin_display)"><CopyDocument /></el-icon>
       </template>
     </el-table-column>
     <el-table-column prop="cname" label="CNAME" min-width="180">
        <template #default="{ row }">
-        <span class="copyable-text" @click="copyText(row.cname)" title="点击复制">{{ row.cname }}</span>
+        <span>{{ row.cname }}</span>
+        <el-icon class="copy-icon" @click.stop="copyText(row.cname)"><CopyDocument /></el-icon>
       </template>
     </el-table-column>
     <el-table-column label="HTTPS" width="80" align="center">
