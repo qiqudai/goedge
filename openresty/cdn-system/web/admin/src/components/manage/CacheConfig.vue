@@ -38,6 +38,10 @@ import { ref, watch } from 'vue'
 import { cacheTypeLabelMap } from '@/constants/origin'
 import { getCachePreset, normalizeCacheRule } from '@/utils/siteHelpers'
 
+import { useSiteSettings } from '@/composables/useSiteSettings'
+
+const { saveSettings } = useSiteSettings()
+
 const props = defineProps({
   modelValue: { 
     type: Object, 
@@ -52,6 +56,19 @@ const localSettings = ref({
 })
 
 let isInternalUpdate = false
+
+const updateSettings = () => {
+    isInternalUpdate = true
+    emit('update:modelValue', {
+        ...props.modelValue,
+        ...localSettings.value
+    })
+}
+
+const handleSave = () => {
+    updateSettings()
+    saveSettings(true)
+}
 
 watch(localSettings, (newVal) => {
   isInternalUpdate = true
@@ -75,6 +92,10 @@ const cacheQuickPreset = ref('')
 
 const openCacheRuleDialog = (rule = null) => {
   emit('open-rule-dialog', rule)
+  // Editing rule is handled by parent Dialog SAVE. 
+  // Parent should call saveSettings() when dialog saves.
+  // Wait, `Manage.vue` handles `saveCacheRule`. 
+  // We need to check `Manage.vue`.
 }
 
 const applyCachePreset = (val) => {
@@ -85,6 +106,8 @@ const applyCachePreset = (val) => {
     const rule = normalizeCacheRule(preset)
     if (rule) {
       cacheSettings.value.rules.push(rule)
+      // Since manual save, we must trigger save here
+      handleSave()
     }
   }
   cacheQuickPreset.value = ''
@@ -92,6 +115,7 @@ const applyCachePreset = (val) => {
 
 const removeCacheRule = (index) => {
   cacheSettings.value.rules.splice(index, 1)
+  handleSave()
 }
 </script>
 

@@ -71,13 +71,26 @@ const siteSettings = reactive({
         enable: false,
         qps: 200,
         rule: 'close'
-      }
+      },
+      customRules: []
     },
-    customRules: [],
-    ip: { white: '', black: '' },
+    crawlers: {
+      action: 'none'
+    },
+    ip: {
+      white: '',
+      black: '',
+      blackTime: 3600,
+      blackTimeCustom: false,
+      whiteTime: 21600,
+      whiteTimeCustom: false
+    },
     ua: { white: '', black: '' },
     cookie: { enable: false, domain: '' },
-    regions: []
+    regions: [],
+    block: {
+      transparentProxy: false
+    }
   },
   cache: { rules: [] },
   access: {
@@ -167,7 +180,8 @@ export function useSiteSettings() {
     }
 
     if (!isInitialized.value) return
-    triggerSave()
+    if (!isInitialized.value) return
+    // triggerSave() // Disabled global auto-save to support save-on-blur
   }, { deep: true })
 
   // 保存设置
@@ -397,9 +411,39 @@ export function useSiteSettings() {
             console.error('Parse auto_switch failed', e)
           }
         }
+
+        // Custom Rules
+        siteSettings.security.cc.customRules = sec.custom_rules || []
+
+        // Crawlers
+        siteSettings.security.crawlers.action = sec.crawlers_action || 'none'
+
+        // IP List Timeouts
         siteSettings.security.ip.black = (sec.blacklist || []).join('\n')
         siteSettings.security.ip.white = (sec.whitelist || []).join('\n')
+
+        const blackTime = parseInt(sec.ip_black_timeout)
+        if (blackTime > 0 && blackTime !== 3600) {
+          siteSettings.security.ip.blackTime = blackTime
+          siteSettings.security.ip.blackTimeCustom = true
+        } else {
+          siteSettings.security.ip.blackTime = 3600
+          siteSettings.security.ip.blackTimeCustom = false
+        }
+
+        const whiteTime = parseInt(sec.ip_white_timeout)
+        if (whiteTime > 0 && whiteTime !== 21600) {
+          siteSettings.security.ip.whiteTime = whiteTime
+          siteSettings.security.ip.whiteTimeCustom = true
+        } else {
+          siteSettings.security.ip.whiteTime = 21600
+          siteSettings.security.ip.whiteTimeCustom = false
+        }
+
         siteSettings.security.regions = sec.region_block || []
+
+        // Block Settings
+        siteSettings.security.block.transparentProxy = !!sec.block_transparent_proxy
       }
 
       // 访问控制

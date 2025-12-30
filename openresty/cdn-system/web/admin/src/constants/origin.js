@@ -9,13 +9,11 @@ export const originConditionItems = [
   { label: '客户端运营商', value: 'client_isp' },
   { label: '客户端省份', value: 'client_province' },
   { label: '客户端城市', value: 'client_city' },
-  { label: '用户 IP', value: 'client_ip' },
+  { label: '用户IP', value: 'client_ip' },
   { label: '域名', value: 'domain' },
   { label: '请求头', value: 'header' },
   { label: '请求方法', value: 'method' },
-  { label: 'HTTP 版本', value: 'http_version' },
-  { label: '独立 UA 数量', value: 'ua_count' },
-  { label: '404 状态码数量', value: 'status_404' }
+  { label: 'HTTP版本', value: 'http_version' }
 ];
 
 export const originConditionOperators = [

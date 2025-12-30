@@ -4,17 +4,19 @@
     <div class="section-title">回源协议与端口</div>
     <el-form label-width="150px" class="config-form">
       <el-form-item label="回源协议">
-        <el-radio-group v-model="originSettings.protocol">
-          <el-radio value="http">HTTP</el-radio>
-          <el-radio value="https">HTTPS</el-radio>
-          <el-radio value="follow">跟随协议</el-radio>
-          <el-radio value="follow_port">跟随端口和协议</el-radio>
-        </el-radio-group>
-        <div class="form-helper">
-          1. 当选择HTTP，即节点与源的连接使用HTTP协议；<br/>
-          2. 当选择HTTPS时，节点使用HTTPS连接；<br/>
-          3. 当选择跟随协议时，当用户使用HTTP访问你在cdn上的网站时，节点也使用HTTP连接源，用户使用HTTPS访问时，节点也使用HTTPS连接源；<br/>
-          4. 当选择跟随端口和协议时，即用户访问的协议和端口，节点也使用同样的协议和端口与源连接，一般用于当监听多个端口时，也希望以同样的访问端口回源
+        <div>
+          <el-radio-group v-model="originSettings.protocol" @change="handleSave">
+            <el-radio value="http">HTTP</el-radio>
+            <el-radio value="https">HTTPS</el-radio>
+            <el-radio value="follow">跟随协议</el-radio>
+            <el-radio value="follow_port">跟随端口和协议</el-radio>
+          </el-radio-group>
+          <div class="form-helper">
+            <div>1. 当选择HTTP，即节点与源的连接使用HTTP协议；</div>
+            <div>2. 当选择HTTPS时，节点使用HTTPS连接；</div>
+            <div>3. 当选择跟随协议时，当用户使用HTTP访问你在cdn上的网站时，节点也使用HTTP连接源，用户使用HTTPS访问时，节点也使用HTTPS连接源；</div>
+            <div>4. 当选择跟随端口和协议时，即用户访问的协议和端口，节点也使用同样的协议和端口与源连接，一般用于当监听多个端口时，也希望以同样的访问端口回源</div>
+          </div>
         </div>
       </el-form-item>
       
@@ -23,7 +25,7 @@
         v-if="['http', 'follow'].includes(originSettings.protocol)" 
         style="width: 520px"
       >
-        <el-input v-model="originSettings.httpPort" />
+        <el-input v-model="originSettings.httpPort" @change="handleSave" />
         <div class="form-helper">当节点与源使用HTTP连接时所使用的端口</div>
       </el-form-item>
       
@@ -32,12 +34,12 @@
         v-if="['https', 'follow'].includes(originSettings.protocol)" 
         style="width: 520px"
       >
-        <el-input v-model="originSettings.httpsPort" />
+        <el-input v-model="originSettings.httpsPort" @change="handleSave" />
         <div class="form-helper">当节点与源使用HTTPS连接时所使用的端口</div>
       </el-form-item>
 
       <el-form-item label="回源HOST" style="width: 520px">
-        <el-radio-group v-model="originSettings.host">
+        <el-radio-group v-model="originSettings.host" @change="handleSave">
           <el-radio value="follow">自动跟随</el-radio>
           <el-radio value="domain">网站域名</el-radio>
           <el-radio value="custom">自定义</el-radio>
@@ -47,6 +49,7 @@
           v-model="originSettings.hostValue" 
           placeholder="请输入自定义回源HOST"
           style="margin-top: 10px"
+          @change="handleSave"
         />
         <div class="form-helper">节点回源时发送的 Host 头部。自动跟随：跟随用户请求的 Host；网站域名：使用当前网站配置的第一个域名。</div>
       </el-form-item>
@@ -58,12 +61,12 @@
     <div class="section-title">回源超时</div>
     <el-form label-width="150px" class="config-form">
       <el-form-item label="回源超时" style="width: 320px">
-        <el-input v-model="originSettings.timeout">
+        <el-input v-model="originSettings.timeout" @change="handleSave">
           <template #append>秒</template>
         </el-input>
       </el-form-item>
       <el-form-item label="连接超时" style="width: 320px">
-        <el-input style="width: 320px" v-model="originSettings.connTimeout">
+        <el-input style="width: 320px" v-model="originSettings.connTimeout" @change="handleSave">
           <template #append>秒</template>
         </el-input>
       </el-form-item>
@@ -93,10 +96,33 @@ const localSettings = ref({
   connTimeout: props.modelValue?.connTimeout || 10
 })
 
+import { validateDomain } from '@/utils/siteHelpers'
+import { useSiteSettings } from '@/composables/useSiteSettings'
+
+const { saveSettings } = useSiteSettings()
+
 let isInternalUpdate = false
+
+const handleSave = () => {
+   // Wait for sync to happen (watch triggers sync)
+   // But watch is sync in Vue 3 for reactive objects?
+   // Let's use nextTick or just assume sync.
+   // Also handle custom validation check again just in case watch blocked it?
+   // If watch blocked it, parent state is stale (old valid one).
+   // Calling saveSettings saves the STALE state.
+   // This is CORRECT: we don't save invalid state.
+   saveSettings(true)
+}
 
 // 监听本地变化并同步
 watch(localSettings, (newVal) => {
+  // 如果是自定义 HOST，必须验证通过才保存
+  if (newVal.host === 'custom') {
+    if (!newVal.hostValue || !validateDomain(newVal.hostValue)) {
+      return
+    }
+  }
+
   isInternalUpdate = true
   emit('update:modelValue', {
     ...props.modelValue,

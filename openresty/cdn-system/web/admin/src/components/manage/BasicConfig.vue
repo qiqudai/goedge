@@ -7,7 +7,7 @@
           v-model="localSettings.status" 
           active-text="正常" 
           inactive-text="已停用"
-          @change="updateSettings"
+          @change="handleSave"
         />
       </el-form-item>
       <el-form-item label="CNAME">
@@ -57,6 +57,7 @@
         <el-input 
           v-model="localSettings.domain" 
           @input="updateSettings"
+          @change="saveSettings(true)"
         />
         <div class="form-helper">
           多个域名以空格分隔，中文域名及其它IDN域名需要转成Punycode，
@@ -74,7 +75,7 @@
       <el-form-item label="开关">
         <el-switch 
           v-model="localSettings.httpEnable" 
-          @change="updateSettings"
+          @change="handleSave"
         />
         <div class="form-helper">如果关闭，网站将完全拒绝HTTP访问</div>
       </el-form-item>
@@ -83,6 +84,7 @@
         <el-input 
           v-model="localSettings.httpPorts" 
           @input="updateSettings"
+          @change="saveSettings(true)"
         />
         <div class="form-helper">
           多个端口空格分隔。如需兼容http://www.example.com和http://www.example.com:888访问，则填80 888
@@ -105,13 +107,14 @@
           <el-input 
             v-model="row.address" 
             placeholder="IP 或域名" 
-            size="small" 
+            size="small"
+            @change="saveSettings(true)"
           />
         </template>
       </el-table-column>
       <el-table-column prop="weight" label="权重" width="120">
         <template #default="{ row }">
-          <el-input v-model="row.weight" size="small" />
+          <el-input v-model="row.weight" size="small" @change="saveSettings(true)" />
         </template>
       </el-table-column>
       <el-table-column label="状态" width="120">
@@ -120,7 +123,8 @@
             v-model="row.enable" 
             active-text="启用" 
             inactive-text="停用" 
-            size="small" 
+            size="small"
+            @change="saveSettings(true)"
           />
         </template>
       </el-table-column>
@@ -177,18 +181,21 @@
               v-model="row.header"
               size="small"
               placeholder="请求头名称，如 user-agent"
+              @change="saveSettings(true)"
             />
             <el-input
               v-else-if="isOriginStatItem(row.item)"
               v-model="row.seconds"
               size="small"
               placeholder="统计秒数"
+              @change="saveSettings(true)"
             />
             <el-input
               v-else
               v-model="row.value"
               size="small"
               :placeholder="getOriginConditionPlaceholder(row)"
+              @change="saveSettings(true)"
             />
             <el-select
               v-if="!isOriginStatItem(row.item)"
@@ -196,6 +203,7 @@
               size="small"
               placeholder="匹配方式"
               style="width: 140px;"
+              @change="saveSettings(true)"
             >
               <el-option
                 v-for="opt in originConditionOperators"
@@ -213,7 +221,8 @@
           <el-input 
             v-model="row.origin" 
             placeholder="源站地址，多个用 | 分隔" 
-            size="small" 
+            size="small"
+            @change="saveSettings(true)"
           />
         </template>
       </el-table-column>
@@ -241,6 +250,9 @@
 import { ref, computed, watch } from 'vue'
 import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
 import { originConditionItems, originConditionOperators } from '@/constants/origin'
+import { useSiteSettings } from '@/composables/useSiteSettings'
+
+const { saveSettings } = useSiteSettings()
 
 const props = defineProps({
   modelValue: { 
@@ -302,20 +314,25 @@ watch(() => props.modelValue, (newValue) => {
   isInternalUpdate = false
 }, { deep: true })
 
-const handlePackageChange = (value) => {
-  updateSettings()
-}
-
-const handleGroupChange = (value) => {
-  updateSettings()
-}
-
 const updateSettings = () => {
   isInternalUpdate = true
   emit('update:modelValue', {
     ...props.modelValue,
     ...localSettings.value
   })
+}
+
+const handleSave = () => {
+  updateSettings()
+  saveSettings(true)
+}
+
+const handlePackageChange = (value) => {
+  handleSave()
+}
+
+const handleGroupChange = (value) => {
+  handleSave()
 }
 
 // 源站相关方法
@@ -328,13 +345,13 @@ const addOrigin = () => {
     weight: '10', 
     enable: true 
   })
-  updateSettings()
+  handleSave()
 }
 
 const removeOrigin = (index) => {
   if (localSettings.value.originList) {
     localSettings.value.originList.splice(index, 1)
-    updateSettings()
+    handleSave()
   }
 }
 
@@ -347,16 +364,15 @@ const addConditionOrigin = () => {
     operator: 'eq',
     value: '',
     origin: '',
-    header: '',
-    seconds: ''
+    header: ''
   })
-  updateSettings()
+  handleSave()
 }
 
 const removeConditionOrigin = (index) => {
   if (localSettings.value.originConditions) {
     localSettings.value.originConditions.splice(index, 1)
-    updateSettings()
+    handleSave()
   }
 }
 
@@ -365,7 +381,7 @@ const isOriginHeaderItem = (item) => {
 }
 
 const isOriginStatItem = (item) => {
-  return item === 'ua_count' || item === 'status_404'
+  return false
 }
 
 const getOriginConditionPlaceholder = (row) => {
@@ -394,9 +410,7 @@ const getOriginConditionPlaceholder = (row) => {
     case 'node_city':
     case 'client_city':
       return '输入城市，如 深圳'
-    case 'ua_count':
-    case 'status_404':
-      return '输入次数'
+
     case 'header':
       return '输入请求头名称'
     default:
@@ -412,6 +426,7 @@ const handleOriginConditionChange = (row) => {
   } else if (!row.operator) {
     row.operator = 'eq'
   }
+  handleSave()
 }
 </script>
 

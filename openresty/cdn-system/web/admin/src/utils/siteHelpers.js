@@ -225,3 +225,22 @@ export function getCachePreset(preset) {
   
   return presets[preset] || null
 }
+
+/**
+ * 验证域名格式
+ * @param {string} domain - 域名字符串
+ * @returns {boolean} 是否有效
+ */
+export function validateDomain(domain) {
+  if (!domain) return false
+  // 不允许带有协议前缀
+  if (domain.includes('://')) return false
+
+  // IP地址验证
+  const ipRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/
+  if (ipRegex.test(domain)) return true
+
+  // 域名验证 (支持泛域名)
+  const domainRegex = /^(?:\*\.)?(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/
+  return domainRegex.test(domain)
+}

@@ -130,8 +130,20 @@ function buildSecurityPayload(securitySettings) {
     auto_switch: securitySettings.cc.autoSwitch.enable 
       ? JSON.stringify(securitySettings.cc.autoSwitch) 
       : '',
+    custom_rules: securitySettings.cc.customRules,
+
+    // IP Lists
     blacklist: splitStr(securitySettings.ip.black),
     whitelist: splitStr(securitySettings.ip.white),
+    ip_black_timeout: securitySettings.ip.blackTime,
+    ip_white_timeout: securitySettings.ip.whiteTime,
+
+    // Crawlers
+    crawlers_action: securitySettings.crawlers.action,
+
+    // Block
+    block_transparent_proxy: securitySettings.block.transparentProxy,
+
     shield_proxy: false, // 默认值
     region_block: securitySettings.regions
   }

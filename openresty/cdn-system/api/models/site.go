@@ -36,7 +36,7 @@ type Site struct {
 
 	// 源站配置
 	BackendRaw      string `json:"-" gorm:"column:backend;type:text"`
-	BackendProtocol string `json:"backend_protocol"` // http, https
+	BackendProtocol string `json:"backend_protocol" gorm:"type:varchar(32);default:'follow'"` // http, https, follow, follow_port
 	BalanceWay      string `json:"balance_way"`      // ip_hash, rr
 	Backends        []string `json:"backends" gorm:"-"`
 

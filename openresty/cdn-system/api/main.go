@@ -107,6 +107,15 @@ func main() {
 		migrator.AddColumn(&models.Site{}, "CnameHostname2")
 		log.Println("Added missing column: cname_hostname2")
 	}
+
+	// Fix backend_protocol length for "follow_port"
+	// AutoMigrate might skip this if it thinks types are compatible, so we force check/alter
+	if err := migrator.AlterColumn(&models.Site{}, "BackendProtocol"); err != nil {
+		log.Printf("Warning: Failed to alter backend_protocol column: %v", err)
+	} else {
+        log.Println("Altered column: backend_protocol")
+    }
+
 	// Ensure Admin Role / User Exists
 	go func() {
 		var u models.User
