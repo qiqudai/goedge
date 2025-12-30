@@ -50,7 +50,7 @@ func (ctr *AuthController) Login(c *gin.Context) {
 	// Support login by Name or Email
 	if err := db.DB.Where("name = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeLoginLog(c, 0, false, "user not found")
+			writeLoginLog(c, 0, false, "user not found: "+req.Username)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials (user not found)"})
 		} else {
 			fmt.Printf("[Error] DB Query Failed: %v\n", err)

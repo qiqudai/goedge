@@ -43,11 +43,24 @@ service.interceptors.response.use(
     }
   },
   error => {
-    ElMessage({
-      message: error.message,
-      type: 'error',
-      duration: 5 * 1000
-    })
+    if (error.response && error.response.status === 401) {
+      ElMessage({
+        message: '登录失效，请重新登录',
+        type: 'error',
+        duration: 3000
+      })
+      localStorage.removeItem('admin_token')
+      localStorage.removeItem('role')
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 1000)
+    } else {
+      ElMessage({
+        message: error.message,
+        type: 'error',
+        duration: 5 * 1000
+      })
+    }
     return Promise.reject(error)
   }
 )

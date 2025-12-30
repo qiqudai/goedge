@@ -70,7 +70,7 @@
           </el-table-column>
           <el-table-column label="登录状态" width="100" align="center">
             <template #default="{row}">
-               <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '成功' : '失败' }}</el-tag>
+               <el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag>
             </template>
           </el-table-column>
         </AppTable>
@@ -274,7 +274,7 @@ const fetchData = async () => {
 
 const formatTime = (ts) => {
   if (!ts) return '-'
-  const date = new Date(ts * 1000)
+  const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts)
   return date.toLocaleString()
 }
 
