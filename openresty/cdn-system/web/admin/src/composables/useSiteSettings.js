@@ -67,7 +67,9 @@ export function useSiteSettings() {
       http2: false,
       http3: false,
       ocsp: false,
-      sslPolicy: 'compat'
+      sslPolicy: 'compat',
+      sslCiphers: '',
+      sslProtocols: ''
     },
     security: {
       cc: {
@@ -122,7 +124,14 @@ export function useSiteSettings() {
       logRequestHeader: false,
       logResponseHeader: false,
       logRequestBody: false,
-      logRequestBodySizeLimit: 16
+      logRequestBodySizeLimit: 16,
+      proxyConnectTimeout: '30s',
+      proxyReadTimeout: '60s',
+      proxySendTimeout: '60s',
+      limitRate: 0,
+      upstreamKeepalive: false,
+      upstreamKeepaliveConn: 100,
+      upstreamKeepaliveTimeout: 60
     }
   })
 
@@ -227,8 +236,58 @@ export function useSiteSettings() {
     siteSettings.basic.originList = siteSettings.origin.list
     siteSettings.basic.originConditions = siteSettings.origin.conditions
     
-    // 其他设置...
-    // 这里省略具体的映射逻辑
+    // 映射 Settings 中的高级配置
+    if (data.settings && typeof data.settings === 'object') {
+      const s = data.settings
+
+      // HTTPS 高级设置
+      siteSettings.https.force = !!s.https_force
+      siteSettings.https.forcePort = s.https_redirect_port || '443'
+      siteSettings.https.hsts = !!s.https_hsts
+      siteSettings.https.http2 = !!s.https_http2
+      siteSettings.https.http3 = !!s.https_http3
+      siteSettings.https.ocsp = !!s.ocsp_stapling
+      siteSettings.https.sslPolicy = s.ssl_profile || 'compat'
+      siteSettings.https.sslCiphers = s.ssl_ciphers || ''
+      siteSettings.https.sslProtocols = s.ssl_protocols || ''
+
+      // 高级设置
+      siteSettings.advanced.gzip = !!s.enable_gzip
+      siteSettings.advanced.websocket = !!s.enable_websocket
+      siteSettings.advanced.searchEngineOrigin = !!s.search_engine_origin
+      siteSettings.advanced.uploadLimitMode = (s.body_limit && s.body_limit > 0) ? 'custom' : 'none'
+      siteSettings.advanced.uploadLimitValue = s.body_limit ? Math.round(s.body_limit / 1024 / 1024) : 100
+
+      // 代理超时设置
+      siteSettings.advanced.proxyConnectTimeout = s.proxy_connect_timeout || '30s'
+      siteSettings.advanced.proxyReadTimeout = s.proxy_read_timeout || '60s'
+      siteSettings.advanced.proxySendTimeout = s.proxy_send_timeout || '60s'
+
+      // 限速设置
+      siteSettings.advanced.limitRate = s.limit_rate || 0
+
+      // 上游长连接
+      siteSettings.advanced.upstreamKeepalive = !!s.upstream_keepalive
+      siteSettings.advanced.upstreamKeepaliveConn = s.upstream_keepalive_conn || 100
+      siteSettings.advanced.upstreamKeepaliveTimeout = s.upstream_keepalive_timeout || 60
+
+      // 日志设置
+      siteSettings.advanced.logRequestHeader = !!s.log_request_header
+      siteSettings.advanced.logResponseHeader = !!s.log_response_header
+      siteSettings.advanced.logRequestBody = !!s.log_request_body
+      siteSettings.advanced.logRequestBodySizeLimit = s.log_request_body_size_limit || 16
+
+      // 其他高级设置
+      siteSettings.advanced.originCert = !!s.origin_cert
+      siteSettings.advanced.realtimeIdentify = !!s.realtime_identify
+      siteSettings.advanced.realtimeSend = !!s.realtime_send
+
+      // 列表类数据
+      siteSettings.advanced.urlRedirects = s.url_redirects || []
+      siteSettings.advanced.reqHeaders = s.req_headers || []
+      siteSettings.advanced.resHeaders = s.res_headers || []
+      siteSettings.advanced.urlRewrites = s.url_rewrites || []
+    }
   }
 
   // 工具函数：分割字符串

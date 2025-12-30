@@ -109,15 +109,17 @@
     <el-table-column :label="NODE_T.sort" prop="sort_order" width="80" align="center" sortable />
     <el-table-column :label="NODE_T.action" align="center" width="160" fixed="right">
       <template #default="{ row }">
-        <el-button link type="primary" @click="$emit('edit', row)">{{ NODE_T.manage }}</el-button>
-        <el-dropdown trigger="click" @command="(c) => $emit('row-action', c, row)">
-          <span class="link-more">更多<el-icon><ArrowDown /></el-icon></span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="delete">{{ NODE_T.delete }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div style="display: flex; justify-content: center; gap: 8px;">
+          <el-button link type="primary" @click="$emit('edit', row)">{{ NODE_T.manage }}</el-button>
+          <el-dropdown trigger="click" @command="(c) => $emit('row-action', c, row)">
+            <span class="link-more">更多<el-icon><ArrowDown /></el-icon></span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="delete">{{ NODE_T.delete }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </template>
     </el-table-column>
   </AppTable>

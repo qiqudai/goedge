@@ -74,6 +74,28 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 				nodes[i].SubIPs = subMap[nodes[i].ID]
 			}
 		}
+
+		// Load Regions
+		regionIDs := make([]int64, 0)
+		for _, node := range nodes {
+			if node.RegionID != nil && *node.RegionID > 0 {
+				regionIDs = append(regionIDs, *node.RegionID)
+			}
+		}
+		if len(regionIDs) > 0 {
+			var regions []models.Region
+			if err := db.DB.Select("id", "name").Find(&regions, regionIDs).Error; err == nil {
+				regionMap := make(map[int64]string)
+				for _, r := range regions {
+					regionMap[r.ID] = r.Name
+				}
+				for i := range nodes {
+					if nodes[i].RegionID != nil {
+						nodes[i].RegionName = regionMap[*nodes[i].RegionID]
+					}
+				}
+			}
+		}
 	}
 
 	for i := range nodes {

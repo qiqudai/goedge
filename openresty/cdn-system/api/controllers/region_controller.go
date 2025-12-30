@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,6 +40,7 @@ func (ctr *RegionController) ListRegions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Database Error"})
 		return
 	}
+	log.Printf("[Debug] ListRegions: found %d regions", len(regions))
 
 	metaMap := loadRegionMeta()
 	views := make([]regionView, 0, len(regions))

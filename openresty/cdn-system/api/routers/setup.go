@@ -41,6 +41,7 @@ func Setup(r *gin.Engine) {
 			admin.POST("/nodes", nodeCtr.CreateNode)
 			admin.PUT("/nodes/:id", nodeCtr.UpdateNode)
 			admin.POST("/nodes/batch", nodeCtr.BatchAction)
+			admin.POST("/nodes/batch_action", nodeCtr.BatchAction) // Alias for frontend compatibility
 			ngCtr := &controllers.NodeGroupController{}
 			admin.GET("/node-groups", ngCtr.ListNodeGroups)
 			admin.POST("/node-groups", ngCtr.CreateNodeGroup)

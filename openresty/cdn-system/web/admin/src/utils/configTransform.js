@@ -36,6 +36,19 @@ export function buildSettingsPayload(siteSettings) {
     log_request_body: siteSettings.advanced.logRequestBody,
     log_request_body_size_limit: parseInt(siteSettings.advanced.logRequestBodySizeLimit || 16),
     
+    // 代理超时
+    proxy_connect_timeout: siteSettings.advanced.proxyConnectTimeout,
+    proxy_read_timeout: siteSettings.advanced.proxyReadTimeout,
+    proxy_send_timeout: siteSettings.advanced.proxySendTimeout,
+
+    // 上游长连接
+    upstream_keepalive: siteSettings.advanced.upstreamKeepalive,
+    upstream_keepalive_conn: parseInt(siteSettings.advanced.upstreamKeepaliveConn || 0),
+    upstream_keepalive_timeout: parseInt(siteSettings.advanced.upstreamKeepaliveTimeout || 0),
+
+    // 限速
+    limit_rate: parseInt(siteSettings.advanced.limitRate || 0),
+
     // 源站相关设置
     origin_host: siteSettings.origin.host === 'custom' 
       ? siteSettings.origin.hostValue 
@@ -86,8 +99,8 @@ function buildHttpsPayload(httpsSettings) {
     http3: httpsSettings.http3,
     ocsp_stapling: httpsSettings.ocsp,
     ssl_profile: httpsSettings.sslPolicy,
-    ssl_protocols: '', // 如果需要自定义协议，这里填写
-    ssl_ciphers: '', // 如果需要自定义密码，这里填写
+    ssl_protocols: httpsSettings.sslProtocols,
+    ssl_ciphers: httpsSettings.sslCiphers,
     ssl_prefer_server_ciphers: true,
     certificate_id: httpsSettings.certId
   }

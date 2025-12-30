@@ -95,6 +95,27 @@
             <el-radio value="custom">自定义</el-radio>
           </el-radio-group>
         </el-form-item>
+        
+        <template v-if="httpsSettings.sslPolicy === 'custom'">
+          <el-form-item label="加密算法">
+            <el-input 
+              v-model="httpsSettings.sslCiphers" 
+              type="textarea" 
+              :rows="3" 
+              placeholder="EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH" 
+            />
+            <div class="form-helper">OpenSSL支持的加密算法，多个算法之间使用冒号(:)分隔</div>
+          </el-form-item>
+          <el-form-item label="SSL协议">
+            <el-input 
+              v-model="httpsSettings.sslProtocols" 
+              type="textarea" 
+              :rows="2" 
+              placeholder="TLSv1 TLSv1.1 TLSv1.2 TLSv1.3" 
+            />
+            <div class="form-helper">空格分隔，如 TLSv1.2 TLSv1.3</div>
+          </el-form-item>
+        </template>
       </template>
     </el-form>
   </div>

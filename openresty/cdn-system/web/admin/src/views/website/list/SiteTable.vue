@@ -103,17 +103,19 @@
     </el-table-column>
     <el-table-column label="操作" width="150" align="center">
       <template #default="{ row }">
-        <el-button link type="primary" @click="$emit('manage', row)">管理</el-button>
-        <el-dropdown trigger="click" @command="(c) => handleAction('row-' + c, row)">
-           <span class="link-more">更多<el-icon><ArrowDown /></el-icon></span>
-           <template #dropdown>
-             <el-dropdown-menu>
-               <el-dropdown-item v-if="!row.status" command="enable">启用</el-dropdown-item>
-               <el-dropdown-item v-else command="disable">禁用</el-dropdown-item>
-               <el-dropdown-item command="delete">删除</el-dropdown-item>
-             </el-dropdown-menu>
-           </template>
-        </el-dropdown>
+        <div style="display: flex; justify-content: center; gap: 8px;">
+          <el-button link type="primary" @click="$emit('manage', row)">管理</el-button>
+          <el-dropdown trigger="click" @command="(c) => handleAction('row-' + c, row)">
+             <span class="link-more">更多<el-icon><ArrowDown /></el-icon></span>
+             <template #dropdown>
+               <el-dropdown-menu>
+                 <el-dropdown-item v-if="!row.status" command="enable">启用</el-dropdown-item>
+                 <el-dropdown-item v-else command="disable">禁用</el-dropdown-item>
+                 <el-dropdown-item command="delete">删除</el-dropdown-item>
+               </el-dropdown-menu>
+             </template>
+          </el-dropdown>
+        </div>
       </template>
     </el-table-column>
   </AppTable>

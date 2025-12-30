@@ -23,6 +23,7 @@ type Node struct {
 	Enable         bool        `json:"enable"`
 	DisableBy      string      `json:"disable_by"`
 	ConfigTask     string      `json:"config_task"`
+	RegionName     string      `json:"region_name" gorm:"-"` // Added for list view
 	CheckOn        bool        `json:"check_on"`
 	CheckProtocol  string      `json:"check_protocol"`
 	CheckTimeout   int         `json:"check_timeout"`

@@ -110,6 +110,60 @@
 
       <div class="divider"></div>
 
+      <div class="divider"></div>
+
+      <div class="section-title">代理超时设置</div>
+      <el-form-item label="连接超时">
+        <el-input v-model="advancedSettings.proxyConnectTimeout" style="width: 200px;" placeholder="30s">
+          <template #append>秒/单位</template>
+        </el-input>
+        <div class="form-helper">连接源站的超时时间，默认为30s</div>
+      </el-form-item>
+      <el-form-item label="读取超时">
+        <el-input v-model="advancedSettings.proxyReadTimeout" style="width: 200px;" placeholder="60s">
+          <template #append>秒/单位</template>
+        </el-input>
+        <div class="form-helper">读取源站响应的超时时间，默认为60s</div>
+      </el-form-item>
+      <el-form-item label="发送超时">
+        <el-input v-model="advancedSettings.proxySendTimeout" style="width: 200px;" placeholder="60s">
+          <template #append>秒/单位</template>
+        </el-input>
+        <div class="form-helper">发送请求到源站的超时时间，默认为60s</div>
+      </el-form-item>
+
+      <div class="divider"></div>
+
+      <div class="section-title">上游长连接</div>
+      <el-form-item label="开关">
+        <el-switch v-model="advancedSettings.upstreamKeepalive" />
+        <div class="form-helper">开启后，回源连接将复用HTTP连接，减少三次握手开销</div>
+      </el-form-item>
+      <template v-if="advancedSettings.upstreamKeepalive">
+        <el-form-item label="最大空闲连接">
+          <el-input v-model="advancedSettings.upstreamKeepaliveConn" style="width: 200px;" placeholder="100" />
+          <div class="form-helper">每个Worker进程保留的最大空闲连接数</div>
+        </el-form-item>
+        <el-form-item label="超时时间">
+          <el-input v-model="advancedSettings.upstreamKeepaliveTimeout" style="width: 200px;" placeholder="60">
+            <template #append>秒</template>
+          </el-input>
+          <div class="form-helper">空闲连接的超时时间</div>
+        </el-form-item>
+      </template>
+
+      <div class="divider"></div>
+
+      <div class="section-title">流量限制</div>
+      <el-form-item label="单连接限速">
+        <el-input v-model="advancedSettings.limitRate" style="width: 200px;" placeholder="0">
+          <template #append>KB/s</template>
+        </el-input>
+        <div class="form-helper">限制单个连接的下载速度，0表示不限制</div>
+      </el-form-item>
+
+      <div class="divider"></div>
+
       <div class="section-title">其它</div>
       <el-form-item label="源站证书">
         <el-switch v-model="advancedSettings.originCert" />

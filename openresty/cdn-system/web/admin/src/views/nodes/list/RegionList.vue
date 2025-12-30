@@ -24,8 +24,10 @@
       <el-table-column prop="create_at" label="添加时间" min-width="160" />
       <el-table-column label="操作" width="120" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          <div style="display: flex; justify-content: center; gap: 8px;">
+            <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </AppTable>
@@ -59,7 +61,7 @@ const form = reactive({ id: 0, name: '', remark: '', l2_check_port: 80, sort_ord
 const fetchData = async () => {
   loading.value = true
   const res = await request.get('/regions')
-  list.value = res.list || []
+  list.value = res.data?.list || []
   loading.value = false
 }
 

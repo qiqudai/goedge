@@ -71,8 +71,8 @@ const fetchList = async (query = {}) => {
   listLoading.value = true
   try {
     const res = await request.get('/nodes', { params: query })
-    list.value = res.list || []
-    total.value = res.total || 0
+    list.value = res.data?.list || []
+    total.value = res.data?.total || 0
   } finally {
     listLoading.value = false
   }
@@ -80,7 +80,7 @@ const fetchList = async (query = {}) => {
 
 const fetchRegions = async () => {
   const res = await request.get('/regions')
-  regions.value = res.list || []
+  regions.value = res.data?.list || []
 }
 
 const handleTabChange = (name) => {
