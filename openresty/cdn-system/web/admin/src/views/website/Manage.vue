@@ -1,9 +1,9 @@
 <template>
-  <div class="site-manage">
+  <div class="site-manage" v-loading.fullscreen.lock="loading || isSaving" :element-loading-text="loading ? '正在加载数据...' : '正在保存配置...'">
     <!-- 网站信息头部 -->
     <SiteHeader v-if="site" :site="site" @back="goBack" />
     
-    <el-card class="page-card" v-loading="loading">
+    <el-card class="page-card">
       <el-tabs v-model="activeTab" class="manage-tabs" type="border-card">
         <!-- 基本配置 -->
         <el-tab-pane label="基本配置" name="basic">

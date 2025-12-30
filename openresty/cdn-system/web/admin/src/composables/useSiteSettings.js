@@ -11,7 +11,6 @@ import { buildSettingsPayload } from '@/utils/configTransform'
  * 提供统一的状态管理和API调用逻辑
  */
 export function useSiteSettings() {
-  const loading = ref(false)
   const isSaving = ref(false)
   const activeTab = ref('basic')
   
@@ -150,7 +149,8 @@ export function useSiteSettings() {
         user_package_id: siteSettings.basic.userPackageId || 0,
         group_id: siteSettings.basic.groupId || 0,
         domains: splitStr(siteSettings.basic.domain),
-        backends: siteSettings.origin.list.map(o => o.address).filter(Boolean)
+        backends: siteSettings.origin.list.map(o => o.address).filter(Boolean),
+        backend_protocol: siteSettings.origin.protocol
       }
 
       await request.put(`/sites/${siteId.value}`, payload)
@@ -167,7 +167,7 @@ export function useSiteSettings() {
     saveSettings()
   }, 1000)
 
-  // 监听设置变化自动保存
+  // 监听并自动保存
   watch(siteSettings, (newVal) => {
     // 同步 basic 和 origin 下的重复字段，确保两边数据一致
     if (newVal.basic.originList && newVal.basic.originList !== newVal.origin.list) {
@@ -187,6 +187,18 @@ export function useSiteSettings() {
     triggerSave()
   }, { deep: true })
 
+  const loadingCount = ref(0)
+  const loading = computed(() => loadingCount.value > 0)
+
+  const withLoading = async (fn) => {
+    loadingCount.value++
+    try {
+      await fn()
+    } finally {
+      loadingCount.value--
+    }
+  }
+
   // 加载网站数据
   const loadSite = async () => {
     if (!siteId.value) {
@@ -194,23 +206,22 @@ export function useSiteSettings() {
       return
     }
     
-    loading.value = true
-    try {
-      const res = await request.get(`/sites/${siteId.value}`)
-      const data = res.data?.site || res.site || res.data || res
-      
-      if (!data || !data.id) {
-        ElMessage.error('站点信息载入失败')
-        return
+    await withLoading(async () => {
+      try {
+        const res = await request.get(`/sites/${siteId.value}`)
+        const data = res.data?.site || res.site || res.data || res
+
+        if (!data || !data.id) {
+          ElMessage.error('站点信息载入失败')
+          return
+        }
+
+        site.value = data
+        applySiteData(data)
+      } catch (error) {
+        ElMessage.error('加载失败: ' + error.message)
       }
-      
-      site.value = data
-      applySiteData(data)
-    } catch (error) {
-      ElMessage.error('加载失败: ' + error.message)
-    } finally {
-      loading.value = false
-    }
+    })
   }
 
   // 应用站点数据到设置
@@ -224,26 +235,58 @@ export function useSiteSettings() {
     siteSettings.basic.httpPorts = (data.http_listen || []).join(' ')
     
     // 源站设置
+    let finalOriginList = []
     if (data.settings?.origin?.list && Array.isArray(data.settings.origin.list)) {
-      siteSettings.origin.list = data.settings.origin.list.map(o => ({
+      finalOriginList = data.settings.origin.list.map(o => ({
         address: o.address || '',
         weight: o.weight || '10',
         enable: o.enable !== false
       }))
     } else {
-      siteSettings.origin.list = (data.backends || []).map(b => ({
+      finalOriginList = (data.backends || []).map(b => ({
         address: b,
         weight: '10',
         enable: true
       }))
     }
+    siteSettings.origin.list = finalOriginList
+    siteSettings.basic.originList = JSON.parse(JSON.stringify(finalOriginList))
 
+    let finalConditions = []
     if (data.settings?.origin?.conditions && Array.isArray(data.settings.origin.conditions)) {
-      siteSettings.origin.conditions = data.settings.origin.conditions
-    } else {
-      siteSettings.origin.conditions = []
+      finalConditions = data.settings.origin.conditions
     }
-    
+    siteSettings.origin.conditions = finalConditions
+    siteSettings.basic.originConditions = JSON.parse(JSON.stringify(finalConditions))
+
+    // 回源详情设置
+    const s = data.settings || {}
+    const sOrigin = s.origin || {}
+
+    siteSettings.origin.protocol = data.backend_protocol || s.backend_protocol || sOrigin.protocol || 'follow'
+
+    // 映射 host
+    const rawHost = s.origin_host || sOrigin.host || 'follow'
+    if (['follow', 'domain'].includes(rawHost)) {
+      siteSettings.origin.host = rawHost
+      siteSettings.origin.hostValue = ''
+    } else {
+      siteSettings.origin.host = 'custom'
+      siteSettings.origin.hostValue = rawHost
+    }
+
+    siteSettings.origin.httpPort = s.origin_http_port || data.origin_http_port || sOrigin.httpPort || '80'
+    siteSettings.origin.httpsPort = s.origin_https_port || data.origin_https_port || sOrigin.httpsPort || '443'
+    siteSettings.origin.timeout = parseInt(s.origin_timeout || data.origin_timeout || sOrigin.timeout || 60)
+    siteSettings.origin.connTimeout = parseInt(sOrigin.connTimeout || 10)
+
+    // 健康检查
+    siteSettings.origin.healthCheckEnabled = sOrigin.health_check !== false
+    siteSettings.origin.healthCheckHost = sOrigin.health_host || ''
+    siteSettings.origin.healthCheckPath = sOrigin.health_path || '/'
+    siteSettings.origin.healthCheckStatus = sOrigin.health_status || '200 301 302'
+    siteSettings.origin.healthCheckInterval = parseInt(sOrigin.health_interval || 60)
+
     // HTTPS设置
     siteSettings.https.enable = !!(data.https_listen && data.https_listen.length)
     siteSettings.https.listenPorts = (data.https_listen || []).join(' ')
@@ -264,46 +307,75 @@ export function useSiteSettings() {
       const s = data.settings
 
       // HTTPS 高级设置
-      siteSettings.https.force = !!s.https_force
-      siteSettings.https.forcePort = s.https_redirect_port || '443'
-      siteSettings.https.hsts = !!s.https_hsts
-      siteSettings.https.http2 = !!s.https_http2
-      siteSettings.https.http3 = !!s.https_http3
-      siteSettings.https.ocsp = !!s.ocsp_stapling
-      siteSettings.https.sslPolicy = s.ssl_profile || 'compat'
-      siteSettings.https.sslCiphers = s.ssl_ciphers || ''
-      siteSettings.https.sslProtocols = s.ssl_protocols || ''
+      siteSettings.https.force = !!s.https?.force || !!s.force
+      siteSettings.https.forcePort = s.https?.redirect_port || s.redirect_port || '443'
+      siteSettings.https.hsts = !!s.https?.hsts || !!s.hsts
+      siteSettings.https.http2 = !!s.https?.http2 || !!s.http2
+      siteSettings.https.http3 = !!s.https?.http3 || !!s.http3
+      siteSettings.https.ocsp = !!s.https?.ocsp_stapling || !!s.ocsp_stapling
+      siteSettings.https.sslPolicy = s.https?.ssl_profile || s.ssl_profile || 'compat'
+      siteSettings.https.sslCiphers = s.https?.ssl_ciphers || s.ssl_ciphers || ''
+      siteSettings.https.sslProtocols = s.https?.ssl_protocols || s.ssl_protocols || ''
 
       // 高级设置
-      siteSettings.advanced.gzip = !!s.enable_gzip
-      siteSettings.advanced.websocket = !!s.enable_websocket
+      siteSettings.advanced.gzip = !!s.gzip
+      siteSettings.advanced.websocket = !!s.websocket
       siteSettings.advanced.searchEngineOrigin = !!s.search_engine_origin
-      siteSettings.advanced.uploadLimitMode = (s.body_limit && s.body_limit > 0) ? 'custom' : 'none'
-      siteSettings.advanced.uploadLimitValue = s.body_limit ? Math.round(s.body_limit / 1024 / 1024) : 100
-
-      // 代理超时设置
-      siteSettings.advanced.proxyConnectTimeout = s.proxy_connect_timeout || '30s'
-      siteSettings.advanced.proxyReadTimeout = s.proxy_read_timeout || '60s'
-      siteSettings.advanced.proxySendTimeout = s.proxy_send_timeout || '60s'
-
-      // 限速设置
-      siteSettings.advanced.limitRate = s.limit_rate || 0
-
-      // 上游长连接
-      siteSettings.advanced.upstreamKeepalive = !!s.upstream_keepalive
-      siteSettings.advanced.upstreamKeepaliveConn = s.upstream_keepalive_conn || 100
-      siteSettings.advanced.upstreamKeepaliveTimeout = s.upstream_keepalive_timeout || 60
-
-      // 日志设置
+      siteSettings.advanced.uploadLimitMode = (s.upload_limit && s.upload_limit > 0) ? 'custom' : 'none'
+      siteSettings.advanced.uploadLimitValue = s.upload_limit || 100
       siteSettings.advanced.logRequestHeader = !!s.log_request_header
       siteSettings.advanced.logResponseHeader = !!s.log_response_header
       siteSettings.advanced.logRequestBody = !!s.log_request_body
       siteSettings.advanced.logRequestBodySizeLimit = s.log_request_body_size_limit || 16
 
-      // 其他高级设置
+      siteSettings.advanced.proxyConnectTimeout = s.proxy_connect_timeout || '30s'
+      siteSettings.advanced.proxyReadTimeout = s.proxy_read_timeout || '60s'
+      siteSettings.advanced.proxySendTimeout = s.proxy_send_timeout || '60s'
+
+      siteSettings.advanced.upstreamKeepalive = !!s.upstream_keepalive
+      siteSettings.advanced.upstreamKeepaliveConn = s.upstream_keepalive_conn || 100
+      siteSettings.advanced.upstreamKeepaliveTimeout = s.upstream_keepalive_timeout || 60
+
+      siteSettings.advanced.limitRate = s.limit_rate || 0
       siteSettings.advanced.originCert = !!s.origin_cert
       siteSettings.advanced.realtimeIdentify = !!s.realtime_identify
       siteSettings.advanced.realtimeSend = !!s.realtime_send
+
+      // 缓存设置
+      if (s.cache?.rules) {
+        siteSettings.cache.rules = s.cache.rules
+      }
+
+      // 安全设置
+      if (s.security) {
+        const sec = s.security
+        siteSettings.security.cc.mode = sec.default_rule || 10002
+        if (sec.auto_switch) {
+          try {
+            siteSettings.security.cc.autoSwitch = JSON.parse(sec.auto_switch)
+          } catch (e) {
+            console.error('Parse auto_switch failed', e)
+          }
+        }
+        siteSettings.security.ip.black = (sec.blacklist || []).join('\n')
+        siteSettings.security.ip.white = (sec.whitelist || []).join('\n')
+        siteSettings.security.regions = sec.region_block || []
+      }
+
+      // 访问控制
+      if (s.access) {
+        const acc = s.access
+        siteSettings.access.acl = acc.acl || ''
+        if (acc.hotlink) {
+          siteSettings.access.hotlink = { ...siteSettings.access.hotlink, ...acc.hotlink }
+        }
+        if (acc.cors) {
+          siteSettings.access.cors = { ...siteSettings.access.cors, ...acc.cors }
+        }
+        if (acc.region_block) {
+          siteSettings.access.regionBlock = { ...siteSettings.access.regionBlock, ...acc.region_block }
+        }
+      }
 
       // 列表类数据
       siteSettings.advanced.urlRedirects = s.url_redirects || []
@@ -318,30 +390,36 @@ export function useSiteSettings() {
 
   // 加载辅助数据
   const loadCerts = async () => {
-    try {
-      const res = await request.get('/certs')
-      certList.value = res.data?.list || res.list || []
-    } catch (error) {
-      console.error('加载证书列表失败:', error)
-    }
+    await withLoading(async () => {
+      try {
+        const res = await request.get('/certs')
+        certList.value = res.data?.list || res.list || []
+      } catch (error) {
+        console.error('加载证书列表失败:', error)
+      }
+    })
   }
 
   const loadUserPackages = async () => {
-    try {
-      const res = await request.get('/user_packages')
-      userPackages.value = res.data?.list || res.list || []
-    } catch (error) {
-      console.error('加载套餐列表失败:', error)
-    }
+    await withLoading(async () => {
+      try {
+        const res = await request.get('/user_packages')
+        userPackages.value = res.data?.list || res.list || []
+      } catch (error) {
+        console.error('加载套餐列表失败:', error)
+      }
+    })
   }
 
   const loadAcls = async () => {
-    try {
-      const res = await request.get('/acls')
-      aclList.value = res.data?.list || res.list || []
-    } catch (error) {
-      console.error('加载ACL列表失败:', error)
-    }
+    await withLoading(async () => {
+      try {
+        const res = await request.get('/acls')
+        aclList.value = res.data?.list || res.list || []
+      } catch (error) {
+        console.error('加载ACL列表失败:', error)
+      }
+    })
   }
 
   // 计算证书剩余天数

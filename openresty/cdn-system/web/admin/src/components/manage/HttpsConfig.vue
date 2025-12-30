@@ -122,7 +122,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: { 
@@ -137,15 +137,59 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'calc-cert-days'])
 
-const httpsSettings = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+const localSettings = ref({
+  enable: props.modelValue?.enable || false,
+  certId: props.modelValue?.certId || null,
+  listenPorts: props.modelValue?.listenPorts || '443',
+  force: props.modelValue?.force || false,
+  forcePort: props.modelValue?.forcePort || '443',
+  hsts: props.modelValue?.hsts || false,
+  http2: props.modelValue?.http2 || false,
+  http3: props.modelValue?.http3 || false,
+  ocsp: props.modelValue?.ocsp || false,
+  sslPolicy: props.modelValue?.sslPolicy || 'compat',
+  sslCiphers: props.modelValue?.sslCiphers || '',
+  sslProtocols: props.modelValue?.sslProtocols || ''
 })
+
+let isInternalUpdate = false
+
+// 监听本地变化并同步
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...newVal
+  })
+}, { deep: true })
+
+// 监听外部变化并更新本地
+watch(() => props.modelValue, (newVal) => {
+  if (newVal && !isInternalUpdate) {
+    localSettings.value = {
+      enable: newVal.enable || false,
+      certId: newVal.certId || null,
+      listenPorts: newVal.listenPorts || '443',
+      force: newVal.force || false,
+      forcePort: newVal.forcePort || '443',
+      hsts: newVal.hsts || false,
+      http2: newVal.http2 || false,
+      http3: newVal.http3 || false,
+      ocsp: newVal.ocsp || false,
+      sslPolicy: newVal.sslPolicy || 'compat',
+      sslCiphers: newVal.sslCiphers || '',
+      sslProtocols: newVal.sslProtocols || ''
+    }
+  }
+  isInternalUpdate = false
+}, { deep: true })
+
+const httpsSettings = localSettings
 
 const calcCertDays = (cert, certs) => {
   emit('calc-cert-days', cert, certs)
-  // 临时返回默认值，实际计算在父组件处理
-  return 30
+  // 临时返回默认值，实际由父组件处理，如果是组件显示，父组件会更新props中的相关字段
+  return 30 
 }
 </script>
 

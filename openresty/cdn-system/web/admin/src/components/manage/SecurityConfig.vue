@@ -75,7 +75,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, watch } from 'vue'
 import CountrySelector from '@/components/CountrySelector.vue'
 
 const props = defineProps({
@@ -87,10 +87,70 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-const securitySettings = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+const localSettings = ref({
+  cc: {
+    mode: props.modelValue?.cc?.mode || 10002,
+    autoSwitch: {
+      enable: props.modelValue?.cc?.autoSwitch?.enable || false,
+      qps: props.modelValue?.cc?.autoSwitch?.qps || 200,
+      rule: props.modelValue?.cc?.autoSwitch?.rule || 'close'
+    }
+  },
+  ip: {
+    black: props.modelValue?.ip?.black || '',
+    white: props.modelValue?.ip?.white || ''
+  },
+  ua: {
+    black: props.modelValue?.ua?.black || '',
+    white: props.modelValue?.ua?.white || ''
+  },
+  cookie: {
+    enable: props.modelValue?.cookie?.enable || false,
+    domain: props.modelValue?.cookie?.domain || ''
+  },
+  regions: JSON.parse(JSON.stringify(props.modelValue?.regions || []))
 })
+
+let isInternalUpdate = false
+
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...newVal
+  })
+}, { deep: true })
+
+watch(() => props.modelValue, (newVal) => {
+  if (newVal && !isInternalUpdate) {
+    localSettings.value = {
+      cc: {
+        mode: newVal.cc?.mode || 10002,
+        autoSwitch: {
+          enable: newVal.cc?.autoSwitch?.enable || false,
+          qps: newVal.cc?.autoSwitch?.qps || 200,
+          rule: newVal.cc?.autoSwitch?.rule || 'close'
+        }
+      },
+      ip: {
+        black: newVal.ip?.black || '',
+        white: newVal.ip?.white || ''
+      },
+      ua: {
+        black: newVal.ua?.black || '',
+        white: newVal.ua?.white || ''
+      },
+      cookie: {
+        enable: newVal.cookie?.enable || false,
+        domain: newVal.cookie?.domain || ''
+      },
+      regions: JSON.parse(JSON.stringify(newVal.regions || []))
+    }
+  }
+  isInternalUpdate = false
+}, { deep: true })
+
+const securitySettings = localSettings
 </script>
 
 <style scoped>

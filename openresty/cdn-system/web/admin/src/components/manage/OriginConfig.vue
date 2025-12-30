@@ -35,6 +35,21 @@
         <el-input v-model="originSettings.httpsPort" />
         <div class="form-helper">当节点与源使用HTTPS连接时所使用的端口</div>
       </el-form-item>
+
+      <el-form-item label="回源HOST" style="width: 520px">
+        <el-radio-group v-model="originSettings.host">
+          <el-radio value="follow">自动跟随</el-radio>
+          <el-radio value="domain">网站域名</el-radio>
+          <el-radio value="custom">自定义</el-radio>
+        </el-radio-group>
+        <el-input 
+          v-if="originSettings.host === 'custom'" 
+          v-model="originSettings.hostValue" 
+          placeholder="请输入自定义回源HOST"
+          style="margin-top: 10px"
+        />
+        <div class="form-helper">节点回源时发送的 Host 头部。自动跟随：跟随用户请求的 Host；网站域名：使用当前网站配置的第一个域名。</div>
+      </el-form-item>
     </el-form>
 
     <div class="divider"></div>
@@ -57,7 +72,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: { 
@@ -68,10 +83,44 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-const originSettings = computed({
-  get: () => props.modelValue || {},
-  set: (val) => emit('update:modelValue', val)
+const localSettings = ref({
+  protocol: props.modelValue?.protocol || 'follow',
+  host: props.modelValue?.host || 'follow',
+  hostValue: props.modelValue?.hostValue || '',
+  httpPort: props.modelValue?.httpPort || '80',
+  httpsPort: props.modelValue?.httpsPort || '443',
+  timeout: props.modelValue?.timeout || 60,
+  connTimeout: props.modelValue?.connTimeout || 10
 })
+
+let isInternalUpdate = false
+
+// 监听本地变化并同步
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...newVal
+  })
+}, { deep: true })
+
+// 监听外部变化并更新本地
+watch(() => props.modelValue, (newVal) => {
+  if (newVal && !isInternalUpdate) {
+    localSettings.value = {
+      protocol: newVal.protocol || 'follow',
+      host: newVal.host || 'follow',
+      hostValue: newVal.hostValue || '',
+      httpPort: newVal.httpPort || '80',
+      httpsPort: newVal.httpsPort || '443',
+      timeout: newVal.timeout || 60,
+      connTimeout: newVal.connTimeout || 10
+    }
+  }
+  isInternalUpdate = false
+}, { deep: true })
+
+const originSettings = localSettings
 </script>
 
 <style scoped>

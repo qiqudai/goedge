@@ -34,7 +34,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch } from 'vue'
 import { cacheTypeLabelMap } from '@/constants/origin'
 import { getCachePreset, normalizeCacheRule } from '@/utils/siteHelpers'
 
@@ -47,11 +47,30 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'open-rule-dialog'])
 
-const cacheSettings = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+const localSettings = ref({
+  rules: JSON.parse(JSON.stringify(props.modelValue?.rules || []))
 })
 
+let isInternalUpdate = false
+
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...newVal
+  })
+}, { deep: true })
+
+watch(() => props.modelValue, (newVal) => {
+  if (newVal && !isInternalUpdate) {
+    localSettings.value = {
+      rules: JSON.parse(JSON.stringify(newVal.rules || []))
+    }
+  }
+  isInternalUpdate = false
+}, { deep: true })
+
+const cacheSettings = localSettings
 const cacheQuickPreset = ref('')
 
 const openCacheRuleDialog = (rule = null) => {

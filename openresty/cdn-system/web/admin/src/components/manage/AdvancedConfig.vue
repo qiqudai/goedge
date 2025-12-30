@@ -187,7 +187,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { ref, watch } from 'vue'
 import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
 
 const props = defineProps({
@@ -203,10 +203,74 @@ const emit = defineEmits([
   'remove-header'
 ])
 
-const advancedSettings = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+const localSettings = ref({
+  uploadLimitMode: props.modelValue?.uploadLimitMode || 'none',
+  uploadLimitValue: props.modelValue?.uploadLimitValue || 100,
+  gzip: props.modelValue?.gzip || false,
+  websocket: props.modelValue?.websocket || false,
+  searchEngineOrigin: props.modelValue?.searchEngineOrigin || false,
+  urlRedirects: JSON.parse(JSON.stringify(props.modelValue?.urlRedirects || [])),
+  reqHeaders: JSON.parse(JSON.stringify(props.modelValue?.reqHeaders || [])),
+  resHeaders: JSON.parse(JSON.stringify(props.modelValue?.resHeaders || [])),
+  logRequestHeader: props.modelValue?.logRequestHeader || false,
+  logResponseHeader: props.modelValue?.logResponseHeader || false,
+  logRequestBody: props.modelValue?.logRequestBody || false,
+  logRequestBodySizeLimit: props.modelValue?.logRequestBodySizeLimit || 16,
+  proxyConnectTimeout: props.modelValue?.proxyConnectTimeout || '30',
+  proxyReadTimeout: props.modelValue?.proxyReadTimeout || '60',
+  proxySendTimeout: props.modelValue?.proxySendTimeout || '60',
+  upstreamKeepalive: props.modelValue?.upstreamKeepalive || false,
+  upstreamKeepaliveConn: props.modelValue?.upstreamKeepaliveConn || 100,
+  upstreamKeepaliveTimeout: props.modelValue?.upstreamKeepaliveTimeout || 60,
+  limitRate: props.modelValue?.limitRate || 0,
+  originCert: props.modelValue?.originCert || false,
+  realtimeIdentify: props.modelValue?.realtimeIdentify || false,
+  realtimeSend: props.modelValue?.realtimeSend || false
 })
+
+let isInternalUpdate = false
+
+// 监听本地同步
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...newVal
+  })
+}, { deep: true })
+
+// 监听外部更新
+watch(() => props.modelValue, (newVal) => {
+  if (newVal && !isInternalUpdate) {
+    localSettings.value = {
+      uploadLimitMode: newVal.uploadLimitMode || 'none',
+      uploadLimitValue: newVal.uploadLimitValue || 100,
+      gzip: newVal.gzip || false,
+      websocket: newVal.websocket || false,
+      searchEngineOrigin: newVal.searchEngineOrigin || false,
+      urlRedirects: JSON.parse(JSON.stringify(newVal.urlRedirects || [])),
+      reqHeaders: JSON.parse(JSON.stringify(newVal.reqHeaders || [])),
+      resHeaders: JSON.parse(JSON.stringify(newVal.resHeaders || [])),
+      logRequestHeader: newVal.logRequestHeader || false,
+      logResponseHeader: newVal.logResponseHeader || false,
+      logRequestBody: newVal.logRequestBody || false,
+      logRequestBodySizeLimit: newVal.logRequestBodySizeLimit || 16,
+      proxyConnectTimeout: newVal.proxyConnectTimeout || '30',
+      proxyReadTimeout: newVal.proxyReadTimeout || '60',
+      proxySendTimeout: newVal.proxySendTimeout || '60',
+      upstreamKeepalive: newVal.upstreamKeepalive || false,
+      upstreamKeepaliveConn: newVal.upstreamKeepaliveConn || 100,
+      upstreamKeepaliveTimeout: newVal.upstreamKeepaliveTimeout || 60,
+      limitRate: newVal.limitRate || 0,
+      originCert: newVal.originCert || false,
+      realtimeIdentify: newVal.realtimeIdentify || false,
+      realtimeSend: newVal.realtimeSend || false
+    }
+  }
+  isInternalUpdate = false
+}, { deep: true })
+
+const advancedSettings = localSettings
 
 // 转向规则弹窗状态
 const redirectDialogVisible = ref(false)

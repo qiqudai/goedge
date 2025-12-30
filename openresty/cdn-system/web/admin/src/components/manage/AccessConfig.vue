@@ -88,7 +88,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { getHotlinkPlaceholder } from '@/utils/siteHelpers'
 
 const props = defineProps({
@@ -104,15 +104,64 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-const accessSettings = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+const localSettings = ref({
+  acl: props.modelValue?.acl || '',
+  hotlink: {
+    enable: props.modelValue?.hotlink?.enable || false,
+    scope: props.modelValue?.hotlink?.scope || 'all',
+    value: props.modelValue?.hotlink?.value || '',
+    allowEmpty: props.modelValue?.hotlink?.allowEmpty !== false,
+    domains: props.modelValue?.hotlink?.domains || ''
+  },
+  cors: {
+    enable: props.modelValue?.cors?.enable || false,
+    allowOrigin: props.modelValue?.cors?.allowOrigin || '*',
+    allowMethods: props.modelValue?.cors?.allowMethods || 'GET,POST,OPTIONS',
+    allowHeaders: props.modelValue?.cors?.allowHeaders || '*',
+    exposeHeaders: props.modelValue?.cors?.exposeHeaders || '',
+    allowCredentials: props.modelValue?.cors?.allowCredentials || false,
+    maxAge: props.modelValue?.cors?.maxAge || '3600'
+  }
 })
 
+let isInternalUpdate = false
+
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  emit('update:modelValue', {
+    ...props.modelValue,
+    ...newVal
+  })
+}, { deep: true })
+
+watch(() => props.modelValue, (newVal) => {
+  if (newVal && !isInternalUpdate) {
+    localSettings.value = {
+      acl: newVal.acl || '',
+      hotlink: {
+        enable: newVal.hotlink?.enable || false,
+        scope: newVal.hotlink?.scope || 'all',
+        value: newVal.hotlink?.value || '',
+        allowEmpty: newVal.hotlink?.allowEmpty !== false,
+        domains: newVal.hotlink?.domains || ''
+      },
+      cors: {
+        enable: newVal.cors?.enable || false,
+        allowOrigin: newVal.cors?.allowOrigin || '*',
+        allowMethods: newVal.cors?.allowMethods || 'GET,POST,OPTIONS',
+        allowHeaders: newVal.cors?.allowHeaders || '*',
+        exposeHeaders: newVal.cors?.exposeHeaders || '',
+        allowCredentials: newVal.cors?.allowCredentials || false,
+        maxAge: newVal.cors?.maxAge || '3600'
+      }
+    }
+  }
+  isInternalUpdate = false
+}, { deep: true })
+
+const accessSettings = localSettings
 const corsExpanded = ref(false)
 const aclList = computed(() => props.aclList)
-
-// 方法在模板中直接使用 getHotlinkPlaceholder
 </script>
 
 <style scoped>
