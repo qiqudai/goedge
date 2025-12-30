@@ -118,20 +118,28 @@
 
       <div class="section-title">其它</div>
       <el-form-item label="源站证书">
-        <el-switch v-model="advancedSettings.originCert" />
-        <div class="form-helper">用于回源连接（HTTPS）验证源站证书</div>
+        <div>
+          <el-switch v-model="advancedSettings.originCert" />
+          <div class="form-helper">用于回源连接（HTTPS）验证源站证书</div>
+        </div>
       </el-form-item>
       <el-form-item label="数据实时鉴别">
-        <el-switch v-model="advancedSettings.realtimeIdentify" />
-        <div class="form-helper">开启后，节点一收到源返回的数据，立即发送到用户。</div>
+        <div>
+          <el-switch v-model="advancedSettings.realtimeIdentify" />
+          <div class="form-helper">开启后，节点一收到源返回的数据，立即发送到用户。</div>
+        </div>
       </el-form-item>
       <el-form-item label="数据实时发送">
-        <el-switch v-model="advancedSettings.realtimeSend" />
-        <div class="form-helper">开启后，节点一收到用户发来的数据就会立即发送给源服务器。</div>
+        <div>
+          <el-switch v-model="advancedSettings.realtimeSend" />
+          <div class="form-helper">开启后，节点一收到用户发来的数据就会立即发送给源服务器。</div>
+        </div>
       </el-form-item>
       <el-form-item label="默认站点">
-        <el-switch v-model="advancedSettings.defaultSite" />
-        <div class="form-helper">开启后，不属于cdn上的域名将会使用这个站点；另外如果要使用IP证书，也请开启这个选项</div>
+        <div>
+          <el-switch v-model="advancedSettings.defaultSite" />
+          <div class="form-helper">开启后，不属于cdn上的域名将会使用这个站点；另外如果要使用IP证书，也请开启这个选项</div>
+        </div>
       </el-form-item>
       <el-form-item label="L2配置">
         <el-radio-group v-model="advancedSettings.l2Config">
@@ -310,5 +318,7 @@ const removeHeader = (type, index) => {
   color: #909399;
   line-height: 1.5;
   margin-top: 6px;
+  width: 100%;
+  display: block;
 }
 </style>

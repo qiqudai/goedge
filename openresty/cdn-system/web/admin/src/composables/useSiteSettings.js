@@ -199,12 +199,7 @@ export function useSiteSettings() {
           backend_protocol: siteSettings.origin.protocol
         }
         await request.put(`/sites/${siteId.value}`, payload)
-        if (!isAutoSave) {
-          ElMessage.success('配置已保存')
-        } else {
-          // 自动保存时可以选择不弹窗，或者使用更轻量的提示，这里暂且保留但可考虑 console.log
-          // ElMessage.success({ message: '已自动保存', type: 'success', duration: 1000 }) 
-        }
+        ElMessage.success('配置已保存')
       } catch (error) {
         ElMessage.error('保存失败: ' + error.message)
       }
