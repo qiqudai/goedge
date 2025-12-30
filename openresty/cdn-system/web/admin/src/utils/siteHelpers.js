@@ -110,7 +110,10 @@ export function normalizeCacheRule(rule) {
     value: rule.value || '',
     ttl: String(ttl),
     ignore_query: !!rule.ignore_query,
-    force_cache: !!rule.force_cache
+    force_cache: !!rule.force_cache,
+    enable_slice: !!rule.enable_slice,
+    ignore_vary: !!rule.ignore_vary,
+    skip_conditions: rule.skip_conditions || []
   }
 }
 

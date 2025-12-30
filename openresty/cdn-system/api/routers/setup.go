@@ -29,6 +29,9 @@ func Setup(r *gin.Engine) {
 	// V1 API Group
 	v1 := r.Group("/api/v1")
 	{
+		// ACLs (Shared endpoint for User/Admin, filtered by role in controller)
+		v1.GET("/acls", middleware.AuthRequired(""), (&controllers.ACLController{}).List)
+
 		// 1. Admin Routes (Require Admin Auth Middleware)
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthRequired("admin"))

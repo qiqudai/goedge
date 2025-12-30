@@ -11,7 +11,9 @@ const service = axios.create({
 service.interceptors.request.use(
   config => {
     const role = localStorage.getItem('role') || 'user'
-    config.baseURL = role === 'admin' ? '/api/v1/admin' : '/api/v1/user'
+    if (config.baseURL === '/api/v1/admin') {
+      config.baseURL = role === 'admin' ? '/api/v1/admin' : '/api/v1/user'
+    }
     // Inject Token if exists
     const token = localStorage.getItem('admin_token')
     if (token) {

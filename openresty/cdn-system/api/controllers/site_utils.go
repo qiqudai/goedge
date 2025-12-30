@@ -360,6 +360,9 @@ func resolveNodeGroupFromPackage(userPackageID int64, requestedID int64) (int64,
 }
 
 func isUserRequest(c *gin.Context) bool {
+	if val, ok := c.Get("role"); ok && val == "user" {
+		return true
+	}
 	return strings.Contains(c.Request.URL.Path, "/api/v1/user")
 }
 

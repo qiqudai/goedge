@@ -22,6 +22,7 @@ export function buildSettingsPayload(siteSettings) {
     gzip: siteSettings.advanced.gzip,
     websocket: siteSettings.advanced.websocket,
     search_engine_origin: siteSettings.advanced.searchEngineOrigin,
+    search_engine_origin_ip: siteSettings.advanced.searchEngineOriginIp,
     url_rewrites: siteSettings.advanced.urlRewrites,
     req_headers: siteSettings.advanced.reqHeaders,
     res_headers: siteSettings.advanced.resHeaders,
@@ -36,18 +37,11 @@ export function buildSettingsPayload(siteSettings) {
     log_request_body: siteSettings.advanced.logRequestBody,
     log_request_body_size_limit: parseInt(siteSettings.advanced.logRequestBodySizeLimit || 16),
     
-    // 代理超时
-    proxy_connect_timeout: siteSettings.advanced.proxyConnectTimeout,
-    proxy_read_timeout: siteSettings.advanced.proxyReadTimeout,
-    proxy_send_timeout: siteSettings.advanced.proxySendTimeout,
+    // Default Site & L2 Config
+    default_site: siteSettings.advanced.defaultSite,
+    l2_config: siteSettings.advanced.l2Config,
 
-    // 上游长连接
-    upstream_keepalive: siteSettings.advanced.upstreamKeepalive,
-    upstream_keepalive_conn: parseInt(siteSettings.advanced.upstreamKeepaliveConn || 0),
-    upstream_keepalive_timeout: parseInt(siteSettings.advanced.upstreamKeepaliveTimeout || 0),
-
-    // 限速
-    limit_rate: parseInt(siteSettings.advanced.limitRate || 0),
+    // Deprecated fields removed: proxy timeouts, upstream keepalive, limit rate
 
     // 源站相关设置
     origin_host: siteSettings.origin.host === 'custom' 

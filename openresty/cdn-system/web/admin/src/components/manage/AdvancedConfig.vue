@@ -38,6 +38,10 @@
       <el-form-item label="开关">
         <el-switch v-model="advancedSettings.searchEngineOrigin" />
       </el-form-item>
+      <el-form-item label="回源IP" v-if="advancedSettings.searchEngineOrigin">
+        <el-input v-model="advancedSettings.searchEngineOriginIp" placeholder="请输入源IP" style="width: 200px;" />
+        <div class="form-helper" style="color: #F56C6C;">谨慎使用，有泄露源IP的风险!</div>
+      </el-form-item>
 
       <div class="divider"></div>
 
@@ -112,58 +116,6 @@
 
       <div class="divider"></div>
 
-      <div class="section-title">代理超时设置</div>
-      <el-form-item label="连接超时">
-        <el-input v-model="advancedSettings.proxyConnectTimeout" style="width: 200px;" placeholder="30s">
-          <template #append>秒/单位</template>
-        </el-input>
-        <div class="form-helper">连接源站的超时时间，默认为30s</div>
-      </el-form-item>
-      <el-form-item label="读取超时">
-        <el-input v-model="advancedSettings.proxyReadTimeout" style="width: 200px;" placeholder="60s">
-          <template #append>秒/单位</template>
-        </el-input>
-        <div class="form-helper">读取源站响应的超时时间，默认为60s</div>
-      </el-form-item>
-      <el-form-item label="发送超时">
-        <el-input v-model="advancedSettings.proxySendTimeout" style="width: 200px;" placeholder="60s">
-          <template #append>秒/单位</template>
-        </el-input>
-        <div class="form-helper">发送请求到源站的超时时间，默认为60s</div>
-      </el-form-item>
-
-      <div class="divider"></div>
-
-      <div class="section-title">上游长连接</div>
-      <el-form-item label="开关">
-        <el-switch v-model="advancedSettings.upstreamKeepalive" />
-        <div class="form-helper">开启后，回源连接将复用HTTP连接，减少三次握手开销</div>
-      </el-form-item>
-      <template v-if="advancedSettings.upstreamKeepalive">
-        <el-form-item label="最大空闲连接">
-          <el-input v-model="advancedSettings.upstreamKeepaliveConn" style="width: 200px;" placeholder="100" />
-          <div class="form-helper">每个Worker进程保留的最大空闲连接数</div>
-        </el-form-item>
-        <el-form-item label="超时时间">
-          <el-input v-model="advancedSettings.upstreamKeepaliveTimeout" style="width: 200px;" placeholder="60">
-            <template #append>秒</template>
-          </el-input>
-          <div class="form-helper">空闲连接的超时时间</div>
-        </el-form-item>
-      </template>
-
-      <div class="divider"></div>
-
-      <div class="section-title">流量限制</div>
-      <el-form-item label="单连接限速">
-        <el-input v-model="advancedSettings.limitRate" style="width: 200px;" placeholder="0">
-          <template #append>KB/s</template>
-        </el-input>
-        <div class="form-helper">限制单个连接的下载速度，0表示不限制</div>
-      </el-form-item>
-
-      <div class="divider"></div>
-
       <div class="section-title">其它</div>
       <el-form-item label="源站证书">
         <el-switch v-model="advancedSettings.originCert" />
@@ -171,9 +123,22 @@
       </el-form-item>
       <el-form-item label="数据实时鉴别">
         <el-switch v-model="advancedSettings.realtimeIdentify" />
+        <div class="form-helper">开启后，节点一收到源返回的数据，立即发送到用户。</div>
       </el-form-item>
       <el-form-item label="数据实时发送">
         <el-switch v-model="advancedSettings.realtimeSend" />
+        <div class="form-helper">开启后，节点一收到用户发来的数据就会立即发送给源服务器。</div>
+      </el-form-item>
+      <el-form-item label="默认站点">
+        <el-switch v-model="advancedSettings.defaultSite" />
+        <div class="form-helper">开启后，不属于cdn上的域名将会使用这个站点；另外如果要使用IP证书，也请开启这个选项</div>
+      </el-form-item>
+      <el-form-item label="L2配置">
+        <el-radio-group v-model="advancedSettings.l2Config">
+          <el-radio value="current">当前套餐配置</el-radio>
+          <el-radio value="none">不配置L2</el-radio>
+          <el-radio value="custom">自定义L2配置</el-radio>
+        </el-radio-group>
       </el-form-item>
     </el-form>
 
@@ -209,6 +174,7 @@ const localSettings = ref({
   gzip: props.modelValue?.gzip || false,
   websocket: props.modelValue?.websocket || false,
   searchEngineOrigin: props.modelValue?.searchEngineOrigin || false,
+  searchEngineOriginIp: props.modelValue?.searchEngineOriginIp || '',
   urlRedirects: JSON.parse(JSON.stringify(props.modelValue?.urlRedirects || [])),
   reqHeaders: JSON.parse(JSON.stringify(props.modelValue?.reqHeaders || [])),
   resHeaders: JSON.parse(JSON.stringify(props.modelValue?.resHeaders || [])),
@@ -216,16 +182,11 @@ const localSettings = ref({
   logResponseHeader: props.modelValue?.logResponseHeader || false,
   logRequestBody: props.modelValue?.logRequestBody || false,
   logRequestBodySizeLimit: props.modelValue?.logRequestBodySizeLimit || 16,
-  proxyConnectTimeout: props.modelValue?.proxyConnectTimeout || '30',
-  proxyReadTimeout: props.modelValue?.proxyReadTimeout || '60',
-  proxySendTimeout: props.modelValue?.proxySendTimeout || '60',
-  upstreamKeepalive: props.modelValue?.upstreamKeepalive || false,
-  upstreamKeepaliveConn: props.modelValue?.upstreamKeepaliveConn || 100,
-  upstreamKeepaliveTimeout: props.modelValue?.upstreamKeepaliveTimeout || 60,
-  limitRate: props.modelValue?.limitRate || 0,
   originCert: props.modelValue?.originCert || false,
   realtimeIdentify: props.modelValue?.realtimeIdentify || false,
-  realtimeSend: props.modelValue?.realtimeSend || false
+  realtimeSend: props.modelValue?.realtimeSend || false,
+  defaultSite: props.modelValue?.defaultSite || false,
+  l2Config: props.modelValue?.l2Config || 'current'
 })
 
 let isInternalUpdate = false
@@ -248,6 +209,7 @@ watch(() => props.modelValue, (newVal) => {
       gzip: newVal.gzip || false,
       websocket: newVal.websocket || false,
       searchEngineOrigin: newVal.searchEngineOrigin || false,
+      searchEngineOriginIp: newVal.searchEngineOriginIp || '',
       urlRedirects: JSON.parse(JSON.stringify(newVal.urlRedirects || [])),
       reqHeaders: JSON.parse(JSON.stringify(newVal.reqHeaders || [])),
       resHeaders: JSON.parse(JSON.stringify(newVal.resHeaders || [])),
@@ -255,16 +217,11 @@ watch(() => props.modelValue, (newVal) => {
       logResponseHeader: newVal.logResponseHeader || false,
       logRequestBody: newVal.logRequestBody || false,
       logRequestBodySizeLimit: newVal.logRequestBodySizeLimit || 16,
-      proxyConnectTimeout: newVal.proxyConnectTimeout || '30',
-      proxyReadTimeout: newVal.proxyReadTimeout || '60',
-      proxySendTimeout: newVal.proxySendTimeout || '60',
-      upstreamKeepalive: newVal.upstreamKeepalive || false,
-      upstreamKeepaliveConn: newVal.upstreamKeepaliveConn || 100,
-      upstreamKeepaliveTimeout: newVal.upstreamKeepaliveTimeout || 60,
-      limitRate: newVal.limitRate || 0,
       originCert: newVal.originCert || false,
       realtimeIdentify: newVal.realtimeIdentify || false,
-      realtimeSend: newVal.realtimeSend || false
+      realtimeSend: newVal.realtimeSend || false,
+      defaultSite: newVal.defaultSite || false,
+      l2Config: newVal.l2Config || 'current'
     }
   }
   isInternalUpdate = false

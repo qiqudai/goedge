@@ -121,6 +121,7 @@ const siteSettings = reactive({
     gzip: false,
     websocket: false,
     searchEngineOrigin: false,
+    searchEngineOriginIp: '',
     urlRewrites: [],
     reqHeaders: [],
     resHeaders: [],
@@ -131,13 +132,8 @@ const siteSettings = reactive({
     logResponseHeader: false,
     logRequestBody: false,
     logRequestBodySizeLimit: 16,
-    proxyConnectTimeout: '30s',
-    proxyReadTimeout: '60s',
-    proxySendTimeout: '60s',
-    upstreamKeepalive: false,
-    upstreamKeepaliveConn: 100,
-    upstreamKeepaliveTimeout: 60,
-    limitRate: 0
+    defaultSite: false,
+    l2Config: 'current'
   }
 })
 
@@ -255,7 +251,7 @@ export function useSiteSettings() {
         await Promise.allSettled([
           loadAux('/certs', certList),
           loadAux('/user_packages', userPackages),
-          loadAux('/acls', aclList)
+          loadAcls()
         ])
       } catch (error) {
         console.error('[SiteSettings] Init error:', error)
@@ -375,6 +371,7 @@ export function useSiteSettings() {
       siteSettings.advanced.gzip = !!s.gzip
       siteSettings.advanced.websocket = !!s.websocket
       siteSettings.advanced.searchEngineOrigin = !!s.search_engine_origin
+      siteSettings.advanced.searchEngineOriginIp = s.search_engine_origin_ip || ''
       siteSettings.advanced.uploadLimitMode = (s.upload_limit && s.upload_limit > 0) ? 'custom' : 'none'
       siteSettings.advanced.uploadLimitValue = s.upload_limit || 100
       siteSettings.advanced.logRequestHeader = !!s.log_request_header
@@ -382,18 +379,12 @@ export function useSiteSettings() {
       siteSettings.advanced.logRequestBody = !!s.log_request_body
       siteSettings.advanced.logRequestBodySizeLimit = s.log_request_body_size_limit || 16
 
-      siteSettings.advanced.proxyConnectTimeout = s.proxy_connect_timeout || '30s'
-      siteSettings.advanced.proxyReadTimeout = s.proxy_read_timeout || '60s'
-      siteSettings.advanced.proxySendTimeout = s.proxy_send_timeout || '60s'
-
-      siteSettings.advanced.upstreamKeepalive = !!s.upstream_keepalive
-      siteSettings.advanced.upstreamKeepaliveConn = s.upstream_keepalive_conn || 100
-      siteSettings.advanced.upstreamKeepaliveTimeout = s.upstream_keepalive_timeout || 60
-
-      siteSettings.advanced.limitRate = s.limit_rate || 0
       siteSettings.advanced.originCert = !!s.origin_cert
       siteSettings.advanced.realtimeIdentify = !!s.realtime_identify
       siteSettings.advanced.realtimeSend = !!s.realtime_send
+
+      siteSettings.advanced.defaultSite = !!s.default_site
+      siteSettings.advanced.l2Config = s.l2_config || 'current'
 
       // 缓存设置
       if (s.cache?.rules) {
@@ -492,7 +483,7 @@ export function useSiteSettings() {
 
   const loadAcls = () => withLoading(async () => {
     try {
-      const r = await request.get('/acls')
+      const r = await request.get('/acls', { baseURL: '/api/v1' })
       aclList.value = r.data?.list || r.list || []
     } catch (e) { console.error('Load acls failed', e) }
   })
