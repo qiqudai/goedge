@@ -426,6 +426,10 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	regionMap, err := loadRegions(sites)
+	if err != nil {
+		return nil, err
+	}
 
 	items := make([]siteListItem, 0, len(sites))
 	for _, site := range sites {
@@ -441,15 +445,26 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		httpsOn := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
 		httpPorts := parseListenPorts(site.HttpListen, site.HttpListenRaw, "80")
 		httpsPorts := parseListenPorts(site.HttpsListen, site.HttpsListenRaw, "")
-		listenPorts := buildListenDisplay(httpPorts, httpsPorts)
+		
+		var listenParts []string
+		if len(httpPorts) > 0 {
+			listenParts = append(listenParts, "HTTP:"+strings.Join(httpPorts, ","))
+		}
+		if httpsOn && len(httpsPorts) > 0 {
+			listenParts = append(listenParts, "HTTPS:"+strings.Join(httpsPorts, ","))
+		}
+		listenPorts := strings.Join(listenParts, " ")
 
 		cname := strings.TrimSpace(site.CnameHostname)
 		pkg := pkgMap[site.UserPackageID]
-		fmt.Printf("[DEBUG] SiteID: %d Mode: '%s' PkgHost: '%s' PkgDomain: '%s'\n", site.ID, pkg.CnameMode, pkg.CnameHostname, pkg.CnameDomain)
-		// Check if mode is package OR if the current cname matches the package hostname (partial cname bug fix)
-		isHubCNAME := strings.TrimSpace(pkg.CnameMode) == "package" || (cname != "" && cname == pkg.CnameHostname)
+		
+		// Priority: Site Mode > Package Mode > Default
+		siteMode := strings.TrimSpace(site.CnameMode)
+		pkgMode := strings.TrimSpace(pkg.CnameMode)
 
-		if isHubCNAME && pkg.CnameHostname != "" {
+		isPkgMode := siteMode == "package" || (siteMode == "" && pkgMode == "package")
+
+		if isPkgMode && pkg.CnameHostname != "" {
 			cname = pkg.CnameHostname
 			if pkg.CnameDomain != "" {
 				cname += "." + pkg.CnameDomain
@@ -459,7 +474,9 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 				cname += ".cdn.node.com"
 			}
 		} else {
-			if cname == "" && len(domains) > 0 && site.CnameDomain != "" {
+			// Custom or Default mode
+			// Reconstruct CNAME to ensure it reflects current CnameDomain (important for batch updates)
+			if len(domains) > 0 && site.CnameDomain != "" {
 				cname = buildSiteCname(domains[0], site.CnameDomain)
 			}
 		}
@@ -485,6 +502,8 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			GroupName:       "",
 			NodeGroupID:     site.NodeGroupID,
 			NodeGroupName:   nodeGroupMap[site.NodeGroupID],
+			RegionID:        site.RegionID,
+			RegionName:      regionMap[site.RegionID],
 			Status:          site.Enable,
 			State:           site.State,
 			CreatedAt:       site.CreatedAt,
@@ -492,7 +511,6 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		if len(item.GroupIDs) > 0 {
 			item.GroupID = item.GroupIDs[0]
 			item.GroupName = groupMap[item.GroupIDs[0]]
-			// If there are multiple groups, maybe join names? For now keep legacy behavior -> first group name
 			names := make([]string, 0, len(item.GroupIDs))
 			for _, gid := range item.GroupIDs {
 				if name, ok := groupMap[gid]; ok {

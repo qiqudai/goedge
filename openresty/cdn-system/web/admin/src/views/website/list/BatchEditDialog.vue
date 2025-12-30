@@ -120,7 +120,7 @@ const loadDependencies = async () => {
   try {
     const [rRes, nRes] = await Promise.all([
       request.get('/regions', { params: { pageSize: 100 } }),
-      request.get('/node_groups', { params: { pageSize: 100 } })
+      request.get('/node-groups', { params: { pageSize: 100 } })
     ])
     regions.value = rRes.data?.list || rRes.list || []
     nodeGroups.value = nRes.data?.list || nRes.list || []

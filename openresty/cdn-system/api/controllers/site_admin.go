@@ -405,6 +405,62 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		if req.CnameMode != nil {
 			updates["cname_mode"] = *req.CnameMode
 		}
+		
+		// 如果更新了CNAME相关字段，需要重新计算CnameHostname
+		if req.CnameDomain != nil || req.CnameMode != nil {
+			// 获取更新的站点信息来重新计算CNAME
+			var sites []models.Site
+			if err := tx.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
+				return err
+			}
+			
+			for _, site := range sites {
+				var pkg models.UserPackage
+				if err := tx.First(&pkg, site.UserPackageID).Error; err != nil {
+					continue
+				}
+				
+				// 重新计算CnameHostname
+				newCnameHostname := site.CnameHostname
+				siteMode := ""
+				if req.CnameMode != nil {
+					siteMode = *req.CnameMode
+				} else {
+					siteMode = site.CnameMode
+				}
+				
+				cnameDomain := site.CnameDomain
+				if req.CnameDomain != nil {
+					cnameDomain = *req.CnameDomain
+				}
+				
+				// 根据模式重新计算CNAME
+				if siteMode == "package" || (siteMode == "" && pkg.CnameMode == "package") {
+					// Package模式
+					if pkg.CnameHostname != "" {
+						newCnameHostname = pkg.CnameHostname
+						if pkg.CnameDomain != "" {
+							newCnameHostname += "." + pkg.CnameDomain
+						} else if cnameDomain != "" {
+							newCnameHostname += "." + cnameDomain
+						} else {
+							newCnameHostname += ".cdn.node.com"
+						}
+					}
+				} else {
+					// 自定义或默认模式
+					if len(site.Domains) > 0 && cnameDomain != "" {
+						newCnameHostname = buildSiteCname(site.Domains[0], cnameDomain)
+					}
+				}
+				
+				if newCnameHostname != site.CnameHostname {
+					if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("cname_hostname", newCnameHostname).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
 		if req.RegionID != nil {
 			updates["region_id"] = *req.RegionID
 		}

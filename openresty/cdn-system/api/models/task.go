@@ -12,15 +12,15 @@ type Task struct {
 	Res       string    `json:"res"`
 	Data      string    `json:"data" gorm:"type:longtext"` // URLs or JSON payload
 	Depend    string    `json:"depend"`
-	CreateAt  time.Time `json:"create_at" gorm:"column:create_at"`
-	StartAt   time.Time `json:"start_at" gorm:"column:start_at"`
-	EndAt     time.Time `json:"end_at" gorm:"column:end_at"`
-	Ret       string    `json:"ret"`
-	Enable    bool      `json:"enable"`
-	State     string    `json:"state"` // running, done, fail, waiting
-	ErrTimes  int       `json:"err_times"`
-	RetryAt   time.Time `json:"retry_at" gorm:"column:retry_at"`
-	Progress  string    `json:"progress"`
+	CreateAt  time.Time  `json:"create_at" gorm:"column:create_at"`
+	StartAt   *time.Time `json:"start_at" gorm:"column:start_at"`
+	EndAt     *time.Time `json:"end_at" gorm:"column:end_at"`
+	Ret       string     `json:"ret"`
+	Enable    bool       `json:"enable"`
+	State     string     `json:"state"` // running, done, fail, waiting
+	ErrTimes  int        `json:"err_times"`
+	RetryAt   *time.Time `json:"retry_at" gorm:"column:retry_at"`
+	Progress  string     `json:"progress"`
 }
 
 func (Task) TableName() string {
