@@ -53,7 +53,9 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 	for _, item := range items {
 		list = append(list, gin.H{
 			"id":          item.ID,
-			"user":        userMap[item.UserID],
+			"user_id":     item.UserID,
+			"uid":         item.UserID,
+			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
 			"is_system":   item.Internal || item.UserID == 0,
 			"is_on":       item.Enable,
@@ -77,16 +79,22 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 // POST /api/v1/admin/rules/cc/groups
 func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 	var req struct {
-		Type   string                   `json:"type"`
-		Name   string                   `json:"name"`
-		Remark string                   `json:"remark"`
-		Rules  []map[string]interface{} `json:"rules"`
+		Type         string                   `json:"type"`
+		Name         string                   `json:"name"`
+		Remark       string                   `json:"remark"`
+		Rules        []map[string]interface{} `json:"rules"`
+		IsVisible    bool                     `json:"is_visible"`
+		VisibleUsers []int64                  `json:"visible_users"`
+		SortOrder    int                      `json:"sort_order"`
+		UserID       int64                    `json:"user_id"` // Admin allows selection
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 	userID := int64(0)
+	internal := false
+
 	if isUserRequest(ctx) {
 		userID = parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 {
@@ -94,11 +102,23 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else {
+		// Admin request
+		if req.Type == "system" {
+			internal = true
+		} else {
+			// Admin creating user rule
+			internal = false
+			if req.UserID > 0 {
+				userID = req.UserID
+			}
+		}
 	}
 
 	// Prepare JSON data for 'data' column
 	dataMap := map[string]interface{}{
-		"rules": req.Rules,
+		"rules":         req.Rules,
+		"visible_users": req.VisibleUsers,
 	}
 	dataBytes, _ := json.Marshal(dataMap)
 
@@ -107,21 +127,12 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 		Name:        req.Name,
 		Description: req.Remark,
 		Data:        string(dataBytes),
-		Enable:      true,
-		IsShow:      true,
-		Internal:    req.Type == "system",
+		Enable:      true, // Default enable or add is_on field if needed
+		IsShow:      req.IsVisible,
+		Sort:        req.SortOrder,
+		Internal:    internal,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-	}
-
-	if req.Type == "user" {
-		// Simplified logic: assume admin wants to create for a specific user if uid passed?
-		// For now, if "type" is user but no uid, assume it's a template for users or system default
-		// Adjust based on requirements. The UI sends type='system' or 'user'.
-		// If 'user', maybe we set Internal=false. UserID is 0 for admin created templates.
-		ccRule.Internal = false
-	} else {
-		ccRule.Internal = true
 	}
 
 	if err := db.DB.Create(&ccRule).Error; err != nil {
@@ -143,10 +154,14 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 	}
 
 	var req struct {
-		Type   string                   `json:"type"`
-		Name   string                   `json:"name"`
-		Remark string                   `json:"remark"`
-		Rules  []map[string]interface{} `json:"rules"`
+		Type         string                   `json:"type"`
+		Name         string                   `json:"name"`
+		Remark       string                   `json:"remark"`
+		Rules        []map[string]interface{} `json:"rules"`
+		IsVisible    bool                     `json:"is_visible"`
+		VisibleUsers []int64                  `json:"visible_users"`
+		SortOrder    int                      `json:"sort_order"`
+		UserID       int64                    `json:"user_id"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -158,24 +173,40 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule group not found"})
 		return
 	}
+
+	// Permission check
 	if isUserRequest(ctx) {
 		userID := parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 || ccRule.UserID != userID {
 			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
 		}
+		// User can't change type or assign to other users
 		req.Type = "user"
+	} else {
+		// Admin can potentially change/reassign, but sticking to logic:
+		if req.Type == "system" {
+			ccRule.Internal = true
+			ccRule.UserID = 0
+		} else {
+			ccRule.Internal = false
+			if req.UserID > 0 {
+				ccRule.UserID = req.UserID
+			}
+		}
 	}
 
 	dataMap := map[string]interface{}{
-		"rules": req.Rules,
+		"rules":         req.Rules,
+		"visible_users": req.VisibleUsers,
 	}
 	dataBytes, _ := json.Marshal(dataMap)
 
 	ccRule.Name = req.Name
 	ccRule.Description = req.Remark
 	ccRule.Data = string(dataBytes)
-	ccRule.Internal = (req.Type == "system")
+	ccRule.IsShow = req.IsVisible
+	ccRule.Sort = req.SortOrder
 	ccRule.UpdatedAt = time.Now()
 
 	if err := db.DB.Save(&ccRule).Error; err != nil {
@@ -185,6 +216,61 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 	services.BumpConfigVersion("cc_rule", []int64{ccRule.ID})
 
 	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
+// GetRuleGroup Retrieves details of a rule group
+// GET /api/v1/admin/rules/cc/groups/:id
+func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var rule models.CCRule
+	if err := db.DB.Where("id = ?", id).First(&rule).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+		return
+	}
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || (rule.UserID != 0 && rule.UserID != userID) {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
+	rules := []gin.H{}
+	visibleUsers := []int64{}
+	if rule.Data != "" {
+		var parsed struct {
+			Rules        []map[string]interface{} `json:"rules"`
+			VisibleUsers []int64                  `json:"visible_users"`
+		}
+		if err := json.Unmarshal([]byte(rule.Data), &parsed); err == nil {
+			visibleUsers = parsed.VisibleUsers
+			for _, r := range parsed.Rules {
+				// Keep full map logic or simplify by just returning r
+				rules = append(rules, r)
+			}
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"id":            rule.ID,
+			"name":          rule.Name,
+			"remark":        rule.Description,
+			"user_id":       rule.UserID,
+			"is_system":     rule.Internal || rule.UserID == 0,
+			"type":          mapRuleType(rule.UserID, rule.Internal),
+			"is_on":         rule.Enable,
+			"is_visible":    rule.IsShow,
+			"sort_order":    rule.Sort,
+			"rules":         rules,
+			"visible_users": visibleUsers,
+		},
+	})
 }
 
 // ListMatchers Lists available matchers
@@ -224,7 +310,9 @@ func (c *RuleController) ListMatchers(ctx *gin.Context) {
 	for _, item := range items {
 		list = append(list, gin.H{
 			"id":          item.ID,
-			"user":        userMap[item.UserID],
+			"user_id":     item.UserID,
+			"uid":         item.UserID,
+			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
 			"is_system":   item.Internal || item.UserID == 0,
 			"status":      "normal",
@@ -248,12 +336,15 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 		Remark string                   `json:"remark"`
 		IsOn   bool                     `json:"is_on"`
 		Rules  []map[string]interface{} `json:"rules"`
+		UserID int64                    `json:"user_id"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 	userID := int64(0)
+	internal := false
+
 	if isUserRequest(ctx) {
 		userID = parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 {
@@ -261,6 +352,15 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else {
+		if req.Type == "system" {
+			internal = true
+		} else {
+			internal = false
+			if req.UserID > 0 {
+				userID = req.UserID
+			}
+		}
 	}
 
 	dataMap := map[string]interface{}{
@@ -274,7 +374,7 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 		Description: req.Remark,
 		Data:        string(dataBytes),
 		Enable:      req.IsOn,
-		Internal:    req.Type == "system",
+		Internal:    internal,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -303,6 +403,7 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		Remark string                   `json:"remark"`
 		IsOn   bool                     `json:"is_on"`
 		Rules  []map[string]interface{} `json:"rules"`
+		UserID int64                    `json:"user_id"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -314,6 +415,7 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "matcher not found"})
 		return
 	}
+	
 	if isUserRequest(ctx) {
 		userID := parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 || matcher.UserID != userID {
@@ -321,6 +423,17 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else {
+		// Admin logic
+		if req.Type == "system" {
+			matcher.Internal = true
+			matcher.UserID = 0
+		} else {
+			matcher.Internal = false
+			if req.UserID > 0 {
+				matcher.UserID = req.UserID
+			}
+		}
 	}
 
 	dataMap := map[string]interface{}{
@@ -332,8 +445,10 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 	matcher.Description = req.Remark
 	matcher.Data = string(dataBytes)
 	matcher.Enable = req.IsOn
-	matcher.Internal = (req.Type == "system")
 	matcher.UpdatedAt = time.Now()
+	if matcher.CreatedAt.IsZero() {
+		matcher.CreatedAt = time.Now()
+	}
 
 	if err := db.DB.Save(&matcher).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update matcher"})
@@ -429,7 +544,9 @@ func (c *RuleController) ListFilters(ctx *gin.Context) {
 	for _, item := range items {
 		list = append(list, gin.H{
 			"id":          item.ID,
-			"user":        userMap[item.UserID],
+			"user_id":     item.UserID,
+			"uid":         item.UserID,
+			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
 			"is_system":   item.Internal || item.UserID == 0,
 			"type":        item.Type,
@@ -459,12 +576,15 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 		MaxReq       int                    `json:"max_req"`
 		MaxReqPerURI int                    `json:"max_req_per_uri"`
 		Auth         map[string]interface{} `json:"auth"`
+		UserID       int64                  `json:"user_id"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 	userID := int64(0)
+	internal := false
+
 	if isUserRequest(ctx) {
 		userID = parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 {
@@ -472,6 +592,15 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else {
+		if req.Type == "system" {
+			internal = true
+		} else {
+			internal = false
+			if req.UserID > 0 {
+				userID = req.UserID
+			}
+		}
 	}
 
 	extra := map[string]interface{}{
@@ -492,14 +621,12 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 		MaxReq:        req.MaxReq,
 		MaxReqPerUri:  req.MaxReqPerURI,
 		Extra:         string(extraBytes),
-		Internal:      req.Type == "system",
+		Internal:      internal,
 		Enable:        req.Enable,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
-	if req.Type == "user" {
-		filter.Internal = false
-	}
+
 
 	if err := db.DB.Create(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create filter"})
@@ -572,6 +699,9 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 		filter.Internal = false
 	}
 	filter.UpdatedAt = time.Now()
+	if filter.CreatedAt.IsZero() {
+		filter.CreatedAt = time.Now()
+	}
 
 	if err := db.DB.Save(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update filter"})
@@ -659,71 +789,7 @@ func (c *RuleController) DeleteFilter(ctx *gin.Context) {
 }
 
 // GetRuleGroup Retrieves details of a rule group
-// GET /api/v1/admin/rules/cc/groups/:id
-func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
-	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
-	if id == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	var rule models.CCRule
-	if err := db.DB.Where("id = ?", id).First(&rule).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
-		return
-	}
-	if isUserRequest(ctx) {
-		userID := parseUserID(mustGet(ctx, "userID"))
-		if userID == 0 || (rule.UserID != 0 && rule.UserID != userID) {
-			ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-	}
 
-	rules := []gin.H{}
-	if rule.Data != "" {
-		var parsed struct {
-			Rules []map[string]interface{} `json:"rules"`
-		}
-		if err := json.Unmarshal([]byte(rule.Data), &parsed); err == nil {
-			for _, r := range parsed.Rules {
-				item := gin.H{}
-				if v, ok := r["matcher_id"]; ok {
-					item["matcher_id"] = v
-				}
-				if v, ok := r["matcher_name"]; ok {
-					item["matcher_name"] = v
-				}
-				if v, ok := r["filter1_id"]; ok {
-					item["filter1_id"] = v
-				}
-				if v, ok := r["filter1_name"]; ok {
-					item["filter1_name"] = v
-				}
-				if v, ok := r["action"]; ok {
-					item["action"] = v
-				}
-				if v, ok := r["mode"]; ok {
-					item["mode"] = v
-				}
-				if len(item) > 0 {
-					rules = append(rules, item)
-				}
-			}
-		}
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": gin.H{
-			"id":        rule.ID,
-			"name":      rule.Name,
-			"remark":    rule.Description,
-			"is_system": rule.Internal || rule.UserID == 0,
-			"type":      mapRuleType(rule.UserID, rule.Internal),
-			"rules":     rules,
-		},
-	})
-}
 
 func mapRuleType(userID int64, internal bool) string {
 	if userID == 0 || internal {

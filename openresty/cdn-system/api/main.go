@@ -51,6 +51,14 @@ func main() {
 	dropForeignKey("stream", "stream_ibfk_3")
 	dropForeignKey("merge_stream_group", "merge_stream_group_ibfk_1")
 	dropForeignKey("merge_stream_group", "merge_stream_group_ibfk_2")
+	dropForeignKey("cc_match", "user_ibfk_7") // Fix: system matches with uid=0
+	dropForeignKey("cert", "user_ibfk_4")     // Fix: system certs with uid=0
+	dropForeignKey("cc_match", "task_ibfk_6") // Fix: system matches with task_id=0
+	dropForeignKey("cc_rule", "user_ibfk_6")  // Fix: system rules with uid=0
+	dropForeignKey("cc_rule", "task_ibfk_8")  // Fix: system rules with task_id=0
+	dropForeignKey("cc_filter", "user_ibfk_8") // Fix: system filters with uid=0
+	dropForeignKey("cc_filter", "task_ibfk_7") // Fix: Speculative system filters with task_id=0 (Pattern: match=6, rule=8)
+	dropForeignKey("cc_filter", "task_ibfk_9") // Fix: Speculative backup
 	// Auto Migrate
 	db.DB.AutoMigrate(
 		&models.Node{},
