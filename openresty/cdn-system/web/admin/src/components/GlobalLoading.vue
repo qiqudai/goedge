@@ -1,0 +1,110 @@
+<template>
+  <Transition name="fade">
+    <div v-if="loading" class="global-loading-overlay">
+      <div class="loading-content">
+        <div class="loading-spinner">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+        <div class="loading-text">{{ loadingText }}</div>
+      </div>
+    </div>
+  </Transition>
+</template>
+
+<script setup>
+import { useLoading } from '@/composables/useLoading'
+
+const { loading, loadingText } = useLoading()
+</script>
+
+<style scoped>
+.global-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 99999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.loading-text {
+  font-size: 16px;
+  color: #409eff;
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+
+/* Premium Spinner */
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  position: relative;
+}
+
+.dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  animation: rotate 2.5s infinite linear both;
+}
+
+.dot::before {
+  content: '';
+  display: block;
+  width: 25%;
+  height: 25%;
+  background-color: #409eff;
+  border-radius: 100%;
+  animation: dotBefore 2s infinite ease-in-out both;
+}
+
+.dot:nth-child(1) { animation-delay: -1.1s; }
+.dot:nth-child(1)::before { animation-delay: -1.1s; }
+.dot:nth-child(2) { animation-delay: -1.0s; }
+.dot:nth-child(2)::before { animation-delay: -1.0s; }
+.dot:nth-child(3) { animation-delay: -0.9s; }
+.dot:nth-child(3)::before { animation-delay: -0.9s; }
+.dot:nth-child(4) { animation-delay: -0.8s; }
+.dot:nth-child(4)::before { animation-delay: -0.8s; }
+.dot:nth-child(5) { animation-delay: -0.7s; }
+.dot:nth-child(5)::before { animation-delay: -0.7s; }
+
+@keyframes rotate {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes dotBefore {
+  50% { transform: scale(0.4); opacity: 0.3; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Fade Transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

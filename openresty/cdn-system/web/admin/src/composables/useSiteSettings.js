@@ -6,170 +6,151 @@ import request from '@/utils/request'
 import { formatDate, parseBool } from '@/utils/helpers'
 import { buildSettingsPayload } from '@/utils/configTransform'
 
+import { useLoading } from './useLoading'
+
+const { withLoading, loading, loadingText } = useLoading()
+
+// 全局共享状态 (单例模式)
+const isInitialized = ref(false)
+const activeTab = ref('basic')
+const site = ref(null)
+
+// 证书列表和套餐列表
+const certList = ref([])
+const userPackages = ref([])
+const aclList = ref([])
+
+// 网站设置数据结构
+const siteSettings = reactive({
+  basic: {
+    status: true,
+    domain: '',
+    cname: '',
+    httpEnable: true,
+    httpPorts: '80',
+    userPackageId: null,
+    groupId: null,
+    expireTime: '-',
+    createdAt: '-',
+    updatedAt: '-',
+    originList: [],
+    originConditions: []
+  },
+  origin: {
+    list: [],
+    conditions: [],
+    protocol: 'follow',
+    httpPort: '80',
+    httpsPort: '443',
+    timeout: 60,
+    connTimeout: 10,
+    healthCheckEnabled: true,
+    healthCheckHost: '',
+    healthCheckPath: '/',
+    healthCheckStatus: '200 301 302',
+    healthCheckInterval: 60
+  },
+  https: {
+    enable: false,
+    listenPorts: '443',
+    certId: null,
+    force: false,
+    forcePort: '443',
+    hsts: false,
+    http2: false,
+    http3: false,
+    ocsp: false,
+    sslPolicy: 'compat',
+    sslCiphers: '',
+    sslProtocols: ''
+  },
+  security: {
+    cc: {
+      mode: 10002,
+      autoSwitch: {
+        enable: false,
+        qps: 200,
+        rule: 'close'
+      }
+    },
+    customRules: [],
+    ip: { white: '', black: '' },
+    ua: { white: '', black: '' },
+    cookie: { enable: false, domain: '' },
+    regions: []
+  },
+  cache: { rules: [] },
+  access: {
+    acl: '',
+    hotlink: {
+      enable: false,
+      scope: 'all',
+      value: '',
+      allowEmpty: false,
+      domains: ''
+    },
+    cors: {
+      enable: false,
+      allowOrigin: '*',
+      allowMethods: '*',
+      allowHeaders: '*',
+      exposeHeaders: '*',
+      maxAge: 1728000
+    },
+    regionBlock: {
+      mode: 'disabled',
+      countries: []
+    }
+  },
+  advanced: {
+    uploadLimitMode: 'none',
+    uploadLimitValue: 100,
+    gzip: false,
+    websocket: false,
+    searchEngineOrigin: false,
+    urlRewrites: [],
+    reqHeaders: [],
+    resHeaders: [],
+    originCert: false,
+    realtimeIdentify: false,
+    realtimeSend: false,
+    logRequestHeader: false,
+    logResponseHeader: false,
+    logRequestBody: false,
+    logRequestBodySizeLimit: 16,
+    proxyConnectTimeout: '30s',
+    proxyReadTimeout: '60s',
+    proxySendTimeout: '60s',
+    upstreamKeepalive: false,
+    upstreamKeepaliveConn: 100,
+    upstreamKeepaliveTimeout: 60,
+    limitRate: 0
+  }
+})
+
+// 初始化控制
+let isInitializing = false
+
 /**
  * 网站设置状态管理
  * 提供统一的状态管理和API调用逻辑
  */
 export function useSiteSettings() {
-  const isSaving = ref(false)
-  const activeTab = ref('basic')
-  
-  // 网站基本信息
-  const site = ref(null)
+  const route = useRoute()
   const siteId = computed(() => {
-    const route = useRoute()
     return parseInt(route.query.site_id || route.params.site_id || 0, 10)
   })
 
-  // 证书列表和套餐列表
-  const certList = ref([])
-  const userPackages = ref([])
-  const aclList = ref([])
-
-  // 网站设置数据结构
-  const siteSettings = reactive({
-    basic: {
-      status: true,
-      domain: '',
-      cname: '',
-      httpEnable: true,
-      httpPorts: '80',
-      userPackageId: null,
-      groupId: null,
-      expireTime: '-',
-      createdAt: '-',
-      updatedAt: '-',
-      originList: [],
-      originConditions: []
-    },
-    origin: {
-      list: [],
-      conditions: [],
-      protocol: 'follow',
-      httpPort: '80',
-      httpsPort: '443',
-      timeout: 60,
-      connTimeout: 10,
-      healthCheckEnabled: true,
-      healthCheckHost: '',
-      healthCheckPath: '/',
-      healthCheckStatus: '200 301 302',
-      healthCheckInterval: 60
-    },
-    https: {
-      enable: false,
-      listenPorts: '443',
-      certId: null,
-      force: false,
-      forcePort: '443',
-      hsts: false,
-      http2: false,
-      http3: false,
-      ocsp: false,
-      sslPolicy: 'compat',
-      sslCiphers: '',
-      sslProtocols: ''
-    },
-    security: {
-      cc: {
-        mode: 10002,
-        autoSwitch: {
-          enable: false,
-          qps: 200,
-          rule: 'close'
-        }
-      },
-      customRules: [],
-      ip: { white: '', black: '' },
-      ua: { white: '', black: '' },
-      cookie: { enable: false, domain: '' },
-      regions: []
-    },
-    cache: { rules: [] },
-    access: {
-      acl: '',
-      hotlink: {
-        enable: false,
-        scope: 'all',
-        value: '',
-        allowEmpty: false,
-        domains: ''
-      },
-      cors: {
-        enable: false,
-        allowOrigin: '*',
-        allowMethods: '*',
-        allowHeaders: '*',
-        exposeHeaders: '*',
-        maxAge: 1728000
-      },
-      regionBlock: {
-        mode: 'disabled',
-        countries: []
-      }
-    },
-    advanced: {
-      uploadLimitMode: 'none',
-      uploadLimitValue: 100,
-      gzip: false,
-      websocket: false,
-      searchEngineOrigin: false,
-      urlRewrites: [],
-      reqHeaders: [],
-      resHeaders: [],
-      originCert: false,
-      realtimeIdentify: false,
-      realtimeSend: false,
-      logRequestHeader: false,
-      logResponseHeader: false,
-      logRequestBody: false,
-      logRequestBodySizeLimit: 16,
-      proxyConnectTimeout: '30s',
-      proxyReadTimeout: '60s',
-      proxySendTimeout: '60s',
-      limitRate: 0,
-      upstreamKeepalive: false,
-      upstreamKeepaliveConn: 100,
-      upstreamKeepaliveTimeout: 60
-    }
-  })
-
-  // 保存设置
-  const saveSettings = async () => {
-    if (!siteId.value) return
-    
-    isSaving.value = true
-    try {
-      const payload = {
-        ids: [siteId.value],
-        settings: buildSettingsPayload(siteSettings),
-        enable: siteSettings.basic.status,
-        http_listen: siteSettings.basic.httpEnable ? splitStr(siteSettings.basic.httpPorts) : [],
-        https_listen: siteSettings.https.enable ? splitStr(siteSettings.https.listenPorts) : [],
-        user_package_id: siteSettings.basic.userPackageId || 0,
-        group_id: siteSettings.basic.groupId || 0,
-        domains: splitStr(siteSettings.basic.domain),
-        backends: siteSettings.origin.list.map(o => o.address).filter(Boolean),
-        backend_protocol: siteSettings.origin.protocol
-      }
-
-      await request.put(`/sites/${siteId.value}`, payload)
-      ElMessage.success('配置已保存')
-    } catch (error) {
-      ElMessage.error('保存失败: ' + error.message)
-    } finally {
-      isSaving.value = false
-    }
-  }
-
   // 自动保存逻辑
   const triggerSave = debounce(() => {
-    saveSettings()
+    if (isInitialized.value) {
+      saveSettings()
+    }
   }, 1000)
 
-  // 监听并自动保存
+  // 监听并同步
   watch(siteSettings, (newVal) => {
-    // 同步 basic 和 origin 下的重复字段，确保两边数据一致
+    // 始终进行数据一致性检查
     if (newVal.basic.originList && newVal.basic.originList !== newVal.origin.list) {
       newVal.origin.list = newVal.basic.originList
     }
@@ -177,54 +158,83 @@ export function useSiteSettings() {
       newVal.origin.conditions = newVal.basic.originConditions
     }
 
-    // 安全检查逻辑
-    if (activeTab.value === 'security') {
-      const autoSwitch = newVal.security.cc.autoSwitch
-      if (autoSwitch.enable && (!autoSwitch.qps || !autoSwitch.rule)) {
-        return // 无效配置不保存
-      }
-    }
+    if (!isInitialized.value) return
     triggerSave()
   }, { deep: true })
 
-  const loadingCount = ref(0)
-  const loading = computed(() => loadingCount.value > 0)
-
-  const withLoading = async (fn) => {
-    loadingCount.value++
-    try {
-      await fn()
-    } finally {
-      loadingCount.value--
-    }
-  }
-
-  // 加载网站数据
-  const loadSite = async () => {
-    if (!siteId.value) {
-      ElMessage.warning('缺少 site_id')
-      return
-    }
-    
+  // 保存设置
+  const saveSettings = async () => {
+    if (!siteId.value) return
     await withLoading(async () => {
       try {
+        const payload = {
+          ids: [siteId.value],
+          settings: buildSettingsPayload(siteSettings),
+          enable: siteSettings.basic.status,
+          http_listen: siteSettings.basic.httpEnable ? splitStr(siteSettings.basic.httpPorts) : [],
+          https_listen: siteSettings.https.enable ? splitStr(siteSettings.https.listenPorts) : [],
+          user_package_id: siteSettings.basic.userPackageId || 0,
+          group_id: siteSettings.basic.groupId || 0,
+          domains: splitStr(siteSettings.basic.domain),
+          backends: siteSettings.origin.list.map(o => o.address).filter(Boolean),
+          backend_protocol: siteSettings.origin.protocol
+        }
+        await request.put(`/sites/${siteId.value}`, payload)
+        ElMessage.success('配置已保存')
+      } catch (error) {
+        ElMessage.error('保存失败: ' + error.message)
+      }
+    }, '正在保存配置...')
+  }
+
+  // 初始化方法
+  const init = async () => {
+    if (isInitializing) return
+    isInitializing = true
+    isInitialized.value = false
+
+    // 不要在这里重置 loadingCount，让 withLoading 自己处理计数
+    await withLoading(async () => {
+      try {
+        console.log('[SiteSettings] Starting init for site:', siteId.value)
+
+        // 加载基本数据
         const res = await request.get(`/sites/${siteId.value}`)
         const data = res.data?.site || res.site || res.data || res
-
-        if (!data || !data.id) {
-          ElMessage.error('站点信息载入失败')
-          return
+        if (data && data.id) {
+          site.value = data
+          applySiteData(data)
         }
 
-        site.value = data
-        applySiteData(data)
+        // 加载辅助数据 (允许部分失败，静默处理)
+        const loadAux = async (url, refVar) => {
+          try {
+            const r = await request.get(url)
+            refVar.value = r.data?.list || r.list || []
+          } catch (e) {
+            console.warn(`[SiteSettings] Load ${url} failed`, e)
+          }
+        }
+
+        await Promise.allSettled([
+          loadAux('/certs', certList),
+          loadAux('/user_packages', userPackages),
+          loadAux('/acls', aclList)
+        ])
       } catch (error) {
-        ElMessage.error('加载失败: ' + error.message)
+        console.error('[SiteSettings] Init error:', error)
+      } finally {
+        isInitializing = false
+        // 延迟开启保存监听，避开初始化的响应式数据波峰
+        setTimeout(() => {
+          isInitialized.value = true
+          console.log('[SiteSettings] Init complete, auto-save enabled.')
+        }, 1500)
       }
     })
   }
 
-  // 应用站点数据到设置
+  // 计算属性：分发站点数据
   const applySiteData = (data) => {
     // 基本信息
     siteSettings.basic.userPackageId = data.user_package_id || null
@@ -388,45 +398,38 @@ export function useSiteSettings() {
   // 工具函数：分割字符串
   const splitStr = (str) => (str || '').split(/[\s\n]+/).filter(Boolean)
 
-  // 加载辅助数据
-  const loadCerts = async () => {
-    await withLoading(async () => {
-      try {
-        const res = await request.get('/certs')
-        certList.value = res.data?.list || res.list || []
-      } catch (error) {
-        console.error('加载证书列表失败:', error)
-      }
-    })
-  }
 
-  const loadUserPackages = async () => {
-    await withLoading(async () => {
-      try {
-        const res = await request.get('/user_packages')
-        userPackages.value = res.data?.list || res.list || []
-      } catch (error) {
-        console.error('加载套餐列表失败:', error)
-      }
-    })
-  }
+  // 辅助加载函数 (带 loading 效果)
+  const loadSite = () => init()
 
-  const loadAcls = async () => {
-    await withLoading(async () => {
-      try {
-        const res = await request.get('/acls')
-        aclList.value = res.data?.list || res.list || []
-      } catch (error) {
-        console.error('加载ACL列表失败:', error)
-      }
-    })
-  }
+  const loadCerts = () => withLoading(async () => {
+    try {
+      const r = await request.get('/certs')
+      certList.value = r.data?.list || r.list || []
+    } catch (e) { console.error('Load certs failed', e) }
+  })
+
+  const loadUserPackages = () => withLoading(async () => {
+    try {
+      const r = await request.get('/user_packages')
+      userPackages.value = r.data?.list || r.list || []
+    } catch (e) { console.error('Load user packages failed', e) }
+  })
+
+  const loadAcls = () => withLoading(async () => {
+    try {
+      const r = await request.get('/acls')
+      aclList.value = r.data?.list || r.list || []
+    } catch (e) { console.error('Load acls failed', e) }
+  })
 
   // 计算证书剩余天数
-  const calcCertDays = (cert, certs) => {
-    if (!cert || !certs) return 0
-    // 实际计算逻辑
-    return 30
+  const calcCertDays = (certId) => {
+    const c = certList.value.find(i => i.id === certId)
+    if (!c || !c.end_time) return null
+    const end = new Date(c.end_time).getTime()
+    const now = new Date().getTime()
+    return Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)))
   }
 
   // 返回所有状态和方法
@@ -435,7 +438,6 @@ export function useSiteSettings() {
     site,
     siteSettings,
     loading,
-    isSaving,
     activeTab,
     certList,
     userPackages,

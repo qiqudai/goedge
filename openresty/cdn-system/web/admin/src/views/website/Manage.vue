@@ -1,5 +1,5 @@
 <template>
-  <div class="site-manage" v-loading.fullscreen.lock="loading || isSaving" :element-loading-text="loading ? '正在加载数据...' : '正在保存配置...'">
+  <div class="site-manage">
     <!-- 网站信息头部 -->
     <SiteHeader v-if="site" :site="site" @back="goBack" />
     
@@ -177,10 +177,7 @@ const removeHeader = (type, index) => {
 
 // 初始化
 onMounted(() => {
-  loadSite()
-  loadCerts()
-  loadUserPackages()
-  loadAcls()
+  loadSite() // 这现在会自动调用内建的 init() 并涵盖 loadCerts 等
 })
 </script>
 
