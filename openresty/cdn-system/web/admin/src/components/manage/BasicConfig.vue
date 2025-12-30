@@ -3,13 +3,17 @@
     <div class="section-title">基本设置</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="状态">
-        <span class="status-dot" :class="{ active: basicStatus }"></span>
-        {{ basicStatus ? '正常' : '已停用' }}
+        <el-switch 
+          v-model="localSettings.status" 
+          active-text="正常" 
+          inactive-text="已停用"
+          @change="updateSettings"
+        />
       </el-form-item>
       <el-form-item label="CNAME">
         {{ basicCname || '-' }}
       </el-form-item>
-      <el-form-item label="企业到期">
+      <el-form-item label="套餐到期">
         {{ basicExpireTime || '-' }}
       </el-form-item>
       <el-form-item label="创建时间">
@@ -52,8 +56,6 @@
       <el-form-item label="域名" style="width: 520px">
         <el-input 
           v-model="localSettings.domain" 
-          type="textarea" 
-          :rows="3" 
           @input="updateSettings"
         />
         <div class="form-helper">
@@ -257,8 +259,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-// 提取基本属性，使用computed确保响应式
-const basicStatus = computed(() => props.modelValue?.status || true)
+// 提取只读属性用于显示
 const basicCname = computed(() => props.modelValue?.cname || '-')
 const basicExpireTime = computed(() => props.modelValue?.expireTime || '-')
 const basicCreatedAt = computed(() => props.modelValue?.createdAt || '-')
@@ -266,28 +267,39 @@ const basicUpdatedAt = computed(() => props.modelValue?.updatedAt || '-')
 
 // 本地设置状态
 const localSettings = ref({
+  status: props.modelValue?.status !== false,
   userPackageId: props.modelValue?.userPackageId || null,
   groupId: props.modelValue?.groupId || null,
   domain: props.modelValue?.domain || '',
   httpEnable: props.modelValue?.httpEnable !== false,
   httpPorts: props.modelValue?.httpPorts || '80',
-  originList: props.modelValue?.originList || [],
-  originConditions: props.modelValue?.originConditions || []
+  originList: JSON.parse(JSON.stringify(props.modelValue?.originList || [])),
+  originConditions: JSON.parse(JSON.stringify(props.modelValue?.originConditions || []))
 })
+
+let isInternalUpdate = false
+
+// 深度监听本地配置变化并同步到父组件
+watch(localSettings, (newVal) => {
+  isInternalUpdate = true
+  updateSettings()
+}, { deep: true })
 
 // 监听props变化，更新本地状态
 watch(() => props.modelValue, (newValue) => {
-  if (newValue) {
+  if (newValue && !isInternalUpdate) {
     localSettings.value = {
+      status: newValue.status !== false,
       userPackageId: newValue.userPackageId || null,
       groupId: newValue.groupId || null,
       domain: newValue.domain || '',
       httpEnable: newValue.httpEnable !== false,
       httpPorts: newValue.httpPorts || '80',
-      originList: newValue.originList || [],
-      originConditions: newValue.originConditions || []
+      originList: JSON.parse(JSON.stringify(newValue.originList || [])),
+      originConditions: JSON.parse(JSON.stringify(newValue.originConditions || []))
     }
   }
+  isInternalUpdate = false
 }, { deep: true })
 
 const handlePackageChange = (value) => {
@@ -299,6 +311,7 @@ const handleGroupChange = (value) => {
 }
 
 const updateSettings = () => {
+  isInternalUpdate = true
   emit('update:modelValue', {
     ...props.modelValue,
     ...localSettings.value

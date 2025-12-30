@@ -34,13 +34,13 @@ func (ctrl *ForwardController) AdminCreate(c *gin.Context) {
 	if isUserRequest(c) {
 		adminMode = false
 	}
-	forward, groupID, err := parseForwardCreateRequest(c, adminMode)
+	forward, groupIDs, err := parseForwardCreateRequest(c, adminMode)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := createForwardWithGroup(forward, groupID); err != nil {
+	if err := createForwardWithGroup(forward, groupIDs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create forward"})
 		return
 	}
@@ -52,12 +52,13 @@ func (ctrl *ForwardController) AdminCreate(c *gin.Context) {
 
 func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 	var req struct {
-		UserID        int64  `json:"user_id"`
-		UserPackageID int64  `json:"user_package_id"`
-		GroupID       int64  `json:"group_id"`
-		Data          string `json:"data"`
-		IgnoreError   bool   `json:"ignore_error"`
-		Remark        string `json:"remark"`
+		UserID        int64   `json:"user_id"`
+		UserPackageID int64   `json:"user_package_id"`
+		GroupID       int64   `json:"group_id"` // Desc: use group_ids
+		GroupIDs      []int64 `json:"group_ids"`
+		Data          string  `json:"data"`
+		IgnoreError   bool    `json:"ignore_error"`
+		Remark        string  `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -107,7 +108,12 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 			UpdatedAt:     time.Now(),
 		}
 		services.ApplyForwardDefaults(forward, defaults)
-		if err := createForwardWithGroup(forward, req.GroupID); err != nil {
+		groupIDs := req.GroupIDs
+		if len(groupIDs) == 0 && req.GroupID != 0 {
+			groupIDs = []int64{req.GroupID}
+		}
+
+		if err := createForwardWithGroup(forward, groupIDs); err != nil {
 			if req.IgnoreError {
 				continue
 			}
@@ -129,7 +135,8 @@ func (ctrl *ForwardController) AdminBatchUpdate(c *gin.Context) {
 	var req struct {
 		IDs           []int64                 `json:"ids"`
 		UserPackageID *int64                  `json:"user_package_id"`
-		GroupID       *int64                  `json:"group_id"`
+		GroupID       *int64                  `json:"group_id"` // Desc: use group_ids
+		GroupIDs      *[]int64                `json:"group_ids"`
 		ListenPorts   *[]string               `json:"listen_ports"`
 		Origins       *[]models.ForwardOrigin `json:"origins"`
 		Remark        *string                 `json:"remark"`
@@ -190,17 +197,29 @@ func (ctrl *ForwardController) AdminBatchUpdate(c *gin.Context) {
 			}
 		}
 
-		if req.GroupID != nil {
+		updateGroupIDs := req.GroupIDs
+		if updateGroupIDs == nil && req.GroupID != nil {
+			ids := []int64{*req.GroupID}
+			updateGroupIDs = &ids
+		}
+
+		if updateGroupIDs != nil {
 			if err := tx.Where("stream_id IN ?", req.IDs).Delete(&models.ForwardGroupRelation{}).Error; err != nil {
 				return err
 			}
-			if *req.GroupID != 0 {
-				relations := make([]models.ForwardGroupRelation, 0, len(req.IDs))
-				for _, id := range req.IDs {
-					relations = append(relations, models.ForwardGroupRelation{ForwardID: id, GroupID: *req.GroupID})
+			if len(*updateGroupIDs) > 0 {
+				relations := make([]models.ForwardGroupRelation, 0, len(req.IDs)*len(*updateGroupIDs))
+				for _, sid := range req.IDs {
+					for _, gid := range *updateGroupIDs {
+						if gid != 0 {
+							relations = append(relations, models.ForwardGroupRelation{ForwardID: sid, GroupID: gid})
+						}
+					}
 				}
-				if err := tx.Create(&relations).Error; err != nil {
-					return err
+				if len(relations) > 0 {
+					if err := tx.Create(&relations).Error; err != nil {
+						return err
+					}
 				}
 			}
 		}

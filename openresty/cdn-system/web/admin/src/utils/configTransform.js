@@ -69,7 +69,7 @@ function buildOriginPayload(originSettings) {
   return {
     list: originSettings.list.map(item => ({
       address: item.address,
-      weight: item.weight,
+      weight: parseInt(item.weight || 10, 10),
       enable: item.enable
     })),
     conditions: originSettings.conditions.map(item => ({

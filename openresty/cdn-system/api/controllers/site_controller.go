@@ -16,6 +16,7 @@ type siteListItem struct {
 	ListenPorts     string    `json:"listen_ports"`
 	OriginDisplay   string    `json:"origin_display"`
 	CNAME           string    `json:"cname"`
+	Backends        []string  `json:"backends"`
 	HTTPS           bool      `json:"https"`
 	UserPackageID   int64     `json:"user_package_id"`
 	UserPackageName string    `json:"user_package_name"`
@@ -27,9 +28,12 @@ type siteListItem struct {
 	NodeGroupName   string    `json:"node_group_name"`
 	RegionID        int64     `json:"region_id"`
 	RegionName      string    `json:"region_name"`
-	Status          bool      `json:"status"`
-	State           string    `json:"state"`
+	Status          bool                   `json:"status"`
+	State           string                 `json:"state"`
+	Settings        map[string]interface{} `json:"settings"`
+	ExpireTime      string                 `json:"expire_time"`
 	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type siteQueryResult struct {

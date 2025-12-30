@@ -60,12 +60,7 @@
 
         <div v-show="isExpanded">
             <el-form-item label="所属分组：">
-              <div style="display: flex; gap: 8px; width: 100%;">
-                  <el-select v-model="form.group_id" placeholder="转发分组，可选" style="flex: 1" clearable>
-                    <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-                  </el-select>
-                  <el-button @click="showAddGroup = true"><el-icon><Plus /></el-icon></el-button>
-              </div>
+                <SiteGroupSelect v-model="form.group_ids" type="forward" :user-id="form.user_id" multiple />
             </el-form-item>
 
             <el-form-item label="备注：">
@@ -80,25 +75,15 @@
       <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
     </template>
 
-    <!-- Inline Add Group Dialog -->
-    <el-dialog v-model="showAddGroup" title="新增转发分组" width="380px" append-to-body>
-        <el-form :model="groupForm" label-width="60px">
-            <el-form-item label="名称"><el-input v-model="groupForm.name" /></el-form-item>
-            <el-form-item label="备注"><el-input v-model="groupForm.remark" /></el-form-item>
-        </el-form>
-        <template #footer>
-            <el-button @click="showAddGroup = false">取消</el-button>
-            <el-button type="primary" @click="handleAddGroup">确定</el-button>
-        </template>
-    </el-dialog>
   </el-dialog>
 </template>
 
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowUp, Plus } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -113,11 +98,9 @@ const submitting = ref(false)
 const formRef = ref(null)
 const activeTab = ref('single')
 const isExpanded = ref(false)
-const showAddGroup = ref(false)
 
 const users = ref([])
 const userPackages = ref([])
-const groups = ref([])
 
 const form = reactive({
   id: 0,
@@ -127,11 +110,9 @@ const form = reactive({
   origin: '',
   batch_data: '',
   ignore_errors: false,
-  group_id: '',
+  group_ids: [],
   remark: ''
 })
-
-const groupForm = reactive({ name: '', remark: '' })
 
 const rules = {
   user_id: [{ required: true, message: '请选择用户', trigger: 'change' }],
@@ -146,7 +127,9 @@ watch(() => props.modelValue, (val) => {
   if (val) {
     initData()
     if (props.data) {
-      Object.assign(form, props.data)
+      const data = { ...props.data }
+      data.group_ids = data.group_ids || (data.group_id ? [data.group_id] : [])
+      Object.assign(form, data)
       activeTab.value = 'single'
     } else {
       resetForm()
@@ -160,12 +143,10 @@ watch(() => visible.value, (val) => {
 
 const initData = async () => {
   try {
-    const [uRes, gRes] = await Promise.all([
-      props.isAdmin ? request.get('/users') : Promise.resolve({ data: { list: [] } }),
-      request.get('/forward_groups')
-    ])
-    if (props.isAdmin) users.value = uRes.data?.list || []
-    groups.value = gRes.data?.list || []
+    if (props.isAdmin) {
+      const uRes = await request.get('/users')
+      users.value = uRes.data?.list || []
+    }
     
     if (form.user_id) {
         handleUserChange(form.user_id)
@@ -184,16 +165,7 @@ const handleUserChange = async (userId) => {
     userPackages.value = res.data?.list || []
 }
 
-const handleAddGroup = async () => {
-    if (!groupForm.name) return
-    await request.post('/forward_groups', groupForm)
-    ElMessage.success('分组添加成功')
-    showAddGroup.value = false
-    groupForm.name = ''
-    groupForm.remark = ''
-    const gRes = await request.get('/forward_groups')
-    groups.value = gRes.data?.list || []
-}
+// handleAddGroup removed
 
 const resetForm = () => {
   Object.assign(form, {
@@ -204,7 +176,7 @@ const resetForm = () => {
     origin: '',
     batch_data: '',
     ignore_errors: false,
-    group_id: '',
+    group_ids: [],
     remark: ''
   })
   activeTab.value = 'single'
@@ -231,7 +203,7 @@ const handleSubmit = async () => {
         const batchPayload = {
           user_id: form.user_id,
           user_package_id: form.user_package_id,
-          group_id: form.group_id,
+          group_ids: form.group_ids,
           data: form.batch_data,
           ignore_error: form.ignore_errors,
           remark: form.remark
@@ -241,7 +213,7 @@ const handleSubmit = async () => {
         const singlePayload = {
           user_id: form.user_id,
           user_package_id: form.user_package_id,
-          group_id: form.group_id,
+          group_ids: form.group_ids,
           listen_ports_input: form.listen_ports,
           origin_input: form.origin,
           remark: form.remark

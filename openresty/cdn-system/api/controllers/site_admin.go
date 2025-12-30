@@ -67,11 +67,28 @@ func (ctrl *SiteController) AdminGet(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch site"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch site: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"site": site}})
+	// Fetch Groups
+	var relations []models.SiteGroupRelation
+	db.DB.Where("site_id = ?", id).Find(&relations)
+	for _, rel := range relations {
+		site.GroupIDs = append(site.GroupIDs, rel.GroupID)
+	}
+	if len(site.GroupIDs) > 0 {
+		site.GroupID = site.GroupIDs[0]
+	}
+
+	// Enrich Site Data
+	items, err := buildSiteListItems([]models.Site{site})
+	if err != nil || len(items) == 0 {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"site": site}})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"site": items[0]}})
 }
 
 // AdminUpdate updates a single site config
@@ -96,6 +113,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		CertID          *int64                 `json:"cert_id"`
 		Domains         *[]string              `json:"domains"`
 		Enable          *bool                  `json:"enable"`
+		Backends        *[]string              `json:"backends"`
 		Settings        map[string]interface{} `json:"settings"`
 	}
 
@@ -117,6 +135,9 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		}
 		if req.HttpsListen != nil {
 			updates["https_listen"] = encodeList(*req.HttpsListen)
+		}
+		if req.Backends != nil {
+			updates["backend"] = encodeList(*req.Backends)
 		}
 		if req.BalanceWay != nil {
 			updates["balance_way"] = *req.BalanceWay
@@ -152,7 +173,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 			}
 		}
 
-		updates["updated_at"] = time.Now()
+		updates["update_at"] = time.Now()
 
 		if err := tx.Model(&models.Site{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err

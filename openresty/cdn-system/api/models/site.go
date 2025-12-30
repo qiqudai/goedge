@@ -48,12 +48,15 @@ type Site struct {
 	BlockRegionRaw string `json:"-" gorm:"column:block_region;type:text"`
 	SettingsRaw    string `json:"-" gorm:"column:settings;type:longtext"`
 	Settings       map[string]interface{} `json:"settings" gorm:"-"`
-
 	// 状态
 	State     string    `json:"state"` // running, stop
 	Enable    bool      `json:"enable"`
 	CreatedAt time.Time `json:"create_at" gorm:"column:create_at"`
 	UpdatedAt time.Time `json:"update_at" gorm:"column:update_at"`
+
+	// API Only fields
+	GroupID  int64   `json:"group_id" gorm:"-"`
+	GroupIDs []int64 `json:"group_ids" gorm:"-"`
 }
 
 // TableName 指定表名

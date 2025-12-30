@@ -3,7 +3,6 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
-	"cdn-api/services"
 	"errors"
 	"strconv"
 	"strings"
@@ -13,18 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
-func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, int64, error) {
+func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []int64, error) {
 	var req struct {
 		UserID           int64    `json:"user_id"`
 		UserPackageID    int64    `json:"user_package_id"`
-		GroupID          int64    `json:"group_id"`
+		GroupID          int64    `json:"group_id"` // Desc: use group_ids
+		GroupIDs         []int64  `json:"group_ids"`
 		ListenPorts      []string `json:"listen_ports"`
 		ListenPortsInput string   `json:"listen_ports_input"`
 		OriginInput      string   `json:"origin_input"`
 		Remark           string   `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		return nil, 0, errors.New("invalid request")
+		return nil, nil, errors.New("invalid request")
 	}
 
 	userID := req.UserID
@@ -32,7 +32,7 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, int
 		userID = parseInt64(mustGet(c, "userID"))
 	}
 	if userID == 0 {
-		return nil, 0, errors.New("user_id is required")
+		return nil, nil, errors.New("user_id is required")
 	}
 
 	listenPorts := req.ListenPorts
@@ -40,12 +40,12 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, int
 		listenPorts = splitFields(req.ListenPortsInput)
 	}
 	if len(listenPorts) == 0 {
-		return nil, 0, errors.New("listen_ports is required")
+		return nil, nil, errors.New("listen_ports is required")
 	}
 
 	origins := parseOrigins(req.OriginInput)
 	if len(origins) == 0 {
-		return nil, 0, errors.New("origin is required")
+		return nil, nil, errors.New("origin is required")
 	}
 
 	nodeGroupID, _ := resolveNodeGroupFromPackage(req.UserPackageID, 0)
@@ -68,24 +68,30 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, int
 		forward.Cname = listenPorts[0] + ".cdn.node.com"
 	}
 
-	defaults, err := services.GetStreamDefaultMap(userID)
-	if err != nil {
-		return nil, 0, err
+	groupIDs := req.GroupIDs
+	if len(groupIDs) == 0 && req.GroupID != 0 {
+		groupIDs = []int64{req.GroupID}
 	}
-	services.ApplyForwardDefaults(forward, defaults)
 
-	return forward, req.GroupID, nil
+	return forward, groupIDs, nil
 }
 
-func createForwardWithGroup(forward *models.Forward, groupID int64) error {
+func createForwardWithGroup(forward *models.Forward, groupIDs []int64) error {
 	return db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(forward).Error; err != nil {
 			return err
 		}
-		if groupID != 0 {
-			rel := models.ForwardGroupRelation{ForwardID: forward.ID, GroupID: groupID}
-			if err := tx.Create(&rel).Error; err != nil {
-				return err
+		if len(groupIDs) > 0 {
+			relations := make([]models.ForwardGroupRelation, 0, len(groupIDs))
+			for _, gid := range groupIDs {
+				if gid != 0 {
+					relations = append(relations, models.ForwardGroupRelation{ForwardID: forward.ID, GroupID: gid})
+				}
+			}
+			if len(relations) > 0 {
+				if err := tx.Create(&relations).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -247,6 +253,18 @@ func buildForwardListItems(forwards []models.Forward) ([]forwardListItem, error)
 			cname = "-"
 		}
 
+		groupIDs := relMap[forward.ID]
+		groupNames := make([]string, 0, len(groupIDs))
+		primaryGroupID := int64(0)
+		if len(groupIDs) > 0 {
+			primaryGroupID = groupIDs[0]
+			for _, gid := range groupIDs {
+				if name, ok := groupMap[gid]; ok {
+					groupNames = append(groupNames, name)
+				}
+			}
+		}
+
 		item := forwardListItem{
 			ID:              forward.ID,
 			UserID:          forward.UserID,
@@ -255,8 +273,9 @@ func buildForwardListItems(forwards []models.Forward) ([]forwardListItem, error)
 			OriginDisplay:   originDisplay,
 			UserPackageID:   forward.UserPackageID,
 			UserPackageName: pkgMap[forward.UserPackageID],
-			GroupID:         relMap[forward.ID],
-			GroupName:       groupMap[relMap[forward.ID]],
+			GroupID:         primaryGroupID,
+			GroupIDs:        groupIDs,
+			GroupName:       strings.Join(groupNames, ","),
 			NodeGroupID:     forward.NodeGroupID,
 			NodeGroupName:   nodeGroupMap[forward.NodeGroupID],
 			CNAME:           cname,

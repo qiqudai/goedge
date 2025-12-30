@@ -63,10 +63,10 @@ func loadUserPackagesForForward(items []models.Forward) (map[int64]string, error
 	return result, nil
 }
 
-func loadForwardGroups(items []models.Forward) (map[int64]string, map[int64]int64, error) {
+func loadForwardGroups(items []models.Forward) (map[int64]string, map[int64][]int64, error) {
 	ids := uniqueIDsForward(items, func(f models.Forward) int64 { return f.ID })
 	groupMap := map[int64]string{}
-	relMap := map[int64]int64{}
+	relMap := map[int64][]int64{}
 	if len(ids) == 0 {
 		return groupMap, relMap, nil
 	}
@@ -76,7 +76,7 @@ func loadForwardGroups(items []models.Forward) (map[int64]string, map[int64]int6
 	}
 	groupIDs := make([]int64, 0, len(relations))
 	for _, rel := range relations {
-		relMap[rel.ForwardID] = rel.GroupID
+		relMap[rel.ForwardID] = append(relMap[rel.ForwardID], rel.GroupID)
 		groupIDs = append(groupIDs, rel.GroupID)
 	}
 	if len(groupIDs) == 0 {

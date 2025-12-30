@@ -149,7 +149,8 @@ export function useSiteSettings() {
         https_listen: siteSettings.https.enable ? splitStr(siteSettings.https.listenPorts) : [],
         user_package_id: siteSettings.basic.userPackageId || 0,
         group_id: siteSettings.basic.groupId || 0,
-        domains: splitStr(siteSettings.basic.domain)
+        domains: splitStr(siteSettings.basic.domain),
+        backends: siteSettings.origin.list.map(o => o.address).filter(Boolean)
       }
 
       await request.put(`/sites/${siteId.value}`, payload)
@@ -168,6 +169,14 @@ export function useSiteSettings() {
 
   // 监听设置变化自动保存
   watch(siteSettings, (newVal) => {
+    // 同步 basic 和 origin 下的重复字段，确保两边数据一致
+    if (newVal.basic.originList && newVal.basic.originList !== newVal.origin.list) {
+      newVal.origin.list = newVal.basic.originList
+    }
+    if (newVal.basic.originConditions && newVal.basic.originConditions !== newVal.origin.conditions) {
+      newVal.origin.conditions = newVal.basic.originConditions
+    }
+
     // 安全检查逻辑
     if (activeTab.value === 'security') {
       const autoSwitch = newVal.security.cc.autoSwitch
@@ -215,11 +224,25 @@ export function useSiteSettings() {
     siteSettings.basic.httpPorts = (data.http_listen || []).join(' ')
     
     // 源站设置
-    siteSettings.origin.list = (data.backends || []).map(b => ({
-      address: b,
-      weight: 1,
-      enable: true
-    }))
+    if (data.settings?.origin?.list && Array.isArray(data.settings.origin.list)) {
+      siteSettings.origin.list = data.settings.origin.list.map(o => ({
+        address: o.address || '',
+        weight: o.weight || '10',
+        enable: o.enable !== false
+      }))
+    } else {
+      siteSettings.origin.list = (data.backends || []).map(b => ({
+        address: b,
+        weight: '10',
+        enable: true
+      }))
+    }
+
+    if (data.settings?.origin?.conditions && Array.isArray(data.settings.origin.conditions)) {
+      siteSettings.origin.conditions = data.settings.origin.conditions
+    } else {
+      siteSettings.origin.conditions = []
+    }
     
     // HTTPS设置
     siteSettings.https.enable = !!(data.https_listen && data.https_listen.length)

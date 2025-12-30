@@ -65,9 +65,7 @@
 
         <div v-show="expandMore" class="extra-fields">
             <el-form-item label="网站分组">
-                <el-select v-model="form.group_ids" placeholder="选择分组" style="width: 100%" clearable multiple>
-                <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-                </el-select>
+                <SiteGroupSelect v-model="form.group_ids" :user-id="form.user_id" multiple />
             </el-form-item>
             <el-form-item label="DNS API">
                 <el-select v-model="form.dns_provider_id" placeholder="自动添加解析记录 (可选)" style="width: 100%" clearable>
@@ -119,9 +117,7 @@ domain=test.com|ip=2.2.2.2,3.3.3.3
         </el-form-item>
         
         <el-form-item label="网站分组">
-             <el-select v-model="batchForm.group_id" placeholder="选择分组" style="width: 100%" clearable>
-             <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-             </el-select>
+             <SiteGroupSelect v-model="batchForm.group_id" :user-id="batchForm.user_id" />
         </el-form-item>
       </el-form>
     </div>
@@ -138,6 +134,7 @@ import { ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -157,7 +154,6 @@ const batchFormRef = ref(null)
 const users = ref([])
 const userLoading = ref(false)
 const userPackages = ref([])
-const groups = ref([])
 const dnsProviders = ref([])
 
 const form = reactive({
@@ -166,7 +162,8 @@ const form = reactive({
   domains: '',
   origins: '',
   user_package_id: '',
-  group_id: '',
+  group_ids: [],
+  group_id: '', // keep for legacy compatibility if needed
   dns_provider_id: '',
   site_type: 'website',
   remark: ''
@@ -259,27 +256,17 @@ const searchUsers = async (query) => {
 const handleUserChange = async (uid) => {
     if (!uid) {
         userPackages.value = []
-        groups.value = []
         dnsProviders.value = []
         return
     }
     
-    // For admins, we might want to see ALL groups to allow assigning shared groups
-    // For users, we only show their own groups
-    const groupParams = { pageSize: 1000 }
-    if (!props.isAdmin) {
-        groupParams.user_id = uid
-    }
-
-    const [pkgRes, groupRes, dnsRes] = await Promise.all([
+    const [pkgRes, dnsRes] = await Promise.all([
         request.get('/user_packages', { params: { user_id: uid, pageSize: 1000 } }),
-        request.get('/site_groups', { params: groupParams }),
         request.get('/dnsapi', { params: { user_id: uid, pageSize: 1000 } })
     ])
     
     // safe data mapping
     userPackages.value = pkgRes.data?.list || pkgRes.list || []
-    groups.value = groupRes.data?.list || groupRes.list || []
     dnsProviders.value = dnsRes.data?.list || dnsRes.list || []
 
     // 1. Auto-select first package

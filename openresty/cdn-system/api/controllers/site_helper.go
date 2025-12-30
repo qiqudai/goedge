@@ -493,6 +493,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			ListenPorts:     listenPorts,
 			OriginDisplay:   originDisplay,
 			CNAME:           cname,
+			Backends:        site.Backends,
 			HTTPS:           httpsOn,
 			UserPackageID:   site.UserPackageID,
 			UserPackageName: pkg.Name,
@@ -506,7 +507,10 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			RegionName:      regionMap[site.RegionID],
 			Status:          site.Enable,
 			State:           site.State,
+			Settings:        site.Settings,
+			ExpireTime:      pkg.EndAt.Format("2006-01-02"),
 			CreatedAt:       site.CreatedAt,
+			UpdatedAt:       site.UpdatedAt,
 		}
 		if len(item.GroupIDs) > 0 {
 			item.GroupID = item.GroupIDs[0]
