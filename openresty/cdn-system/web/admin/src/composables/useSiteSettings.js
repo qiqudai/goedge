@@ -146,7 +146,7 @@ export function useSiteSettings() {
     if (isInitialized.value) {
       saveSettings()
     }
-  }, 1000)
+  }, 200) // 延迟缩短为 500ms
 
   // 监听并同步
   watch(siteSettings, (newVal) => {
@@ -158,14 +158,23 @@ export function useSiteSettings() {
       newVal.origin.conditions = newVal.basic.originConditions
     }
 
+    // 监听跳转端口变化，确保有效
+    if (newVal.https.listenPorts && newVal.https.enable) {
+      const ports = (newVal.https.listenPorts || '').split(' ').filter(Boolean)
+      if (ports.length > 0 && !ports.includes(newVal.https.forcePort)) {
+        newVal.https.forcePort = ports[0]
+      }
+    }
+
     if (!isInitialized.value) return
     triggerSave()
   }, { deep: true })
 
   // 保存设置
-  const saveSettings = async () => {
+  const saveSettings = async (isAutoSave = false) => {
     if (!siteId.value) return
-    await withLoading(async () => {
+
+    const doSave = async () => {
       try {
         const payload = {
           ids: [siteId.value],
@@ -180,11 +189,24 @@ export function useSiteSettings() {
           backend_protocol: siteSettings.origin.protocol
         }
         await request.put(`/sites/${siteId.value}`, payload)
-        ElMessage.success('配置已保存')
+        if (!isAutoSave) {
+          ElMessage.success('配置已保存')
+        } else {
+          // 自动保存时可以选择不弹窗，或者使用更轻量的提示，这里暂且保留但可考虑 console.log
+          // ElMessage.success({ message: '已自动保存', type: 'success', duration: 1000 }) 
+        }
       } catch (error) {
         ElMessage.error('保存失败: ' + error.message)
       }
-    }, '正在保存配置...')
+    }
+
+    if (isAutoSave) {
+      // 自动保存不显示全屏 loading
+      await doSave()
+    } else {
+      // 手动保存（如果有的话）显示 loading
+      await withLoading(doSave, '正在保存配置...')
+    }
   }
 
   // 初始化方法
@@ -302,6 +324,14 @@ export function useSiteSettings() {
     siteSettings.https.listenPorts = (data.https_listen || []).join(' ')
     siteSettings.https.certId = data.cert_id || null
     
+    // 如果 settings 中有明确配置，则覆盖
+    if (data.settings?.https) {
+      const h = data.settings.https
+      if (h.enable !== undefined) {
+        siteSettings.https.enable = parseBool(h.enable, false)
+      }
+    }
+
     // 基本设置中显示的字段
     siteSettings.basic.cname = data.cname || data.domain_cname || ''
     siteSettings.basic.expireTime = data.expire_time || data.user_plan_expire_time || '-'

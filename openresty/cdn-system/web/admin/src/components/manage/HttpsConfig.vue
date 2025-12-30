@@ -3,7 +3,7 @@
     <div class="section-title">HTTPS证书</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="开关">
-        <el-switch v-model="httpsSettings.enable" />
+        <el-switch v-model="enableSwitch" />
       </el-form-item>
       
       <template v-if="httpsSettings.enable">
@@ -43,7 +43,12 @@
         
         <el-form-item label="跳转端口" v-if="httpsSettings.force" style="width: 320px">
           <el-select v-model="httpsSettings.forcePort" placeholder="443">
-            <el-option label="443" value="443" />
+            <el-option
+              v-for="option in listenPortOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
           <div class="form-helper">如果https监听有多个端口，可以择其一个跳转</div>
         </el-form-item>
@@ -122,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 
 const props = defineProps({
   modelValue: { 
@@ -150,6 +155,26 @@ const localSettings = ref({
   sslPolicy: props.modelValue?.sslPolicy || 'compat',
   sslCiphers: props.modelValue?.sslCiphers || '',
   sslProtocols: props.modelValue?.sslProtocols || ''
+})
+
+const listenPortOptions = computed(() => {
+  return (localSettings.value.listenPorts || '443').split(' ').filter(Boolean).map(port => ({
+    label: port,
+    value: port
+  }))
+})
+
+// 使用计算属性处理 enable 开关的逻辑
+const enableSwitch = computed({
+  get() {
+    return localSettings.value.enable
+  },
+  set(newVal) {
+    if (newVal && !localSettings.value.listenPorts) {
+      localSettings.value.listenPorts = '443'
+    }
+    localSettings.value.enable = newVal
+  }
 })
 
 let isInternalUpdate = false
@@ -183,6 +208,14 @@ watch(() => props.modelValue, (newVal) => {
   }
   isInternalUpdate = false
 }, { deep: true })
+
+// 监听监听端口变化，确保跳转端口有效
+watch(() => localSettings.value.listenPorts, (newPorts) => {
+  const ports = (newPorts || '').split(' ').filter(Boolean)
+  if (ports.length > 0 && !ports.includes(localSettings.value.forcePort)) {
+    localSettings.value.forcePort = ports[0]
+  }
+})
 
 const httpsSettings = localSettings
 

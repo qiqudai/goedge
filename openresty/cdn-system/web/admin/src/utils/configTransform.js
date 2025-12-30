@@ -76,6 +76,7 @@ function buildOriginPayload(originSettings) {
       ...item,
       seconds: item.seconds ? parseInt(item.seconds) : 0
     })),
+    connTimeout: parseInt(originSettings.connTimeout || 10),
     health_check: originSettings.healthCheckEnabled,
     health_host: originSettings.healthCheckHost,
     health_path: originSettings.healthCheckPath,
@@ -91,6 +92,7 @@ function buildOriginPayload(originSettings) {
  */
 function buildHttpsPayload(httpsSettings) {
   return {
+    enable: httpsSettings.enable,
     listen_port: httpsSettings.listenPorts,
     force: httpsSettings.force,
     redirect_port: httpsSettings.forcePort,
