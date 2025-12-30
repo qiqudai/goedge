@@ -3,7 +3,7 @@
     <!-- CC Protection -->
     <div class="section-title">CC 防护</div>
     <el-form label-width="120px" class="config-form">
-      <el-form-item label="默认规则" style="width: 720px">
+      <el-form-item label="默认规则">
         <el-radio-group v-model="securitySettings.cc.mode" @change="handleSave">
           <el-radio 
             v-for="rule in systemRules" 

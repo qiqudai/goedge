@@ -38,17 +38,34 @@ func mustGet(c *gin.Context, key string) interface{} {
 
 type ACLController struct{}
 
-type aclRuleItem struct {
-	IP     string `json:"ip"`
-	Action string `json:"action"`
+type ACLCondition struct {
+	Item     string `json:"item"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+type ACLRule struct {
+	Conditions  []ACLCondition `json:"conditions"`
+	Action      string         `json:"action"`      // allow, deny
+	DenyStatus  int            `json:"deny_status"` // 403
+	RedirectURL string         `json:"redirect_url"`
+}
+
+type ACLData struct {
+	Rules              []ACLRule `json:"rules"`
+	DefaultDenyStatus  int       `json:"default_deny_status"`
+	DefaultRedirectURL string    `json:"default_redirect_url"`
 }
 
 type aclPayload struct {
-	Name          string        `json:"name"`
-	Description   string        `json:"des"`
-	DefaultAction string        `json:"default_action"`
-	Enable        bool          `json:"enable"`
-	Rules         []aclRuleItem `json:"rules"`
+	Name               string    `json:"name"`
+	Description        string    `json:"des"`
+	DefaultAction      string    `json:"default_action"`
+	Enable             bool      `json:"enable"`
+	Rules              []ACLRule `json:"rules"`
+	UserID             int64     `json:"user_id"`
+	DefaultDenyStatus  int       `json:"default_deny_status"`
+	DefaultRedirectURL string    `json:"default_redirect_url"`
 }
 
 func (ctr *ACLController) List(c *gin.Context) {
@@ -86,7 +103,9 @@ func (ctr *ACLController) List(c *gin.Context) {
 	for _, item := range items {
 		list = append(list, gin.H{
 			"id":             item.ID,
-			"user":           userMap[item.UserID],
+			"user_id":        item.UserID,
+			"uid":            item.UserID,
+			"user":           gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":           item.Name,
 			"des":            item.Description,
 			"default_action": item.DefaultAction,
@@ -117,31 +136,43 @@ func (ctr *ACLController) Get(c *gin.Context) {
 		}
 	}
 
-	rules := parseACLRuleItems(item.Data)
+	rules, denyStatus, redirectURL := parseACLData(item.Data)
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"id":             item.ID,
-			"name":           item.Name,
-			"des":            item.Description,
-			"default_action": item.DefaultAction,
-			"enable":         item.Enable,
-			"rules":          rules,
+			"id":                   item.ID,
+			"user_id":              item.UserID,
+			"name":                 item.Name,
+			"des":                  item.Description,
+			"default_action":       item.DefaultAction,
+			"enable":               item.Enable,
+			"rules":                rules,
+			"default_deny_status":  denyStatus,
+			"default_redirect_url": redirectURL,
 		},
 	})
 }
 
 func (ctr *ACLController) Create(c *gin.Context) {
-	uid := parseInt64(mustGet(c, "userID"))
-	if isUserRequest(c) && uid == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
-		return
+	uid := int64(0)
+	if isUserRequest(c) {
+		uid = parseInt64(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+			return
+		}
 	}
+	
 	var req aclPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+	
+	if !isUserRequest(c) && req.UserID > 0 {
+		uid = req.UserID
+	}
+
 	if strings.TrimSpace(req.Name) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
 		return
@@ -149,7 +180,14 @@ func (ctr *ACLController) Create(c *gin.Context) {
 	if req.DefaultAction == "" {
 		req.DefaultAction = "allow"
 	}
-	b, _ := json.Marshal(req.Rules)
+	
+	dataObj := ACLData{
+		Rules:              req.Rules,
+		DefaultDenyStatus:  req.DefaultDenyStatus,
+		DefaultRedirectURL: req.DefaultRedirectURL,
+	}
+	b, _ := json.Marshal(dataObj)
+	
 	item := models.ACL{
 		UserID:        uid,
 		Name:          req.Name,
@@ -176,15 +214,17 @@ func (ctr *ACLController) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	
+	var item models.ACL
+	if err := db.DB.Where("id = ?", id).First(&item).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "acl not found"})
+		return
+	}
+
 	if isUserRequest(c) {
 		uid := parseInt64(mustGet(c, "userID"))
 		if uid == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
-			return
-		}
-		var item models.ACL
-		if err := db.DB.Where("id = ?", id).First(&item).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "acl not found"})
 			return
 		}
 		if item.UserID != uid {
@@ -192,24 +232,35 @@ func (ctr *ACLController) Update(c *gin.Context) {
 			return
 		}
 	}
+	
 	var req aclPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+	if !isUserRequest(c) && req.UserID > 0 {
+		item.UserID = req.UserID
+	}
+	
 	if req.DefaultAction == "" {
 		req.DefaultAction = "allow"
 	}
-	b, _ := json.Marshal(req.Rules)
-	updates := map[string]interface{}{
-		"name":           req.Name,
-		"des":            req.Description,
-		"default_action": req.DefaultAction,
-		"enable":         req.Enable,
-		"data":           string(b),
-		"update_at":      time.Now(),
+	
+	dataObj := ACLData{
+		Rules:              req.Rules,
+		DefaultDenyStatus:  req.DefaultDenyStatus,
+		DefaultRedirectURL: req.DefaultRedirectURL,
 	}
-	if err := db.DB.Model(&models.ACL{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	b, _ := json.Marshal(dataObj)
+	
+	item.Name = req.Name
+	item.Description = req.Description
+	item.DefaultAction = req.DefaultAction
+	item.Enable = req.Enable
+	item.Data = string(b)
+	item.UpdatedAt = time.Now()
+
+	if err := db.DB.Save(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
 		return
 	}
@@ -251,15 +302,22 @@ func (ctr *ACLController) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "deleted"})
 }
 
-func parseACLRuleItems(raw string) []aclRuleItem {
+func parseACLData(raw string) ([]ACLRule, int, string) {
 	if strings.TrimSpace(raw) == "" {
-		return []aclRuleItem{}
+		return []ACLRule{}, 0, ""
 	}
-	var items []aclRuleItem
+	// Try parsing as ACLData struct
+	var data ACLData
+	if err := json.Unmarshal([]byte(raw), &data); err == nil {
+		return data.Rules, data.DefaultDenyStatus, data.DefaultRedirectURL
+	}
+	
+	// Legacy or simple list fallback
+	var items []ACLRule
 	if err := json.Unmarshal([]byte(raw), &items); err == nil {
-		return items
+		return items, 0, ""
 	}
-	return []aclRuleItem{}
+	return []ACLRule{}, 0, ""
 }
 
 func uniqueACLUserIDs(items []models.ACL) []int64 {

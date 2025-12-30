@@ -193,4 +193,14 @@ onMounted(() => {
 .manage-tabs {
   margin-bottom: 20px;
 }
+
+:deep(.form-helper) {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  color: #909399;
+  font-size: 13px;
+  line-height: 1.5;
+  clear: both;
+}
 </style>
