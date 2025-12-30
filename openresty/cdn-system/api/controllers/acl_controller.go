@@ -260,7 +260,7 @@ func (ctr *ACLController) Update(c *gin.Context) {
 	item.Data = string(b)
 	item.UpdatedAt = time.Now()
 
-	if err := db.DB.Save(&item).Error; err != nil {
+	if err := db.DB.Omit("CreatedAt").Save(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
 		return
 	}

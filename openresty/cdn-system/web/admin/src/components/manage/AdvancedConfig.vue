@@ -4,7 +4,7 @@
       <div class="section-title">上传大小限制</div>
       <el-form-item label="大小限制">
         <div style="display: flex; align-items: center; gap: 10px;">
-          <el-radio-group v-model="advancedSettings.uploadLimitMode">
+          <el-radio-group v-model="advancedSettings.uploadLimitMode" @change="handleSave">
             <el-radio value="none">不限制</el-radio>
             <el-radio value="custom">自定义</el-radio>
           </el-radio-group>
@@ -13,6 +13,7 @@
             v-model="advancedSettings.uploadLimitValue" 
             style="width: 150px" 
             placeholder="100"
+            @change="handleSave"
           >
             <template #append>MB</template>
           </el-input>
@@ -22,24 +23,24 @@
       <div class="divider"></div>
       <div class="section-title">压缩设置</div>
       <el-form-item label="Gzip压缩">
-        <el-switch v-model="advancedSettings.gzip" />
+        <el-switch v-model="advancedSettings.gzip" @change="handleSave" />
       </el-form-item>
 
       <div class="divider"></div>
 
       <div class="section-title">Websocket设置</div>
       <el-form-item label="Websocket">
-        <el-switch v-model="advancedSettings.websocket" />
+        <el-switch v-model="advancedSettings.websocket" @change="handleSave" />
       </el-form-item>
 
       <div class="divider"></div>
 
       <div class="section-title">搜索引擎回源配置</div>
       <el-form-item label="开关">
-        <el-switch v-model="advancedSettings.searchEngineOrigin" />
+        <el-switch v-model="advancedSettings.searchEngineOrigin" @change="handleSave" />
       </el-form-item>
       <el-form-item label="回源IP" v-if="advancedSettings.searchEngineOrigin">
-        <el-input v-model="advancedSettings.searchEngineOriginIp" placeholder="请输入源IP" style="width: 200px;" />
+        <el-input v-model="advancedSettings.searchEngineOriginIp" placeholder="请输入源IP" style="width: 200px;" @change="handleSave" />
         <div class="form-helper" style="color: #F56C6C;">谨慎使用，有泄露源IP的风险!</div>
       </el-form-item>
 
@@ -95,19 +96,19 @@
       
       <div class="section-title">访问日志</div>
       <el-form-item label="记录请求头">
-        <el-switch v-model="advancedSettings.logRequestHeader" />
+        <el-switch v-model="advancedSettings.logRequestHeader" @change="handleSave" />
         <div class="form-helper">开启只会增加硬盘空间占用，可长期开启</div>
       </el-form-item>
       <el-form-item label="记录响应头">
-        <el-switch v-model="advancedSettings.logResponseHeader" />
+        <el-switch v-model="advancedSettings.logResponseHeader" @change="handleSave" />
         <div class="form-helper">建议只在调试时开启，始终开启会增加cpu, 硬盘的占用</div>
       </el-form-item>
       <el-form-item label="记录请求体">
-        <el-switch v-model="advancedSettings.logRequestBody" />
+        <el-switch v-model="advancedSettings.logRequestBody" @change="handleSave" />
         <div class="form-helper">建议只在调试时开启，始终开启对节点性能消耗较大</div>
       </el-form-item>
       <el-form-item label="请求体大小限制">
-        <el-input v-model="advancedSettings.logRequestBodySizeLimit" placeholder="16" style="width: 200px;">
+        <el-input v-model="advancedSettings.logRequestBodySizeLimit" placeholder="16" style="width: 200px;" @change="handleSave">
           <template #append>KB</template>
         </el-input>
       </el-form-item>
@@ -119,30 +120,30 @@
       <div class="section-title">其它</div>
       <el-form-item label="源站证书">
         <div>
-          <el-switch v-model="advancedSettings.originCert" />
+          <el-switch v-model="advancedSettings.originCert" @change="handleSave" />
           <div class="form-helper">用于回源连接（HTTPS）验证源站证书</div>
         </div>
       </el-form-item>
       <el-form-item label="数据实时鉴别">
         <div>
-          <el-switch v-model="advancedSettings.realtimeIdentify" />
+          <el-switch v-model="advancedSettings.realtimeIdentify" @change="handleSave" />
           <div class="form-helper">开启后，节点一收到源返回的数据，立即发送到用户。</div>
         </div>
       </el-form-item>
       <el-form-item label="数据实时发送">
         <div>
-          <el-switch v-model="advancedSettings.realtimeSend" />
+          <el-switch v-model="advancedSettings.realtimeSend" @change="handleSave" />
           <div class="form-helper">开启后，节点一收到用户发来的数据就会立即发送给源服务器。</div>
         </div>
       </el-form-item>
       <el-form-item label="默认站点">
         <div>
-          <el-switch v-model="advancedSettings.defaultSite" />
+          <el-switch v-model="advancedSettings.defaultSite" @change="handleSave" />
           <div class="form-helper">开启后，不属于cdn上的域名将会使用这个站点；另外如果要使用IP证书，也请开启这个选项</div>
         </div>
       </el-form-item>
       <el-form-item label="L2配置">
-        <el-radio-group v-model="advancedSettings.l2Config">
+        <el-radio-group v-model="advancedSettings.l2Config" @change="handleSave">
           <el-radio value="current">当前套餐配置</el-radio>
           <el-radio value="none">不配置L2</el-radio>
           <el-radio value="custom">自定义L2配置</el-radio>
@@ -165,6 +166,10 @@ import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 
 const { saveSettings } = useSiteSettings()
+
+const handleSave = () => {
+  saveSettings(true)
+}
 
 const props = defineProps({
   modelValue: { 
@@ -209,7 +214,6 @@ watch(localSettings, (newVal) => {
     ...props.modelValue,
     ...newVal
   })
-  saveSettings(true)
 }, { deep: true })
 
 // 监听外部更新
@@ -277,6 +281,8 @@ const handleRedirectSubmit = (ruleData) => {
   // 重置状态
   editingRedirectRule.value = null
   editingRedirectIndex.value = -1
+
+  handleSave()
 }
 
 const removeRedirect = (index) => {
@@ -286,6 +292,7 @@ const removeRedirect = (index) => {
     ...advancedSettings.value,
     urlRedirects
   }
+  handleSave()
 }
 
 const openHeaderDialog = (type, rule = null, index = -1) => {

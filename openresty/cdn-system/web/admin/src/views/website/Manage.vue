@@ -146,6 +146,7 @@ const saveCacheRule = (newRule) => {
   } else {
     siteSettings.cache.rules.push(rule)
   }
+  saveSettings(true)
 }
 
 // 请求头相关方法
@@ -166,6 +167,7 @@ const saveHeader = (newRule) => {
   } else {
     list.push(newRule)
   }
+  saveSettings(true)
 }
 
 const removeHeader = (type, index) => {
@@ -173,6 +175,7 @@ const removeHeader = (type, index) => {
     ? siteSettings.advanced.reqHeaders 
     : siteSettings.advanced.resHeaders
   list.splice(index, 1)
+  saveSettings(true)
 }
 
 // 初始化

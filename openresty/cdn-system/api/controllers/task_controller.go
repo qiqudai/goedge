@@ -401,7 +401,7 @@ func saveUserPurgeUsage(userID int64, usage purgeUsage) error {
 	}
 	cfg.Value = string(raw)
 	cfg.UpdatedAt = time.Now()
-	return db.DB.Save(&cfg).Error
+	return db.DB.Omit("CreatedAt").Save(&cfg).Error
 }
 
 func consumePurgeQuota(userID int64, taskType string, count int) error {

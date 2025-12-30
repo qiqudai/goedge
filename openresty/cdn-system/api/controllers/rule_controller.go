@@ -209,7 +209,7 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 	ccRule.Sort = req.SortOrder
 	ccRule.UpdatedAt = time.Now()
 
-	if err := db.DB.Save(&ccRule).Error; err != nil {
+	if err := db.DB.Omit("CreatedAt").Save(&ccRule).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
 		return
 	}
@@ -446,11 +446,8 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 	matcher.Data = string(dataBytes)
 	matcher.Enable = req.IsOn
 	matcher.UpdatedAt = time.Now()
-	if matcher.CreatedAt.IsZero() {
-		matcher.CreatedAt = time.Now()
-	}
 
-	if err := db.DB.Save(&matcher).Error; err != nil {
+	if err := db.DB.Omit("CreatedAt").Save(&matcher).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update matcher"})
 		return
 	}
@@ -699,11 +696,8 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 		filter.Internal = false
 	}
 	filter.UpdatedAt = time.Now()
-	if filter.CreatedAt.IsZero() {
-		filter.CreatedAt = time.Now()
-	}
 
-	if err := db.DB.Save(&filter).Error; err != nil {
+	if err := db.DB.Omit("CreatedAt").Save(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update filter"})
 		return
 	}

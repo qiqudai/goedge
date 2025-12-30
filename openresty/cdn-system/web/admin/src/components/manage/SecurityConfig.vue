@@ -4,7 +4,7 @@
     <div class="section-title">CC 防护</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="默认规则">
-        <el-radio-group v-model="securitySettings.cc.mode" @change="handleSave">
+        <el-radio-group v-model="computedMode">
           <el-radio 
             v-for="rule in systemRules" 
             :key="rule.id" 
@@ -12,7 +12,27 @@
           >
             {{ rule.name }}
           </el-radio>
+          <el-radio value="custom">自定义</el-radio>
         </el-radio-group>
+        
+        <el-select 
+          v-if="computedMode === 'custom' && userRules.length > 0"
+          v-model="securitySettings.cc.mode"
+          placeholder="请选择自定义规则"
+          size="small"
+          style="margin-left: 10px; width: 160px;"
+          @change="handleSave"
+        >
+          <el-option
+            v-for="rule in userRules"
+            :key="rule.id"
+            :label="rule.name"
+            :value="rule.id"
+          />
+        </el-select>
+        <span v-if="computedMode === 'custom' && userRules.length === 0" style="margin-left: 10px; color: #909399; font-size: 13px;">
+          (暂无自定义规则)
+        </span>
         <div class="form-helper">不同模式对应不同的防御级别</div>
       </el-form-item>
       
@@ -312,7 +332,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, reactive } from 'vue'
+import { ref, watch, onMounted, reactive, computed } from 'vue'
 import CountrySelector from '@/components/CountrySelector.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 import request from '@/utils/request'
@@ -348,16 +368,50 @@ const securitySettings = siteSettings.security // Helper ref
 
 // System Rules
 const systemRules = ref([])
+const userRules = ref([])
 const fetchSystemRules = async () => {
   try {
     const { data } = await request.get('/rules/cc/groups')
     if (data.list) {
       systemRules.value = data.list.filter(item => item.is_system)
+      userRules.value = data.list.filter(item => !item.is_system)
     }
   } catch (err) {
     console.error('Failed to fetch system rules', err)
   }
 }
+
+const computedMode = computed({
+  get: () => {
+    // If the current mode ID exists in systemRules, return it (selects that radio)
+    const currentId = securitySettings.cc.mode
+    if (systemRules.value.some(r => r.id === currentId)) {
+      return currentId
+    }
+    // Otherwise it's custom (or invalid/legacy)
+    return 'custom'
+  },
+  set: (val) => {
+    if (val === 'custom') {
+      // If switching to custom, default to first user rule if current isn't one
+      if (userRules.value.length > 0) {
+        // Only change if not currently pointing to a valid user rule
+        const currentIsUser = userRules.value.some(r => r.id === securitySettings.cc.mode)
+        if (!currentIsUser) {
+           securitySettings.cc.mode = userRules.value[0].id
+           handleSave()
+        }
+      } else {
+        // No user rules? We can't really set a valid ID. Maybe keep current or prompt?
+        // Logic: allow selecting 'custom' radio even if empty, UI shows "No rules"
+      }
+    } else {
+      // System rule ID selected
+      securitySettings.cc.mode = val
+      handleSave()
+    }
+  }
+})
 
 // Auto Switch QPS Logic
 const qpsSelection = ref(200)

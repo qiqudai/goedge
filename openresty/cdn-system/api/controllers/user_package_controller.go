@@ -347,7 +347,7 @@ func saveUserPackageBoolConfig(userPackageID int64, name string, value bool) err
 		cfg.Value = val
 		cfg.Enable = true
 		cfg.UpdatedAt = time.Now()
-		return db.DB.Save(&cfg).Error
+		return db.DB.Omit("CreatedAt").Save(&cfg).Error
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
