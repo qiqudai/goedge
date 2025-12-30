@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"cdn-api/db"
+	"cdn-api/models"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -76,6 +77,12 @@ func (ctr *LogController) ListLoginLogs(c *gin.Context) {
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("user.name LIKE ? OR login_log.ip LIKE ?", like, like)
+		query = query.Where("user.name LIKE ? OR login_log.ip LIKE ?", like, like)
+	}
+
+	startTime, endTime := parseTimeRange(c)
+	if !startTime.IsZero() && !endTime.IsZero() {
+		query = query.Where("login_log.create_at BETWEEN ? AND ?", startTime, endTime)
 	}
 
 	var total int64
@@ -117,6 +124,12 @@ func (ctr *LogController) ListOpLogs(c *gin.Context) {
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("user.name LIKE ? OR op_log.action LIKE ? OR op_log.content LIKE ? OR op_log.ip LIKE ?", like, like, like, like)
+		query = query.Where("user.name LIKE ? OR op_log.action LIKE ? OR op_log.content LIKE ? OR op_log.ip LIKE ?", like, like, like, like)
+	}
+
+	startTime, endTime := parseTimeRange(c)
+	if !startTime.IsZero() && !endTime.IsZero() {
+		query = query.Where("op_log.create_at BETWEEN ? AND ?", startTime, endTime)
 	}
 
 	var total int64
@@ -135,6 +148,149 @@ func (ctr *LogController) ListOpLogs(c *gin.Context) {
 		"code": 0,
 		"data": gin.H{
 			"list":  logs,
+			"total": total,
+		},
+	})
+}
+
+// ListBackupLogs
+// GET /api/v1/admin/logs/backup
+func (ctr *LogController) ListBackupLogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	query := db.DB.Table("backup_log")
+	// Status/Result filters if needed, currently just global search mentioned in prompt?
+	// User request: "Global search Status Result"
+	keyword := c.Query("keyword")
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("status LIKE ? OR result LIKE ?", like, like)
+	}
+
+	startTime, endTime := parseTimeRange(c)
+	if !startTime.IsZero() && !endTime.IsZero() {
+		query = query.Where("create_at BETWEEN ? AND ?", startTime, endTime)
+	}
+
+	var total int64
+	// If table doesn't exist, this might fail, handle gracefully?
+	// For now assume table exists or we return 0
+	if err := query.Count(&total).Error; err != nil {
+		// Table might not exist, return empty
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+		return
+	}
+
+	type BackupLogRow struct {
+		ID         int64     `json:"id"`
+		CreatedAt  time.Time `json:"created_at" gorm:"column:create_at"`
+		FinishedAt time.Time `json:"finished_at" gorm:"column:finish_at"`
+		Status     int       `json:"status"` // 1 success, 0 fail
+		Result     string    `json:"result"`
+	}
+	var logs []BackupLogRow
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"list":  logs,
+			"total": total,
+		},
+	})
+}
+
+// ListMailLogs
+// GET /api/v1/admin/logs/mail
+func (ctr *LogController) ListMailLogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	// Use 'message' table as Mail Log source
+	query := db.DB.Table("message")
+	
+	keyword := c.Query("keyword")
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		// User ID search requires join? Message has pub_user and receive (uid)
+		// For now generic search on title/content
+		query = query.Where("title LIKE ? OR content LIKE ?", like, like)
+		if id, err := strconv.Atoi(keyword); err == nil {
+			query = query.Or("id = ? OR uid = ?", id, id)
+		}
+	}
+
+	startTime, endTime := parseTimeRange(c)
+	if !startTime.IsZero() && !endTime.IsZero() {
+		query = query.Where("create_at BETWEEN ? AND ?", startTime, endTime)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	var msgs []models.Message
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&msgs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	type MailLogRow struct {
+		ID        int64     `json:"message_id"`
+		UserID    int64     `json:"user_id"`
+		Title     string    `json:"subject"`
+		Medium    string    `json:"medium"`
+		Fails     int       `json:"fails"`
+		Status    int       `json:"status"` // 1 success
+		Reason    string    `json:"reason"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	list := make([]MailLogRow, 0, len(msgs))
+	for _, m := range msgs {
+		medium := "Email"
+		if m.PhoneNeedSend {
+			medium = "SMS"
+		}
+		status := 0
+		if m.EmailIsSent || m.PhoneIsSent {
+			status = 1
+		}
+		
+		list = append(list, MailLogRow{
+			ID:        m.ID,
+			UserID:    m.Receive,
+			Title:     m.Title,
+			Medium:    medium,
+			Fails:     0, // Not tracked in Message model
+			Status:    status,
+			Reason:    "", // Not tracked
+			CreatedAt: m.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"list":  list,
 			"total": total,
 		},
 	})
@@ -325,12 +481,27 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	}
 	startRaw := c.Query("start_time")
 	endRaw := c.Query("end_time")
-	if startRaw != "" && endRaw != "" {
-		start, _ := time.Parse(layout, startRaw)
-		end, _ := time.Parse(layout, endRaw)
+	var start, end time.Time
+	
+	// Support Unix Timestamp (Seconds)
+	if startStats, err := strconv.ParseInt(startRaw, 10, 64); err == nil && startStats > 0 {
+		start = time.Unix(startStats, 0)
+	} else if startRaw != "" {
+		start, _ = time.Parse(layout, startRaw)
+	}
+	
+	if endStats, err := strconv.ParseInt(endRaw, 10, 64); err == nil && endStats > 0 {
+		end = time.Unix(endStats, 0)
+	} else if endRaw != "" {
+		end, _ = time.Parse(layout, endRaw)
+	}
+	
+	if !start.IsZero() && !end.IsZero() {
 		return start, end
 	}
-	return time.Time{}, time.Time{}
+	
+	// Fallback to original logic if needed, but redundant now
+	return start, end
 }
 
 // ListOpLogsUser

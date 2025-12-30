@@ -99,7 +99,7 @@
     <div class="form-helper" style="padding-left: 20px;">
       <div>1. 自定义规则优先匹配，之后才是上面的默认防护;</div>
       <div>2. 像API请求的放行可以使用此处的自定义规则;</div>
-      <div>3. 规则是从上到下匹配，可拖动规则调整顺序(暂不支持拖动，请按添加顺序)。</div>
+      <div>3. 规则是从上到下匹配，可拖动规则调整顺序。</div>
     </div>
 
     <div class="divider"></div>

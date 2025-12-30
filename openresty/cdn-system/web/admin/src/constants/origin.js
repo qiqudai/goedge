@@ -27,8 +27,8 @@ export const originConditionOperators = [
   { label: '正则不匹配', value: 'not_regex' },
   { label: '存在', value: 'exists' },
   { label: '不存在', value: 'not_exists' },
-  { label: '在 IP 段', value: 'in_ip' },
-  { label: '不在 IP 段', value: 'not_in_ip' }
+  { label: '在IP段', value: 'ip_range' },
+  { label: '不在IP段', value: 'not_ip_range' }
 ];
 
 export const cacheTypeLabelMap = {

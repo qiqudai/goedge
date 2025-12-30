@@ -110,13 +110,19 @@
                  <el-switch v-model="row.is_on" size="small" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="60" align="center">
+            <el-table-column label="操作" width="130" align="center">
               <template #default="{$index}">
+                <el-button link type="primary" size="small" @click="moveRule($index, -1)" :disabled="$index === 0">
+                  <el-icon><ArrowUp /></el-icon>
+                </el-button>
+                <el-button link type="primary" size="small" @click="moveRule($index, 1)" :disabled="$index === form.rules.length - 1">
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
                 <el-button link type="danger" size="small" @click="removeRule($index)">移除</el-button>
               </template>
             </el-table-column>
           </el-table>
-          <div class="form-helper">规则从上往下匹配，可拖动规则来调整顺序。</div>
+          <div class="form-helper">规则从上往下匹配，可使用按钮来调整顺序。</div>
         </div>
       </el-form-item>
 
@@ -363,6 +369,14 @@ const addRule = () => {
 }
 
 const removeRule = (idx) => form.rules.splice(idx, 1)
+
+const moveRule = (index, direction) => {
+  const newIndex = index + direction
+  if (newIndex < 0 || newIndex >= form.rules.length) return
+  const temp = form.rules[index]
+  form.rules[index] = form.rules[newIndex]
+  form.rules[newIndex] = temp
+}
 
 const getMatcherName = (id) => matchers.value.find(m => m.id === id)?.name || id
 const getFilterName = (id) => filters.value.find(f => f.id === id)?.name || id

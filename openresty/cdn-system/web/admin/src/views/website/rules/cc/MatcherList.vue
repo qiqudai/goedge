@@ -82,8 +82,16 @@
              <el-table-column label="匹配值">
                 <template #default="{row}">{{ row.value }}</template>
              </el-table-column>
-             <el-table-column label="操作" width="60" align="center">
-                <template #default="{$index}"><el-button link type="danger" @click="removeRow($index)">移除</el-button></template>
+             <el-table-column label="操作" width="130" align="center">
+                <template #default="{$index}">
+                   <el-button link type="primary" size="small" @click="moveRule($index, -1)" :disabled="$index === 0">
+                     <el-icon><ArrowUp /></el-icon>
+                   </el-button>
+                   <el-button link type="primary" size="small" @click="moveRule($index, 1)" :disabled="$index === form.rules.length - 1">
+                     <el-icon><ArrowDown /></el-icon>
+                   </el-button>
+                   <el-button link type="danger" @click="removeRow($index)">移除</el-button>
+                </template>
              </el-table-column>
           </el-table>
           
@@ -97,7 +105,7 @@
             <el-input v-model="newRule.value" size="small" placeholder="输入匹配值(可为空)" style="flex: 1;" />
             <el-button type="primary" link size="small" @click="addRow">添加</el-button>
           </div>
-          <div class="form-helper">规则从上往下匹配，可拖动规则来调整顺序。</div>
+          <div class="form-helper">规则从上往下匹配，可使用按钮来调整顺序。</div>
           <div class="form-helper" v-if="newRule.item === 'header'">多个匹配条件的关系为且，即所有条件都满足时才执行下面的过滤</div>
        </el-form-item>
        
@@ -113,8 +121,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Search, Check, Close, ArrowDown } from '@element-plus/icons-vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { Search, Check, Close, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 
@@ -226,6 +234,14 @@ const addRow = () => {
 }
 
 const removeRow = (idx) => form.rules.splice(idx, 1)
+
+const moveRule = (index, direction) => {
+  const newIndex = index + direction
+  if (newIndex < 0 || newIndex >= form.rules.length) return
+  const temp = form.rules[index]
+  form.rules[index] = form.rules[newIndex]
+  form.rules[newIndex] = temp
+}
 
 const submitForm = async () => {
     try {

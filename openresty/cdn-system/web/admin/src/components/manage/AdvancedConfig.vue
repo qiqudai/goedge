@@ -162,6 +162,9 @@
 <script setup>
 import { ref, watch } from 'vue'
 import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
+import { useSiteSettings } from '@/composables/useSiteSettings'
+
+const { saveSettings } = useSiteSettings()
 
 const props = defineProps({
   modelValue: { 
@@ -206,6 +209,7 @@ watch(localSettings, (newVal) => {
     ...props.modelValue,
     ...newVal
   })
+  saveSettings(true)
 }, { deep: true })
 
 // 监听外部更新

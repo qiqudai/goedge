@@ -62,6 +62,11 @@
     >
       <el-table-column type="selection" width="55" align="center" />
       <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column v-if="isAdmin" prop="user" label="用户" width="120">
+        <template #default="{row}">
+          {{ row.user?.username || row.user_id }}
+        </template>
+      </el-table-column>
       <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
       <el-table-column prop="type" label="类型" width="120" />
       <el-table-column prop="domain" label="域名" min-width="200" show-overflow-tooltip />
@@ -103,6 +108,19 @@
       <el-tabs v-model="dialogTab" type="card">
         <el-tab-pane label="单个" name="single">
           <el-form :model="form" label-width="90px">
+            <el-form-item label="用户" v-if="isAdmin">
+              <el-select
+                v-model="form.user_id"
+                filterable
+                remote
+                clearable
+                placeholder="搜索用户ID或账号"
+                :remote-method="loadUsers"
+                :loading="userLoading"
+                style="width: 100%">
+                <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="名称">
               <el-input v-model="form.name" placeholder="输入证书名称" />
             </el-form-item>
@@ -127,7 +145,7 @@
             <el-form-item v-if="form.type !== 'upload'" label="域名">
               <el-input v-model="form.domain" placeholder="输入域名, 多个域名空格分隔" />
             </el-form-item>
-            <el-form-item v-if="form.type !== 'upload'" label="DNS API">
+            <el-form-item label="DNS API" v-if="form.type !== 'upload'">
               <el-select v-model="form.dnsapi" clearable placeholder="请选择" style="width: 100%;">
               <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
               </el-select>
@@ -135,9 +153,7 @@
                 这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
               </div>
             </el-form-item>
-            <el-form-item label="自动续签">
-              <el-switch v-model="form.auto_renew" />
-            </el-form-item>
+            <!-- Auto Renew removed as requested -->
           </el-form>
         </el-tab-pane>
 
@@ -162,9 +178,7 @@
                 这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
               </div>
             </el-form-item>
-            <el-form-item label="自动续签">
-              <el-switch v-model="batchForm.auto_renew" />
-            </el-form-item>
+             <!-- Auto Renew removed as requested -->
           </el-form>
         </el-tab-pane>
       </el-tabs>
@@ -329,13 +343,14 @@ const form = reactive({
   dnsapi: '',
   cert: '',
   key: '',
-  auto_renew: false
+  // auto_renew: true // Default true implicit
+  user_id: null
 })
 const batchForm = reactive({
   type: 'zerossl',
   domains: '',
   dnsapi: '',
-  auto_renew: true
+  // auto_renew: true
 })
 
 const dialogTitle = computed(() => (editingId.value ? '编辑证书' : '添加证书'))

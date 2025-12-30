@@ -80,6 +80,8 @@ func Setup(r *gin.Engine) {
 			admin.GET("/logs/login", logCtr.ListLoginLogs)
 			admin.GET("/logs/operation", logCtr.ListOpLogs)
 			admin.GET("/logs/access", logCtr.ListAccessLogs)
+			admin.GET("/logs/backup", logCtr.ListBackupLogs)
+			admin.GET("/logs/mail", logCtr.ListMailLogs)
 
 			blockLogCtr := &controllers.BlockLogController{}
 			admin.GET("/logs/block/current", blockLogCtr.ListCurrent)
