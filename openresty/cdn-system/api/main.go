@@ -6,10 +6,8 @@ package main
 import (
 	"cdn-api/config"
 	"cdn-api/db"
-	"cdn-api/models"
 	"cdn-api/routers"
 	"cdn-api/services"
-	"cdn-api/utils"
 	"log"
 	"time"
 
@@ -23,216 +21,6 @@ func main() {
 	// 2. Connect Database (MySQL)
 	db.Init()
 	db.InitClickHouse()
-	dropForeignKey := func(table, fk string) {
-		var count int64
-		if err := db.DB.Raw(
-			"SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'",
-			table, fk,
-		).Scan(&count).Error; err != nil {
-			log.Printf("Failed to check foreign key %s on %s: %v", fk, table, err)
-			return
-		}
-		if count == 0 {
-			return
-		}
-		sql := "ALTER TABLE `" + table + "` DROP FOREIGN KEY `" + fk + "`"
-		if err := db.DB.Exec(sql).Error; err != nil {
-			log.Printf("Failed to drop foreign key %s on %s: %v", fk, table, err)
-		} else {
-			log.Printf("Dropped foreign key %s on %s", fk, table)
-		}
-	}
-	dropForeignKey("node", "region_ibfk_1")
-	dropForeignKey("site", "region_ibfk_4")
-	dropForeignKey("stream", "region_ibfk_2")
-	dropForeignKey("stream", "node_group_ibfk_1")
-	dropForeignKey("stream", "stream_ibfk_1")
-	dropForeignKey("stream", "stream_ibfk_2")
-	dropForeignKey("stream", "stream_ibfk_3")
-	dropForeignKey("merge_stream_group", "merge_stream_group_ibfk_1")
-	dropForeignKey("merge_stream_group", "merge_stream_group_ibfk_2")
-	dropForeignKey("cc_match", "user_ibfk_7") // Fix: system matches with uid=0
-	dropForeignKey("cert", "user_ibfk_4")     // Fix: system certs with uid=0
-	dropForeignKey("cc_match", "task_ibfk_6") // Fix: system matches with task_id=0
-	dropForeignKey("cc_rule", "user_ibfk_6")  // Fix: system rules with uid=0
-	dropForeignKey("cc_rule", "task_ibfk_8")  // Fix: system rules with task_id=0
-	dropForeignKey("cc_filter", "user_ibfk_8") // Fix: system filters with uid=0
-	dropForeignKey("cc_filter", "task_ibfk_7") // Fix: Speculative system filters with task_id=0 (Pattern: match=6, rule=8)
-	dropForeignKey("cc_filter", "task_ibfk_9") // Fix: Speculative backup
-	// Auto Migrate
-	db.DB.AutoMigrate(
-		&models.Node{},
-		&models.SysConfig{},
-		&models.Cert{},
-		// &models.Plan{}, // Deprecated? Check Package
-		&models.Package{},
-		&models.UserPackage{},
-		&models.User{},
-		// &models.Domain{}, // Deprecated -> Site
-		&models.Site{},
-		&models.SiteGroup{},
-		&models.SiteGroupRelation{},
-		// &models.DomainOrigin{}, // Deprecated
-		// &models.NodeIP{}, // Deprecated
-		&models.NodeGroup{},
-		&models.DNSAPI{},
-		&models.DNSProvider{}, // Check if exists
-		&models.UserLoginLog{},
-		&models.UserOperationLog{},
-		&models.CnameDomain{}, // Check if exists
-		&models.CCRule{},
-		&models.CCMatch{},
-		&models.CCFilter{},
-		&models.ACL{},
-		&models.Order{},
-		&models.APIKey{},
-		&models.Message{},
-		&models.MessageRead{},
-		&models.MessageSub{},
-		&models.Forward{},
-		&models.ForwardGroup{},
-		&models.ForwardGroupRelation{},
-		&models.Task{},
-	)
-
-	// Custom Migration Fixes
-	migrator := db.DB.Migrator()
-	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
-		migrator.AddColumn(&models.Site{}, "DNSProviderID")
-		log.Println("Added missing column: dns_provider_id")
-	}
-	// Note: HasColumn checks against DB column name usually, but GORM maps field names too.
-	// Use explicit DB names for check, Struct field names for Add.
-	if !migrator.HasColumn(&models.Site{}, "settings") {
-		err := migrator.AddColumn(&models.Site{}, "SettingsRaw")
-		if err != nil {
-			log.Printf("Error adding settings column: %v", err)
-		} else {
-			log.Println("Added missing column: settings")
-		}
-	}
-	if !migrator.HasColumn(&models.Site{}, "cname_hostname2") {
-		migrator.AddColumn(&models.Site{}, "CnameHostname2")
-		log.Println("Added missing column: cname_hostname2")
-	}
-
-	// Migration for DNS Async Task fields
-	if !migrator.HasColumn(&models.Task{}, "idempotency_key") {
-		migrator.AddColumn(&models.Task{}, "IdempotencyKey")
-		log.Println("Added missing column: idempotency_key to task")
-	}
-	if !migrator.HasColumn(&models.Site{}, "platform_dns_record_id") {
-		migrator.AddColumn(&models.Site{}, "PlatformDNSRecordID")
-		log.Println("Added missing column: platform_dns_record_id to site")
-	}
-	if !migrator.HasColumn(&models.Site{}, "user_dns_record_id") {
-		migrator.AddColumn(&models.Site{}, "UserDNSRecordID")
-		log.Println("Added missing column: user_dns_record_id to site")
-	}
-
-	// Migration for Cert fields
-	if !migrator.HasColumn(&models.Cert{}, "state") {
-		migrator.AddColumn(&models.Cert{}, "State")
-		log.Println("Added missing column: state to cert")
-	}
-	if !migrator.HasColumn(&models.Cert{}, "last_acme_type") {
-		migrator.AddColumn(&models.Cert{}, "LastACMEType")
-		log.Println("Added missing column: last_acme_type to cert")
-	}
-	if !migrator.HasColumn(&models.Cert{}, "last_acme_node_id") {
-		migrator.AddColumn(&models.Cert{}, "LastACMENodeID")
-		log.Println("Added missing column: last_acme_node_id to cert")
-	}
-
-	// Fix backend_protocol length for "follow_port"
-	// AutoMigrate might skip this if it thinks types are compatible, so we force check/alter
-	if err := migrator.AlterColumn(&models.Site{}, "BackendProtocol"); err != nil {
-		log.Printf("Warning: Failed to alter backend_protocol column: %v", err)
-	} else {
-        log.Println("Altered column: backend_protocol")
-    }
-
-	// Ensure Admin Role / User Exists
-	go func() {
-		var u models.User
-		// 1=Admin
-		adminType := 1
-		if err := db.DB.Where("name = ?", "admin").First(&u).Error; err != nil {
-			// Create Admin
-			u = models.User{
-				Name:     "admin",
-				Password: "123456", // Supported by fallback
-				Type:     adminType,
-				Enable:   true,
-			}
-			db.DB.Create(&u)
-			log.Println("Created Admin User")
-		} else {
-			shouldSave := false
-			if u.Type != adminType {
-				u.Type = adminType
-				shouldSave = true
-			}
-			if !u.Enable {
-				u.Enable = true
-				shouldSave = true
-			}
-			if shouldSave {
-				db.DB.Save(&u)
-				log.Println("Fixed Admin Type/Enable Status")
-			}
-		}
-
-		// Seed Default Package
-		var pkgCount int64
-		db.DB.Model(&models.Package{}).Count(&pkgCount)
-		if pkgCount == 0 {
-			defaultPkg := models.Package{
-				Name:         "Free Plan",
-				Description:  "Default free plan",
-				MonthPrice:   0,
-				QuarterPrice: 0,
-				YearPrice:    0,
-				Bandwidth:    "10M",
-				Traffic:      100,
-				DomainLimit:  10,
-				Enable:       true,
-				Sort:         0,
-				CreatedAt:    time.Now(),
-				UpdatedAt:    time.Now(),
-			}
-			if err := db.DB.Create(&defaultPkg).Error; err == nil {
-				log.Println("Created Default Package: Free Plan")
-			}
-		}
-
-		// Ensure Admin has a UserPackage
-		var userPkg models.UserPackage
-		if err := db.DB.Where("uid = ?", u.ID).First(&userPkg).Error; err != nil {
-			var pkg models.Package
-			if err := db.DB.Order("id asc").First(&pkg).Error; err == nil {
-				userPkg = models.UserPackage{
-					UserID:      u.ID,
-					Name:        pkg.Name + " (Admin)",
-					PackageID:   pkg.ID,
-					Bandwidth:   pkg.Bandwidth,
-					Traffic:     pkg.Traffic,
-					Connection:  1000,
-					DomainLimit: pkg.DomainLimit,
-					StartAt:     time.Now(),
-					EndAt:       time.Now().AddDate(10, 0, 0),
-					CreatedAt:   time.Now(),
-				}
-				if err := db.DB.Create(&userPkg).Error; err == nil {
-					log.Println("Assigned Default Package to Admin")
-				}
-			}
-		}
-
-		// DEBUG: Print Admin Token
-		token, _ := utils.GenerateToken(u.ID, "admin")
-		log.Printf("[DEBUG] ADMIN TOKEN: %s", token)
-	}()
 
 	// 3. Initialize Router (Gin)
 	r := gin.Default()
@@ -268,6 +56,8 @@ func main() {
 	go services.StartDNSWorker()
 	// Start Cert Issue Worker
 	go services.StartCertIssueWorker()
+	// Start Site Create Worker
+	services.StartSiteCreateWorker()
 
 	// 4. Start Server
 	// Recommend running behind Nginx Load Balancer for HA

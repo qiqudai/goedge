@@ -44,22 +44,13 @@ func (ctrl *CertController) Upload(c *gin.Context) {
 		return
 	}
 
-	// Encrypt Key if provided (for upload)
-	if certModel.Key != "" {
-		enc, err := services.Crypto.Encrypt(certModel.Key)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
-			return
-		}
-		certModel.Key = enc
-	}
-
 	if err := db.DB.Create(certModel).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save certificate"})
 		return
 	}
 
 	services.BumpConfigVersion("cert", []int64{int64(certModel.ID)})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Certificate uploaded successfully", "data": certModel})
 }
 
@@ -88,36 +79,21 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		return
 	}
 
-	// Encrypt Key if provided
-	if certModel.Key != "" {
-		enc, err := services.Crypto.Encrypt(certModel.Key)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
-			return
-		}
-		certModel.Key = enc
-	}
-
 	certModel.ID = id
 	certModel.UpdateAt = time.Now()
-	updates := map[string]interface{}{
+	if err := db.DB.Model(&models.Cert{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"name":        certModel.Name,
 		"des":         certModel.Description,
 		"type":        certModel.Type,
 		"domain":      certModel.Domain,
 		"dnsapi":      certModel.DNSAPI,
 		"cert":        certModel.Cert,
+		"key":         certModel.Key,
 		"start_time":  certModel.StartTime,
 		"expire_time": certModel.ExpireTime,
 		"auto_renew":  certModel.AutoRenew,
 		"update_at":   certModel.UpdateAt,
-	}
-	// Only update Key if provided
-	if certModel.Key != "" {
-		updates["key"] = certModel.Key
-	}
-
-	if err := db.DB.Model(&models.Cert{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update certificate"})
 		return
 	}
@@ -134,28 +110,6 @@ func (ctrl *CertController) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	var cert models.Cert
-	if err := db.DB.First(&cert, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Certificate not found"})
-		return
-	}
-
-	// Safety check: Prevent deletion if used by active HTTPS sites
-	var sites []models.Site
-	if err := db.DB.Where("enable = ? AND https_listen != '' AND https_listen != '[]'", true).Find(&sites).Error; err == nil && len(sites) > 0 {
-		certDomains := strings.Split(cert.Domain, ",")
-		for _, site := range sites {
-			for _, d := range site.Domains {
-				for _, cd := range certDomains {
-					if strings.TrimSpace(d) == strings.TrimSpace(cd) {
-						c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Certificate is in use by site %d (%s)", site.ID, d)})
-						return
-					}
-				}
-			}
-		}
-	}
-
 	if err := db.DB.Delete(&models.Cert{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete certificate"})
 		return
@@ -248,7 +202,12 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 		return
 	}
 
+	// Generate BatchID (int64 stored in PID)
+	batchID := time.Now().UnixNano()
+
 	now := time.Now()
+	var createdIDs []int64
+
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		for _, domain := range domains {
 			cert := models.Cert{
@@ -261,12 +220,14 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 				Enable:     true,
 				CreateAt:   now,
 				UpdateAt:   now,
+				State:      "waiting", // Initial state
 				StartTime:  nil,
 				ExpireTime: nil,
 			}
 			if err := tx.Create(&cert).Error; err != nil {
 				return err
 			}
+			createdIDs = append(createdIDs, int64(cert.ID))
 		}
 		return nil
 	})
@@ -277,7 +238,10 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 
 	services.BumpConfigVersion("cert", []int64{})
 
-	c.JSON(http.StatusOK, gin.H{"message": "Batch created", "created": len(domains)})
+	// Trigger async issuance
+	services.IssueCertsAsync(batchID, createdIDs)
+
+	c.JSON(http.StatusOK, gin.H{"batch_id": strconv.FormatInt(batchID, 10), "count": len(createdIDs)})
 }
 
 func (ctrl *CertController) Reissue(c *gin.Context) {
@@ -312,23 +276,13 @@ func (ctrl *CertController) Download(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Certificate not found"})
 		return
 	}
-
-	// Decrypt Key
-	keyPEM := cert.Key
-	if metaKey, err := services.Crypto.Decrypt(cert.Key); err == nil {
-		keyPEM = metaKey
-	}
-
-	content := cert.Cert + "\n" + keyPEM + "\n"
+	content := cert.Cert + "\n" + cert.Key + "\n"
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Disposition", "attachment; filename=cert_"+strconv.Itoa(cert.ID)+".pem")
 	c.Writer.Write([]byte(content))
 }
 
-type certListResult struct {
-	Certs []models.Cert
-	Total int64
-}
+
 
 type certDefaultSettings struct {
 	Type   string `json:"type"`
@@ -354,6 +308,17 @@ func loadCertDefaultSettings(scopeType, scopeName string, scopeID int) (*certDef
 		settings.Type = "system"
 	}
 	return &settings, nil
+}
+
+type CertDetail struct {
+	models.Cert
+	User      *models.User `json:"user"`
+	IssueTask *models.Task `json:"issue_task"`
+}
+
+type certListResult struct {
+	Certs []CertDetail
+	Total int64
 }
 
 func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
@@ -400,7 +365,61 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&certs).Error; err != nil {
 		return nil, err
 	}
-	return &certListResult{Certs: certs, Total: total}, nil
+
+	// Manual Preload
+	var userIDs []int64
+	var taskIDs []int64
+	for _, cert := range certs {
+		if cert.UserID > 0 {
+			userIDs = append(userIDs, int64(cert.UserID))
+		}
+		if cert.IssueTaskID > 0 {
+			taskIDs = append(taskIDs, cert.IssueTaskID)
+		}
+	}
+
+	usersMap := make(map[int64]models.User)
+	if len(userIDs) > 0 {
+		var users []models.User
+		if err := db.DB.Where("id IN ?", userIDs).Find(&users).Error; err == nil {
+			for _, u := range users {
+				usersMap[int64(u.ID)] = u
+			}
+		}
+		// Debug Log
+		fmt.Printf("DEBUG: Found %d users for IDs: %v\n", len(users), userIDs)
+	} else {
+		fmt.Println("DEBUG: No userIDs collected from certs.")
+	}
+
+	tasksMap := make(map[int64]models.Task)
+	if len(taskIDs) > 0 {
+		var tasks []models.Task
+		if err := db.DB.Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
+			for _, t := range tasks {
+				tasksMap[t.ID] = t
+			}
+		}
+	}
+
+	var details []CertDetail
+	for _, cert := range certs {
+		detail := CertDetail{Cert: cert}
+		if u, ok := usersMap[int64(cert.UserID)]; ok {
+			detail.User = &u
+		}
+		if t, ok := tasksMap[cert.IssueTaskID]; ok {
+			detail.IssueTask = &t
+		}
+		details = append(details, detail)
+	}
+
+	if len(details) > 0 {
+		b, _ := json.Marshal(details[0])
+		fmt.Printf("DEBUG: First Cert Detail JSON: %s\n", string(b))
+	}
+
+	return &certListResult{Certs: details, Total: total}, nil
 }
 
 func (ctrl *CertController) GetDefaultSettings(c *gin.Context) {

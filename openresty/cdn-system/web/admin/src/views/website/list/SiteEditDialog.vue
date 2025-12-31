@@ -79,52 +79,77 @@
       </el-form>
 
       <!-- Batch Mode Form -->
-      <el-form v-if="activeTab === 'batch'" :model="batchForm" label-width="120px" ref="batchFormRef">
-        <el-form-item v-if="isAdmin" label="所属用户">
-           <el-select 
-            v-model="batchForm.user_id" 
-            placeholder="搜索用户" 
-            style="width: 100%" 
-            filterable 
-            remote 
-            :remote-method="searchUsers"
-            :loading="userLoading"
-            @change="handleBatchUserChange"
-            clearable
-          >
-            <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="网站套餐">
-           <el-select v-model="batchForm.user_package_id" placeholder="选择套餐" style="width: 100%" clearable>
-            <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="网站数据" required>
-           <el-input
-            v-model="batchForm.data"
-            type="textarea"
-            :rows="8"
-            placeholder="格式: domain=域名|ip=源IP
+      <!-- Batch Mode Form -->
+      <div v-if="activeTab === 'batch'">
+        <div v-if="!currentBatchId">
+            <el-form :model="batchForm" label-width="120px" ref="batchFormRef">
+                <el-form-item v-if="isAdmin" label="所属用户">
+                <el-select 
+                    v-model="batchForm.user_id" 
+                    placeholder="搜索用户" 
+                    style="width: 100%" 
+                    filterable 
+                    remote 
+                    :remote-method="searchUsers"
+                    :loading="userLoading"
+                    @change="handleBatchUserChange"
+                    clearable
+                >
+                    <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
+                </el-select>
+                </el-form-item>
+                <el-form-item label="网站套餐">
+                <el-select v-model="batchForm.user_package_id" placeholder="选择套餐" style="width: 100%" clearable>
+                    <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+                </el-form-item>
+                
+                <el-tabs v-model="batchMode" type="border-card" class="mb-4">
+                    <el-tab-pane label="简单模式" name="simple">
+                        <el-form-item label="网站域名" required>
+                            <DomainBatchInput v-model="batchForm.simpleDomains" @validation="handleBatchValidation" />
+                        </el-form-item>
+                        <el-form-item label="源站地址" required>
+                             <el-input 
+                                v-model="batchForm.simpleBackends" 
+                                type="textarea" 
+                                :rows="3" 
+                                placeholder="所有域名共享的源站，每行一个。如: 1.1.1.1" 
+                             />
+                        </el-form-item>
+                    </el-tab-pane>
+                    <el-tab-pane label="高级模式" name="advanced">
+                         <el-form-item label="数据内容" required>
+                            <el-input
+                                v-model="batchForm.data"
+                                type="textarea"
+                                :rows="8"
+                                placeholder="格式: domain=域名|ip=源IP
 示例:
 domain=example.com,www.example.com|ip=1.1.1.1
-domain=test.com|ip=2.2.2.2,3.3.3.3
-"
-           />
-        </el-form-item>
-        <el-form-item label="选项">
-            <el-checkbox v-model="batchForm.ignore_error">忽略错误</el-checkbox>
-        </el-form-item>
-        
-        <el-form-item label="网站分组">
-             <SiteGroupSelect v-model="batchForm.group_id" :user-id="batchForm.user_id" />
-        </el-form-item>
-      </el-form>
+domain=test.com|ip=2.2.2.2,3.3.3.3"
+                            />
+                        </el-form-item>
+                    </el-tab-pane>
+                </el-tabs>
+
+                <el-form-item label="选项">
+                    <el-checkbox v-model="batchForm.ignore_error">忽略错误</el-checkbox>
+                </el-form-item>
+                
+                <el-form-item label="网站分组">
+                    <SiteGroupSelect v-model="batchForm.group_id" :user-id="batchForm.user_id" />
+                </el-form-item>
+            </el-form>
+        </div>
+      </div>
     </div>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+      <div v-if="activeTab === 'batch'">
+        <el-button @click="visible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
@@ -134,7 +159,11 @@ import { ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+
 import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
+import DomainBatchInput from '@/components/DomainBatchInput.vue'
+import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
+import DomainBatchInput from '@/components/DomainBatchInput.vue'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -174,8 +203,14 @@ const batchForm = reactive({
   user_package_id: '',
   group_id: '',
   data: '',
-  ignore_error: false
+  ignore_error: false,
+  simpleDomains: '',
+  simpleBackends: ''
 })
+
+const batchMode = ref('simple')
+const currentBatchId = ref('')
+const validBatchDomains = ref([])
 
 const rules = {
   domains: [
@@ -293,7 +328,7 @@ const resetForm = () => {
     origins: '',
     user_package_id: '',
     group_ids: [],
-    group_id: '', // keep for legacy compatibility if needed or just remove, sticking to group_ids for UI
+    group_id: '', 
     dns_provider_id: '',
     site_type: 'website',
     remark: ''
@@ -303,12 +338,36 @@ const resetForm = () => {
       user_package_id: '',
       group_id: '',
       data: '',
-      ignore_error: false
+      ignore_error: false,
+      simpleDomains: '',
+      simpleBackends: ''
   })
+  currentBatchId.value = ''
+  batchMode.value = 'simple'
 }
 
 const handleClosed = () => {
   singleFormRef.value?.resetFields()
+}
+
+const handleBatchValidation = (res) => {
+    validBatchDomains.value = res.valid
+}
+
+const handleBatchComplete = () => {
+    ElMessage.success('批量添加完成')
+    emit('success') // Refresh list
+}
+
+const resetBatch = () => {
+    currentBatchId.value = ''
+    batchForm.simpleDomains = '' // Clear input
+    // Keep user/package selection
+}
+
+const handleBatchClose = () => {
+    visible.value = false
+    emit('success')
 }
 
 const handleSubmit = async () => {
@@ -321,12 +380,11 @@ const handleSubmit = async () => {
             user_id: Number(form.user_id),
             user_package_id: Number(form.user_package_id) || 0,
             dns_provider_id: Number(form.dns_provider_id) || 0,
-            group_id: 0, // Explicitly zero out as we use group_ids now. Fixes "invalid request" string vs int
+            group_id: 0, 
             domains: form.domains.split('\n').map(s => s.trim()).filter(Boolean),
             backends: form.origins.split('\n').map(s => s.trim()).filter(Boolean),
             group_ids: Array.isArray(form.group_ids) ? form.group_ids : (form.group_ids ? [form.group_ids] : [])
         }
-        // Remove 'origins' to avoid confusion, though Go ignores strict extra fields usually
         delete payload.origins 
         
         if (form.id) {
@@ -334,27 +392,62 @@ const handleSubmit = async () => {
         } else {
           await request.post('/sites', payload)
         }
+        ElMessage.success('操作成功')
+        emit('success')
+        visible.value = false
     } else {
-        if (!batchForm.data) {
+        // Construct Data if Simple Mode
+        let dataStr = batchForm.data
+        if (batchMode.value === 'simple') {
+            if (!batchForm.simpleDomains || !batchForm.simpleBackends) {
+                ElMessage.error('请填写域名和源站')
+                submitting.value = false // Fix stuck loading
+                return
+            }
+            const domains = validBatchDomains.value // Use validated list
+            if (domains.length === 0) {
+                 ElMessage.error('无有效域名')
+                 submitting.value = false
+                 return
+            }
+            // Normalize backends
+            const backends = batchForm.simpleBackends.split('\n').map(s=>s.trim()).filter(Boolean).join(',')
+            if (!backends) {
+                 ElMessage.error('请填写源站')
+                 submitting.value = false
+                 return
+            }
+            
+            // Build data string: domain=d1|ip=backends\ndomain=d2|ip=backends...
+            // Note: backends comma separated for `ip=`? 
+            // `parseBatchLine` usually parses `ip=a,b`. Yes.
+            dataStr = domains.map(d => `domain=${d}|ip=${backends}`).join('\n')
+        }
+
+        if (!dataStr) {
             ElMessage.error('请输入网站数据')
+            submitting.value = false
             return
         }
-        // Sanitize batch form
+        
         const payload = {
             ...batchForm,
+            data: dataStr,
             user_id: Number(batchForm.user_id),
             user_package_id: Number(batchForm.user_package_id) || 0,
             group_id: Number(batchForm.group_id) || 0,
             dns_provider_id: 0, 
         }
-        await request.post('/sites/batch', payload)
+        
+        const res = await request.post('/sites/batch', finalPayload)
+        
+        ElMessage.success('批量添加任务已提交')
+        visible.value = false
+        emit('success')
     }
     
-    ElMessage.success('操作成功')
-    emit('success')
-    visible.value = false
-  } catch(e) {
-      console.error(e)
+  } catch (err) {
+      console.error(err)
   } finally {
     submitting.value = false
   }

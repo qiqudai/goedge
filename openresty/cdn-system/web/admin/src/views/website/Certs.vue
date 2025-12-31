@@ -64,24 +64,45 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column v-if="isAdmin" prop="user" label="用户" width="120">
         <template #default="{row}">
-          {{ row.user?.username || row.user_id }}
+          <span v-if="row.user">{{ row.user.fullname || row.user.username }}</span>
+          <span v-else>{{ row.uid }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="type" label="类型" width="120" />
-      <el-table-column prop="domain" label="域名" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="create_at" label="创建时间" width="180" />
-      <el-table-column prop="expire_time" label="到期时间" width="180" />
-      <el-table-column label="自动续签" width="100" align="center">
+      <el-table-column prop="name" label="名称" width="320" show-overflow-tooltip />
+      <el-table-column prop="type" label="类型" width="160" />
+      <el-table-column prop="domain" label="域名" width="240" show-overflow-tooltip />
+      <el-table-column prop="create_at" label="创建时间" width="200">
+        <template #default="{row}">
+           {{ formatTime(row.create_at) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="expire_time" label="到期时间" width="200">
+        <template #default="{row}">
+           {{ formatTime(row.expire_time) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="自动续签" width="90" align="center">
         <template #default="{ row }">
           <el-icon v-if="row.auto_renew" color="#67C23A"><CircleCheckFilled /></el-icon>
           <el-icon v-else color="#C0C4CC"><CircleCloseFilled /></el-icon>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90" align="center">
+      <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.enable ? 'success' : 'info'">{{ row.enable ? '正常' : '禁用' }}</el-tag>
+          <el-tag v-if="row.state === 'waiting'" type="info" size="small">待签发</el-tag>
+          <el-tag v-else-if="row.state === 'issuing'" type="warning" size="small">签发中</el-tag>
+          <el-tag v-else-if="row.state === 'ready' || row.state === 'success' || (row.enable && !row.state)" type="success" size="small">已签发</el-tag>
+          <el-tag v-else-if="row.state === 'fail'" type="danger" size="small">失败</el-tag>
+          <el-tag v-else type="info" size="small">{{ row.enable ? '正常' : '禁用' }}</el-tag>
         </template>
+      </el-table-column>
+      <el-table-column label="失败原因" min-width="150" show-overflow-tooltip>
+         <template #default="{ row }">
+            <span v-if="row.state === 'fail' && row.issue_task && row.issue_task.err" class="error-text" @click="showError(row.issue_task.err)">
+               {{ row.issue_task.err }}
+            </span>
+            <span v-else>-</span>
+         </template>
       </el-table-column>
       <el-table-column label="操作" width="150" align="center">
         <template #default="{ row }">
@@ -158,33 +179,50 @@
         </el-tab-pane>
 
         <el-tab-pane label="批量申请" name="batch">
-          <el-form :model="batchForm" label-width="90px">
-            <el-form-item label="类型">
-              <el-radio-group v-model="batchForm.type">
-                <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
-                <el-radio value="letsencrypt">Let's Encrypt</el-radio>
-                <el-radio value="buypass">BuyPass</el-radio>
-                <el-radio value="google">Google CA</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="域名">
-              <el-input v-model="batchForm.domains" type="textarea" :rows="5" placeholder="输入域名，一行一个" />
-            </el-form-item>
-            <el-form-item label="DNS API">
-              <el-select v-model="batchForm.dnsapi" clearable placeholder="请选择" style="width: 100%;">
-              <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
-              </el-select>
-              <div class="help-text">
-                这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
-              </div>
-            </el-form-item>
-             <!-- Auto Renew removed as requested -->
-          </el-form>
+          <div v-if="!currentBatchId">
+            <el-form :model="batchForm" label-width="90px">
+              <el-form-item label="用户" v-if="isAdmin">
+                <el-select
+                  v-model="batchForm.user_id"
+                  filterable
+                  remote
+                  clearable
+                  placeholder="搜索用户ID或账号"
+                  :remote-method="loadUsers"
+                  :loading="userLoading"
+                  style="width: 100%">
+                  <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="类型">
+                <el-radio-group v-model="batchForm.type">
+                  <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+                  <el-radio value="letsencrypt">Let's Encrypt</el-radio>
+                  <el-radio value="buypass">BuyPass</el-radio>
+                  <el-radio value="google">Google CA</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="域名">
+                <DomainBatchInput v-model="batchForm.domains" @validation="handleValidation" />
+              </el-form-item>
+              <el-form-item label="DNS API">
+                <el-select v-model="batchForm.dnsapi" clearable placeholder="请选择" style="width: 100%;">
+                <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
+                </el-select>
+                <div class="help-text">
+                  这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
+                </div>
+              </el-form-item>
+            </el-form>
+          </div>
+
         </el-tab-pane>
       </el-tabs>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitForm">确定</el-button>
+        <span>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitForm">确定</el-button>
+        </span>
       </template>
     </el-dialog>
 
@@ -294,6 +332,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import DomainBatchInput from '@/components/DomainBatchInput.vue'
+
 const activeTopTab = ref('list')
 const list = ref([])
 const total = ref(0)
@@ -347,6 +387,7 @@ const form = reactive({
   user_id: null
 })
 const batchForm = reactive({
+  user_id: '',
   type: 'zerossl',
   domains: '',
   dnsapi: '',
@@ -384,6 +425,22 @@ const handleSelectionChange = rows => {
   selectedRows.value = rows
 }
 
+const formatTime = (t) => {
+  if (!t) return '-'
+  // Format: YYYY-MM-DD HH:mm:ss
+  // Assuming backend returns RFC3339 string. 
+  // If strict +08 is needed, might need date library, but simple replacement is standard in this project.
+  return t.replace('T', ' ').substring(0, 19)
+}
+
+const showError = (err) => {
+  ElMessageBox.alert(err, '错误详情', {
+    confirmButtonText: '关闭',
+    type: 'error',
+    customClass: 'error-dialog-pre'
+  })
+}
+
 const openCreate = () => {
   editingId.value = 0
   dialogTab.value = 'single'
@@ -416,9 +473,43 @@ const openEdit = row => {
   dialogVisible.value = true
 }
 
+const currentBatchId = ref('')
+const validBatchDomains = ref([])
+
+const handleValidation = (result) => {
+  validBatchDomains.value = result.valid
+}
+
+const resetBatch = () => {
+  currentBatchId.value = ''
+  batchForm.domains = ''
+}
+
+
+
 const submitForm = () => {
   if (dialogTab.value === 'batch') {
-    request.post('/certs/batch', batchForm).then(res => {
+    if (isAdmin.value && !batchForm.user_id) {
+       ElMessage.warning('请选择用户')
+       return
+    }
+
+    if (validBatchDomains.value.length === 0) {
+      ElMessage.warning('请输入有效的域名')
+      return
+    }
+    // Convert valid domains to array if using DomainBatchInput, or split text
+    // DomainBatchInput emits validation result but we should use the bound value or validated list
+    const domainsList = validBatchDomains.value.length > 0 ? validBatchDomains.value : batchForm.domains.split('\n').map(d=>d.trim()).filter(Boolean)
+    
+    const payload = {
+        ...batchForm,
+        user_id: Number(batchForm.user_id) || 0,
+        domains: domainsList,
+        dnsapi: Number(batchForm.dnsapi) || 0
+    }
+
+    request.post('/certs/batch', payload).then(res => { 
       ElMessage.success(res.message || '批量申请提交成功')
       dialogVisible.value = false
       fetchList()
@@ -427,6 +518,29 @@ const submitForm = () => {
   }
 
   const payload = { ...form }
+  // Check if Single Add (non-upload) -> Use Batch Task
+  if (!editingId.value && form.type !== 'upload') {
+     // Convert to Batch format
+     // Convert to Batch format with array domains
+     // Use regex to split by comma, space, newline
+     const domainList = form.domain.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean)
+
+     const batchPayload = {
+        user_id: Number(form.user_id) || 0,
+        type: form.type,
+        domains: domainList, 
+        dnsapi: Number(form.dnsapi) || 0,
+        auto_renew: true 
+     }
+
+     request.post('/certs/batch', batchPayload).then(res => {
+        ElMessage.success('申请任务已提交')
+        dialogVisible.value = false
+        fetchList()
+     })
+     return
+  }
+
   if (editingId.value) {
     request.put(`/certs/${editingId.value}`, payload).then(() => {
       ElMessage.success('更新成功')
@@ -434,6 +548,7 @@ const submitForm = () => {
       fetchList()
     })
   } else {
+    // Legacy /certs (AdminCreate) -> Handles Upload type
     request.post('/certs', payload).then(() => {
       ElMessage.success('添加成功')
       dialogVisible.value = false
@@ -448,16 +563,25 @@ const handleBatchAction = action => {
     return
   }
   const ids = selectedRows.value.map(row => row.id)
-  ElMessageBox.confirm('确定执行该操作?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
+  
+  const execute = () => {
     request.post('/certs/batch_action', { action, ids }).then(res => {
       ElMessage.success(res.message || '操作成功')
       fetchList()
     })
-  })
+  }
+
+  if (action === 'delete') {
+    ElMessageBox.confirm('确定删除选中证书?', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }).then(() => {
+      execute()
+    })
+  } else {
+    execute()
+  }
 }
 
 const handleRowAction = (action, row) => {
@@ -605,9 +729,15 @@ const handleDnsapiSelection = rows => {
 const removeDnsapiBatch = () => {
   if (!selectedDnsapi.value.length) return
   const ids = selectedDnsapi.value.map(row => row.id)
-  Promise.all(ids.map(id => request.delete(`/dnsapi/${id}`))).then(() => {
-    ElMessage.success('删除成功')
-    loadDnsapiList()
+  ElMessageBox.confirm('确定删除选中DNS API?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    Promise.all(ids.map(id => request.delete(`/dnsapi/${id}`))).then(() => {
+      ElMessage.success('删除成功')
+      loadDnsapiList()
+    })
   })
 }
 
@@ -702,10 +832,12 @@ onMounted(() => {
   font-size: 12px;
   margin-left: 8px;
 }
+.error-text { color: #f56c6c; cursor: pointer; text-decoration: underline; }
+.error-text:hover { color: #f78989; }
+:deep(.error-dialog-pre .el-message-box__message) { white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
 .default-empty {
   color: #909399;
   font-size: 12px;
   padding: 4px 0 4px 90px;
 }
 </style>
-

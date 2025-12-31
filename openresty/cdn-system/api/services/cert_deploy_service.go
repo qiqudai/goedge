@@ -38,22 +38,15 @@ func CreateDeployTask(certID int64) error {
 	}
 
 	data, _ := json.Marshal(payload)
-	key := fmt.Sprintf("CERT_DEPLOY:%d:%d", certID, cert.Version)
-
-	// Idempotency Check
-	var existing models.Task
-	if err := db.DB.Where("idempotency_key = ? AND state IN ?", key, []string{"waiting", "running"}).First(&existing).Error; err == nil {
-		return nil
-	}
+	// Idempotency logic removed to match DB schema constraints
 
 	task := models.Task{
-		Type:           "deploy_cert",
-		Name:           fmt.Sprintf("Deploy Cert %d v%d", certID, cert.Version),
-		Data:           string(data),
-		IdempotencyKey: key,
-		State:          "waiting",
-		Enable:         true,
-		CreateAt:       time.Now(),
+		Type:     "deploy_cert",
+		Name:     fmt.Sprintf("Deploy Cert %d v%d", certID, cert.Version),
+		Data:     string(data),
+		State:    "waiting",
+		Enable:   true,
+		CreateAt: time.Now(),
 	}
 
 	return db.DB.Create(&task).Error

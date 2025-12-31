@@ -4,9 +4,12 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -297,15 +300,20 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		return
 	}
 
-	defaults, err := services.GetSiteDefaultMapWithGroup(req.UserID, req.GroupID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load defaults"})
-		return
-	}
+	// defaults, err := services.GetSiteDefaultMapWithGroup(req.UserID, req.GroupID)
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load defaults"})
+	// 	return
+	// }
+
+	// Generate BatchID
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	batchID := hex.EncodeToString(b)
 
 	lines := splitLines(req.Data)
 	created := 0
-	createdIDs := make([]int64, 0)
+	
 	for _, line := range lines {
 		item, err := parseBatchLine(line)
 		if err != nil {
@@ -316,44 +324,87 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 			return
 		}
 		for _, domain := range item.Domains {
-			site := &models.Site{
+			payload := services.SiteCreatePayload{
 				UserID:        req.UserID,
 				UserPackageID: req.UserPackageID,
 				DNSProviderID: req.DNSProviderID,
 				NodeGroupID:   nodeGroupID,
-				Domains:       []string{domain},
+				GroupID:       req.GroupID,
+				Domain:        domain,
 				Backends:      item.Backends,
-				HttpListen:    []string{"80"},
-				State:         "running",
-				Enable:        true,
-				CreatedAt:     time.Now(),
-				UpdatedAt:     time.Now(),
 			}
-			site.CnameHostname = domain + ".cdn.node.com"
-			services.ApplySiteDefaults(site, defaults)
-
-			groupIDs := []int64{}
-			if req.GroupID != 0 {
-				groupIDs = append(groupIDs, req.GroupID)
+			
+			if err := services.CreateSiteCreateTask(payload, batchID); err != nil {
+				fmt.Printf("Failed to create site task: %v\n", err)
+			} else {
+				created++
 			}
-
-			if err := createSiteWithGroup(site, groupIDs); err != nil {
-				if req.IgnoreError {
-					continue
-				}
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			created++
-			createdIDs = append(createdIDs, site.ID)
 		}
 	}
 
-	if created > 0 {
-		services.BumpConfigVersion("site", createdIDs)
+	c.JSON(http.StatusOK, gin.H{"message": "Batch create submitted", "batch_id": batchID, "created": created})
+}
+
+// AdminBatchProgress returns the progress of a batch task
+func (ctrl *SiteController) AdminBatchProgress(c *gin.Context) {
+	batchID := c.Param("id")
+	if batchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "batch_id is required"})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Batch create completed", "created": created})
+	var tasks []models.Task
+	if err := db.DB.Where("batch_id = ?", batchID).Find(&tasks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query tasks"})
+		return
+	}
+
+	total := len(tasks)
+	success := 0
+	fail := 0
+	running := 0
+	pending := 0
+	
+	type FailItem struct {
+		Domain string `json:"domain"`
+		Reason string `json:"reason"`
+	}
+	var failItems []FailItem
+
+	for _, t := range tasks {
+		switch t.State {
+		case "success":
+			success++
+		case "fail":
+			fail++
+			
+			var payload services.SiteCreatePayload
+			_ = json.Unmarshal([]byte(t.Data), &payload)
+			domain := payload.Domain
+			if domain == "" {
+				domain = "Unknown"
+			}
+			failItems = append(failItems, FailItem{
+				Domain: domain,
+				Reason: t.Ret, // Use Ret column
+			})
+		case "running", "retrying":
+			running++
+		default:
+			pending++
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":      total,
+		"success":    success,
+		"fail":       fail,
+		"running":    running,
+		"pending":    pending,
+		"done":       success + fail,
+		"percent":    0, 
+		"fail_items": failItems,
+	})
 }
 
 // AdminBatchUpdate updates fields for selected sites

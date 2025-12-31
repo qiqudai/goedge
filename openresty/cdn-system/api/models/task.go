@@ -21,9 +21,6 @@ type Task struct {
 	ErrTimes  int        `json:"err_times"`
 	RetryAt   *time.Time `json:"retry_at" gorm:"column:retry_at"`
 	Progress  string     `json:"progress"`
-
-	// 新增：幂等键，防止重复创建任务
-	IdempotencyKey string `json:"idempotency_key" gorm:"column:idempotency_key;index;type:varchar(255)"`
 }
 
 func (Task) TableName() string {

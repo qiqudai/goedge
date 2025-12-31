@@ -21,11 +21,9 @@ type Cert struct {
 	UpdateAt    time.Time  `json:"update_at"`
 	Enable      bool       `json:"enable"`
 	TaskID      int64      `json:"task_id"`
-	IssueTaskID    int64     `json:"issue_task_id"`
-	Version        int       `json:"version"`
-	State          string    `json:"state"`               // issuing, ready, fail
-	LastACMEType   string    `json:"last_acme_type"`      // Record successful CA
-	LastACMENodeID int64     `json:"last_acme_node_id"`   // Record successful Node
+	IssueTaskID int64      `json:"issue_task_id"`
+	State       string     `json:"state"`
+	Version     int        `json:"version"`
 }
 
 func (Cert) TableName() string {
