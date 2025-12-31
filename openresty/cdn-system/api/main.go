@@ -6,8 +6,10 @@ package main
 import (
 	"cdn-api/config"
 	"cdn-api/db"
+	"cdn-api/models"
 	"cdn-api/routers"
 	"cdn-api/services"
+
 	"log"
 	"time"
 
@@ -21,6 +23,12 @@ func main() {
 	// 2. Connect Database (MySQL)
 	db.Init()
 	db.InitClickHouse()
+	
+	// Migration
+	if err := db.DB.AutoMigrate(&models.UserPackage{}, &models.Job{}); err != nil {
+		log.Fatal("Failed to migrate schemas:", err)
+	}
+
 
 	// 3. Initialize Router (Gin)
 	r := gin.Default()
@@ -58,6 +66,9 @@ func main() {
 	// go services.StartCertIssueWorker()
 	// Start Site Create Worker
 	services.StartSiteCreateWorker()
+	// Start User Package Expiration Worker
+	services.StartUserPackageExpirationWorker()
+
 
 	// 4. Start Server
 	// Recommend running behind Nginx Load Balancer for HA

@@ -11,6 +11,7 @@ type NodeSubIP struct {
 type Node struct {
 	ID             int64       `json:"id" gorm:"primaryKey"`
 	PID            int64       `json:"pid" gorm:"column:pid"`
+	GroupID        int64       `json:"group_id" gorm:"column:group_id"`
 	RegionID       *int64      `json:"region_id"`
 	Name           string      `json:"name"`
 	Remark         string      `json:"remark" gorm:"column:des"`

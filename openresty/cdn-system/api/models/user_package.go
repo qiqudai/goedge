@@ -38,6 +38,8 @@ type UserPackage struct {
 	EndAt     time.Time `json:"end_at"`
 	CreatedAt time.Time `json:"create_at" gorm:"column:create_at"`
 	TaskID    *int64    `json:"task_id" gorm:"column:task_id"`
+	Version   int       `json:"version" gorm:"column:version;default:1"` // Sync Version
+	IsExpired bool      `json:"is_expired" gorm:"column:is_expired"`
 
 	// Status (Derived from time & state)
 	// No explicit status column in db.sql, usually checked via EndAt > Now()

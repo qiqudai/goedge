@@ -3,8 +3,10 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -531,6 +533,11 @@ func (ctr *PlanController) AssignUserPlan(c *gin.Context) {
 		return
 	}
 
+	// Trigger Sync
+	if err := services.NewUserPackageService().SyncUserPackage(userPkg.ID, "update"); err != nil {
+		fmt.Printf("[WARN] SyncUserPackage (Assign) Failed: %v\n", err)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Assigned"})
 }
 
@@ -611,8 +618,13 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	}
 
 	if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed"})
 		return
+	}
+
+	// Trigger Sync
+	if err := services.NewUserPackageService().SyncUserPackage(id, "update"); err != nil {
+		fmt.Printf("[WARN] SyncUserPackage (Update) Failed: %v\n", err)
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Updated"})
 }

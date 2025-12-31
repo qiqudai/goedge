@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"errors"
 	"fmt"
 	"net/http"
@@ -179,6 +180,12 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		}
 	}
 
+	// Trigger Sync
+	if err := services.NewUserPackageService().SyncUserPackage(id, "update"); err != nil {
+		// Log error but don't fail request? Or warning?
+		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Updated"})
 }
 
@@ -239,6 +246,11 @@ func (ctr *UserPackageController) RenewUserPackage(c *gin.Context) {
 	if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", pack.ID).Update("end_at", newEnd).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Renew Failed"})
 		return
+	}
+
+	// Trigger Sync
+	if err := services.NewUserPackageService().SyncUserPackage(pack.ID, "renew"); err != nil {
+		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"end_at": newEnd}})
@@ -305,6 +317,11 @@ func (ctr *UserPackageController) SwitchUserPackage(c *gin.Context) {
 	if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", pack.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed"})
 		return
+	}
+
+	// Trigger Sync
+	if err := services.NewUserPackageService().SyncUserPackage(pack.ID, "upgrade"); err != nil {
+		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Updated"})
