@@ -55,6 +55,13 @@ func (p *DNSPodProvider) GetDomains() ([]string, error) {
 	return []string{}, nil
 }
 
+func (p *DNSPodProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	if p.useTC3() {
+		return p.getRecordsTC3(domain)
+	}
+	return p.getRecordsV2(domain)
+}
+
 func (p *DNSPodProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	if p.useTC3() {
 		return p.addRecordTC3(domain, record)
@@ -612,4 +619,100 @@ func NewDNSPodProviderIntl(credentials string) (dns.Provider, error) {
 func init() {
 	dns.RegisterProvider("dnspod", NewDNSPodProvider)
 	dns.RegisterProvider("dnspod_intl", NewDNSPodProviderIntl)
+}
+
+func (p *DNSPodProvider) getRecordsV2(domain string) ([]dns.DNSRecord, error) {
+	vals := url.Values{}
+	vals.Set("domain", domain)
+	vals.Set("length", "3000") // Max fetch
+
+	respData, err := p.sendRequestV2("Record.List", vals)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Status struct {
+			Code string `json:"code"`
+		} `json:"status"`
+		Records []struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Type  string `json:"type"`
+			Value string `json:"value"`
+			Line  string `json:"line"`
+			TTL   string `json:"ttl"`
+		} `json:"records"`
+	}
+
+	if err := json.Unmarshal(respData, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Status.Code != "1" {
+		if resp.Status.Code == "10" {
+			return []dns.DNSRecord{}, nil
+		}
+		return nil, fmt.Errorf("api error code: %s", resp.Status.Code)
+	}
+
+	var results []dns.DNSRecord
+	for _, r := range resp.Records {
+		ttl := 600
+		fmt.Sscanf(r.TTL, "%d", &ttl)
+		results = append(results, dns.DNSRecord{
+			Type:  r.Type,
+			Name:  r.Name,
+			Value: r.Value,
+			Line:  r.Line,
+			TTL:   ttl,
+		})
+	}
+	return results, nil
+}
+
+func (p *DNSPodProvider) getRecordsTC3(domain string) ([]dns.DNSRecord, error) {
+	payload := map[string]interface{}{
+		"Domain": domain,
+		"Limit":  3000,
+	}
+	resp, err := p.sendRequestTC3("DescribeRecordList", payload)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Response struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+			RecordList []struct {
+				Name  string `json:"Name"`
+				Type  string `json:"Type"`
+				Value string `json:"Value"`
+				Line  string `json:"Line"`
+				TTL   uint64 `json:"TTL"`
+			} `json:"RecordList"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return nil, err
+	}
+	if parsed.Response.Error != nil {
+		if parsed.Response.Error.Code == "ResourceNotFound.NoDataOfRecord" {
+			return []dns.DNSRecord{}, nil
+		}
+		return nil, fmt.Errorf("api error code: %s", parsed.Response.Error.Code)
+	}
+
+	var results []dns.DNSRecord
+	for _, r := range parsed.Response.RecordList {
+		results = append(results, dns.DNSRecord{
+			Type:  r.Type,
+			Name:  r.Name,
+			Value: r.Value,
+			Line:  r.Line,
+			TTL:   int(r.TTL),
+		})
+	}
+	return results, nil
 }

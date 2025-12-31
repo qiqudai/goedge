@@ -39,6 +39,10 @@ func (p *AliyunProvider) GetDomains() ([]string, error) {
 	return []string{}, nil
 }
 
+func (p *AliyunProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil // Not implemented
+}
+
 func (p *AliyunProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	params := p.newParams("AddDomainRecord")
 	params.Set("DomainName", domain)

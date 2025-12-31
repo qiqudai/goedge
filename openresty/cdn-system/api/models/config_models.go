@@ -43,6 +43,8 @@ type EdgeDomain struct {
 	Status            string            `json:"status,omitempty"` // active, suspended
 	SSLCertData       string            `json:"ssl_cert_data,omitempty"`
 	SSLKeyData        string            `json:"ssl_key_data,omitempty"`
+	SSLCertPath       string            `json:"ssl_cert_path,omitempty"`
+	SSLKeyPath        string            `json:"ssl_key_path,omitempty"`
 	ACLDefaultAction  string            `json:"acl_default_action,omitempty"`
 	ACLRules          []EdgeACLRule     `json:"acl_rules,omitempty"`
 	BlackIPs          []string          `json:"black_ips,omitempty"`

@@ -116,6 +116,34 @@ func main() {
 		log.Println("Added missing column: cname_hostname2")
 	}
 
+	// Migration for DNS Async Task fields
+	if !migrator.HasColumn(&models.Task{}, "idempotency_key") {
+		migrator.AddColumn(&models.Task{}, "IdempotencyKey")
+		log.Println("Added missing column: idempotency_key to task")
+	}
+	if !migrator.HasColumn(&models.Site{}, "platform_dns_record_id") {
+		migrator.AddColumn(&models.Site{}, "PlatformDNSRecordID")
+		log.Println("Added missing column: platform_dns_record_id to site")
+	}
+	if !migrator.HasColumn(&models.Site{}, "user_dns_record_id") {
+		migrator.AddColumn(&models.Site{}, "UserDNSRecordID")
+		log.Println("Added missing column: user_dns_record_id to site")
+	}
+
+	// Migration for Cert fields
+	if !migrator.HasColumn(&models.Cert{}, "state") {
+		migrator.AddColumn(&models.Cert{}, "State")
+		log.Println("Added missing column: state to cert")
+	}
+	if !migrator.HasColumn(&models.Cert{}, "last_acme_type") {
+		migrator.AddColumn(&models.Cert{}, "LastACMEType")
+		log.Println("Added missing column: last_acme_type to cert")
+	}
+	if !migrator.HasColumn(&models.Cert{}, "last_acme_node_id") {
+		migrator.AddColumn(&models.Cert{}, "LastACMENodeID")
+		log.Println("Added missing column: last_acme_node_id to cert")
+	}
+
 	// Fix backend_protocol length for "follow_port"
 	// AutoMigrate might skip this if it thinks types are compatible, so we force check/alter
 	if err := migrator.AlterColumn(&models.Site{}, "BackendProtocol"); err != nil {
@@ -235,6 +263,11 @@ func main() {
 			}
 		}
 	}()
+
+	// Start DNS Worker
+	go services.StartDNSWorker()
+	// Start Cert Issue Worker
+	go services.StartCertIssueWorker()
 
 	// 4. Start Server
 	// Recommend running behind Nginx Load Balancer for HA

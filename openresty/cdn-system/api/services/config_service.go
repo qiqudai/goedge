@@ -159,7 +159,17 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				cert := findCertForDomain(domain, certs)
 				if cert != nil {
 					domainConf.SSLCertData = cert.Cert
-					domainConf.SSLKeyData = cert.Key
+					// Decrypt key
+					plainKey := cert.Key
+					if dec, err := Crypto.Decrypt(cert.Key); err == nil {
+						plainKey = dec
+					}
+					domainConf.SSLKeyData = plainKey
+				} else {
+					// Placeholder Certificate Strategy
+					// User Requirement: Enable port 443 immediately using placeholder
+					domainConf.SSLCertPath = "/usr/local/goedge/edge/configs/placeholder.crt"
+					domainConf.SSLKeyPath = "/usr/local/goedge/edge/configs/placeholder.key"
 				}
 			}
 			payload.Domains = append(payload.Domains, domainConf)
@@ -504,8 +514,12 @@ func buildResponseHeaderMap(settings map[string]interface{}) map[string]string {
 
 func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
 	for _, cert := range certs {
-		if cert.Domain == domain {
-			return &cert
+		// Handle multi-domain certs (comma separated)
+		domains := strings.Split(cert.Domain, ",")
+		for _, d := range domains {
+			if strings.TrimSpace(d) == domain {
+				return &cert
+			}
 		}
 	}
 	return nil

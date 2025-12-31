@@ -34,6 +34,10 @@ func (p *CloudFlareProvider) GetDomains() ([]string, error) {
 	return []string{}, nil
 }
 
+func (p *CloudFlareProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil // Not implemented
+}
+
 func (p *CloudFlareProvider) getZoneID(domain string) (string, error) {
 	// Simple domain validation and extracting search domain
 	parts := strings.Split(domain, ".")

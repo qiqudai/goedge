@@ -18,6 +18,10 @@ type Site struct {
 	EnableBackupGroup bool  `json:"enable_backup_group"`
 	DNSProviderID     int64 `json:"dns_provider_id" gorm:"column:dns_provider_id;index"`
 
+	// DNS 记录 ID (回写)
+	PlatformDNSRecordID string `json:"platform_dns_record_id" gorm:"column:platform_dns_record_id;type:varchar(64)"`
+	UserDNSRecordID     string `json:"user_dns_record_id" gorm:"column:user_dns_record_id;type:varchar(64)"`
+
 	// CNAME 相关
 	CnameDomain    string `json:"cname_domain"`
 	CnameHostname  string `json:"cname_hostname"`

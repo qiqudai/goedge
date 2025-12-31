@@ -41,6 +41,10 @@ func (p *HuaweiProvider) GetDomains() ([]string, error) {
 	return []string{}, nil
 }
 
+func (p *HuaweiProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil // Not implemented
+}
+
 func (p *HuaweiProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// 1. Get Zone ID
 	zoneID, err := p.getZoneID(domain)

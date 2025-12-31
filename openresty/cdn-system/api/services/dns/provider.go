@@ -2,6 +2,7 @@ package dns
 
 type Provider interface {
 	GetDomains() ([]string, error)
+	GetRecords(domain string) ([]DNSRecord, error)
 	AddRecord(domain string, record DNSRecord) error
 	DeleteRecord(domain string, record DNSRecord) error
 }

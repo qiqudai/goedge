@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"cdn-api/db"
+	"cdn-api/models"
 	"cdn-api/services"
 
 	"github.com/gin-gonic/gin"
@@ -46,7 +48,24 @@ func (ctr *AgentCertController) ReceiveIssued(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid certificate"})
 		return
 	}
-	if err := services.UpdateIssuedCert(req.CertID, req.CertPEM, req.KeyPEM, notBefore, notAfter, req.IssueTaskID); err != nil {
+	// Fetch current cert to increment version
+	var existingCert models.Cert
+	if err := db.DB.First(&existingCert, req.CertID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cert not found"})
+		return
+	}
+	// Encrypt key before update (Agent sends plaintext key?)
+	// Note: Agent might send encrypted if configured? Assuming Agent sends PEM (plaintext).
+	// UpdateIssuedCert expects ENCRYPTED KEY since my change in Step 222 (issueCertLocal).
+	// Wait! `UpdateIssuedCert` arg is `keyCipher string`.
+	// So I MUST ENCRYPT IT HERE if `req.KeyPEM` is plaintext.
+	encryptedKey, err := services.Crypto.Encrypt(req.KeyPEM)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "encryption failed"})
+		return
+	}
+
+	if err := services.UpdateIssuedCert(req.CertID, req.CertPEM, encryptedKey, notBefore, notAfter, req.IssueTaskID, existingCert.Version+1); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -43,13 +44,22 @@ func (ctrl *CertController) Upload(c *gin.Context) {
 		return
 	}
 
+	// Encrypt Key if provided (for upload)
+	if certModel.Key != "" {
+		enc, err := services.Crypto.Encrypt(certModel.Key)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
+			return
+		}
+		certModel.Key = enc
+	}
+
 	if err := db.DB.Create(certModel).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save certificate"})
 		return
 	}
 
 	services.BumpConfigVersion("cert", []int64{int64(certModel.ID)})
-
 	c.JSON(http.StatusOK, gin.H{"message": "Certificate uploaded successfully", "data": certModel})
 }
 
@@ -78,21 +88,36 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		return
 	}
 
+	// Encrypt Key if provided
+	if certModel.Key != "" {
+		enc, err := services.Crypto.Encrypt(certModel.Key)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
+			return
+		}
+		certModel.Key = enc
+	}
+
 	certModel.ID = id
 	certModel.UpdateAt = time.Now()
-	if err := db.DB.Model(&models.Cert{}).Where("id = ?", id).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"name":        certModel.Name,
 		"des":         certModel.Description,
 		"type":        certModel.Type,
 		"domain":      certModel.Domain,
 		"dnsapi":      certModel.DNSAPI,
 		"cert":        certModel.Cert,
-		"key":         certModel.Key,
 		"start_time":  certModel.StartTime,
 		"expire_time": certModel.ExpireTime,
 		"auto_renew":  certModel.AutoRenew,
 		"update_at":   certModel.UpdateAt,
-	}).Error; err != nil {
+	}
+	// Only update Key if provided
+	if certModel.Key != "" {
+		updates["key"] = certModel.Key
+	}
+
+	if err := db.DB.Model(&models.Cert{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update certificate"})
 		return
 	}
@@ -109,6 +134,28 @@ func (ctrl *CertController) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	var cert models.Cert
+	if err := db.DB.First(&cert, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Certificate not found"})
+		return
+	}
+
+	// Safety check: Prevent deletion if used by active HTTPS sites
+	var sites []models.Site
+	if err := db.DB.Where("enable = ? AND https_listen != '' AND https_listen != '[]'", true).Find(&sites).Error; err == nil && len(sites) > 0 {
+		certDomains := strings.Split(cert.Domain, ",")
+		for _, site := range sites {
+			for _, d := range site.Domains {
+				for _, cd := range certDomains {
+					if strings.TrimSpace(d) == strings.TrimSpace(cd) {
+						c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Certificate is in use by site %d (%s)", site.ID, d)})
+						return
+					}
+				}
+			}
+		}
+	}
+
 	if err := db.DB.Delete(&models.Cert{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete certificate"})
 		return
@@ -265,7 +312,14 @@ func (ctrl *CertController) Download(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Certificate not found"})
 		return
 	}
-	content := cert.Cert + "\n" + cert.Key + "\n"
+
+	// Decrypt Key
+	keyPEM := cert.Key
+	if metaKey, err := services.Crypto.Decrypt(cert.Key); err == nil {
+		keyPEM = metaKey
+	}
+
+	content := cert.Cert + "\n" + keyPEM + "\n"
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Disposition", "attachment; filename=cert_"+strconv.Itoa(cert.ID)+".pem")
 	c.Writer.Write([]byte(content))

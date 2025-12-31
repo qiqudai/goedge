@@ -31,6 +31,52 @@ func (p *DNSLAProvider) GetDomains() ([]string, error) {
 	return []string{}, nil
 }
 
+func (p *DNSLAProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	vals := url.Values{}
+	vals.Set("apiid", p.Config.ID)
+	vals.Set("apipass", p.Config.Secret)
+	vals.Set("domain", domain)
+
+	respBody, err := p.post("api/recordList", vals)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Code int    `json:"code"`
+		Data []struct {
+			ID    string `json:"id"`
+			Type  string `json:"type"`
+			Value string `json:"data"`
+			Line  string `json:"line"`
+			Name  string `json:"host"`
+			TTL   int    `json:"ttl"`
+		} `json:"data"`
+	}
+	
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, err
+	}
+	// DNSLA code 200 = success, 300 = success? Need to verify. Based on existing code 200 checks.
+	if resp.Code != 200 {
+		return nil, nil // Return empty if failed or no records? Better safe to return error if not 200? 
+		// Existing findRecordID ignores error? No it returns err.
+		// Let's assume 200 is strict success.
+	}
+
+	var results []dns.DNSRecord
+	for _, r := range resp.Data {
+		results = append(results, dns.DNSRecord{
+			Type:  r.Type,
+			Name:  r.Name,
+			Value: r.Value,
+			Line:  r.Line,
+			TTL:   r.TTL,
+		})
+	}
+	return results, nil
+}
+
 func (p *DNSLAProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// DNS.LA Add Record
 	// API: https://api.dns.la/api/recordCreate

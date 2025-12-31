@@ -4,7 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
-	"cdn-api/services/dns"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -221,26 +221,36 @@ func ensureDNSRecords(site *models.Site) error {
 	if site == nil || site.DNSProviderID == 0 || len(site.Domains) == 0 {
 		return nil
 	}
-	var api models.DNSAPI
-	if err := db.DB.Where("id = ?", site.DNSProviderID).First(&api).Error; err != nil {
-		return err
-	}
-	provider, err := dns.GetProvider(api.Type, api.Auth)
-	if err != nil || provider == nil {
-		return err
-	}
+	// Verify provider existence (optional, worker handles specific errors)
+	// But keeping it light here is better.
+
 	for _, domain := range site.Domains {
 		root, name := splitRootDomain(domain)
 		if root == "" {
 			continue
 		}
-		record := dns.DNSRecord{
-			Type:  "CNAME",
-			Name:  name,
-			Value: site.CnameHostname,
-			TTL:   600,
+		
+		data := map[string]interface{}{
+			"uid":         site.UserID,
+			"site_id":     site.ID,
+			"dnsapi_id":   site.DNSProviderID,
+			"zone":        root,
+			"record_type": "CNAME",
+			"name":        name,
+			"fqdn":        domain,
+			"value":       site.CnameHostname,
+			"ttl":         600,
 		}
-		_ = provider.AddRecord(root, record)
+		jsonData, _ := json.Marshal(data)
+
+		// Idempotency Key: Ensure we don't spam tasks if one is already pending for this exact state
+		key := fmt.Sprintf("dns_user_cname_%d_%s_%s", site.ID, domain, site.CnameHostname)
+
+		_, err := services.CreateDNSTask("DNS_USER_CNAME_UPSERT", string(jsonData), key)
+		if err != nil {
+			fmt.Printf("[Error] Failed to create DNS task: %v\n", err)
+			return err
+		}
 	}
 	return nil
 }

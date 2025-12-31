@@ -18,6 +18,7 @@ var App = &AppConfig{
 	AcmeEmail:         "",
 	AcmeWebroot:       "./acme",
 	AcmeAccountDir:    "./acme/accounts",
+	SecretKey:         "0123456789abcdef0123456789abcdef",
 }
 
 type AppConfig struct {
@@ -30,6 +31,7 @@ type AppConfig struct {
 	AcmeEmail         string `yaml:"acme_email"`
 	AcmeWebroot       string `yaml:"acme_webroot"`
 	AcmeAccountDir    string `yaml:"acme_account_dir"`
+	SecretKey         string `yaml:"secret_key"`
 }
 
 var (
