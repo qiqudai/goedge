@@ -55,47 +55,40 @@ type SystemSettings struct {
     ResetPwdmailContent string `json:"reset_pwd_mail_content"`
     VerifyMailTitle     string `json:"verify_mail_title"`
     VerifyMailContent   string `json:"verify_mail_content"`
+    
+    // SMS Templates
+    PhoneCaptchaTemplId string `json:"phone_captcha_templ_id"`
+    PhoneCaptchaTempl   string `json:"phone_captcha_templ"`
 
     // 6. Notifications
-    // Traffic Exceeded
-    NotifyTrafficExceeded       bool     `json:"notify_traffic_exceeded"`
-    NotifyTrafficExceededMethod []string `json:"notify_traffic_exceeded_method"` // email, sms
-    NotifyTrafficExceededCount  int      `json:"notify_traffic_exceeded_count"`
-    NotifyTrafficExceededInterval int    `json:"notify_traffic_exceeded_interval"`
-    NotifyTrafficExceededTitle  string   `json:"notify_traffic_exceeded_title"`
-    NotifyTrafficExceededContent string  `json:"notify_traffic_exceeded_content"`
-    
-    // Traffic Low
-    NotifyTrafficLow            bool     `json:"notify_traffic_low"`
-    NotifyTrafficLowThreshold   int      `json:"notify_traffic_low_threshold"`
-    NotifyTrafficLowTitle       string   `json:"notify_traffic_low_title"`
-    NotifyTrafficLowContent     string   `json:"notify_traffic_low_content"`
-    
-    // Expire
-    NotifyExpire                bool     `json:"notify_expire"`
-    NotifyExpireTitle           string   `json:"notify_expire_title"`
-    NotifyExpireContent         string   `json:"notify_expire_content"`
-    
-    // Expire Soon
-    NotifyExpireSoon            bool     `json:"notify_expire_soon"`
-    NotifyExpireSoonDays        int      `json:"notify_expire_soon_days"`
-    NotifyExpireSoonTitle       string   `json:"notify_expire_soon_title"`
-    NotifyExpireSoonContent     string   `json:"notify_expire_soon_content"`
-    
-    // Domain CC Switch
-    NotifyCCSwitch              bool     `json:"notify_cc_switch"`
-    NotifyCCSwitchTitle         string   `json:"notify_cc_switch_title"`
-    NotifyCCSwitchContent       string   `json:"notify_cc_switch_content"`
-    
-    // Cert Expire
-    NotifyCertExpire            bool     `json:"notify_cert_expire"`
-    NotifyCertExpireTitle       string   `json:"notify_cert_expire_title"`
-    NotifyCertExpireContent     string   `json:"notify_cert_expire_content"`
+    // 6. Notifications
+    NotificationPeriod string `json:"notification_period"` // all, custom
+
+    // JSON configs
+    NotifyTrafficExceedInfo    string `json:"notify_traffic_exceed_info"`    // {enable, methods, count, interval, email_title, email_content, sms_content}
+    NotifyTrafficLowInfo       string `json:"notify_traffic_low_info"`       // {enable, methods, threshold, count, interval, ...}
+    NotifyPackageExpireInfo    string `json:"notify_package_expire_info"`
+    NotifyPackageExpiringInfo  string `json:"notify_package_expiring_info"`
+    NotifyCCSwitchInfo         string `json:"notify_cc_switch_info"`
+    NotifyBandwidthExceedInfo  string `json:"notify_bandwidth_exceed_info"`
+    NotifyCertExpireInfo       string `json:"notify_cert_expire_info"`
+    NotifyCertExpiringInfo     string `json:"notify_cert_expiring_info"`
 
     // 7. HTTPS
     CertContent string `json:"cert_content"` // PEM
     KeyContent  string `json:"key_content"`  // PEM
     ForceSSL    bool   `json:"force_ssl"`
+
+    // 8. Other Config
+    MasterClientIpHeader        string  `json:"master_client_ip_header"`
+    RecordRepairEnable          int     `json:"record_repair_enable"` // 0: close, 1: repair, 2: repair_and_delete
+    DnsRsProtect                string  `json:"dns_rs_protect"`
+    MaxSiteStreamSyncOneTime    int     `json:"max_site_stream_sync_one_time"`
+    SyncSiteConfigScope         string  `json:"sync_site_config_scope"` // region, group
+    ResRankSize                 int     `json:"res_rank_size"`
+    HttpProxy                   string  `json:"http_proxy"`
+    ApiKeyStatus                bool    `json:"api_key_status"`
+    TcpTrafficFactor            float64 `json:"tcp_traffic_factor"`
 }
 
 type Link struct {

@@ -260,7 +260,7 @@ func (ctrl *CertController) Reissue(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "acme_email is required"})
 		return
 	}
-	services.IssueCertsAsync(req.IDs)
+	services.IssueCertsAsync(time.Now().UnixNano(), req.IDs)
 	c.JSON(http.StatusOK, gin.H{"message": "Reissue submitted"})
 }
 
@@ -282,14 +282,10 @@ func (ctrl *CertController) Download(c *gin.Context) {
 	c.Writer.Write([]byte(content))
 }
 
-
-
 type certDefaultSettings struct {
 	Type   string `json:"type"`
 	DNSAPI int    `json:"dnsapi"`
 }
-
-
 
 func loadCertDefaultSettings(scopeType, scopeName string, scopeID int) (*certDefaultSettings, error) {
 	var sys models.SysConfig
@@ -311,9 +307,27 @@ func loadCertDefaultSettings(scopeType, scopeName string, scopeID int) (*certDef
 }
 
 type CertDetail struct {
-	models.Cert
-	User      *models.User `json:"user"`
-	IssueTask *models.Task `json:"issue_task"`
+	ID          int        `json:"id"`
+	Uid         int        `json:"uid"`
+	Name        string     `json:"name"`
+	Description string     `json:"des"`
+	Type        string     `json:"type"`
+	Domain      string     `json:"domain"`
+	DNSAPI      int        `json:"dnsapi"`
+	Cert        string     `json:"cert"`
+	Key         string     `json:"key"`
+	StartTime   *time.Time `json:"start_time"`
+	ExpireTime  *time.Time `json:"expire_time"`
+	AutoRenew   bool       `json:"auto_renew"`
+	CreateAt    time.Time  `json:"create_at"`
+	UpdateAt    time.Time  `json:"update_at"`
+	Enable      bool       `json:"enable"`
+	TaskID      int64      `json:"task_id"`
+	State       string     `json:"state"`
+	Version     int        `json:"version"`
+
+	UserName     string `json:"user_name,omitempty"`
+	IssueTaskRet string `json:"issue_task_ret,omitempty"`
 }
 
 type certListResult struct {
@@ -378,12 +392,15 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 		}
 	}
 
-	usersMap := make(map[int64]models.User)
+	usersMap := make(map[int64]string)
 	if len(userIDs) > 0 {
-		var users []models.User
-		if err := db.DB.Where("id IN ?", userIDs).Find(&users).Error; err == nil {
+		var users []struct {
+			ID   int64  `gorm:"column:id"`
+			Name string `gorm:"column:name"`
+		}
+		if err := db.DB.Model(&models.User{}).Select("id, name").Where("id IN ?", userIDs).Find(&users).Error; err == nil {
 			for _, u := range users {
-				usersMap[int64(u.ID)] = u
+				usersMap[u.ID] = u.Name
 			}
 		}
 		// Debug Log
@@ -392,24 +409,46 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 		fmt.Println("DEBUG: No userIDs collected from certs.")
 	}
 
-	tasksMap := make(map[int64]models.Task)
+	tasksMap := make(map[int64]string)
 	if len(taskIDs) > 0 {
-		var tasks []models.Task
-		if err := db.DB.Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
+		var tasks []struct {
+			ID  int64  `gorm:"column:id"`
+			Ret string `gorm:"column:ret"`
+		}
+		if err := db.DB.Model(&models.Task{}).Select("id, ret").Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
 			for _, t := range tasks {
-				tasksMap[t.ID] = t
+				tasksMap[t.ID] = t.Ret
 			}
 		}
 	}
 
 	var details []CertDetail
 	for _, cert := range certs {
-		detail := CertDetail{Cert: cert}
-		if u, ok := usersMap[int64(cert.UserID)]; ok {
-			detail.User = &u
+		detail := CertDetail{
+			ID:          cert.ID,
+			Uid:         cert.UserID,
+			Name:        cert.Name,
+			Description: cert.Description,
+			Type:        cert.Type,
+			Domain:      cert.Domain,
+			DNSAPI:      cert.DNSAPI,
+			Cert:        cert.Cert,
+			Key:         cert.Key,
+			StartTime:   cert.StartTime,
+			ExpireTime:  cert.ExpireTime,
+			AutoRenew:   cert.AutoRenew,
+			CreateAt:    cert.CreateAt,
+			UpdateAt:    cert.UpdateAt,
+			Enable:      cert.Enable,
+			TaskID:      cert.TaskID,
+			State:       cert.State,
+			Version:     cert.Version,
 		}
-		if t, ok := tasksMap[cert.IssueTaskID]; ok {
-			detail.IssueTask = &t
+		if name, ok := usersMap[int64(cert.UserID)]; ok {
+			detail.UserName = name
+		}
+		if ret, ok := tasksMap[cert.IssueTaskID]; ok {
+			detail.IssueTaskRet = ret
 		}
 		details = append(details, detail)
 	}
@@ -653,5 +692,3 @@ func normalizeCertType(value string) string {
 	}
 	return value
 }
-
-

@@ -54,10 +54,10 @@
       </el-form-item>
       
       <el-form-item label="域名" style="width: 520px">
-        <el-input 
-          v-model="localSettings.domain" 
+        <el-input
+          v-model="localSettings.domain"
           @input="updateSettings"
-          @change="saveSettings(true)"
+          @blur="saveSettings(true)"
         />
         <div class="form-helper">
           多个域名以空格分隔，中文域名及其它IDN域名需要转成Punycode，
@@ -81,10 +81,10 @@
       </el-form-item>
       
       <el-form-item label="监听端口" style="width: 520px">
-        <el-input 
-          v-model="localSettings.httpPorts" 
+        <el-input
+          v-model="localSettings.httpPorts"
           @input="updateSettings"
-          @change="saveSettings(true)"
+          @blur="saveSettings(true)"
         />
         <div class="form-helper">
           多个端口空格分隔。如需兼容http://www.example.com和http://www.example.com:888访问，则填80 888
@@ -104,17 +104,17 @@
     >
       <el-table-column prop="address" label="源地址">
         <template #default="{ row }">
-          <el-input 
-            v-model="row.address" 
-            placeholder="IP 或域名" 
+          <el-input
+            v-model="row.address"
+            placeholder="IP 或域名"
             size="small"
-            @change="saveSettings(true)"
+            @blur="saveSettings(true)"
           />
         </template>
       </el-table-column>
       <el-table-column prop="weight" label="权重" width="120">
         <template #default="{ row }">
-          <el-input v-model="row.weight" size="small" @change="saveSettings(true)" />
+          <el-input v-model="row.weight" size="small" @blur="saveSettings(true)" />
         </template>
       </el-table-column>
       <el-table-column label="状态" width="120">
@@ -181,21 +181,21 @@
               v-model="row.header"
               size="small"
               placeholder="请求头名称，如 user-agent"
-              @change="saveSettings(true)"
+              @blur="saveSettings(true)"
             />
             <el-input
               v-else-if="isOriginStatItem(row.item)"
               v-model="row.seconds"
               size="small"
               placeholder="统计秒数"
-              @change="saveSettings(true)"
+              @blur="saveSettings(true)"
             />
             <el-input
               v-else
               v-model="row.value"
               size="small"
               :placeholder="getOriginConditionPlaceholder(row)"
-              @change="saveSettings(true)"
+              @blur="saveSettings(true)"
             />
             <el-select
               v-if="!isOriginStatItem(row.item)"
@@ -218,11 +218,11 @@
       
       <el-table-column label="源站" min-width="220">
         <template #default="{ row }">
-          <el-input 
-            v-model="row.origin" 
-            placeholder="源站地址，多个用 | 分隔" 
+          <el-input
+            v-model="row.origin"
+            placeholder="源站地址，多个用 | 分隔"
             size="small"
-            @change="saveSettings(true)"
+            @blur="saveSettings(true)"
           />
         </template>
       </el-table-column>

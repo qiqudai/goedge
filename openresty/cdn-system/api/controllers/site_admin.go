@@ -313,7 +313,8 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 
 	lines := splitLines(req.Data)
 	created := 0
-	
+	var createdTasks []*models.Task
+
 	for _, line := range lines {
 		item, err := parseBatchLine(line)
 		if err != nil {
@@ -333,16 +334,17 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 				Domain:        domain,
 				Backends:      item.Backends,
 			}
-			
-			if err := services.CreateSiteCreateTask(payload, batchID); err != nil {
+
+			if task, err := services.CreateSiteCreateTask(payload, batchID); err != nil {
 				fmt.Printf("Failed to create site task: %v\n", err)
 			} else {
 				created++
+				createdTasks = append(createdTasks, task)
 			}
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Batch create submitted", "batch_id": batchID, "created": created})
+	c.JSON(http.StatusOK, gin.H{"message": "Batch create submitted", "batch_id": batchID, "created": created, "tasks": createdTasks})
 }
 
 // AdminBatchProgress returns the progress of a batch task

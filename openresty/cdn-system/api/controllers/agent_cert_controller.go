@@ -65,7 +65,7 @@ func (ctr *AgentCertController) ReceiveIssued(c *gin.Context) {
 		return
 	}
 
-	if err := services.UpdateIssuedCert(req.CertID, req.CertPEM, encryptedKey, notBefore, notAfter, req.IssueTaskID, existingCert.Version+1); err != nil {
+	if err := services.UpdateIssuedCert(req.CertID, req.CertPEM, encryptedKey, notBefore, notAfter, req.IssueTaskID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}

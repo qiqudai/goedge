@@ -20,13 +20,13 @@ type SiteCreatePayload struct {
 	// Additional defaults can be applied in worker or payload
 }
 
-func CreateSiteCreateTask(payload SiteCreatePayload, batchID string) error {
+func CreateSiteCreateTask(payload SiteCreatePayload, batchID string) (*models.Task, error) {
 	data, _ := json.Marshal(payload)
 
 	// Idempotency logic removed
 	// BatchID removed (not supported in DB without migration)
 
-	task := models.Task{
+	task := &models.Task{
 		Type:     "site_create",
 		Name:     "Create Site " + payload.Domain,
 		Data:     string(data),
@@ -34,7 +34,10 @@ func CreateSiteCreateTask(payload SiteCreatePayload, batchID string) error {
 		Enable:   true,
 		CreateAt: time.Now(),
 	}
-	return db.DB.Create(&task).Error
+	if err := db.DB.Create(&task).Error; err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 func StartSiteCreateWorker() {
@@ -63,7 +66,7 @@ func processSiteCreateTask(task *models.Task) {
 
 	var payload SiteCreatePayload
 	if err := json.Unmarshal([]byte(task.Data), &payload); err != nil {
-		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "err": "Invalid Data: " + err.Error(), "end_at": time.Now()})
+		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "ret": "Invalid Data: " + err.Error(), "end_at": time.Now()})
 		return
 	}
 
@@ -118,7 +121,7 @@ func processSiteCreateTask(task *models.Task) {
 	})
 
 	if err != nil {
-		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "err": err.Error(), "end_at": time.Now()})
+		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "ret": err.Error(), "end_at": time.Now()})
 		return
 	}
 
@@ -132,5 +135,5 @@ func processSiteCreateTask(task *models.Task) {
 	// OR create a CreateDNSTask here.
 
 	// Success
-	db.DB.Model(task).Updates(map[string]interface{}{"state": "success", "end_at": time.Now(), "err": ""})
+	db.DB.Model(task).Updates(map[string]interface{}{"state": "success", "end_at": time.Now(), "ret": ""})
 }

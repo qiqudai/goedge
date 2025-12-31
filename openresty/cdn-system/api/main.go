@@ -55,7 +55,7 @@ func main() {
 	// Start DNS Worker
 	go services.StartDNSWorker()
 	// Start Cert Issue Worker
-	go services.StartCertIssueWorker()
+	// go services.StartCertIssueWorker()
 	// Start Site Create Worker
 	services.StartSiteCreateWorker()
 

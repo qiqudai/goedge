@@ -78,8 +78,6 @@
         </div>
       </el-form>
 
-      <!-- Batch Mode Form -->
-      <!-- Batch Mode Form -->
       <div v-if="activeTab === 'batch'">
         <div v-if="!currentBatchId">
             <el-form :model="batchForm" label-width="120px" ref="batchFormRef">
@@ -160,8 +158,6 @@ import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
-import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
-import DomainBatchInput from '@/components/DomainBatchInput.vue'
 import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
 import DomainBatchInput from '@/components/DomainBatchInput.vue'
 

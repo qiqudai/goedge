@@ -3,8 +3,57 @@
     <el-card shadow="never" class="mb-20">
       <template #header>基本信息</template>
       <el-form-item label="系统名称">
-        <el-input v-model="systemInfo.sys_name" placeholder="CDN 4.0" />
+         <el-input v-model="systemInfo.sys_name" placeholder="CDN 4.0" />
       </el-form-item>
+
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="Favicon">
+             <el-upload
+               class="avatar-uploader"
+               :action="uploadUrl"
+               :headers="uploadHeaders"
+               :show-file-list="false"
+               :on-success="(res) => handleUploadSuccess(res, 'favicon_file')"
+               accept=".ico,.png"
+             >
+               <img v-if="systemInfo.favicon_file" :src="systemInfo.favicon_file" class="avatar" style="width: 32px; height: 32px; object-fit: contain;" />
+               <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+             </el-upload>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="Logo">
+             <el-upload
+               class="avatar-uploader"
+               :action="uploadUrl"
+               :headers="uploadHeaders"
+               :show-file-list="false"
+               :on-success="(res) => handleUploadSuccess(res, 'logo_file')"
+               accept=".png,.jpg,.jpeg,.svg"
+             >
+               <img v-if="systemInfo.logo_file" :src="systemInfo.logo_file" class="avatar" style="height: 40px; object-fit: contain;" />
+               <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+             </el-upload>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="登录页广告">
+             <el-upload
+               class="avatar-uploader"
+               :action="uploadUrl"
+               :headers="uploadHeaders"
+               :show-file-list="false"
+               :on-success="(res) => handleUploadSuccess(res, 'login_ad_file')"
+               accept=".jpg,.jpeg,.png"
+             >
+               <img v-if="systemInfo.login_ad_file" :src="systemInfo.login_ad_file" class="avatar" style="height: 60px; object-fit: contain;" />
+               <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+             </el-upload>
+          </el-form-item>
+        </el-col>
+      </el-row>
+
       <el-form-item label="普通用户标题">
          <el-input v-model="systemInfo.user_console_title" placeholder="CDN用户控制台" />
       </el-form-item>
@@ -32,6 +81,7 @@
 import { ref, watch, onMounted } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 
 const props = defineProps({
   configItems: {
@@ -40,14 +90,33 @@ const props = defineProps({
   }
 })
 
+const emit = defineEmits(['saved'])
+
+const uploadUrl = '/api/v1/admin/upload/image'
+const uploadHeaders = {
+    Authorization: 'Bearer ' + localStorage.getItem('admin_token')
+}
+
 const systemInfo = ref({
   sys_name: '',
   user_console_title: '',
   admin_console_title: '',
   footer_link: '',
-  footer_copyright: ''
+  footer_copyright: '',
+  favicon_file: '',
+  logo_file: '',
+  login_ad_file: ''
 })
 const bindMasterHost = ref('')
+
+const handleUploadSuccess = (res, field) => {
+    if (res.code === 0) {
+        systemInfo.value[field] = res.url
+        ElMessage.success('上传成功')
+    } else {
+        ElMessage.error(res.msg || '上传失败')
+    }
+}
 
 // Initialize data from props
 watch(() => props.configItems, (items) => {
@@ -74,10 +143,18 @@ watch(() => props.configItems, (items) => {
 const save = () => {
   const items = []
   
-  // system_info
+  // system_info: Merge with existing to preserve other fields (cleaning, user, etc.)
+  let fullInfo = {}
+  const infoItem = props.configItems.find(i => i.name === 'system_info')
+  if (infoItem && infoItem.value) {
+    try {
+      fullInfo = JSON.parse(infoItem.value)
+    } catch (e) { /* ignore */ }
+  }
+  
   items.push({
     name: 'system_info',
-    value: JSON.stringify(systemInfo.value)
+    value: JSON.stringify({ ...fullInfo, ...systemInfo.value })
   })
 
   // bind-master-host
@@ -92,6 +169,7 @@ const save = () => {
     items: items
   }).then(() => {
     ElMessage.success('保存成功')
+    emit('saved')
   })
 }
 </script>
@@ -99,4 +177,30 @@ const save = () => {
 <style scoped>
 .mb-20 { margin-bottom: 20px; }
 .form-helper { color: #999; font-size: 12px; margin-top: 5px; }
+
+.avatar-uploader :deep(.el-upload) {
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+}
+.avatar-uploader :deep(.el-upload:hover) {
+  border-color: var(--el-color-primary);
+}
+.avatar-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 100px;
+  height: 100px;
+  text-align: center;
+  line-height: 100px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.avatar {
+  display: block;
+}
 </style>

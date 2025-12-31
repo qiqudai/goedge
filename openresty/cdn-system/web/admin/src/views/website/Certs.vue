@@ -64,8 +64,8 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column v-if="isAdmin" prop="user" label="用户" width="120">
         <template #default="{row}">
-          <span v-if="row.user">{{ row.user.fullname || row.user.username }}</span>
-          <span v-else>{{ row.uid }}</span>
+          <span v-if="row.user_name">{{ formatUserLabel({id: row.uid, name: row.user_name}) }}</span>
+          <span v-else>uid: {{ row.uid }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="name" label="名称" width="320" show-overflow-tooltip />
@@ -98,10 +98,9 @@
       </el-table-column>
       <el-table-column label="失败原因" min-width="150" show-overflow-tooltip>
          <template #default="{ row }">
-            <span v-if="row.state === 'fail' && row.issue_task && row.issue_task.err" class="error-text" @click="showError(row.issue_task.err)">
-               {{ row.issue_task.err }}
-            </span>
-            <span v-else>-</span>
+                                <span v-if="row.state === 'fail' && row.issue_task_ret" class="error-text" @click="showError(row.issue_task_ret)">
+                                   {{ row.issue_task_ret }}
+                                </span>            <span v-else>-</span>
          </template>
       </el-table-column>
       <el-table-column label="操作" width="150" align="center">
