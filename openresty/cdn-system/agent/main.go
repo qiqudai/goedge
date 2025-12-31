@@ -68,6 +68,7 @@ func main() {
 	go startHeartbeat()
 	go startConfigPull()
 	go startTaskPull()
+	go startWebSocketClient() // Persistent Connection
 	go startAccessLogShip()
 	go startMetricsShip()
 	go startL2Monitor()

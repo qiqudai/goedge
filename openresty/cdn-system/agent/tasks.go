@@ -348,8 +348,9 @@ func syncUserPackageTask(raw string) (string, error) {
 		})
 	}
 
-	res, _ := json.Marshal(map[string]interface{}{
-		"applied": applied,
-	})
+	if applied == nil {
+		applied = make([]map[string]interface{}, 0)
+	}
+	res, _ := json.Marshal(applied)
 	return string(res), nil
 }

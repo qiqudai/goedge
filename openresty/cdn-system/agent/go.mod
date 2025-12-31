@@ -15,6 +15,7 @@ require (
 	github.com/go-acme/lego/v4 v4.16.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/josharian/native v1.0.0 // indirect
 	github.com/mdlayher/netlink v1.6.0 // indirect
 	github.com/mdlayher/socket v0.1.1 // indirect

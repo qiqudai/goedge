@@ -19,6 +19,10 @@ func Setup(r *gin.Engine) {
 	acmeCtr := &controllers.AcmeController{}
 	r.GET("/.well-known/acme-challenge/:token", acmeCtr.ServeChallenge)
 
+	// WebSocket for Agents
+	wsCtr := controllers.NewAgentWSController()
+	r.GET("/ws/agent", wsCtr.HandleWS)
+
 	// 0. Public Routes
 	authCtr := &controllers.AuthController{}
 	// Shared login or specific login paths (Frontend requests /api/v1/admin/login etc due to baseURL)
