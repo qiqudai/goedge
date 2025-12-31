@@ -97,6 +97,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/stats/basic", statCtr.ListBasic)
 			admin.GET("/stats/quality", statCtr.ListQuality)
 			admin.GET("/stats/origin", statCtr.ListOrigin)
+            admin.GET("/stats/node_traffic", statCtr.ListNodeTraffic)
 
 			// Dashboard
 			dashCtr := &controllers.DashboardController{}
@@ -143,7 +144,14 @@ func Setup(r *gin.Engine) {
 			// System
 			admin.GET("/system_info", (&controllers.SystemController{}).GetInfo)
 			admin.POST("/system_info", (&controllers.SystemController{}).UpdateInfo)
+
 			admin.POST("/upload/image", (&controllers.UploadController{}).UploadImage)
+            
+            // API Key
+            apiKeyCtr := &controllers.APIKeyController{}
+            admin.GET("/api_key", apiKeyCtr.GetKey)
+            admin.PUT("/api_key", apiKeyCtr.UpdateKey)
+            admin.POST("/api_key/reset", apiKeyCtr.ResetSecret)
 
 
 			// Domain Management

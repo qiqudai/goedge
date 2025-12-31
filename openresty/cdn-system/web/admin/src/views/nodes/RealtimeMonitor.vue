@@ -77,7 +77,7 @@
       </AppTable>
     </div>
 
-    <div v-else>
+    <div v-if="activeTab === 'traffic'">
       <div class="monitor-toolbar">
         <div class="toolbar-row">
           <span class="toolbar-label">类型</span>
@@ -86,13 +86,14 @@
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">时间</span>
-          <el-radio-group v-model="traffic.window">
+          <el-radio-group v-model="traffic.window" @change="refreshTraffic">
             <el-radio-button value="1d">1天</el-radio-button>
             <el-radio-button value="7d">7天</el-radio-button>
             <el-radio-button value="30d">30天</el-radio-button>
             <el-radio-button value="custom">自定义</el-radio-button>
           </el-radio-group>
           <el-date-picker
+            v-if="traffic.window === 'custom'"
             v-model="traffic.timeRange"
             type="datetimerange"
             range-separator="至"
@@ -106,7 +107,8 @@
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">节点</span>
-          <el-select v-model="traffic.node" style="width: 220px;">
+          <el-select v-model="traffic.node" style="width: 220px;" filterable placeholder="选择节点">
+            <el-option label="全部节点" value="all" />
             <el-option v-for="item in nodeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </div>
@@ -117,18 +119,22 @@
         <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshTraffic">刷新</el-button>
       </div>
 
-      <div class="chart-placeholder">
+      <div class="chart-container">
         <div class="chart-title">节点流量</div>
-        <div class="chart-empty">暂无数据</div>
+        <div id="trafficChart" class="traffic-chart"></div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted, nextTick, watch } from 'vue'
+import request from '@/utils/request'
+import * as echarts from 'echarts'
 
 const activeTab = ref('ranking')
+const trafficChartRef = ref(null)
+let myChart = null
 
 const ranking = reactive({
   metric: 'bandwidth',
@@ -152,22 +158,128 @@ const traffic = reactive({
   exclude: ''
 })
 
-const nodeOptions = [
-  { label: 'agent', value: 'agent' },
-  { label: '全部节点', value: 'all' }
-]
+const nodeOptions = ref([])
+
+onMounted(() => {
+  fetchNodes()
+  // Mock ranking data for initial view
+  ranking.list = [
+      { rank: 1, node: 'node-1', nic: 'eth0', out: '100 Mbps', in: '10 Mbps' },
+      { rank: 2, node: 'node-2', nic: 'eth0', out: '80 Mbps', in: '8 Mbps' }
+  ]
+})
+
+const fetchNodes = () => {
+  request.get('/nodes', { params: { pageSize: 1000 } }).then(res => {
+    if (res.code === 0 && res.data && res.data.list) {
+      nodeOptions.value = res.data.list.map(node => ({
+        label: node.name,
+        value: node.id
+      }))
+    }
+  })
+}
 
 const refreshRanking = () => {
-  ranking.list = []
+    // Implement ranking refresh
+    console.log('Refresh ranking')
 }
 
 const refreshMetrics = () => {
-  metrics.list = []
+    // Implement metrics refresh
+     console.log('Refresh metrics')
+}
+
+// Chart Logic
+const initChart = () => {
+  const chartDom = document.getElementById('trafficChart')
+  if (!chartDom) return
+  if (myChart) {
+      myChart.dispose()
+  }
+  myChart = echarts.init(chartDom)
+  refreshTraffic() // Load data initially
+  window.addEventListener('resize', () => myChart && myChart.resize())
 }
 
 const refreshTraffic = () => {
-  // Placeholder for future API integration.
+  if (!myChart) return // Wait for init
+  
+  myChart.showLoading()
+  request.get('/stats/node_traffic', {
+      params: {
+          window: traffic.window,
+          node_id: traffic.node,
+          exclude_nic: traffic.exclude,
+          start_time: traffic.timeRange?.[0],
+          end_time: traffic.timeRange?.[1]
+      }
+  }).then(res => {
+      myChart.hideLoading()
+      if (res.code === 0 && res.data) {
+          updateChartOption(res.data)
+      }
+  }).catch(() => {
+      myChart.hideLoading()
+  })
 }
+
+const updateChartOption = (data) => {
+    const series = []
+    if (traffic.out) {
+        series.push({
+            name: '出站流量',
+            type: 'line',
+            data: data.out_traffic || [],
+            smooth: true,
+            areaStyle: { opacity: 0.1 },
+            itemStyle: { color: '#409eff' }
+        })
+    }
+    if (traffic.in) {
+        series.push({
+             name: '入站流量',
+             type: 'line',
+             data: data.in_traffic || [],
+             smooth: true,
+             areaStyle: { opacity: 0.1 },
+             itemStyle: { color: '#67c23a' }
+        })
+    }
+
+    const option = {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['出站流量', '入站流量'] },
+        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+        xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: data.x_axis || []
+        },
+        yAxis: {
+            type: 'value',
+            name: '流量 (MB)'
+        },
+        series: series
+    }
+    myChart.setOption(option, true)
+}
+
+watch(activeTab, (val) => {
+    if (val === 'traffic') {
+        nextTick(() => {
+            initChart()
+        })
+    }
+})
+
+// Deep watch for traffic options to validation or reload
+watch(() => [traffic.out, traffic.in], () => {
+    if (activeTab.value === 'traffic') {
+         refreshTraffic()
+    }
+})
+
 </script>
 
 <style scoped>
@@ -198,11 +310,11 @@ const refreshTraffic = () => {
   width: 320px;
 }
 
-.chart-placeholder {
+.chart-container {
   border: 1px solid #ebeef5;
   border-radius: 6px;
   padding: 18px;
-  min-height: 240px;
+  background: #fff;
 }
 
 .chart-title {
@@ -210,8 +322,9 @@ const refreshTraffic = () => {
   margin-bottom: 12px;
 }
 
-.chart-empty {
-  color: #909399;
+.traffic-chart {
+    height: 400px;
+    width: 100%;
 }
 
 .refresh-button {

@@ -67,14 +67,14 @@
         <el-icon class="copy-icon" @click.stop="copyText(row.domain_display || (row.domains && row.domains[0]))"><CopyDocument /></el-icon>
       </template>
     </el-table-column>
-    <el-table-column prop="listen_ports" label="监听端口" width="120" />
-    <el-table-column label="源站" min-width="180">
+    <el-table-column prop="listen_ports" label="监听端口" width="170" />
+    <el-table-column label="源站" width="180">
       <template #default="{ row }">
         <span>{{ row.origin_display }}</span>
         <el-icon class="copy-icon" @click.stop="copyText(row.origin_display)"><CopyDocument /></el-icon>
       </template>
     </el-table-column>
-    <el-table-column prop="cname" label="CNAME" min-width="180">
+    <el-table-column prop="cname" label="CNAME" width="240">
        <template #default="{ row }">
         <span>{{ row.cname }}</span>
         <el-icon class="copy-icon" @click.stop="copyText(row.cname)"><CopyDocument /></el-icon>
@@ -86,17 +86,17 @@
         <el-tag v-else type="info" size="small">关闭</el-tag>
       </template>
     </el-table-column>
-    <el-table-column prop="user_package_name" label="套餐" min-width="100" />
-    <el-table-column prop="region_name" label="区域" min-width="100" />
-    <el-table-column prop="node_group_name" label="线路组" min-width="100" />
-    <el-table-column prop="group_name" label="分组" min-width="100" />
+    <el-table-column prop="user_package_name" label="套餐" min-width="80" />
+    <el-table-column prop="region_name" label="区域" min-width="80" />
+    <el-table-column prop="node_group_name" label="线路组" min-width="80" />
+    <el-table-column prop="group_name" label="分组" min-width="80" />
     <el-table-column label="状态" width="80" align="center">
       <template #default="{ row }">
         <el-tag v-if="row.status" type="success" size="small">正常</el-tag>
         <el-tag v-else type="info" size="small">停用</el-tag>
       </template>
     </el-table-column>
-    <el-table-column label="添加时间" width="160">
+    <el-table-column label="添加时间" width="180">
       <template #default="{ row }">
         {{ row.created_at ? row.created_at.replace('T', ' ').substring(0, 19) : '-' }}
       </template>

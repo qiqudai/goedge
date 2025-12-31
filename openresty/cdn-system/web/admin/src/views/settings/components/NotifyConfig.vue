@@ -4,13 +4,13 @@
       <!-- Global Time Setting -->
       <div class="section-top">
          <el-form-item label="通知时间段">
-           <el-radio-group v-model="configs.notification_period">
+           <el-radio-group v-model="configs['notification-period']">
              <el-radio label="all">全天</el-radio>
              <el-radio label="custom">自定义</el-radio>
            </el-radio-group>
            <el-input 
-             v-if="configs.notification_period === 'custom'" 
-             v-model="configs.notification_period_custom" 
+             v-if="configs['notification-period'] === 'custom'" 
+             v-model="configs['notification-period-custom']" 
              placeholder="8-22"
              style="width: 100px; margin-left: 10px;"
             />
@@ -19,77 +19,91 @@
 
       <!-- 1. Traffic Exceeded -->
       <notify-item-config
-        v-model="configs.notify_traffic_exceed_info"
+        v-model="configs['traffic-exceed-notify']"
         title="流量已超限通知"
         :variables="['{{username}}', '{{package_id}}', '{{package_name}}']"
       />
 
       <!-- 2. Traffic Low -->
       <notify-item-config
-        v-model="configs.notify_traffic_low_info"
+        v-model="configs['traffic-exceeding-notify']"
         title="流量即将超限通知"
         :variables="['{{username}}', '{{package_id}}', '{{package_name}}', '{{traffic_remain}}']"
       >
         <template #extra>
            <el-form-item label="剩余流量不足 (GB)">
-             <el-input-number v-model="configs.notify_traffic_low_info.remain_traffic" :min="1" controls-position="right" style="width: 100%" />
+             <el-input-number v-model="configs['traffic-exceeding-notify'].remain_traffic" :min="1" controls-position="right" style="width: 100%" />
            </el-form-item>
         </template>
       </notify-item-config>
 
       <!-- 3. Package Expire -->
       <notify-item-config
-        v-model="configs.notify_package_expire_info"
+        v-model="configs['package-expire-notify']"
         title="套餐过期通知"
         :variables="['{{username}}', '{{package_id}}', '{{package_name}}']"
       />
 
       <!-- 4. Package Expiring (Soon) -->
       <notify-item-config
-        v-model="configs.notify_package_expiring_info"
+        v-model="configs['package-expiring-notify']"
         title="套餐即将过期通知"
         :variables="['{{username}}', '{{package_id}}', '{{package_name}}', '{{remain_days}}']"
       >
         <template #extra>
           <el-form-item label="剩余时间不足 (天)">
-             <el-input-number v-model="configs.notify_package_expiring_info.days" :min="1" controls-position="right" style="width: 100%" />
+             <el-input-number v-model="configs['package-expiring-notify'].days" :min="1" controls-position="right" style="width: 100%" />
           </el-form-item>
         </template>
       </notify-item-config>
 
       <!-- 5. CC Switch -->
       <notify-item-config
-        v-model="configs.notify_cc_switch_info"
+        v-model="configs['cc-switch-notify']"
         title="网站CC规则自动切换通知"
         :variables="['{{username}}', '{{domain}}', '{{curr_qps}}', '{{qps_limit}}', '{{rule_name}}']"
       />
 
       <!-- 6. Bandwidth Exceed -->
       <notify-item-config
-        v-model="configs.notify_bandwidth_exceed_info"
+        v-model="configs['bandwidth-exceed-notify']"
         title="套餐带宽超限通知"
         :variables="['{{username}}', '{{package_id}}', '{{package_name}}']"
       />
 
-      <!-- 7. Cert Expire -->
+      <!-- 7. Conn Exceed (New) -->
       <notify-item-config
-        v-model="configs.notify_cert_expire_info"
+        v-model="configs['conn-exceed-notify']"
+        title="连接数超限通知"
+        :variables="['{{username}}', '{{package_id}}', '{{package_name}}']"
+      />
+
+      <!-- 8. Cert Expire -->
+      <notify-item-config
+        v-model="configs['cert-expire-notify']"
         title="证书已过期通知"
         :variables="['{{username}}', '{{cert_id}}', '{{cert_name}}', '{{domain}}']"
       />
 
-      <!-- 8. Cert Expiring -->
+      <!-- 9. Cert Expiring -->
       <notify-item-config
-        v-model="configs.notify_cert_expiring_info"
+        v-model="configs['cert-expiring-notify']"
         title="证书即将过期通知"
         :variables="['{{username}}', '{{cert_id}}', '{{cert_name}}', '{{domain}}', '{{remain_days}}']"
       >
         <template #extra>
           <el-form-item label="剩余时间不足 (天)">
-             <el-input-number v-model="configs.notify_cert_expiring_info.days" :min="1" controls-position="right" style="width: 100%" />
+             <el-input-number v-model="configs['cert-expiring-notify'].days" :min="1" controls-position="right" style="width: 100%" />
           </el-form-item>
         </template>
       </notify-item-config>
+
+      <!-- 10. Account Auth2 (New) -->
+      <notify-item-config
+        v-model="configs['account-auth2-notify']"
+        title="二次验证通知"
+        :variables="['{{username}}', '{{ip}}', '{{time}}', '{{code}}']"
+      />
 
       <el-form-item label-width="140px">
         <el-button type="primary" @click="save">保存所有配置</el-button>
@@ -115,32 +129,36 @@ const emit = defineEmits(['saved'])
 
 // We use a local reactive object to store the parsed JSON objects
 const configs = ref({
-  notification_period: 'all',
-  notification_period_custom: '8-22',
-  notify_traffic_exceed_info: {},
-  notify_traffic_low_info: {},
-  notify_package_expire_info: {},
-  notify_package_expiring_info: {},
-  notify_cc_switch_info: {},
-  notify_bandwidth_exceed_info: {},
-  notify_cert_expire_info: {},
-  notify_cert_expiring_info: {}
+  'notification-period': 'all',
+  'notification-period-custom': '8-22',
+  'traffic-exceed-notify': {},
+  'traffic-exceeding-notify': {},
+  'package-expire-notify': {},
+  'package-expiring-notify': {},
+  'cc-switch-notify': {},
+  'bandwidth-exceed-notify': {},
+  'cert-expire-notify': {},
+  'cert-expiring-notify': {},
+  'conn-exceed-notify': {},
+  'account-auth2-notify': {}
 })
 
 // Keys mapping for JSON configs
 const jsonKeys = [
-  'notify_traffic_exceed_info',
-  'notify_traffic_low_info',
-  'notify_package_expire_info',
-  'notify_package_expiring_info',
-  'notify_cc_switch_info',
-  'notify_bandwidth_exceed_info',
-  'notify_cert_expire_info',
-  'notify_cert_expiring_info'
+  'traffic-exceed-notify',
+  'traffic-exceeding-notify',
+  'package-expire-notify',
+  'package-expiring-notify',
+  'cc-switch-notify',
+  'bandwidth-exceed-notify',
+  'cert-expire-notify',
+  'cert-expiring-notify',
+  'conn-exceed-notify',
+  'account-auth2-notify'
 ]
 
 // Keys for simple string configs
-const simpleKeys = ['notification_period', 'notification_period_custom']
+const simpleKeys = ['notification-period', 'notification-period-custom']
 
 // Helper to safely parse JSON
 const parseJSON = (str) => {

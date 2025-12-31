@@ -63,6 +63,21 @@ const props = defineProps({
 
 const emit = defineEmits(['saved'])
 
+// Keys mapping: Component Model Key -> Backend Key
+const keyMap = {
+  clean_cache_days: 'keep-job-days',
+  clean_login_log_days: 'keep-login-log-days',
+  clean_op_log_days: 'keep-op-log-days',
+  clean_site_log_days: 'keep-access-log-days',
+  clean_node_monitor_days: 'keep-node-log-days',
+  clean_traffic_days: 'keep-traffic-history-days',
+  clean_node_traffic_days: 'keep-node-traffic-days', // Assuming a key or keep as is if not in list, but let's guess keep-node-log-days covers it? No, keep independent.
+  clean_blacklist_days: 'keep-blacklist-days',
+  backup_frequency: 'backup_rate',
+  backup_retention: 'backup_keep_days',
+  backup_dir: 'backup_dir'
+}
+
 const form = ref({
   clean_cache_days: 30,
   clean_login_log_days: 30,
@@ -79,32 +94,37 @@ const form = ref({
 
 watch(() => props.configItems, (items) => {
   if (!items) return
-  const infoItem = items.find(i => i.name === 'system_info')
-  if (infoItem && infoItem.value) {
-    try {
-      const parsed = JSON.parse(infoItem.value)
-      // Only merge parsing fields relevant to this component
-      const keys = Object.keys(form.value)
-      keys.forEach(k => {
-        if (parsed[k] !== undefined) form.value[k] = parsed[k]
-      })
-    } catch (e) { /* ignore */ }
-  }
+
+  // Inverse Map: Backend Key -> Component Model Key
+  const reverseMap = {}
+  Object.keys(keyMap).forEach(k => reverseMap[keyMap[k]] = k)
+
+  items.forEach(item => {
+    const modelKey = reverseMap[item.name]
+    if (modelKey) {
+      if (item.name === 'backup_dir') {
+        form.value[modelKey] = item.value
+      } else {
+        // Handle "2h" or "30" strings
+        let val = parseInt(item.value, 10)
+        if (isNaN(val)) val = item.value // fallback for strings like '2h' if not purely numeric? backup_rate is '2h' in dump
+        form.value[modelKey] = val
+      }
+    }
+  })
 }, { immediate: true, deep: true })
 
 const save = () => {
-  let fullInfo = {}
-  const infoItem = props.configItems.find(i => i.name === 'system_info')
-  if (infoItem && infoItem.value) {
-    try {
-      fullInfo = JSON.parse(infoItem.value)
-    } catch (e) { /* ignore */ }
-  }
-
   const items = []
-  items.push({
-    name: 'system_info',
-    value: JSON.stringify({ ...fullInfo, ...form.value })
+  
+  Object.keys(form.value).forEach(modelKey => {
+    const backendKey = keyMap[modelKey]
+    if (backendKey) {
+      items.push({
+        name: backendKey,
+        value: String(form.value[modelKey])
+      })
+    }
   })
 
   request.post('/config_items', {

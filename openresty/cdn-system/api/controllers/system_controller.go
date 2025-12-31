@@ -34,7 +34,7 @@ func (ctr *SystemController) GetInfo(c *gin.Context) {
 			CleanNodeMonitorDays: 7,
 			CleanTrafficDays:     90,
 			CleanNodeTrafficDays: 45,
-			BackupFrequency:      2,
+			BackupFrequency:      "2",
 			BackupRetention:      7,
 			BackupDir:            "/data/backup/cdn/",
 			SessionLife:          86400,

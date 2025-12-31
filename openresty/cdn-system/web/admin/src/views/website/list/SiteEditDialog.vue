@@ -138,13 +138,19 @@ domain=test.com|ip=2.2.2.2,3.3.3.3"
                 <el-form-item label="网站分组">
                     <SiteGroupSelect v-model="batchForm.group_id" :user-id="batchForm.user_id" />
                 </el-form-item>
+                
+                <el-form-item label="DNS API">
+                    <el-select v-model="batchForm.dns_provider_id" placeholder="自动添加解析记录 (可选)" style="width: 100%" clearable>
+                        <el-option v-for="d in dnsProviders" :key="d.id" :label="d.name" :value="d.id" />
+                    </el-select>
+                </el-form-item>
             </el-form>
         </div>
       </div>
     </div>
 
     <template #footer>
-      <div v-if="activeTab === 'batch'">
+      <div>
         <el-button @click="visible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </div>
@@ -198,6 +204,7 @@ const batchForm = reactive({
   user_id: '',
   user_package_id: '',
   group_id: '',
+  dns_provider_id: '',
   data: '',
   ignore_error: false,
   simpleDomains: '',
@@ -333,6 +340,7 @@ const resetForm = () => {
       user_id: '',
       user_package_id: '',
       group_id: '',
+      dns_provider_id: '',
       data: '',
       ignore_error: false,
       simpleDomains: '',
@@ -432,10 +440,10 @@ const handleSubmit = async () => {
             user_id: Number(batchForm.user_id),
             user_package_id: Number(batchForm.user_package_id) || 0,
             group_id: Number(batchForm.group_id) || 0,
-            dns_provider_id: 0, 
+            dns_provider_id: Number(batchForm.dns_provider_id) || 0,
         }
         
-        const res = await request.post('/sites/batch', finalPayload)
+        const res = await request.post('/sites/batch', payload)
         
         ElMessage.success('批量添加任务已提交')
         visible.value = false

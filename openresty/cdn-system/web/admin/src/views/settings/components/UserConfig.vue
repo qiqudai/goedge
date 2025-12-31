@@ -61,8 +61,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import request from '@/utils/request'
+import { ElMessage } from 'element-plus'
+
+const props = defineProps({
+  configItems: {
+    type: Array,
+    default: () => []
+  }
+})
+
+const emit = defineEmits(['saved'])
 
 const form = ref({
   session_life: 86400,
@@ -81,44 +91,117 @@ const form = ref({
   phone_captcha_templ: ''
 })
 
-const fetchData = async () => {
-  try {
-    const res = await request.get('/api/v1/admin/config_items', {
-      params: { type: 'system', scope_name: 'global' }
-    })
-    const items = res.data.items || []
-    const infoItem = items.find(i => i.name === 'system_info')
-    if (infoItem && infoItem.value) {
-      try {
-        const parsed = JSON.parse(infoItem.value)
-        const keys = Object.keys(form.value)
-        keys.forEach(k => {
-          if (parsed[k] !== undefined) form.value[k] = parsed[k]
-        })
-      } catch (e) { /* ignore */ }
+// Helper to safely parse JSON
+const safeParse = (str) => {
+    try {
+        return str ? JSON.parse(str) : {}
+    } catch(e) {
+        return {}
     }
-  } catch (e) {
-    console.error('获取配置失败', e)
-  }
 }
+
+watch(() => props.configItems, (items) => {
+  if (!items) return
+
+  items.forEach(item => {
+    const val = item.value
+    switch (item.name) {
+      case 'login_session_valid_time':
+        form.value.session_life = parseInt(val) || 86400
+        break
+      case 'limit_user_login_domain':
+        form.value.limit_user_login_domain = val === '1' || val === 'true'
+        break
+      case 'limit_admin_login_domain':
+        form.value.limit_admin_login_domain = val === '1' || val === 'true'
+        break
+      case 'allow-enable-email-captcha-login':
+        form.value.enable_email_login = val === '1' || val === 'true'
+        break
+      case 'allow-enable-sms-captcha-login':
+        form.value.enable_sms_login = val === '1' || val === 'true'
+        break
+      case 'allow_register':
+        form.value.open_register = val === '1' || val === 'true' || val === 1
+        break
+      case 'register_success_templ':
+        {
+           const obj = safeParse(val)
+           form.value.register_mail_title = obj.title || ''
+           form.value.register_mail_content = obj.data || '' // Dump uses 'data' key for content? "data":"<p>..."
+        }
+        break
+      case 'forget_password_templ':
+        {
+           const obj = safeParse(val)
+           form.value.reset_pwd_mail_title = obj.title || ''
+           form.value.reset_pwd_mail_content = obj.data || ''
+        }
+        break
+      case 'email_captcha_templ':
+        {
+           const obj = safeParse(val)
+           form.value.verify_mail_title = obj.title || ''
+           form.value.verify_mail_content = obj.data || ''
+        }
+        break
+      case 'phone_captcha_templ':
+         // Dump shows string: "【cdn】您的验证码..."
+         form.value.phone_captcha_templ = val
+         break
+      // Configs requiring ID (not in dump but maybe needed?)
+      // We will skip phone_captcha_templ_id if not present in dump mapping
+    }
+  })
+}, { immediate: true, deep: true })
 
 const save = () => {
   const items = []
+  
+  items.push({ name: 'login_session_valid_time', value: String(form.value.session_life) })
+  items.push({ name: 'limit_user_login_domain', value: form.value.limit_user_login_domain ? '1' : '0' })
+  items.push({ name: 'limit_admin_login_domain', value: form.value.limit_admin_login_domain ? '1' : '0' })
+  items.push({ name: 'allow-enable-email-captcha-login', value: form.value.enable_email_login ? '1' : '0' })
+  items.push({ name: 'allow-enable-sms-captcha-login', value: form.value.enable_sms_login ? '1' : '0' })
+  items.push({ name: 'allow_register', value: form.value.open_register ? '1' : '0' })
+
+  // Templates JSON
   items.push({
-    name: 'system_info',
-    value: JSON.stringify(form.value)
+      name: 'register_success_templ',
+      value: JSON.stringify({
+          title: form.value.register_mail_title,
+          data: form.value.register_mail_content
+      })
+  })
+  items.push({
+      name: 'forget_password_templ',
+      value: JSON.stringify({
+          title: form.value.reset_pwd_mail_title,
+          data: form.value.reset_pwd_mail_content
+      })
+  })
+  items.push({
+      name: 'email_captcha_templ',
+      value: JSON.stringify({
+          title: form.value.verify_mail_title,
+          data: form.value.verify_mail_content
+      })
+  })
+  
+  items.push({
+      name: 'phone_captcha_templ',
+      value: form.value.phone_captcha_templ
   })
 
-  request.post('/api/v1/admin/config_items', {
+  request.post('/config_items', {
     type: 'system',
     scope_name: 'global',
     items: items
-  }).catch((e) => {
-    console.error('保存配置失败', e)
+  }).then(() => {
+    ElMessage.success('保存成功')
+    emit('saved')
   })
 }
-
-onMounted(fetchData)
 </script>
 
 <style scoped>

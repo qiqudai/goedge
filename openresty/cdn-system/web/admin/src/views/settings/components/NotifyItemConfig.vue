@@ -90,10 +90,10 @@ const localConfig = ref({
 
 const templateType = ref('email')
 
+// Avoid circular updates
 watch(() => props.modelValue, (val) => {
   if (val) {
-    // Merge defaults
-    localConfig.value = {
+    const newVal = {
       enable: 0,
       methods: [],
       continuous_times: 1,
@@ -102,10 +102,10 @@ watch(() => props.modelValue, (val) => {
       sms_template: { content: '' },
       ...JSON.parse(JSON.stringify(val))
     }
-    // Ensure nested objects
-    if (!localConfig.value.methods) localConfig.value.methods = []
-    if (!localConfig.value.email_template) localConfig.value.email_template = { title: '', content: '' }
-    if (!localConfig.value.sms_template) localConfig.value.sms_template = { content: '' }
+    // Deep compare to avoid unnecessary updates and loops
+    if (JSON.stringify(newVal) !== JSON.stringify(localConfig.value)) {
+      localConfig.value = newVal
+    }
   }
 }, { immediate: true, deep: true })
 

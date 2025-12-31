@@ -58,8 +58,26 @@
     <el-card shadow="never" class="mb-20">
       <template #header>API密钥</template>
         <el-form-item label="密钥状态">
-           <el-switch v-model="form.api_key_status" active-value="1" inactive-value="0" />
+           <el-switch v-model="form.api_key_status" active-value="1" inactive-value="0" @change="handleApiKeyStatusChange" />
         </el-form-item>
+        
+        <div v-if="form.api_key_status === '1'" class="pl-20">
+           <el-form-item label="api_key">
+             <span>{{ apiKeyInfo.api_key }}</span>
+             <el-button link type="primary" class="ml-10" @click="copy(apiKeyInfo.api_key)"><el-icon><CopyDocument /></el-icon></el-button>
+           </el-form-item>
+           <el-form-item label="api_secret">
+             <span>{{ apiKeyInfo.api_secret }}</span>
+             <el-button link type="primary" class="ml-10" @click="copy(apiKeyInfo.api_secret)"><el-icon><CopyDocument /></el-icon></el-button>
+           </el-form-item>
+           <el-form-item label="IP白名单">
+             <el-input v-model="apiKeyInfo.api_ip" placeholder="多个IP以|分隔 (例如: 1.2.3.4|5.6.7.8)" />
+             <div class="form-helper">只允许指定IP访问API，留空表示不限制</div>
+           </el-form-item>
+           <el-form-item>
+             <el-button type="danger" plain size="small" @click="resetSecret">重置密钥</el-button>
+           </el-form-item>
+        </div>
     </el-card>
 
     <!-- Group 7: Traffic Calculation -->
@@ -98,9 +116,10 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import request from '@/utils/request'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { CopyDocument } from '@element-plus/icons-vue'
 
 const props = defineProps({
   configItems: {
@@ -111,6 +130,31 @@ const props = defineProps({
 
 const emit = defineEmits(['saved'])
 
+// Key Mapping
+const keyMap = {
+  master_client_ip_header: 'master_client_ip_header',
+  record_repair_enable: 'record-repair-enable',
+  dns_rs_protect: 'dns_rs_protect',
+  max_site_stream_sync_one_time: 'max_site_stream_sync_one_time',
+  sync_site_config_scope: 'sync-site-config-scope',
+  res_rank_size: 'res_rank_size',
+  http_proxy: 'http_proxy',
+  api_key_status: 'api_key_status',
+  tcp_traffic_factor: 'tcp_traffic_factor',
+  cert_content: 'https_cert',
+  key_content: 'https_key',
+  
+  // New fields
+  package_expire_close_site: 'package_expire_close_site',
+  traffic_excceed_close_site: 'traffic_excceed_close_site', // note double 'c' in dump "excceed"
+  package_allow_upgrade: 'package_allow_upgrade',
+  package_allow_downgrade: 'package_allow_downgrade',
+  node_health_check: 'node_health_check',
+  node_max_failed: 'node_max_failed',
+  auto_upgrade_agent: 'auto_upgrade_agent',
+  delete_config_delayed: 'delete_config_delayed'
+}
+
 const form = ref({
   master_client_ip_header: 'X-Real-IP',
   record_repair_enable: 0,
@@ -120,54 +164,132 @@ const form = ref({
   res_rank_size: 100,
   http_proxy: '',
   api_key_status: '0',
-  api_key_status: '0',
   tcp_traffic_factor: 1.1,
   cert_content: '',
-  key_content: ''
+  key_content: '',
+  
+  package_expire_close_site: '1',
+  traffic_excceed_close_site: '0',
+  package_allow_upgrade: '0',
+  package_allow_downgrade: '0',
+  node_health_check: '1',
+  node_max_failed: 2,
+  auto_upgrade_agent: '0',
+  delete_config_delayed: ''
+})
+
+const apiKeyInfo = ref({
+  api_key: '',
+  api_secret: '',
+  api_ip: ''
 })
 
 watch(() => props.configItems, (items) => {
   if (!items) return
 
+  const reverseMap = {}
+  Object.keys(keyMap).forEach(k => reverseMap[keyMap[k]] = k)
+
   items.forEach(item => {
-    if (Object.keys(form.value).includes(item.name)) {
-      let val = item.value
-      // Type conversion
-      if (['record_repair_enable', 'max_site_stream_sync_one_time', 'res_rank_size'].includes(item.name)) {
-        val = parseInt(val, 10)
-        if (isNaN(val)) val = 0 // default fallback
-      } else if (item.name === 'tcp_traffic_factor') {
-        val = parseFloat(val)
-        if (isNaN(val)) val = 1.1
-      }
-      form.value[item.name] = val
+    const modelKey = reverseMap[item.name]
+    if (modelKey) {
+       let val = item.value
+       
+       // Handling Numerics
+       if (['max_site_stream_sync_one_time', 'res_rank_size', 'record_repair_enable', 'node_max_failed'].includes(modelKey)) {
+           val = parseInt(val) || 0
+       } else if (modelKey === 'tcp_traffic_factor') {
+           val = parseFloat(val) || 1.1
+       }
+       
+       form.value[modelKey] = val
+       
+       // If API Key Status is '1', fetch key info
+       if (modelKey === 'api_key_status' && val === '1') {
+           fetchApiKey()
+       }
     }
   })
 }, { immediate: true, deep: true })
 
-const save = () => {
-  const items = []
-  Object.keys(form.value).forEach(key => {
-    items.push({
-      name: key,
-      value: String(form.value[key])
+const fetchApiKey = () => {
+    request.get('/api_key').then(res => {
+        if(res.code === 0 && res.data) {
+            apiKeyInfo.value = res.data
+        }
     })
+}
+
+const handleApiKeyStatusChange = (val) => {
+    if (val === '1') {
+        fetchApiKey()
+    }
+}
+
+const resetSecret = () => {
+    ElMessageBox.confirm('确定要重置密钥吗？旧的密钥将即刻失效。', '警告', {
+        confirmButtonText: '确定重置',
+        cancelButtonText: '取消',
+        type: 'warning'
+    }).then(() => {
+        request.post('/api_key/reset').then(res => {
+             if(res.code === 0 && res.data) {
+                 apiKeyInfo.value.api_secret = res.data.api_secret
+                 ElMessage.success('密钥已重置')
+             }
+        })
+    })
+}
+
+const copy = (text) => {
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
+        ElMessage.success('已复制')
+    }).catch(() => {
+        ElMessage.error('复制失败')
+    })
+}
+
+const save = async () => {
+  const items = []
+  Object.keys(form.value).forEach(modelKey => {
+    const backendKey = keyMap[modelKey]
+    if (backendKey) {
+        items.push({
+            name: backendKey,
+            value: String(form.value[modelKey])
+        })
+    }
   })
 
-  request.post('/config_items', {
-    type: 'system',
-    scope_name: 'global',
-    items: items
-  }).then(() => {
-    ElMessage.success('保存成功')
-    emit('saved')
-  })
+  // 1. Save Config Items (including api_key_status)
+  try {
+      await request.post('/config_items', {
+        type: 'system',
+        scope_name: 'global',
+        items: items
+      })
+      
+      // 2. Save API Key IP whitelist if status is enabled
+      if (form.value.api_key_status === '1') {
+          await request.put('/api_key', {
+              api_ip: apiKeyInfo.value.api_ip
+          })
+      }
+      
+      ElMessage.success('保存成功')
+      emit('saved')
+  } catch(e) {
+      ElMessage.error('保存失败: ' + (e.msg || '未知错误'))
+  }
 }
 </script>
 
 <style scoped>
 .mb-20 { margin-bottom: 20px; }
 .mt-10 { margin-top: 10px; }
+.ml-10 { margin-left: 10px; }
+.pl-20 { padding-left: 20px; }
 .text-gray-500 { color: #888; }
 .line-height-1\.5 { line-height: 1.5; }
 .form-helper {

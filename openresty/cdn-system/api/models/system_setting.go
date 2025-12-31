@@ -14,81 +14,91 @@ type SystemSettings struct {
     LogoFile            string   `json:"logo_file"`
     LoginAdFile         string   `json:"login_ad_file"`
 
-    // 2. Package Related
-    ExpireCloseSite     bool `json:"expire_close_site"`
-    TrafficCloseSite    bool `json:"traffic_close_site"`
-    AllowUpgrade        bool `json:"allow_upgrade"`
-    AllowDowngrade      bool `json:"allow_downgrade"`
+    // 2. Package Related (Updated Keys)
+    ExpireCloseSite     bool `json:"package_expire_close_site"`
+    TrafficCloseSite    bool `json:"traffic_excceed_close_site"` // NOTE: user dump has typo "excceed"
+    AllowUpgrade        bool `json:"package_allow_upgrade"`
+    AllowDowngrade      bool `json:"package_allow_downgrade"`
 
     // 3. Maintenance
-    MaintenanceStatus   bool   `json:"maintenance_status"`
+    MaintenanceStatus   bool   `json:"maintenance_status"` // or 'maintain' JSON? Dump has 'maintain' {"enable":0...}
     MaintenanceMsg      string `json:"maintenance_msg"`
     AutoUpgradeNode     bool   `json:"auto_upgrade_node"`
+    AutoUpgradeAgent    bool   `json:"auto_upgrade_agent"` // New
 
-    // 4. Data Cleaning (Days)
-    CleanCacheDays      int `json:"clean_cache_days"`      // 30
-    CleanLoginLogDays   int `json:"clean_login_log_days"`  // 30
-    CleanOpLogDays      int `json:"clean_op_log_days"`     // 365
-    CleanSiteLogDays    int `json:"clean_site_log_days"`   // 7
-    CleanNodeMonitorDays int `json:"clean_node_monitor_days"` // 7
-    CleanTrafficDays    int `json:"clean_traffic_days"`    // 90
-    CleanBlacklistDays  int `json:"clean_blacklist_days"`  // 7
-    CleanNodeTrafficDays int `json:"clean_node_traffic_days"` // 45
+    // 4. Data Cleaning (Days) -> Keep Keys
+    CleanCacheDays      int `json:"keep-job-days"`
+    CleanLoginLogDays   int `json:"keep-login-log-days"`
+    CleanOpLogDays      int `json:"keep-op-log-days"`
+    CleanSiteLogDays    int `json:"keep-access-log-days"`
+    CleanNodeMonitorDays int `json:"keep-node-log-days"`
+    CleanTrafficDays    int `json:"keep-traffic-history-days"`
+    CleanBlacklistDays  int `json:"keep-blacklist-days"`
+    CleanNodeTrafficDays int `json:"keep-node-traffic-days"`
     
     // Backup
-    BackupFrequency     int    `json:"backup_frequency"` // Days
-    BackupRetention     int    `json:"backup_retention"` // Days
+    BackupFrequency     string `json:"backup_rate"` // User dump has "2h", string?
+    BackupRetention     int    `json:"backup_keep_days"`
     BackupDir           string `json:"backup_dir"`
 
     // 5. User Config
-    SessionLife         int    `json:"session_life"` // Seconds
-    LimitUserLoginDomain bool  `json:"limit_user_login_domain"`
+    SessionLife         int    `json:"login_session_valid_time"`
+    LimitUserLoginDomain bool  `json:"limit_user_login_domain"` 
     LimitAdminLoginDomain bool `json:"limit_admin_login_domain"`
-    EnableEmailLogin    bool   `json:"enable_email_login"` 
-    EnableSMSLogin      bool   `json:"enable_sms_login"`
-    OpenRegister        bool   `json:"open_register"`
+    EnableEmailLogin    bool   `json:"allow-enable-email-captcha-login"` 
+    EnableSMSLogin      bool   `json:"allow-enable-sms-captcha-login"`
+    OpenRegister        bool   `json:"allow_register"`
     
     // Templates
-    RegisterMailTitle   string `json:"register_mail_title"`
-    RegisterMailContent string `json:"register_mail_content"`
-    ResetPwdmailTitle   string `json:"reset_pwd_mail_title"`
-    ResetPwdmailContent string `json:"reset_pwd_mail_content"`
-    VerifyMailTitle     string `json:"verify_mail_title"`
-    VerifyMailContent   string `json:"verify_mail_content"`
+    RegisterMailTitle   string `json:"-"` // Use JSON structs
+    RegisterMailContent string `json:"-"`
+    ResetPwdmailTitle   string `json:"-"`
+    ResetPwdmailContent string `json:"-"`
+    VerifyMailTitle     string `json:"-"`
+    VerifyMailContent   string `json:"-"`
+    
+    RegisterSuccessTempl   string `json:"register_success_templ"` // JSON
+    ForgetPasswordTempl    string `json:"forget_password_templ"`  // JSON
+    EmailCaptchaTempl      string `json:"email_captcha_templ"`    // JSON
     
     // SMS Templates
     PhoneCaptchaTemplId string `json:"phone_captcha_templ_id"`
     PhoneCaptchaTempl   string `json:"phone_captcha_templ"`
 
     // 6. Notifications
-    // 6. Notifications
-    NotificationPeriod string `json:"notification_period"` // all, custom
+    NotificationPeriod string `json:"notification-period"` // all, custom
 
     // JSON configs
-    NotifyTrafficExceedInfo    string `json:"notify_traffic_exceed_info"`    // {enable, methods, count, interval, email_title, email_content, sms_content}
-    NotifyTrafficLowInfo       string `json:"notify_traffic_low_info"`       // {enable, methods, threshold, count, interval, ...}
-    NotifyPackageExpireInfo    string `json:"notify_package_expire_info"`
-    NotifyPackageExpiringInfo  string `json:"notify_package_expiring_info"`
-    NotifyCCSwitchInfo         string `json:"notify_cc_switch_info"`
-    NotifyBandwidthExceedInfo  string `json:"notify_bandwidth_exceed_info"`
-    NotifyCertExpireInfo       string `json:"notify_cert_expire_info"`
-    NotifyCertExpiringInfo     string `json:"notify_cert_expiring_info"`
+    NotifyTrafficExceedInfo    string `json:"traffic-exceed-notify"`
+    NotifyTrafficLowInfo       string `json:"traffic-exceeding-notify"`
+    NotifyPackageExpireInfo    string `json:"package-expire-notify"`
+    NotifyPackageExpiringInfo  string `json:"package-expiring-notify"`
+    NotifyCCSwitchInfo         string `json:"cc-switch-notify"`
+    NotifyBandwidthExceedInfo  string `json:"bandwidth-exceed-notify"`
+    NotifyCertExpireInfo       string `json:"cert-expire-notify"`
+    NotifyCertExpiringInfo     string `json:"cert-expiring-notify"`
+    NotifyConnExceedInfo       string `json:"conn-exceed-notify"`
+    NotifyAccountAuth2Info     string `json:"account-auth2-notify"`
 
     // 7. HTTPS
-    CertContent string `json:"cert_content"` // PEM
-    KeyContent  string `json:"key_content"`  // PEM
+    CertContent string `json:"https_cert"`
+    KeyContent  string `json:"https_key"`
     ForceSSL    bool   `json:"force_ssl"`
 
     // 8. Other Config
     MasterClientIpHeader        string  `json:"master_client_ip_header"`
-    RecordRepairEnable          int     `json:"record_repair_enable"` // 0: close, 1: repair, 2: repair_and_delete
+    RecordRepairEnable          int     `json:"record-repair-enable"`
     DnsRsProtect                string  `json:"dns_rs_protect"`
     MaxSiteStreamSyncOneTime    int     `json:"max_site_stream_sync_one_time"`
-    SyncSiteConfigScope         string  `json:"sync_site_config_scope"` // region, group
+    SyncSiteConfigScope         string  `json:"sync-site-config-scope"`
     ResRankSize                 int     `json:"res_rank_size"`
     HttpProxy                   string  `json:"http_proxy"`
     ApiKeyStatus                bool    `json:"api_key_status"`
     TcpTrafficFactor            float64 `json:"tcp_traffic_factor"`
+    
+    // Node
+    NodeHealthCheck   bool `json:"node_health_check"`
+    NodeMaxFailed     int  `json:"node_max_failed"`
 }
 
 type Link struct {
