@@ -29,6 +29,7 @@ func startMetricsShip() {
 }
 
 func startLogCleanup() {
+	cleanupStoredLogs()
 	ticker := time.NewTicker(time.Hour)
 	for range ticker.C {
 		cleanupStoredLogs()
@@ -53,6 +54,7 @@ func cleanupStoredLogs() {
 	}
 
 	expireBefore := time.Now().Add(-time.Duration(hours) * time.Hour)
+	removed := 0
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -66,8 +68,13 @@ func cleanupStoredLogs() {
 			continue
 		}
 		if info.ModTime().Before(expireBefore) {
-			_ = os.Remove(filepath.Join(dir, name))
+			if err := os.Remove(filepath.Join(dir, name)); err == nil {
+				removed++
+			}
 		}
+	}
+	if removed > 0 {
+		log.Printf("[Info] Log cleanup removed %d file(s) from %s", removed, dir)
 	}
 }
 

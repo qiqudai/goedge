@@ -94,6 +94,7 @@ func initEnvironment() {
 	CONFIG_BAK = CONFIG_PATH + ".bak"
 
 	loadPersistedConfigs()
+	loadPersistedPackages()
 
 	log.Printf("[Init] Environment Setup: Bin=%s, Config=%s", NginxBinPath, CONFIG_PATH)
 }

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -292,6 +293,21 @@ type UserPackageSyncPayload struct {
 	} `json:"packages"`
 }
 
+type AgentPackageConfig struct {
+	Version  int    `json:"version"`
+	Status   string `json:"status"`
+	Limits   struct {
+		Traffic    int64 `json:"traffic"`
+		Bandwidth  int64 `json:"bandwidth"`
+		Connection int64 `json:"connection"`
+		Domain     int64 `json:"domain"`
+	} `json:"limits"`
+	Features struct {
+		Websocket    bool `json:"websocket"`
+		CustomCCRule bool `json:"custom_cc_rule"`
+	} `json:"features"`
+}
+
 func syncUserPackageTask(raw string) (string, error) {
 	var payload UserPackageSyncPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -306,6 +322,10 @@ func syncUserPackageTask(raw string) (string, error) {
 	var applied []map[string]interface{}
 
 	for _, pkg := range payload.Packages {
+		var parsed AgentPackageConfig
+		if err := json.Unmarshal(pkg.Config, &parsed); err != nil {
+			return "", fmt.Errorf("invalid package config: %v", err)
+		}
 		filename := fmt.Sprintf("%d.json", pkg.PackageID)
 		targetPath := filepath.Join(packagesDir, filename)
 
@@ -341,6 +361,13 @@ func syncUserPackageTask(raw string) (string, error) {
 			return "", fmt.Errorf("rename failed: %v", err)
 		}
 
+		localConfigMu.Lock()
+		if LocalPackages == nil {
+			LocalPackages = make(map[int64]AgentPackageConfig)
+		}
+		LocalPackages[pkg.PackageID] = parsed
+		localConfigMu.Unlock()
+
 		applied = append(applied, map[string]interface{}{
 			"package_id": pkg.PackageID,
 			"version":    pkg.Version,
@@ -353,4 +380,49 @@ func syncUserPackageTask(raw string) (string, error) {
 	}
 	res, _ := json.Marshal(applied)
 	return string(res), nil
+}
+
+func loadPersistedPackages() {
+	packagesDir := filepath.Join(WorkDir, "packages")
+	entries, err := os.ReadDir(packagesDir)
+	if err != nil {
+		return
+	}
+
+	loaded := 0
+	localConfigMu.Lock()
+	if LocalPackages == nil {
+		LocalPackages = make(map[int64]AgentPackageConfig)
+	}
+	localConfigMu.Unlock()
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		idStr := strings.TrimSuffix(name, ".json")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id == 0 {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(packagesDir, name))
+		if err != nil {
+			continue
+		}
+		var parsed AgentPackageConfig
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			continue
+		}
+		localConfigMu.Lock()
+		LocalPackages[id] = parsed
+		localConfigMu.Unlock()
+		loaded++
+	}
+	if loaded > 0 {
+		log.Printf("[Info] Loaded %d package configs from disk", loaded)
+	}
 }
