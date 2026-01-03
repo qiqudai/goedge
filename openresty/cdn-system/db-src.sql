@@ -404,6 +404,7 @@ create table `user_package` (
     `bandwidth` varchar(20),
     `connection` int(11),
     `domain` int(11) DEFAULT NULL,
+    `main_domain_limit` int(11) DEFAULT NULL,
     `http_port` int(11) DEFAULT NULL,
     `stream_port` int(11) DEFAULT NULL,
     `custom_cc_rule` tinyint(1) DEFAULT NULL,

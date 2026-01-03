@@ -82,7 +82,7 @@ func checkUserPackageExpiration() {
 	//    This requires DB migration for `is_expired`.
 	//    I'll add `IsExpired` field to `models.UserPackage`.
 	
-	err := db.DB.Where("end_at < ? AND is_expired = ?", now, false).Find(&expiredPackages).Error
+	err := db.DB.Where("end_at < ? AND (is_expired = ? OR is_expired IS NULL)", now, false).Find(&expiredPackages).Error
 	if err != nil {
 		log.Println("[Error] Check expiration:", err)
 		return
@@ -96,8 +96,19 @@ func checkUserPackageExpiration() {
 		}
 		
 		fmt.Printf("[INFO] Package %d expired. Syncing...\n", p.ID)
+		notifyPackageExpired(p)
 		if err := NewUserPackageService().SyncUserPackage(p.ID, "expire"); err != nil {
 			log.Printf("[Error] Failed to sync expired package %d: %v\n", p.ID, err)
 		}
 	}
+}
+
+func notifyPackageExpired(pkg models.UserPackage) {
+	userID := int64(pkg.UserID)
+	if userID == 0 {
+		return
+	}
+	title := "Package expired"
+	content := fmt.Sprintf("Package %s expired at %s.", pkg.Name, pkg.EndAt.Format("2006-01-02 15:04:05"))
+	_ = CreateUserMessage(userID, "package-expire", title, content, pkg.ID, 0)
 }

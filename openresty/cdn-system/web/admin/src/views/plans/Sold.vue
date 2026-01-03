@@ -261,7 +261,7 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="主域名数">
-              <el-input disabled placeholder="暂不支持" /> 
+              <el-input v-model="editForm.main_domain_limit" placeholder="不限" /> 
               <!-- Screenshot just says "主域名数", checking Basic.vue it doesn't have "Main Domain Limit". 
                    The screenshot has "主域名数". I don't see it in my editForm properties from Basic.vue.
                    Let's add it if needed or placeholder. 
@@ -401,6 +401,7 @@ const editForm = ref({
   bandwidth: '',
   connection: '',
   domain: '',
+  main_domain_limit: '',
   http_port: '',
   stream_port: '',
   custom_cc_rule: false,
@@ -542,6 +543,7 @@ const openEdit = (row) => {
     bandwidth: row.bandwidth,
     connection: row.connection,
     domain: row.domain,
+    main_domain_limit: row.main_domain_limit,
     http_port: row.http_port,
     stream_port: row.stream_port,
     custom_cc_rule: row.custom_cc_rule,

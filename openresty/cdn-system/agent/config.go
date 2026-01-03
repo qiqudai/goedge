@@ -352,7 +352,11 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := writeHTTPGlobalConfig(cfg.Nginx); err != nil {
 		return err
 	}
-	return writeStreamGlobalConfig(cfg.Nginx)
+	if err := writeStreamGlobalConfig(cfg.Nginx); err != nil {
+		return err
+	}
+	setLocalNginxConfig(cfg.Nginx)
+	return nil
 }
 
 func parseResourcesFallback(payload []byte) *edgeResources {
@@ -518,6 +522,15 @@ func setLocalDefaultConfig(cfg *edgeDefaultConfig) {
 	localConfigMu.Unlock()
 }
 
+func setLocalNginxConfig(cfg *edgeNginxConfig) {
+	if cfg == nil {
+		return
+	}
+	localConfigMu.Lock()
+	LocalNginxConfig = cfg
+	localConfigMu.Unlock()
+}
+
 func loadPersistedConfigs() {
 	if WorkDir == "" {
 		return
@@ -560,6 +573,20 @@ func loadPersistedConfigs() {
 		}
 	} else if !os.IsNotExist(err) {
 		log.Printf("[Warn] Load cc_rules.json failed: %v", err)
+	}
+
+	loadPersistedNginxConfig()
+}
+
+func loadPersistedNginxConfig() {
+	if CONFIG_PATH == "" {
+		return
+	}
+	var cfg edgeConfig
+	if err := fsutil.ReadJSONFile(CONFIG_PATH, &cfg); err == nil {
+		setLocalNginxConfig(cfg.Nginx)
+	} else if !os.IsNotExist(err) {
+		log.Printf("[Warn] Load cdn_config.json failed: %v", err)
 	}
 }
 

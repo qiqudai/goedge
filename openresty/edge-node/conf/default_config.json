@@ -1,9 +1,9 @@
 {
   "website": {
-    "cache_enable": false,
-    "cache_ttl": 0,
-    "gzip": false,
-    "waf_enable": false,
+    "cache_enable": true,
+    "cache_ttl": 1234,
+    "gzip": true,
+    "waf_enable": true,
     "ssl_ciphers": ""
   },
   "api": {

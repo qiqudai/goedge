@@ -70,6 +70,11 @@ func processSiteCreateTask(task *models.Task) {
 		return
 	}
 
+	if err := CheckDomainLimit(payload.UserID, payload.UserPackageID, []string{payload.Domain}); err != nil {
+		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "ret": err.Error(), "end_at": time.Now()})
+		return
+	}
+
 	// Double check if domain exists
 	// var exists int64
 
@@ -97,6 +102,9 @@ func processSiteCreateTask(task *models.Task) {
 	defaults, err := GetSiteDefaultMapWithGroup(payload.UserID, payload.GroupID)
 	if err == nil {
 		ApplySiteDefaults(site, defaults)
+	}
+	if globalDefaults := GetGlobalDefaultConfig(); globalDefaults != nil {
+		ApplySiteTemplateDefaults(site, globalDefaults.Website)
 	}
 
 	// Transaction to save Site and Group Relation

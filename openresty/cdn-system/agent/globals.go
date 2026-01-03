@@ -35,6 +35,7 @@ var (
 	LocalCCRules     map[int64][]edgeCCRuleItem
 	LocalCCMatchers  map[int64]edgeCCMatcher
 	LocalCCFilters   map[int64]edgeCCFilter
+	LocalNginxConfig *edgeNginxConfig
 	LocalPackages    map[int64]AgentPackageConfig
 	pendingNodeSyncs []nodeSyncAck
 )

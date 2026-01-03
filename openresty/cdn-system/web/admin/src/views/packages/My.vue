@@ -305,7 +305,7 @@ const usageRows = computed(() => {
   const rows = [
     { label: '流量(GB)', total: formatLimit(data.traffic), used: 0 },
     { label: '域名数', total: formatLimit(data.domain), used: 0 },
-    { label: '主域名数', total: formatLimit(data.domain), used: 0 },
+    { label: '主域名数', total: formatLimit(data.main_domain_limit), used: 0 },
     { label: 'HTTP端口数', total: formatLimit(data.http_port), used: 0 },
     { label: '转发端口数', total: formatLimit(data.stream_port), used: 0 }
   ]

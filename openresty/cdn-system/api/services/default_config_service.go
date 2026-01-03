@@ -238,6 +238,39 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	}
 }
 
+func ApplySiteTemplateDefaults(site *models.Site, template models.SiteTemplate) {
+	if site == nil {
+		return
+	}
+	if site.Settings == nil {
+		site.Settings = map[string]interface{}{}
+	}
+
+	cacheCfg := getSubMap(site.Settings, "cache")
+	if _, ok := cacheCfg["enable"]; !ok {
+		cacheCfg["enable"] = template.CacheEnable
+	}
+	if template.CacheTTL > 0 {
+		if _, ok := cacheCfg["ttl"]; !ok {
+			cacheCfg["ttl"] = template.CacheTTL
+		}
+	}
+
+	advCfg := getSubMap(site.Settings, "advanced")
+	if _, ok := advCfg["gzip"]; !ok {
+		advCfg["gzip"] = template.Gzip
+	}
+
+	httpsCfg := getSubMap(site.Settings, "https")
+	if template.SSLCiphers != "" {
+		setIfMissing(httpsCfg, "ssl_ciphers", template.SSLCiphers)
+	}
+
+	securityCfg := getSubMap(site.Settings, "security")
+	if _, ok := securityCfg["waf_enable"]; !ok {
+		securityCfg["waf_enable"] = template.WAFEnable
+	}
+}
 
 func ApplyForwardDefaults(forward *models.Forward, defaults map[string]string) {
 	if forward == nil || defaults == nil {

@@ -15,6 +15,7 @@ import (
 )
 
 func startAccessLogShip() {
+	shipAccessLogs()
 	ticker := time.NewTicker(LOG_SHIP_INT)
 	for range ticker.C {
 		shipAccessLogs()
@@ -35,6 +36,8 @@ func startLogCleanup() {
 		cleanupStoredLogs()
 	}
 }
+
+var accessLogPathLogged bool
 
 func cleanupStoredLogs() {
 	dir, hours := getLogStorageSettings()
@@ -100,8 +103,11 @@ func getLogStorageSettings() (string, int) {
 }
 
 func shipAccessLogs() {
-	logPath := filepath.Join(WorkDir, "logs", "access.json")
-	offsetPath := filepath.Join(WorkDir, "logs", "access.offset")
+	logPath, offsetPath := getAccessLogPaths()
+	if DebugMode && !accessLogPathLogged {
+		log.Printf("[Debug] Access log ship path=%s offset=%s", logPath, offsetPath)
+		accessLogPathLogged = true
+	}
 	fi, err := os.Stat(logPath)
 	if err != nil {
 		return
@@ -203,4 +209,21 @@ func loadOffset(path string) int64 {
 
 func saveOffset(path string, offset int64) {
 	_ = os.WriteFile(path, []byte(strconv.FormatInt(offset, 10)), 0644)
+}
+
+func getAccessLogPaths() (string, string) {
+	logsDir := filepath.Join(WorkDir, "logs")
+	localConfigMu.RLock()
+	nginx := LocalNginxConfig
+	localConfigMu.RUnlock()
+	if nginx != nil {
+		if dir := strings.TrimSpace(nginx.LogsDir); dir != "" {
+			logsDir = dir
+			if !filepath.IsAbs(logsDir) {
+				logsDir = filepath.Join(WorkDir, logsDir)
+			}
+		}
+	}
+	_ = os.MkdirAll(logsDir, 0755)
+	return filepath.Join(logsDir, "access.json"), filepath.Join(logsDir, "access.offset")
 }

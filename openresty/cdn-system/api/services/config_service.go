@@ -125,6 +125,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		}
 
 		aclDefault, aclRules := buildACLForSite(*effectiveSite)
+		regionBlock := extractRegionBlock(*effectiveSite)
 		if effectiveSite.CcDefaultRule > 0 {
 			usedRuleIDs = append(usedRuleIDs, effectiveSite.CcDefaultRule)
 		}
@@ -154,6 +155,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				ACLRules:                    aclRules,
 				BlackIPs:                    parseIPList(effectiveSite.BlackIPRaw),
 				WhiteIPs:                    parseIPList(effectiveSite.WhiteIPRaw),
+				RegionBlock:                 regionBlock,
 				CCRuleID:                    effectiveSite.CcDefaultRule,
 				OriginProtocol:              originProtocol,
 				OriginHTTPPort:              originHTTPPort,
@@ -271,6 +273,13 @@ func loadGlobalConfig() *models.GlobalConfig {
 	return &cfg
 }
 
+func GetGlobalDefaultConfig() *models.DefaultSiteConfig {
+	if cfg := loadGlobalConfig(); cfg != nil {
+		return &cfg.DefaultConfig
+	}
+	return nil
+}
+
 func normalizeErrorPages(pages map[string]string) map[string]string {
 	if len(pages) == 0 {
 		return pages
@@ -285,14 +294,14 @@ func normalizeErrorPages(pages map[string]string) map[string]string {
 		copyIfPresent(key)
 	}
 	fallbacks := map[string]string{
-		"p400":               "400",
-		"p403":               "403",
-		"p502":               "502",
-		"p504":               "504",
-		"p512":               "timeout",
-		"p513":               "traffic_limit",
-		"p514":               "site_locked",
-		"p515":               "conn_limit",
+		"p400":                "400",
+		"p403":                "403",
+		"p502":                "502",
+		"p504":                "504",
+		"p512":                "timeout",
+		"p513":                "traffic_limit",
+		"p514":                "site_locked",
+		"p515":                "conn_limit",
 		"access_ip_not_allow": "ip",
 		"host_not_found":      "domain_invalid",
 	}
@@ -354,6 +363,17 @@ func buildACLForSite(site models.Site) (string, []models.EdgeACLRule) {
 	return defaultAction, rules
 }
 
+type aclCondition struct {
+	Item     string `json:"item"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+type aclRule struct {
+	Conditions []aclCondition `json:"conditions"`
+	Action     string         `json:"action"`
+}
+
 func parseACLRules(raw string) []models.EdgeACLRule {
 	if strings.TrimSpace(raw) == "" {
 		return nil
@@ -361,6 +381,17 @@ func parseACLRules(raw string) []models.EdgeACLRule {
 	var items []models.EdgeACLRule
 	if err := json.Unmarshal([]byte(raw), &items); err == nil {
 		return items
+	}
+	type aclData struct {
+		Rules []aclRule `json:"rules"`
+	}
+	var data aclData
+	if err := json.Unmarshal([]byte(raw), &data); err == nil && len(data.Rules) > 0 {
+		return extractACLIPRules(data.Rules)
+	}
+	var rules []aclRule
+	if err := json.Unmarshal([]byte(raw), &rules); err == nil && len(rules) > 0 {
+		return extractACLIPRules(rules)
 	}
 	// Try list of objects
 	var generic []map[string]interface{}
@@ -385,6 +416,43 @@ func parseACLRules(raw string) []models.EdgeACLRule {
 	return items
 }
 
+func extractACLIPRules(rules []aclRule) []models.EdgeACLRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]models.EdgeACLRule, 0)
+	for _, rule := range rules {
+		action := strings.TrimSpace(rule.Action)
+		if action == "" {
+			action = "allow"
+		}
+		ipOnly := true
+		for _, cond := range rule.Conditions {
+			if strings.ToLower(strings.TrimSpace(cond.Item)) != "ip" {
+				ipOnly = false
+				break
+			}
+			op := strings.ToLower(strings.TrimSpace(cond.Operator))
+			if op != "eq" && op != "=" {
+				ipOnly = false
+				break
+			}
+			ip := strings.TrimSpace(cond.Value)
+			if ip == "" {
+				continue
+			}
+			out = append(out, models.EdgeACLRule{IP: ip, Action: action})
+		}
+		if !ipOnly {
+			continue
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func parseACLID(value interface{}) int64 {
 	switch v := value.(type) {
 	case float64:
@@ -399,6 +467,104 @@ func parseACLID(value interface{}) int64 {
 		}
 	}
 	return 0
+}
+
+func extractRegionBlock(site models.Site) []string {
+	if site.Settings != nil {
+		if access, ok := site.Settings["access"].(map[string]interface{}); ok {
+			if rb, ok := access["region_block"]; ok {
+				if list := parseRegionBlockConfig(rb); len(list) > 0 {
+					return list
+				}
+			}
+		}
+		if security, ok := site.Settings["security"].(map[string]interface{}); ok {
+			if v, ok := security["region_block"]; ok {
+				if list := parseRegionList(v); len(list) > 0 {
+					return list
+				}
+			}
+			if v, ok := security["region_custom"]; ok {
+				if list := parseRegionList(v); len(list) > 0 {
+					return list
+				}
+			}
+		}
+	}
+	if list := parseRegionList(site.BlockRegionRaw); len(list) > 0 {
+		return list
+	}
+	return nil
+}
+
+func parseRegionBlockConfig(value interface{}) []string {
+	if value == nil {
+		return nil
+	}
+	if m, ok := value.(map[string]interface{}); ok {
+		mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(m["mode"])))
+		if mode == "disabled" || mode == "off" || mode == "none" || mode == "" {
+			return nil
+		}
+		if countries, ok := m["countries"]; ok {
+			return parseRegionList(countries)
+		}
+	}
+	return parseRegionList(value)
+}
+
+func parseRegionList(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return normalizeRegionList(v)
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, fmt.Sprint(item))
+		}
+		return normalizeRegionList(out)
+	case string:
+		raw := strings.TrimSpace(v)
+		if raw == "" {
+			return nil
+		}
+		var parsed []string
+		if json.Unmarshal([]byte(raw), &parsed) == nil && len(parsed) > 0 {
+			return normalizeRegionList(parsed)
+		}
+		fields := strings.FieldsFunc(raw, func(r rune) bool {
+			return r == '\n' || r == '\r' || r == '\t' || r == ',' || r == ';' || r == ' '
+		})
+		return normalizeRegionList(fields)
+	default:
+		return nil
+	}
+}
+
+func normalizeRegionList(list []string) []string {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	seen := map[string]struct{}{}
+	for _, item := range list {
+		code := strings.ToUpper(strings.TrimSpace(item))
+		if code == "" {
+			continue
+		}
+		if idx := strings.Index(code, "-"); idx > 0 {
+			code = code[:idx]
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func buildUpstreamTargets(backends []string, protocol string) []models.EdgeUpstreamTarget {

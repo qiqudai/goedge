@@ -90,6 +90,8 @@ const siteQuery = reactive({ page: 1, pageSize: 10, keyword: '', searchField: 'a
 
 const siteEditVisible = ref(false)
 const siteEditData = ref(null)
+const createDisabled = ref(false)
+const createDisabledTip = ref('')
 
 const batchEditVisible = ref(false)
 const batchEditMode = ref('')
@@ -120,6 +122,10 @@ const handleManage = (row) => {
 
 const handleSiteAction = async (type, data) => {
   if (type === 'create') {
+    if (createDisabled.value) {
+      ElMessage.error(createDisabledTip.value || '域名数量超限，无法添加')
+      return
+    }
     siteEditData.value = null
     siteEditVisible.value = true
     return
@@ -178,7 +184,25 @@ const applyAdvancedSearch = () => {
 
 onMounted(() => {
   fetchSites()
+  loadDomainUsage()
 })
+
+const loadDomainUsage = async () => {
+  if (isAdmin.value) return
+  try {
+    const pkgRes = await request.get('/user_packages', { params: { pageSize: 1000 } })
+    const list = pkgRes.data?.list || pkgRes.list || []
+    if (!list.length) return
+    const pkgId = list[0].id
+    const usageRes = await request.get('/domain_usage', { params: { user_package_id: pkgId } })
+    const usage = usageRes.data || usageRes
+    createDisabled.value = !!usage.exceeded
+    createDisabledTip.value = usage.message || ''
+  } catch (e) {
+    createDisabled.value = false
+    createDisabledTip.value = ''
+  }
+}
 </script>
 
 <style scoped>

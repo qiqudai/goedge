@@ -25,6 +25,7 @@ type UserPackage struct {
 	Bandwidth       string `json:"bandwidth"`
 	Connection      int32  `json:"connection"`
 	DomainLimit     int32  `json:"domain" gorm:"column:domain"`
+	MainDomainLimit int32  `json:"main_domain_limit" gorm:"column:main_domain_limit"`
 	HTTPPortLimit   int32  `json:"http_port" gorm:"column:http_port"`
 	StreamPortLimit int32  `json:"stream_port" gorm:"column:stream_port"`
 	CustomCCRule    bool   `json:"custom_cc_rule" gorm:"column:custom_cc_rule"`

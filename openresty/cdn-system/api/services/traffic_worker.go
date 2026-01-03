@@ -4,7 +4,10 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +20,7 @@ const (
 
 // StartUserPackageTrafficWorker checks traffic usage and applies traffic_limit.
 func StartUserPackageTrafficWorker() {
+	log.Printf("[Traffic] Worker started")
 	go func() {
 		for {
 			checkUserPackageTraffic()
@@ -26,7 +30,8 @@ func StartUserPackageTrafficWorker() {
 }
 
 func checkUserPackageTraffic() {
-	if !db.ClickHouseEnabled() {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return
 	}
 
@@ -44,7 +49,7 @@ func checkUserPackageTraffic() {
 	}
 
 	var packages []models.UserPackage
-	if err := db.DB.Where("traffic > 0 AND is_expired = ?", false).Find(&packages).Error; err != nil {
+	if err := db.DB.Where("traffic > 0 AND (is_expired = ? OR is_expired IS NULL)", false).Find(&packages).Error; err != nil {
 		log.Printf("[Traffic] Failed to load user packages: %v", err)
 		return
 	}
@@ -106,7 +111,7 @@ func checkUserPackageTraffic() {
 		if startAt.IsZero() || startAt.After(now) {
 			startAt = now.Add(-24 * time.Hour)
 		}
-		usedBytes, err := sumTrafficBytesByHosts(hosts, startAt, now)
+		usedBytes, err := sumTrafficBytesByHosts(hosts, startAt, now, httpCfg)
 		if err != nil {
 			log.Printf("[Traffic] Package %d query failed: %v", pkg.ID, err)
 			continue
@@ -122,16 +127,29 @@ func checkUserPackageTraffic() {
 		}
 
 		if usedGB >= limitGB {
-			applyTrafficLimit(pkg.ID)
+			siteIDs, err := applyTrafficLimit(pkg.ID)
+			if err != nil {
+				log.Printf("[Traffic] Package %d limit failed: %v", pkg.ID, err)
+				continue
+			}
+			if len(siteIDs) == 0 {
+				log.Printf("[Traffic] Package %d exceeded but no sites to limit", pkg.ID)
+			}
+			if len(siteIDs) > 0 {
+				notifyTrafficExceed(pkg, usedGB, limitGB, len(siteIDs))
+			}
 		} else {
 			clearTrafficLimit(pkg.ID)
 		}
 	}
 }
 
-func sumTrafficBytesByHosts(hosts []string, start, end time.Time) (uint64, error) {
+func sumTrafficBytesByHosts(hosts []string, start, end time.Time, httpCfg *httpCKConfig) (uint64, error) {
 	if len(hosts) == 0 {
 		return 0, nil
+	}
+	if httpCfg != nil {
+		return sumTrafficBytesByHostsHTTP(httpCfg, hosts, start, end)
 	}
 	var total uint64
 	for i := 0; i < len(hosts); i += trafficHostChunkSize {
@@ -157,24 +175,84 @@ func sumTrafficBytesByHosts(hosts []string, start, end time.Time) (uint64, error
 	return total, nil
 }
 
-func applyTrafficLimit(packageID int64) {
+func sumTrafficBytesByHostsHTTP(cfg *httpCKConfig, hosts []string, start, end time.Time) (uint64, error) {
+	if cfg == nil || len(hosts) == 0 {
+		return 0, nil
+	}
+	startStr := formatTime(start)
+	endStr := formatTime(end)
+	var total uint64
+	for i := 0; i < len(hosts); i += trafficHostChunkSize {
+		endIdx := i + trafficHostChunkSize
+		if endIdx > len(hosts) {
+			endIdx = len(hosts)
+		}
+		chunk := hosts[i:endIdx]
+		quoted := make([]string, 0, len(chunk))
+		for _, host := range chunk {
+			host = strings.ReplaceAll(host, "'", "\\'")
+			quoted = append(quoted, "'"+host+"'")
+		}
+		query := fmt.Sprintf("SELECT sum(bytes) FROM node_access_logs WHERE ts >= toDateTime('%s') AND ts <= toDateTime('%s') AND host IN (%s)", startStr, endStr, strings.Join(quoted, ","))
+		params := url.Values{}
+		params.Set("query", query)
+		if cfg.database != "" {
+			params.Set("database", cfg.database)
+		}
+		endpoint := cfg.baseURL + "/?" + params.Encode()
+
+		req, err := http.NewRequest("POST", endpoint, nil)
+		if err != nil {
+			return total, err
+		}
+		if cfg.user != "" {
+			req.SetBasicAuth(cfg.user, cfg.pass)
+		}
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return total, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return total, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return total, fmt.Errorf("http status %s", resp.Status)
+		}
+		raw := strings.TrimSpace(string(body))
+		if raw == "" {
+			continue
+		}
+		sum, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return total, err
+		}
+		total += sum
+	}
+	return total, nil
+}
+
+func applyTrafficLimit(packageID int64) ([]int64, error) {
 	var siteIDs []int64
 	if err := db.DB.Model(&models.Site{}).
 		Where("user_package = ? AND enable = ? AND (state = ? OR state = ? OR state IS NULL)", packageID, true, "", "running").
 		Pluck("id", &siteIDs).Error; err != nil {
 		log.Printf("[Traffic] Package %d load sites failed: %v", packageID, err)
-		return
+		return nil, err
 	}
 	if len(siteIDs) == 0 {
-		return
+		return siteIDs, nil
 	}
 	if err := db.DB.Model(&models.Site{}).Where("id IN ?", siteIDs).
 		Update("state", "traffic_limit").Error; err != nil {
 		log.Printf("[Traffic] Package %d update sites failed: %v", packageID, err)
-		return
+		return nil, err
 	}
 	BumpConfigVersion("site", siteIDs)
 	log.Printf("[Traffic] Package %d exceeded, %d sites limited", packageID, len(siteIDs))
+	return siteIDs, nil
 }
 
 func clearTrafficLimit(packageID int64) {
@@ -195,6 +273,16 @@ func clearTrafficLimit(packageID int64) {
 	}
 	BumpConfigVersion("site", siteIDs)
 	log.Printf("[Traffic] Package %d recovered, %d sites resumed", packageID, len(siteIDs))
+}
+
+func notifyTrafficExceed(pkg models.UserPackage, usedGB, limitGB float64, siteCount int) {
+	userID := int64(pkg.UserID)
+	if userID == 0 {
+		return
+	}
+	title := "Traffic limit exceeded"
+	content := fmt.Sprintf("Package %s exceeded traffic (%.2fGB/%.2fGB). %d site(s) have been limited.", pkg.Name, usedGB, limitGB, siteCount)
+	_ = CreateUserMessage(userID, "traffic-exceed", title, content, pkg.ID, 0)
 }
 
 func parseBoolConfig(value string) bool {

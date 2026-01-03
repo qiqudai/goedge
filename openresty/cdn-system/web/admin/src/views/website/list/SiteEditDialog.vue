@@ -36,6 +36,14 @@
             placeholder="每行一个域名，支持泛域名如 *.example.com"
           />
         </el-form-item>
+        <el-alert
+          v-if="domainUsage"
+          :type="domainLimitExceeded ? 'error' : 'info'"
+          :closable="false"
+          class="limit-alert"
+        >
+          ?????? {{ domainUsage.total_domains }} / {{ formatLimit(domainUsage.domain_limit) }} ????? {{ domainUsage.total_main_domains }} / {{ formatLimit(domainUsage.main_domain_limit) }}
+        </el-alert>
 
         <el-form-item label="源站地址" prop="origins">
           <el-input
@@ -152,7 +160,7 @@ domain=test.com|ip=2.2.2.2,3.3.3.3"
     <template #footer>
       <div>
         <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="domainLimitExceeded" @click="handleSubmit">确定</el-button>
       </div>
     </template>
   </el-dialog>
@@ -214,6 +222,8 @@ const batchForm = reactive({
 const batchMode = ref('simple')
 const currentBatchId = ref('')
 const validBatchDomains = ref([])
+const domainUsage = ref(null)
+const domainLimitExceeded = ref(false)
 
 const rules = {
   domains: [
@@ -271,6 +281,18 @@ watch(() => props.modelValue, (val) => {
 
 watch(() => visible.value, (val) => {
   emit('update:modelValue', val)
+})
+
+watch(() => [form.user_id, form.user_package_id], () => {
+  if (activeTab.value === 'single') {
+    fetchDomainUsage()
+  }
+})
+
+watch(() => activeTab.value, () => {
+  if (activeTab.value === 'single') {
+    fetchDomainUsage()
+  }
 })
 
 const loadCommonData = async () => {
@@ -348,6 +370,8 @@ const resetForm = () => {
   })
   currentBatchId.value = ''
   batchMode.value = 'simple'
+  domainUsage.value = null
+  domainLimitExceeded.value = false
 }
 
 const handleClosed = () => {
@@ -377,6 +401,11 @@ const handleBatchClose = () => {
 const handleSubmit = async () => {
   submitting.value = true
   try {
+    if (domainLimitExceeded.value) {
+        ElMessage.error(domainUsage.value?.message || '??????')
+        submitting.value = false
+        return
+    }
     if (activeTab.value === 'single') {
         await singleFormRef.value?.validate()
         const payload = { 
@@ -451,9 +480,41 @@ const handleSubmit = async () => {
     }
     
   } catch (err) {
+      const msg = err?.response?.data?.error || err?.response?.data?.msg
+      if (msg) {
+        ElMessage.error(msg)
+      }
       console.error(err)
   } finally {
     submitting.value = false
+  }
+}
+
+function formatLimit(val) {
+  const num = Number(val)
+  if (!num || num <= 0) return '??'
+  return num
+}
+
+async function fetchDomainUsage() {
+  const pkgId = Number(form.user_package_id) || 0
+  if (!pkgId) {
+    domainUsage.value = null
+    domainLimitExceeded.value = false
+    return
+  }
+  try {
+    const params = { user_package_id: pkgId }
+    if (props.isAdmin && form.user_id) {
+      params.user_id = Number(form.user_id)
+    }
+    const res = await request.get('/domain_usage', { params })
+    const data = res.data || res
+    domainUsage.value = data
+    domainLimitExceeded.value = !!data.exceeded
+  } catch (e) {
+    domainUsage.value = null
+    domainLimitExceeded.value = false
   }
 }
 </script>
@@ -476,5 +537,8 @@ const handleSubmit = async () => {
   padding: 15px;
   border-radius: 4px;
   margin-bottom: 20px;
+}
+.limit-alert {
+  margin: 8px 0 16px;
 }
 </style>

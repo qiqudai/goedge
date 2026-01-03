@@ -21,11 +21,11 @@ type userPackageRow struct {
 	models.UserPackage
 	IPv6   bool   `json:"ipv6"`
 	Status string `json:"status"`
-    // Explicitly expose these fields to debug visibility issue
-    CnameDomain   string `json:"cname_domain"`
-    CnameHostname string `json:"cname_hostname"`
-    CnameMode     string `json:"cname_mode"`
-    RecordID      string `json:"record_id"`
+	// Explicitly expose these fields to debug visibility issue
+	CnameDomain   string `json:"cname_domain"`
+	CnameHostname string `json:"cname_hostname"`
+	CnameMode     string `json:"cname_mode"`
+	RecordID      string `json:"record_id"`
 }
 
 // ListUserPackages - GET /api/v1/admin/user_packages?user_id=xx
@@ -59,15 +59,15 @@ func (ctr *UserPackageController) ListUserPackages(c *gin.Context) {
 		if !pack.EndAt.IsZero() && pack.EndAt.Before(now) {
 			status = "expired"
 		}
-        // Force strings.TrimSpace to ensure no whitespace hiding
+		// Force strings.TrimSpace to ensure no whitespace hiding
 		list = append(list, userPackageRow{
 			UserPackage:   pack,
 			IPv6:          ipv6Map[pack.ID],
 			Status:        status,
-            CnameDomain:   strings.TrimSpace(pack.CnameDomain),
-            CnameHostname: strings.TrimSpace(pack.CnameHostname),
-            CnameMode:     pack.CnameMode,
-            RecordID:      pack.RecordID,
+			CnameDomain:   strings.TrimSpace(pack.CnameDomain),
+			CnameHostname: strings.TrimSpace(pack.CnameHostname),
+			CnameMode:     pack.CnameMode,
+			RecordID:      pack.RecordID,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list}})
@@ -82,27 +82,28 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	}
 
 	var req struct {
-		Name          string  `json:"name"`
-		IPv6          *bool   `json:"ipv6"`
-		EndAt         string  `json:"end_at"`
-		RegionID      int64   `json:"region_id"`
-		NodeGroupID   int64   `json:"node_group_id"`
-		BackupGroupID int64   `json:"backup_group_id"`
-		Traffic       string  `json:"traffic"`
-		Bandwidth     *string `json:"bandwidth"` // Pointer to distinguish empty vs unchanged if needed, or just string
-		Connection    *string `json:"connection"`
-		Domain        *string `json:"domain"`
-		HttpPort      *string `json:"http_port"`
-		StreamPort    *string `json:"stream_port"`
-		CustomCCRule  *bool   `json:"custom_cc_rule"`
-		Websocket     *bool   `json:"websocket"`
-		PriceMonthly  float64 `json:"price_monthly"`
+		Name           string  `json:"name"`
+		IPv6           *bool   `json:"ipv6"`
+		EndAt          string  `json:"end_at"`
+		RegionID       int64   `json:"region_id"`
+		NodeGroupID    int64   `json:"node_group_id"`
+		BackupGroupID  int64   `json:"backup_group_id"`
+		Traffic        string  `json:"traffic"`
+		Bandwidth      *string `json:"bandwidth"` // Pointer to distinguish empty vs unchanged if needed, or just string
+		Connection     *string `json:"connection"`
+		Domain         *string `json:"domain"`
+		MainDomain     *string `json:"main_domain_limit"`
+		HttpPort       *string `json:"http_port"`
+		StreamPort     *string `json:"stream_port"`
+		CustomCCRule   *bool   `json:"custom_cc_rule"`
+		Websocket      *bool   `json:"websocket"`
+		PriceMonthly   float64 `json:"price_monthly"`
 		PriceQuarterly float64 `json:"price_quarterly"`
-		PriceYearly   float64 `json:"price_yearly"`
-		CnameHostname string  `json:"cname_hostname"`
-		CnameDomain   string  `json:"cname_domain"`
-		CnameMode     string  `json:"cname_mode"`
-		Http3Enabled  *bool   `json:"http3_enabled"`
+		PriceYearly    float64 `json:"price_yearly"`
+		CnameHostname  string  `json:"cname_hostname"`
+		CnameDomain    string  `json:"cname_domain"`
+		CnameMode      string  `json:"cname_mode"`
+		Http3Enabled   *bool   `json:"http3_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid Params"})
@@ -139,13 +140,30 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	// Resources - Handle "limited" vs "unlimited" (empty string or -1 usually)
 	// Frontend sends string or number.
 	updates["traffic"] = req.Traffic
-	if req.Bandwidth != nil { updates["bandwidth"] = *req.Bandwidth }
-	if req.Connection != nil { updates["connection"] = *req.Connection }
-	if req.Domain != nil { updates["domain"] = *req.Domain }
-	if req.HttpPort != nil { updates["http_port"] = *req.HttpPort }
-	if req.StreamPort != nil { updates["stream_port"] = *req.StreamPort }
-	if req.CustomCCRule != nil { updates["custom_cc_rule"] = *req.CustomCCRule }
-	if req.Websocket != nil { updates["websocket"] = *req.Websocket }
+	if req.Bandwidth != nil {
+		updates["bandwidth"] = *req.Bandwidth
+	}
+	if req.Connection != nil {
+		updates["connection"] = *req.Connection
+	}
+	if req.Domain != nil {
+		updates["domain"] = *req.Domain
+	}
+	if req.MainDomain != nil {
+		updates["main_domain_limit"] = parseIntValue(*req.MainDomain)
+	}
+	if req.HttpPort != nil {
+		updates["http_port"] = *req.HttpPort
+	}
+	if req.StreamPort != nil {
+		updates["stream_port"] = *req.StreamPort
+	}
+	if req.CustomCCRule != nil {
+		updates["custom_cc_rule"] = *req.CustomCCRule
+	}
+	if req.Websocket != nil {
+		updates["websocket"] = *req.Websocket
+	}
 
 	// Price
 	updates["month_price"] = req.PriceMonthly
@@ -390,4 +408,15 @@ func parseBoolString(val string) bool {
 	default:
 		return false
 	}
+}
+
+func parseIntValue(val string) int {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return 0
+	}
+	if i, err := strconv.Atoi(val); err == nil {
+		return i
+	}
+	return 0
 }

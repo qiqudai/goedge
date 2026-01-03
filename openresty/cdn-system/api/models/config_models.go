@@ -53,6 +53,7 @@ type EdgeDomain struct {
 	ACLRules                    []EdgeACLRule     `json:"acl_rules,omitempty"`
 	BlackIPs                    []string          `json:"black_ips,omitempty"`
 	WhiteIPs                    []string          `json:"white_ips,omitempty"`
+	RegionBlock                 []string          `json:"region_block,omitempty"`
 	CCRuleID                    int64             `json:"cc_rule_id,omitempty"`
 	OriginProtocol              string            `json:"origin_protocol,omitempty"`
 	OriginHTTPPort              string            `json:"origin_http_port,omitempty"`

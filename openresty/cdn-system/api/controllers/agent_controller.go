@@ -5,7 +5,6 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type AgentController struct {
@@ -403,7 +401,7 @@ func notifyTaskCompletion(task models.Task, state string, ret string) {
 	if userID == 0 {
 		return
 	}
-	phone, email, ok := lookupMessageSubscription(userID, task.Type)
+	phone, email, ok := services.LookupMessageSubscription(userID, task.Type)
 	if !ok {
 		return
 	}
@@ -448,32 +446,6 @@ func parseIssueTaskTarget(raw string) string {
 		return ""
 	}
 	return strconv.FormatInt(meta.TargetNodeID, 10)
-}
-
-func lookupMessageSubscription(userID int64, msgType string) (bool, bool, bool) {
-	if userID == 0 || msgType == "" {
-		return false, false, false
-	}
-	var sub models.MessageSub
-	err := db.DB.Where("uid = ? AND msg_type = ?", userID, msgType).First(&sub).Error
-	if err == nil {
-		return sub.Phone, sub.Email, true
-	}
-	if !errorsIsRecordNotFound(err) {
-		return false, false, false
-	}
-	var count int64
-	if err := db.DB.Model(&models.MessageSub{}).Where("uid = ?", userID).Count(&count).Error; err != nil {
-		return false, false, false
-	}
-	if count == 0 {
-		return true, true, true
-	}
-	return false, false, false
-}
-
-func errorsIsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func buildTaskTitle(taskType string, state string) string {

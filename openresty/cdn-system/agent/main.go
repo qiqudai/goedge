@@ -68,6 +68,7 @@ func main() {
 	go startConfigPull()
 	go startTaskPull()
 	go startWebSocketClient() // Persistent Connection
+	log.Printf("[Info] Access log ship enabled")
 	go startAccessLogShip()
 	go startMetricsShip()
 	go startLogCleanup()

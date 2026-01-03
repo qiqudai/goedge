@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"log"
 	"net/http"
 
 	"cdn-api/services"
@@ -30,7 +31,8 @@ func (ctr *AgentLogController) AccessLogs(c *gin.Context) {
 	if req.NodeIP == "" {
 		req.NodeIP = c.ClientIP()
 	}
-	services.InsertAccessLogs(req.NodeID, req.NodeIP, req.Lines)
+	inserted := services.InsertAccessLogs(req.NodeID, req.NodeIP, req.Lines)
+	log.Printf("[CK] Access logs inserted: %d", inserted)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -54,7 +56,8 @@ func (ctr *AgentLogController) Metrics(c *gin.Context) {
 	if req.NodeIP == "" {
 		req.NodeIP = c.ClientIP()
 	}
-	services.InsertMetrics(req.NodeID, req.NodeIP, req.Content)
+	inserted := services.InsertMetrics(req.NodeID, req.NodeIP, req.Content)
+	log.Printf("[CK] Metrics inserted: %d", inserted)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -82,6 +85,7 @@ func (ctr *AgentLogController) Events(c *gin.Context) {
 	if req.Type == "" {
 		req.Type = "event"
 	}
-	services.InsertEventLogs(req.NodeID, req.NodeIP, req.Type, req.Payloads)
+	inserted := services.InsertEventLogs(req.NodeID, req.NodeIP, req.Type, req.Payloads)
+	log.Printf("[CK] Events inserted: %d", inserted)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

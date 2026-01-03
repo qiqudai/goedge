@@ -56,6 +56,64 @@ local function ip_in_list(list, ip)
     return false
 end
 
+local function resolve_country(ip)
+    if not ip then
+        return ""
+    end
+    local cache = _G.IP_LRU_CACHE
+    if cache then
+        local cached = cache:get("geo:" .. ip)
+        if cached ~= nil then
+            return cached
+        end
+    end
+    if not _G.IP_SEARCHER then
+        return ""
+    end
+    local ok, res = pcall(function()
+        return _G.IP_SEARCHER:search(ip)
+    end)
+    if not ok or not res then
+        return ""
+    end
+    local country = ""
+    if type(res) == "table" then
+        country = res.country or res.region or res[1] or ""
+    else
+        local first = tostring(res):match("^[^|]+") or tostring(res)
+        country = first
+    end
+    country = string.upper(country)
+    local idx = string.find(country, "-", 1, true)
+    if idx and idx > 1 then
+        country = string.sub(country, 1, idx - 1)
+    end
+    if cache and country ~= "" then
+        cache:set("geo:" .. ip, country, 600)
+    end
+    return country
+end
+
+local function region_blocked(domain_conf, ip)
+    if not domain_conf or not domain_conf.region_block or not ip then
+        return false
+    end
+    local list = domain_conf.region_block
+    if type(list) ~= "table" or #list == 0 then
+        return false
+    end
+    local country = resolve_country(ip)
+    if country == "" then
+        return false
+    end
+    for _, code in ipairs(list) do
+        if string.upper(code) == country then
+            return true
+        end
+    end
+    return false
+end
+
 local host = ngx.var.host
 local config = _G.cdn_config 
 local domain_conf = nil
@@ -76,6 +134,9 @@ else
     local client_ip = ngx.var.remote_addr
     local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
     if not whitelisted and ip_in_list(domain_conf.black_ips, client_ip) then
+        ngx.exit(403)
+    end
+    if not whitelisted and region_blocked(domain_conf, client_ip) then
         ngx.exit(403)
     end
 

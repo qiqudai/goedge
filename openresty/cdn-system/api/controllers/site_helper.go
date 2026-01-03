@@ -94,6 +94,10 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 		return nil, nil, errors.New("domain is required")
 	}
 
+	if err := services.CheckDomainLimit(userID, req.UserPackageID, domains); err != nil {
+		return nil, nil, err
+	}
+
 	backends := req.Backends
 	if len(backends) == 0 && strings.TrimSpace(req.BackendsInput) != "" {
 		backends = splitFields(req.BackendsInput)
@@ -147,10 +151,12 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 		return nil, nil, err
 	}
 	services.ApplySiteDefaults(site, defaults)
+	if globalDefaults := services.GetGlobalDefaultConfig(); globalDefaults != nil {
+		services.ApplySiteTemplateDefaults(site, globalDefaults.Website)
+	}
 
 	// Force HTTPS OFF by default - REMOVED to allow ApplySiteDefaults to work
 	// site.HttpsListen = []string{}
-
 
 	// Handle GroupIDs
 	groupIDs := req.GroupIDs
@@ -229,7 +235,7 @@ func ensureDNSRecords(site *models.Site) error {
 		if root == "" {
 			continue
 		}
-		
+
 		data := map[string]interface{}{
 			"uid":         site.UserID,
 			"site_id":     site.ID,
@@ -455,7 +461,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		httpsOn := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
 		httpPorts := parseListenPorts(site.HttpListen, site.HttpListenRaw, "80")
 		httpsPorts := parseListenPorts(site.HttpsListen, site.HttpsListenRaw, "")
-		
+
 		var listenParts []string
 		if len(httpPorts) > 0 {
 			listenParts = append(listenParts, "HTTP:"+strings.Join(httpPorts, ","))
@@ -467,7 +473,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 
 		cname := strings.TrimSpace(site.CnameHostname)
 		pkg := pkgMap[site.UserPackageID]
-		
+
 		// Priority: Site Mode > Package Mode > Default
 		siteMode := strings.TrimSpace(site.CnameMode)
 		pkgMode := strings.TrimSpace(pkg.CnameMode)

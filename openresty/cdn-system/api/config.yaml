@@ -2,8 +2,8 @@ port: "8080"
 db_dsn: "root:123456@tcp(127.0.0.1:3306)/cdnfy?charset=utf8mb4&parseTime=True&loc=Local"
 debug: false
 agent_token: ""
-clickhouse_enabled: false
-clickhouse_dsn: "clickhouse://default:@172.20.9.140:9000/cdn_logs?compress=true"
+clickhouse_enabled: true
+clickhouse_dsn: "http://default:123@172.20.9.140:8123/cdn_logs?compress=true"
 acme_email: "qiqudai7788@gmail.com"
 acme_webroot: "./acme"
 acme_account_dir: "./acme/accounts"

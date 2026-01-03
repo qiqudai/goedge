@@ -186,6 +186,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/sites/resolve", siteCtr.AdminResolve)
 			admin.GET("/sites/:id", siteCtr.AdminGet)
 			admin.PUT("/sites/:id", siteCtr.AdminUpdate)
+			admin.GET("/domain_usage", siteCtr.DomainUsage)
 
 			siteGroupCtr := &controllers.SiteGroupController{}
 			admin.GET("/site_groups", siteGroupCtr.List)
@@ -309,6 +310,7 @@ func Setup(r *gin.Engine) {
 			siteController := new(controllers.SiteController)
 			user.GET("/sites", siteController.List)
 			user.POST("/sites", siteController.Create)
+			user.GET("/domain_usage", siteController.DomainUsage)
 
 			// Cert management
 			certController := new(controllers.CertController)

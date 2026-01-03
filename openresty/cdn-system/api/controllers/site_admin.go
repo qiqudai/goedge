@@ -126,6 +126,29 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		return
 	}
 
+	if req.Domains != nil || req.UserPackageID != nil {
+		var site models.Site
+		if err := db.DB.Where("id = ?", id).First(&site).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load site: " + err.Error()})
+			return
+		}
+
+		domainsForCheck := site.Domains
+		if req.Domains != nil {
+			domainsForCheck = *req.Domains
+		}
+
+		packageID := site.UserPackageID
+		if req.UserPackageID != nil && *req.UserPackageID > 0 {
+			packageID = *req.UserPackageID
+		}
+
+		if err := services.CheckDomainLimitForUpdate(site.UserID, packageID, site.ID, domainsForCheck); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
 		if req.UserPackageID != nil && *req.UserPackageID > 0 {
@@ -322,6 +345,8 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 	lines := splitLines(req.Data)
 	created := 0
 	var createdTasks []*models.Task
+	allDomains := make([]string, 0, len(lines))
+	batchItems := make([]*batchSiteItem, 0, len(lines))
 
 	for _, line := range lines {
 		item, err := parseBatchLine(line)
@@ -332,6 +357,16 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		batchItems = append(batchItems, item)
+		allDomains = append(allDomains, item.Domains...)
+	}
+
+	if err := services.CheckDomainLimit(req.UserID, req.UserPackageID, allDomains); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, item := range batchItems {
 		for _, domain := range item.Domains {
 			payload := services.SiteCreatePayload{
 				UserID:        req.UserID,

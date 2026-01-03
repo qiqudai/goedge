@@ -1,8 +1,8 @@
 {
   "website": {
     "default_listen_80": false,
-    "log_storage_dir": "",
-    "log_storage_hours": 0
+    "log_storage_dir": "logs4",
+    "log_storage_hours": 1
   },
   "forward": {
     "disabled_ports": ""
