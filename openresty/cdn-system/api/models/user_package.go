@@ -5,9 +5,9 @@ import "time"
 // UserPackage 对应数据库中的 `user_package` 表 (用户已购实例)
 type UserPackage struct {
 	ID        int64  `json:"id" gorm:"primaryKey"`
-	UserID    int64  `json:"uid" gorm:"column:uid"`
+	UserID    int32  `json:"uid" gorm:"column:uid"`
 	Name      string `json:"name"`
-	PackageID int64  `json:"package_id" gorm:"column:package"`
+	PackageID int32  `json:"package_id" gorm:"column:package"`
 
 	// Runtime Config (copied from Package or customized)
 	RegionID        int64  `json:"region_id"`
@@ -21,12 +21,12 @@ type UserPackage struct {
 	RecordID        string `json:"record_id" gorm:"column:record_id"`
 
 	// Resource Usage/Quota
-	Traffic         int64  `json:"traffic"`
+	Traffic         int32  `json:"traffic"`
 	Bandwidth       string `json:"bandwidth"`
-	Connection      int64  `json:"connection"`
-	DomainLimit     int64  `json:"domain" gorm:"column:domain"`
-	HTTPPortLimit   int64  `json:"http_port" gorm:"column:http_port"`
-	StreamPortLimit int64  `json:"stream_port" gorm:"column:stream_port"`
+	Connection      int32  `json:"connection"`
+	DomainLimit     int32  `json:"domain" gorm:"column:domain"`
+	HTTPPortLimit   int32  `json:"http_port" gorm:"column:http_port"`
+	StreamPortLimit int32  `json:"stream_port" gorm:"column:stream_port"`
 	CustomCCRule    bool   `json:"custom_cc_rule" gorm:"column:custom_cc_rule"`
 	Websocket       bool   `json:"websocket" gorm:"column:websocket"`
 	MonthPrice      int64  `json:"month_price" gorm:"column:month_price"`

@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	fsutil "cdn-common/io"
 	"io"
 	"io/ioutil"
 	"log"
@@ -34,20 +35,8 @@ func initEnvironment() {
 
 	if runtime.GOOS == "windows" {
 		binName = "nginx.exe"
-		assetBinPath := "assets/nginx.exe"
-
-		// Unpack Windows DLLs
-		files, _ := assetsFS.ReadDir("assets")
-		for _, f := range files {
-			if strings.HasSuffix(strings.ToLower(f.Name()), ".dll") {
-				restoreFile(path.Join("assets", f.Name()), filepath.Join(WorkDir, f.Name()))
-			}
-		}
-
-		targetBin := filepath.Join(WorkDir, binName)
-		restoreFile(assetBinPath, targetBin)
-		NginxBinPath = targetBin
-
+		restoreDir("assets/nginx-win", WorkDir)
+		NginxBinPath = filepath.Join(WorkDir, binName)
 	} else {
 		// Linux: Unzip the embedded openresty.zip
 		// Expect structure: openresty/nginx/sbin/nginx
@@ -103,6 +92,8 @@ func initEnvironment() {
 		CONFIG_PATH = confPath
 	}
 	CONFIG_BAK = CONFIG_PATH + ".bak"
+
+	loadPersistedConfigs()
 
 	log.Printf("[Init] Environment Setup: Bin=%s, Config=%s", NginxBinPath, CONFIG_PATH)
 }
@@ -230,5 +221,7 @@ func ensureDynamicConf(path string) {
 	if _, err := os.Stat(path); err == nil {
 		return
 	}
-	_ = ioutil.WriteFile(path, []byte(""), 0644)
+	if err := fsutil.WriteFileAtomic(path, []byte(""), 0o644); err != nil {
+		log.Printf("[Error] Ensure dynamic conf failed: %v", err)
+	}
 }

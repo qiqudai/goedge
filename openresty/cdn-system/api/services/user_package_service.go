@@ -14,6 +14,26 @@ func NewUserPackageService() *UserPackageService {
 	return &UserPackageService{}
 }
 
+func (s *UserPackageService) UserHasCustomCCRule(userID int64) (bool, error) {
+	if userID == 0 {
+		return false, nil
+	}
+	var packs []models.UserPackage
+	if err := db.DB.Where("uid = ? AND custom_cc_rule = ?", userID, true).Find(&packs).Error; err != nil {
+		return false, err
+	}
+	if len(packs) == 0 {
+		return false, nil
+	}
+	now := time.Now()
+	for _, pack := range packs {
+		if pack.EndAt.IsZero() || pack.EndAt.After(now) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // SyncUserPackage creates tasks and jobs to sync user package config to nodes
 func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string) error {
 	// 1. Get UserPackage
@@ -30,13 +50,13 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 
 	// 3. Build Agent Config
 	agentConfig := models.AgentPackageConfig{
-		PackageID:       up.ID,
+		PackageID:       int32(up.ID),
 		UID:             up.UserID,
 		Version:         up.Version,
 		Status:          "active",
-		RegionID:        up.RegionID,
-		NodeGroupID:     up.NodeGroupID,
-		BackupNodeGroup: up.BackupNodeGroup,
+		RegionID:        int32(up.RegionID),
+		NodeGroupID:     int32(up.NodeGroupID),
+		BackupNodeGroup: int32(up.BackupNodeGroup),
 		EnableBackup:    0,
 		Cname: models.AgentCnameInfo{
 			Domain:    up.CnameDomain,
@@ -141,7 +161,7 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 		jobs = append(jobs, models.Job{
 			TaskID:      task.ID,
 			NodeID:      node.ID,
-			NodeGroupID: node.GroupID,
+			NodeGroupID: int32(node.GroupID),
 			UID:         up.UserID,
 			Type:        "套餐同步",
 			State:       "waiting",

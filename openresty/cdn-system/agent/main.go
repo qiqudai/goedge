@@ -65,12 +65,12 @@ func main() {
 	initEnvironment()
 
 	// 2. Start Tickers
-	go startHeartbeat()
 	go startConfigPull()
 	go startTaskPull()
 	go startWebSocketClient() // Persistent Connection
 	go startAccessLogShip()
 	go startMetricsShip()
+	go startLogCleanup()
 	go startL2Monitor()
 
 	// 3. Keep Alive

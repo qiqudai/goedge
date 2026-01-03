@@ -3,15 +3,15 @@ package models
 // AgentPackageConfig 对应到 Agent 本地配置文件的 JSON 结构
 // file: /etc/cdn/packages/{user_package_id}.json
 type AgentPackageConfig struct {
-	PackageID int64  `json:"package_id"`
-	UID       int64  `json:"uid"`
+	PackageID int32  `json:"package_id"`
+	UID       int32  `json:"uid"`
 	Version   int    `json:"version"`
 	Status    string `json:"status"` // active, expired, deleted
 
 	// Node allocation
-	RegionID        int64 `json:"region_id"`
-	NodeGroupID     int64 `json:"node_group_id"`
-	BackupNodeGroup int64 `json:"backup_node_group"`
+	RegionID        int32 `json:"region_id"`
+	NodeGroupID     int32 `json:"node_group_id"`
+	BackupNodeGroup int32 `json:"backup_node_group"`
 	EnableBackup    int   `json:"enable_backup_group"` // 0/1
 
 	// CNAME Info
@@ -38,10 +38,10 @@ type AgentCnameInfo struct {
 }
 
 type AgentLimits struct {
-	Traffic    int64  `json:"traffic"`    // GB
+	Traffic    int32  `json:"traffic"`    // GB
 	Bandwidth  string `json:"bandwidth"`  // e.g. "100M"
-	Connection int64  `json:"connection"` // Max concurrent
-	Domain     int64  `json:"domain"`     // Max domains
+	Connection int32  `json:"connection"` // Max concurrent
+	Domain     int32  `json:"domain"`     // Max domains
 }
 
 type AgentFeatures struct {

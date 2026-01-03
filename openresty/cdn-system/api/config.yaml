@@ -4,6 +4,6 @@ debug: false
 agent_token: ""
 clickhouse_enabled: false
 clickhouse_dsn: "clickhouse://default:@172.20.9.140:9000/cdn_logs?compress=true"
-acme_email: ""
+acme_email: "qiqudai7788@gmail.com"
 acme_webroot: "./acme"
 acme_account_dir: "./acme/accounts"

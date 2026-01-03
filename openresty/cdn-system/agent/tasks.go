@@ -77,7 +77,7 @@ func processTask(id int64, taskType string, data string) (string, error) {
 		return "", issueCertTask(id, data)
 	case "config_sync":
 		return "", pullConfig()
-	case "套餐同步":
+	case "package_sync":
 		return syncUserPackageTask(data)
 	default:
 		return "", fmt.Errorf("unknown task type: %s", taskType)

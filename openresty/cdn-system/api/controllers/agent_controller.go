@@ -293,7 +293,7 @@ func (ctr *AgentController) GetTasks(c *gin.Context) {
 	filtered := make([]models.Task, 0, len(tasks))
 	now := time.Now()
 	for _, task := range tasks {
-		if task.RetryAt.After(now) {
+		if task.RetryAt != nil && task.RetryAt.After(now) {
 			continue
 		}
 		if strings.EqualFold(task.Type, "issue_cert") && nodeID != "" {

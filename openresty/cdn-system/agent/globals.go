@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -26,7 +27,24 @@ var (
 	NodeID    = "" // Unique Node ID
 	AuthToken = "" // Token from install parameter
 	DebugMode = false
+
+	localConfigMu    sync.RWMutex
+	LocalResources   *edgeResources
+	LocalErrorPages  map[string]string
+	LocalDefaultConf *edgeDefaultConfig
+	LocalCCRules     map[int64][]edgeCCRuleItem
+	LocalCCMatchers  map[int64]edgeCCMatcher
+	LocalCCFilters   map[int64]edgeCCFilter
+	pendingNodeSyncs []nodeSyncAck
 )
+
+type nodeSyncAck struct {
+	Action    string
+	Success   bool
+	Attempts  int
+	LastError string
+	LastAt    time.Time
+}
 
 var httpClient = &http.Client{
 	Transport: &http.Transport{

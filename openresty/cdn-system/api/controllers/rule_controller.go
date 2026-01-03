@@ -15,6 +15,27 @@ import (
 
 type RuleController struct{}
 
+func ensureCustomCCRuleAllowed(ctx *gin.Context) bool {
+	if !isUserRequest(ctx) {
+		return true
+	}
+	userID := parseUserID(mustGet(ctx, "userID"))
+	if userID == 0 {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return false
+	}
+	ok, err := services.NewUserPackageService().UserHasCustomCCRule(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check permission"})
+		return false
+	}
+	if !ok {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "custom cc rule not enabled"})
+		return false
+	}
+	return true
+}
+
 // ================= CC Rules =================
 
 // ListCCRuleGroups Lists CC rule groups
@@ -78,6 +99,9 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 // CreateCCRuleGroup Creates a new CC rule group
 // POST /api/v1/admin/rules/cc/groups
 func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	var req struct {
 		Type         string                   `json:"type"`
 		Name         string                   `json:"name"`
@@ -147,6 +171,9 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 // UpdateCCRuleGroup Updates an existing CC rule group
 // PUT /api/v1/admin/rules/cc/groups/:id
 func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if id == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
@@ -330,6 +357,9 @@ func (c *RuleController) ListMatchers(ctx *gin.Context) {
 // CreateMatcher Creates a new matcher
 // POST /api/v1/admin/rules/cc/matchers
 func (c *RuleController) CreateMatcher(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	var req struct {
 		Type   string                   `json:"type"`
 		Name   string                   `json:"name"`
@@ -391,6 +421,9 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 // UpdateMatcher Updates an existing matcher
 // PUT /api/v1/admin/rules/cc/matchers/:id
 func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if id == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
@@ -415,7 +448,7 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "matcher not found"})
 		return
 	}
-	
+
 	if isUserRequest(ctx) {
 		userID := parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 || matcher.UserID != userID {
@@ -561,6 +594,9 @@ func (c *RuleController) ListFilters(ctx *gin.Context) {
 // CreateFilter Creates a new filter
 // POST /api/v1/admin/rules/cc/filters
 func (c *RuleController) CreateFilter(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	var req struct {
 		Type         string                 `json:"type"`
 		Name         string                 `json:"name"`
@@ -610,20 +646,19 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 	extraBytes, _ := json.Marshal(extra)
 
 	filter := models.CCFilter{
-		UserID:        userID,
-		Name:          req.Name,
-		Description:   req.Remark,
-		Type:          req.Action,
-		WithinSecond:  req.WithinSecond,
-		MaxReq:        req.MaxReq,
-		MaxReqPerUri:  req.MaxReqPerURI,
-		Extra:         string(extraBytes),
-		Internal:      internal,
-		Enable:        req.Enable,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		UserID:       userID,
+		Name:         req.Name,
+		Description:  req.Remark,
+		Type:         req.Action,
+		WithinSecond: req.WithinSecond,
+		MaxReq:       req.MaxReq,
+		MaxReqPerUri: req.MaxReqPerURI,
+		Extra:        string(extraBytes),
+		Internal:     internal,
+		Enable:       req.Enable,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
-
 
 	if err := db.DB.Create(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create filter"})
@@ -637,6 +672,9 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 // UpdateFilter Updates an existing filter
 // PUT /api/v1/admin/rules/cc/filters/:id
 func (c *RuleController) UpdateFilter(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if id == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
@@ -736,18 +774,18 @@ func (c *RuleController) GetFilter(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"id":             filter.ID,
-			"type":           mapRuleType(filter.UserID, filter.Internal),
-			"name":           filter.Name,
-			"remark":         filter.Description,
-			"enable":         filter.Enable,
-			"action":         filter.Type,
-			"match_mode":     extra["match_mode"],
-			"blacklist":      extra["blacklist"],
-			"within_second":  filter.WithinSecond,
-			"max_req":        filter.MaxReq,
+			"id":              filter.ID,
+			"type":            mapRuleType(filter.UserID, filter.Internal),
+			"name":            filter.Name,
+			"remark":          filter.Description,
+			"enable":          filter.Enable,
+			"action":          filter.Type,
+			"match_mode":      extra["match_mode"],
+			"blacklist":       extra["blacklist"],
+			"within_second":   filter.WithinSecond,
+			"max_req":         filter.MaxReq,
 			"max_req_per_uri": filter.MaxReqPerUri,
-			"auth":           auth,
+			"auth":            auth,
 		},
 	})
 }
@@ -755,6 +793,9 @@ func (c *RuleController) GetFilter(ctx *gin.Context) {
 // DeleteFilter Deletes a filter
 // DELETE /api/v1/admin/rules/cc/filters/:id
 func (c *RuleController) DeleteFilter(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
 	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if id == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
@@ -783,7 +824,6 @@ func (c *RuleController) DeleteFilter(ctx *gin.Context) {
 }
 
 // GetRuleGroup Retrieves details of a rule group
-
 
 func mapRuleType(userID int64, internal bool) string {
 	if userID == 0 || internal {

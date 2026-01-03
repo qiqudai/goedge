@@ -73,7 +73,11 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		return
 	}
 
-	certModel, err := buildCertFromRequest(c, false)
+	role := c.GetString("role")
+	isAdmin := role == "admin"
+
+	// Allow admin to specify UserID
+	certModel, err := buildCertFromRequest(c, isAdmin)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -81,7 +85,8 @@ func (ctrl *CertController) Update(c *gin.Context) {
 
 	certModel.ID = id
 	certModel.UpdateAt = time.Now()
-	if err := db.DB.Model(&models.Cert{}).Where("id = ?", id).Updates(map[string]interface{}{
+
+	updates := map[string]interface{}{
 		"name":        certModel.Name,
 		"des":         certModel.Description,
 		"type":        certModel.Type,
@@ -93,8 +98,28 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		"expire_time": certModel.ExpireTime,
 		"auto_renew":  certModel.AutoRenew,
 		"update_at":   certModel.UpdateAt,
-	}).Error; err != nil {
+	}
+
+	if isAdmin && certModel.UserID > 0 {
+		updates["uid"] = certModel.UserID
+	}
+
+	query := db.DB.Model(&models.Cert{}).Where("id = ?", id)
+	if !isAdmin {
+		// Enforce ownership for non-admins
+		uid := parseUserID(mustGet(c, "userID"))
+		query = query.Where("uid = ?", uid)
+	}
+
+	result := query.Updates(updates)
+	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update certificate"})
+		return
+	}
+	if result.RowsAffected == 0 {
+		// Possibly not found or permission denied (uid mismatch)
+		// We can't distinguish easily without prior query, but generic error is fine or 404
+		c.JSON(http.StatusNotFound, gin.H{"error": "Certificate not found or permission denied"})
 		return
 	}
 
@@ -107,17 +132,27 @@ func (ctrl *CertController) Delete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.Atoi(idStr)
 	if id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "无效的ID"})
 		return
 	}
+
+	// 1. Check if disabled
+	var cert models.Cert
+	if err := db.DB.First(&cert, id).Error; err == nil {
+		if cert.Enable {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "该证书正在启用中，删除前请先执行禁用操作"})
+			return
+		}
+	}
+
 	if err := db.DB.Delete(&models.Cert{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete certificate"})
+		c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "删除失败：" + err.Error()})
 		return
 	}
 
 	services.BumpConfigVersion("cert", []int64{int64(id)})
 
-	c.JSON(http.StatusOK, gin.H{"message": "Deleted"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "删除成功"})
 }
 
 func (ctrl *CertController) BatchAction(c *gin.Context) {
@@ -137,35 +172,49 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 	switch strings.ToLower(req.Action) {
 	case "enable":
 		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("enable", true).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "启用失败"})
 			return
 		}
-	case "disable":
-		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("enable", false).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed"})
+	case "disable", "force_disable":
+		// 1. Check if used by any site
+		var siteCount int64
+		// Site table has cert_id column in database
+		db.DB.Table("site").Where("cert_id IN ?", req.IDs).Count(&siteCount)
+		if siteCount > 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "部分证书当前正被站点引用，请先在站点设置中解除绑定后再禁用"})
 			return
 		}
-	case "force_disable":
-		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Updates(map[string]interface{}{
-			"enable":     false,
-			"auto_renew": false,
-		}).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed"})
+
+		updates := map[string]interface{}{"enable": false}
+		if strings.ToLower(req.Action) == "force_disable" {
+			updates["auto_renew"] = false
+		}
+
+		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "操作失败"})
 			return
 		}
 	case "delete":
+		// 1. Check if all are disabled
+		var enabledCount int64
+		db.DB.Model(&models.Cert{}).Where("id IN ? AND enable = ?", req.IDs, true).Count(&enabledCount)
+		if enabledCount > 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": "选中的证书中包含启用项，请先执行禁用操作后再删除"})
+			return
+		}
+
 		if err := db.DB.Where("id IN ?", req.IDs).Delete(&models.Cert{}).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Delete failed"})
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": "删除失败"})
 			return
 		}
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown action"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "未知操作"})
 		return
 	}
 
 	services.BumpConfigVersion("cert", req.IDs)
 
-	c.JSON(http.StatusOK, gin.H{"message": "Action completed"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "操作成功"})
 }
 
 func (ctrl *CertController) BatchCreate(c *gin.Context) {

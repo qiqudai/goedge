@@ -269,22 +269,22 @@ func (ctr *PlanController) UpdatePlan(c *gin.Context) {
 		updates["year_price"] = getInt64(payload, "price_yearly")
 	}
 	if hasKey(payload, "traffic_limit") {
-		updates["traffic"] = getInt64(payload, "traffic_limit")
+		updates["traffic"] = int32(getInt64(payload, "traffic_limit"))
 	}
 	if hasKey(payload, "bandwidth_limit") {
 		updates["bandwidth"] = getString(payload, "bandwidth_limit")
 	}
 	if hasKey(payload, "connection_limit") {
-		updates["connection"] = getInt64(payload, "connection_limit")
+		updates["connection"] = int32(getInt64(payload, "connection_limit"))
 	}
 	if hasKey(payload, "domain_limit") {
-		updates["domain"] = getInt64(payload, "domain_limit")
+		updates["domain"] = int32(getInt64(payload, "domain_limit"))
 	}
 	if hasKey(payload, "http_port") {
-		updates["http_port"] = getInt64(payload, "http_port")
+		updates["http_port"] = int32(getInt64(payload, "http_port"))
 	}
 	if hasKey(payload, "stream_port") {
-		updates["stream_port"] = getInt64(payload, "stream_port")
+		updates["stream_port"] = int32(getInt64(payload, "stream_port"))
 	}
 	if hasKey(payload, "expire") {
 		updates["expire"] = getTimeUpdateValue(payload, "expire")
@@ -348,15 +348,17 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 	seenPackages := map[int64]struct{}{}
 	for _, p := range userPlans {
 		if p.UserID != 0 {
-			if _, ok := seenUsers[p.UserID]; !ok {
-				seenUsers[p.UserID] = struct{}{}
-				userIDs = append(userIDs, p.UserID)
+			uid := int64(p.UserID)
+			if _, ok := seenUsers[uid]; !ok {
+				seenUsers[uid] = struct{}{}
+				userIDs = append(userIDs, uid)
 			}
 		}
 		if p.PackageID != 0 {
-			if _, ok := seenPackages[p.PackageID]; !ok {
-				seenPackages[p.PackageID] = struct{}{}
-				packageIDs = append(packageIDs, p.PackageID)
+			pkgID := int64(p.PackageID)
+			if _, ok := seenPackages[pkgID]; !ok {
+				seenPackages[pkgID] = struct{}{}
+				packageIDs = append(packageIDs, pkgID)
 			}
 		}
 	}
@@ -406,7 +408,7 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 					Update("record_id", newID).Error
 			}
 		}
-		packageName := packageNameMap[p.PackageID]
+		packageName := packageNameMap[int64(p.PackageID)]
 		if packageName == "" {
 			packageName = p.Name
 		}
@@ -416,18 +418,18 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 		}
 		list = append(list, userPlanItem{
 			ID:           p.ID,
-			UserID:       p.UserID,
-			UserName:     userNameMap[p.UserID],
-			PackageID:    p.PackageID,
+			UserID:       int64(p.UserID),
+			UserName:     userNameMap[int64(p.UserID)],
+			PackageID:    int64(p.PackageID),
 			PackageName:  packageName,
 			PlanName:     p.Name,
 			RecordID:     recordID,
-			Traffic:      p.Traffic,
+			Traffic:      int64(p.Traffic),
 			Bandwidth:    p.Bandwidth,
-			Connection:   p.Connection,
-			DomainLimit:  p.DomainLimit,
-			HTTPPort:     p.HTTPPortLimit,
-			StreamPort:   p.StreamPortLimit,
+			Connection:   int64(p.Connection),
+			DomainLimit:  int64(p.DomainLimit),
+			HTTPPort:     int64(p.HTTPPortLimit),
+			StreamPort:   int64(p.StreamPortLimit),
 			CustomCCRule: p.CustomCCRule,
 			Websocket:    p.Websocket,
 			CnameDomain:  p.CnameDomain,
@@ -494,9 +496,9 @@ func (ctr *PlanController) AssignUserPlan(c *gin.Context) {
 	}
 
 	userPkg := models.UserPackage{
-		UserID:      req.UserID,
+		UserID:      int32(req.UserID),
 		Name:        pkg.Name,
-		PackageID:   pkg.ID,
+		PackageID:   int32(pkg.ID),
 		RegionID:    pkg.RegionID,
 		NodeGroupID: pkg.NodeGroupID,
 		BackupNodeGroup: pkg.BackupNode,
@@ -504,12 +506,12 @@ func (ctr *PlanController) AssignUserPlan(c *gin.Context) {
 		CnameDomain:     pkg.CnameDomain,
 		CnameHostname2:  pkg.CnameHost2,
 		CnameMode:       pkg.CnameMode,
-		Traffic:     pkg.Traffic,
+		Traffic:     int32(pkg.Traffic),
 		Bandwidth:   pkg.Bandwidth,
-		Connection:  pkg.Connection,
-		DomainLimit: pkg.DomainLimit,
-		HTTPPortLimit:   pkg.HttpPort,
-		StreamPortLimit: pkg.StreamPort,
+		Connection:  int32(pkg.Connection),
+		DomainLimit: int32(pkg.DomainLimit),
+		HTTPPortLimit:   int32(pkg.HttpPort),
+		StreamPortLimit: int32(pkg.StreamPort),
 		CustomCCRule:    pkg.CustomCCRule,
 		Websocket:       pkg.Websocket,
 		MonthPrice:      pkg.MonthPrice,

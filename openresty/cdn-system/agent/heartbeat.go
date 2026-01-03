@@ -79,23 +79,8 @@ func applyNodeSync(action string) error {
 }
 
 func reportNodeSync(action string, success bool) error {
-	payload := map[string]interface{}{
-		"node_id": NodeID,
-		"action":  action,
-		"success": success,
-	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/node/sync", bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	respBody, status, err := doRequest(req, 10*time.Second, DebugMode)
-	if err != nil {
+	if err := sendNodeSync(action, success); err != nil {
 		return err
-	}
-	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
-	if status != 200 {
-		return fmt.Errorf("sync status failed: %d", status)
 	}
 	return nil
 }

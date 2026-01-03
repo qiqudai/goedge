@@ -47,7 +47,7 @@ func (s *NodeService) GetUserNodes(userID int64) ([]int64, error) {
 
 	pkgIDs := make([]int64, 0)
 	for _, up := range userPkgs {
-		pkgIDs = append(pkgIDs, up.PackageID)
+		pkgIDs = append(pkgIDs, int64(up.PackageID))
 	}
 
 	// 2. Get Packages to find Regions/Groups

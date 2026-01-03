@@ -28,6 +28,70 @@ func startMetricsShip() {
 	}
 }
 
+func startLogCleanup() {
+	ticker := time.NewTicker(time.Hour)
+	for range ticker.C {
+		cleanupStoredLogs()
+	}
+}
+
+func cleanupStoredLogs() {
+	dir, hours := getLogStorageSettings()
+	if hours <= 0 {
+		return
+	}
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("[Warn] Log cleanup mkdir failed: %v", err)
+		return
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Printf("[Warn] Log cleanup read dir failed: %v", err)
+		return
+	}
+
+	expireBefore := time.Now().Add(-time.Duration(hours) * time.Hour)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == "access.json" || name == "access.offset" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(expireBefore) {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
+}
+
+func getLogStorageSettings() (string, int) {
+	localConfigMu.RLock()
+	resources := LocalResources
+	localConfigMu.RUnlock()
+
+	dir := filepath.Join(WorkDir, "logs")
+	hours := 0
+	if resources != nil {
+		if strings.TrimSpace(resources.Website.LogStorageDir) != "" {
+			dir = resources.Website.LogStorageDir
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(WorkDir, dir)
+			}
+		}
+		if resources.Website.LogStorageHours > 0 {
+			hours = resources.Website.LogStorageHours
+		}
+	}
+	return dir, hours
+}
+
 func shipAccessLogs() {
 	logPath := filepath.Join(WorkDir, "logs", "access.json")
 	offsetPath := filepath.Join(WorkDir, "logs", "access.offset")

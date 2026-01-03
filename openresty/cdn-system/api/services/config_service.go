@@ -35,6 +35,9 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 
 	if globalCfg := loadGlobalConfig(); globalCfg != nil {
 		payload.WAF = &globalCfg.WAF
+		payload.Resources = &globalCfg.Resources
+		payload.ErrorPages = globalCfg.ErrorPages
+		payload.DefaultConfig = &globalCfg.DefaultConfig
 	}
 	if nginxCfg := loadNginxConfig(); nginxCfg != nil {
 		payload.Nginx = nginxCfg
@@ -73,9 +76,22 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	_ = db.DB.Where("enable = ?", true).Find(&certs).Error
 
 	usedRuleIDs := make([]int64, 0)
+	now := time.Now()
 	for _, site := range sites {
+		status := "active"
+		state := strings.ToLower(strings.TrimSpace(site.State))
+		switch state {
+		case "stop", "locked", "site_locked":
+			status = "locked"
+		case "traffic_limit":
+			status = "traffic_limit"
+		case "conn_limit":
+			status = "conn_limit"
+		case "expired", "timeout":
+			status = "expired"
+		}
 		if !site.Enable {
-			continue
+			status = "locked"
 		}
 
 		effectiveSite := cloneSiteForConfig(site)
@@ -102,6 +118,11 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		headers := buildHeaderMap(effectiveSite.Settings)
 		responseHeaders := buildResponseHeaderMap(effectiveSite.Settings)
 		hasHTTPS := len(effectiveSite.HttpsListen) > 0 || strings.TrimSpace(effectiveSite.HttpsListenRaw) != ""
+		if pkg, ok := userPackageMap[effectiveSite.UserPackageID]; ok {
+			if !pkg.EndAt.IsZero() && pkg.EndAt.Before(now) {
+				status = "expired"
+			}
+		}
 
 		aclDefault, aclRules := buildACLForSite(*effectiveSite)
 		if effectiveSite.CcDefaultRule > 0 {
@@ -115,45 +136,53 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				domainCountByUserGroup,
 				nodeGroupCounts,
 			)
+			connLimit := calcDomainConnLimit(
+				effectiveSite.UserID,
+				effectiveSite.NodeGroupID,
+				userPackageMap[effectiveSite.UserPackageID].Connection,
+				domainCountByUserGroup,
+				nodeGroupCounts,
+			)
 			domainConf := models.EdgeDomain{
-				Name:              domain,
-				UpstreamKey:       upstreamKey,
-				LoadBalancePolicy: policy,
-				Headers:           headers,
-				ResponseHeaders:   responseHeaders,
-				Status:            "active",
-				ACLDefaultAction:  aclDefault,
-				ACLRules:          aclRules,
-				BlackIPs:          parseIPList(effectiveSite.BlackIPRaw),
-				WhiteIPs:          parseIPList(effectiveSite.WhiteIPRaw),
-				CCRuleID:          effectiveSite.CcDefaultRule,
-				OriginProtocol:    originProtocol,
-				OriginHTTPPort:    originHTTPPort,
-				OriginHTTPSPort:   originHTTPSPort,
-				Cache:             cacheCfg,
-				HttpListen:        effectiveSite.HttpListen,
-				HttpsListen:       effectiveSite.HttpsListen,
-				HTTPSForce:        httpsCfg.force,
-				HTTPSRedirectPort: httpsCfg.redirectPort,
-				HTTPSHSTS:         httpsCfg.hsts,
-				HTTPSHTTP2:        httpsCfg.http2,
-				HTTPSSSLProtocols: httpsCfg.sslProtocols,
-				HTTPSSSLCiphers:   httpsCfg.sslCiphers,
+				Name:                        domain,
+				UpstreamKey:                 upstreamKey,
+				LoadBalancePolicy:           policy,
+				Headers:                     headers,
+				ResponseHeaders:             responseHeaders,
+				Status:                      status,
+				ACLDefaultAction:            aclDefault,
+				ACLRules:                    aclRules,
+				BlackIPs:                    parseIPList(effectiveSite.BlackIPRaw),
+				WhiteIPs:                    parseIPList(effectiveSite.WhiteIPRaw),
+				CCRuleID:                    effectiveSite.CcDefaultRule,
+				OriginProtocol:              originProtocol,
+				OriginHTTPPort:              originHTTPPort,
+				OriginHTTPSPort:             originHTTPSPort,
+				Cache:                       cacheCfg,
+				HttpListen:                  effectiveSite.HttpListen,
+				HttpsListen:                 effectiveSite.HttpsListen,
+				HTTPSForce:                  httpsCfg.force,
+				HTTPSRedirectPort:           httpsCfg.redirectPort,
+				HTTPSHSTS:                   httpsCfg.hsts,
+				HTTPSHTTP2:                  httpsCfg.http2,
+				HTTPSSSLProtocols:           httpsCfg.sslProtocols,
+				HTTPSSSLCiphers:             httpsCfg.sslCiphers,
 				HTTPSSSLPreferServerCiphers: httpsCfg.sslPreferServerCiphers,
-				ProxyConnectTimeout: proxyTimeouts.connectTimeout,
-				ProxyReadTimeout:    proxyTimeouts.readTimeout,
-				ProxySendTimeout:    proxyTimeouts.sendTimeout,
-				ProxyHTTPVersion:    advCfg.proxyHTTPVersion,
-				ProxySSLProtocols:   advCfg.proxySSLProtocols,
-				EnableGzip:          advCfg.gzip,
-				GzipTypes:           advCfg.gzipTypes,
-				EnableWebsocket:     advCfg.websocket,
-				EnableRange:         advCfg.rangeEnabled,
-				BodyLimit:           advCfg.bodyLimit,
-				LimitRate:           limitRate,
-				UpstreamKeepalive:   advCfg.keepalive,
-				UpstreamKeepaliveConn: advCfg.keepaliveConn,
-				UpstreamKeepaliveTimeout: advCfg.keepaliveTimeout,
+				ProxyConnectTimeout:         proxyTimeouts.connectTimeout,
+				ProxyReadTimeout:            proxyTimeouts.readTimeout,
+				ProxySendTimeout:            proxyTimeouts.sendTimeout,
+				ProxyHTTPVersion:            advCfg.proxyHTTPVersion,
+				ProxySSLProtocols:           advCfg.proxySSLProtocols,
+				EnableGzip:                  advCfg.gzip,
+				GzipTypes:                   advCfg.gzipTypes,
+				EnableWebsocket:             advCfg.websocket,
+				EnableRange:                 advCfg.rangeEnabled,
+				BodyLimit:                   advCfg.bodyLimit,
+				LimitRate:                   limitRate,
+				ConnLimit:                   connLimit,
+				UpstreamKeepalive:           advCfg.keepalive,
+				UpstreamKeepaliveConn:       advCfg.keepaliveConn,
+				UpstreamKeepaliveTimeout:    advCfg.keepaliveTimeout,
 			}
 			if hasHTTPS {
 				cert := findCertForDomain(domain, certs)
@@ -233,7 +262,72 @@ func loadGlobalConfig() *models.GlobalConfig {
 	if err := json.Unmarshal([]byte(sys.Value), &cfg); err != nil {
 		return nil
 	}
+	if len(cfg.ErrorPages) > 0 {
+		cfg.ErrorPages = normalizeErrorPages(cfg.ErrorPages)
+	}
+	if len(cfg.ErrorPages) == 0 {
+		cfg.ErrorPages = normalizeErrorPages(loadErrorPagesFromConfig())
+	}
 	return &cfg
+}
+
+func normalizeErrorPages(pages map[string]string) map[string]string {
+	if len(pages) == 0 {
+		return pages
+	}
+	normalized := make(map[string]string)
+	copyIfPresent := func(key string) {
+		if val, ok := pages[key]; ok && val != "" {
+			normalized[key] = val
+		}
+	}
+	for _, key := range []string{"400", "403", "502", "504", "traffic_limit", "site_locked", "domain_invalid", "conn_limit", "timeout", "ip"} {
+		copyIfPresent(key)
+	}
+	fallbacks := map[string]string{
+		"p400":               "400",
+		"p403":               "403",
+		"p502":               "502",
+		"p504":               "504",
+		"p512":               "timeout",
+		"p513":               "traffic_limit",
+		"p514":               "site_locked",
+		"p515":               "conn_limit",
+		"access_ip_not_allow": "ip",
+		"host_not_found":      "domain_invalid",
+	}
+	for legacy, mapped := range fallbacks {
+		if _, ok := normalized[mapped]; ok {
+			continue
+		}
+		if val, ok := pages[legacy]; ok && val != "" {
+			normalized[mapped] = val
+		}
+	}
+	return normalized
+}
+
+func loadErrorPagesFromConfig() map[string]string {
+	var cfgItem models.ConfigItem
+	if err := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "error-page", "error_page", "global", 0).
+		First(&cfgItem).Error; err == nil && cfgItem.Value != "" {
+		var pages map[string]string
+		if json.Unmarshal([]byte(cfgItem.Value), &pages) == nil && len(pages) > 0 {
+			return pages
+		}
+	}
+	return map[string]string{
+		"400":            "<html><body><h1>400 Bad Request</h1><p>Our systems have detected unusual traffic.</p></body></html>",
+		"403":            "<html><body><h1>403 Forbidden</h1><p>Access Denied.</p></body></html>",
+		"502":            "<html><body><h1>502 Bad Gateway</h1><p>The server is busy.</p></body></html>",
+		"504":            "<html><body><h1>504 Gateway Timeout</h1><p>The origin server did not respond.</p></body></html>",
+		"traffic_limit":  "<h1>Traffic Limit Exceeded</h1>",
+		"site_locked":    "<h1>Site Locked</h1>",
+		"domain_invalid": "<h1>Domain Not Configured</h1>",
+		"conn_limit":     "<h1>Connection Limit Exceeded</h1>",
+		"timeout":        "<h1>Package Expired</h1>",
+		"ip":             "<h1>IP Forbidden</h1>",
+	}
 }
 
 func buildACLForSite(site models.Site) (string, []models.EdgeACLRule) {
@@ -427,6 +521,30 @@ func calcDomainLimitRate(userID int64, nodeGroupID int64, bandwidth string, doma
 	return mbpsToLimitRate(perDomainMbps)
 }
 
+func calcDomainConnLimit(userID int64, nodeGroupID int64, connLimit int32, domainCountByUserGroup map[int64]map[int64]int, nodeGroupCounts map[int64]int64) int {
+	if connLimit <= 0 {
+		return 0
+	}
+	nodeCount := nodeGroupCounts[nodeGroupID]
+	if nodeCount <= 0 {
+		return 0
+	}
+	groupMap := domainCountByUserGroup[nodeGroupID]
+	if groupMap == nil {
+		return 0
+	}
+	domainCount := groupMap[userID]
+	if domainCount <= 0 {
+		return 0
+	}
+	perNode := float64(connLimit) / float64(nodeCount)
+	perDomain := perNode / float64(domainCount)
+	if perDomain < 1 {
+		return 1
+	}
+	return int(perDomain)
+}
+
 func parseBandwidthMbps(raw string) float64 {
 	value := strings.TrimSpace(strings.ToLower(raw))
 	if value == "" || value == "0" || value == "unlimited" || value == "unlimit" || value == "不限" {
@@ -564,26 +682,26 @@ func normalizeIPList(list []string) []string {
 }
 
 type httpsConfig struct {
-	force                 bool
-	redirectPort          string
-	hsts                  bool
-	http2                 bool
-	sslProtocols          string
-	sslCiphers            string
+	force                  bool
+	redirectPort           string
+	hsts                   bool
+	http2                  bool
+	sslProtocols           string
+	sslCiphers             string
 	sslPreferServerCiphers string
 }
 
 type advancedConfig struct {
-	gzip             bool
-	gzipTypes        string
-	websocket        bool
-	rangeEnabled     bool
-	proxyHTTPVersion string
+	gzip              bool
+	gzipTypes         string
+	websocket         bool
+	rangeEnabled      bool
+	proxyHTTPVersion  string
 	proxySSLProtocols string
-	bodyLimit        int64
-	keepalive        bool
-	keepaliveConn    int
-	keepaliveTimeout int
+	bodyLimit         int64
+	keepalive         bool
+	keepaliveConn     int
+	keepaliveTimeout  int
 }
 
 type proxyTimeoutConfig struct {
@@ -722,17 +840,17 @@ func parseCacheRulesFromSettings(raw interface{}) []models.EdgeCacheRule {
 
 func mapToCacheRule(raw map[string]interface{}) models.EdgeCacheRule {
 	return models.EdgeCacheRule{
-		Rule:   parseString(raw["rule"]),
-		Ext:    parseString(raw["ext"]),
-		URI:    parseString(raw["uri"]),
-		Prefix: parseString(raw["prefix"]),
-		TTL:    parseIntValue(raw["ttl"], 0),
-		Enable: parseBoolPtr(raw["enable"]),
-		NoCache: parseBoolValue(raw["no_cache"], false),
+		Rule:       parseString(raw["rule"]),
+		Ext:        parseString(raw["ext"]),
+		URI:        parseString(raw["uri"]),
+		Prefix:     parseString(raw["prefix"]),
+		TTL:        parseIntValue(raw["ttl"], 0),
+		Enable:     parseBoolPtr(raw["enable"]),
+		NoCache:    parseBoolValue(raw["no_cache"], false),
 		ForceCache: parseBoolValue(raw["force_cache"], false),
-		Priority: parseIntValue(raw["priority"], 0),
+		Priority:   parseIntValue(raw["priority"], 0),
 		IgnoreArgs: parseBoolValue(raw["ignore_args"], false),
-		CacheKey: parseString(raw["cache_key"]),
+		CacheKey:   parseString(raw["cache_key"]),
 	}
 }
 
@@ -800,11 +918,11 @@ func buildStreamsForNode(groupIDs []int64) []models.EdgeStream {
 			})
 		}
 		streams = append(streams, models.EdgeStream{
-			ID:            effectiveForward.ID,
-			ListenPorts:   effectiveForward.ListenPorts,
-			Targets:       targets,
-			BalanceWay:    strings.TrimSpace(effectiveForward.BalanceWay),
-			ProxyProtocol: effectiveForward.ProxyProtocol,
+			ID:                  effectiveForward.ID,
+			ListenPorts:         effectiveForward.ListenPorts,
+			Targets:             targets,
+			BalanceWay:          strings.TrimSpace(effectiveForward.BalanceWay),
+			ProxyProtocol:       effectiveForward.ProxyProtocol,
 			ProxyConnectTimeout: connectTimeout,
 			ProxyTimeout:        proxyTimeout,
 			ConnLimit:           connLimit,

@@ -1,0 +1,10 @@
+{
+  "10026": {
+    "id": 10026,
+    "type": "block",
+    "within_second": 10,
+    "max_req": 1,
+    "max_req_per_uri": 1,
+    "extra": "{\"blacklist\":true,\"match_mode\":\"and\"}"
+  }
+}

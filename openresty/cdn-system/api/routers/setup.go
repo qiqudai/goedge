@@ -155,8 +155,9 @@ func Setup(r *gin.Engine) {
             apiKeyCtr := &controllers.APIKeyController{}
             admin.GET("/api_key", apiKeyCtr.GetKey)
             admin.PUT("/api_key", apiKeyCtr.UpdateKey)
-            admin.POST("/api_key/reset", apiKeyCtr.ResetSecret)
+			admin.POST("/api_key/reset", apiKeyCtr.ResetSecret)
 
+			admin.POST("/ws/dispatch", wsCtr.DispatchTest)
 
 			// Domain Management
 			userDomainCtr := &controllers.UserDomainController{}
@@ -166,6 +167,7 @@ func Setup(r *gin.Engine) {
 			userCtr := &controllers.UserController{}
 			admin.GET("/users", userCtr.ListUsers)
 			admin.PUT("/users/:id/status", userCtr.ToggleStatus)
+			admin.PUT("/users/:id", userCtr.UpdateUser)
 			admin.DELETE("/users/:id", userCtr.DeleteUser)
 			admin.POST("/users/:id/purge/reset", userCtr.ResetPurgeUsage)
 			admin.POST("/users/:id/impersonate", userCtr.Impersonate)

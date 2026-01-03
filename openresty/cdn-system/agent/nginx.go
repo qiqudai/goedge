@@ -35,6 +35,13 @@ func startNginx() error {
 	confPath := nginxConfPath()
 	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-c", confPath)
 	setNginxEnv(cmd)
+	if runtime.GOOS == "windows" {
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		log.Println("[Success] Nginx Started")
+		return nil
+	}
 	if err := cmd.Run(); err != nil {
 		return err
 	}

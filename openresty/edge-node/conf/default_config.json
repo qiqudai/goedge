@@ -1,0 +1,23 @@
+{
+  "website": {
+    "cache_enable": false,
+    "cache_ttl": 0,
+    "gzip": false,
+    "waf_enable": false,
+    "ssl_ciphers": ""
+  },
+  "api": {
+    "cache_enable": false,
+    "cache_ttl": 0,
+    "gzip": false,
+    "waf_enable": false,
+    "ssl_ciphers": ""
+  },
+  "download": {
+    "cache_enable": false,
+    "cache_ttl": 0,
+    "gzip": false,
+    "waf_enable": false,
+    "ssl_ciphers": ""
+  }
+}

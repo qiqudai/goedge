@@ -116,6 +116,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		CertID          *int64                 `json:"cert_id"`
 		Domains         *[]string              `json:"domains"`
 		Enable          *bool                  `json:"enable"`
+		State           *string                `json:"state"`
 		Backends        *[]string              `json:"backends"`
 		Settings        map[string]interface{} `json:"settings"`
 	}
@@ -164,6 +165,13 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 				updates["state"] = "running"
 			} else {
 				updates["state"] = "stop"
+			}
+		}
+		if req.State != nil {
+			state := strings.ToLower(strings.TrimSpace(*req.State))
+			switch state {
+			case "running", "stop", "locked", "site_locked", "traffic_limit", "conn_limit", "expired", "timeout":
+				updates["state"] = state
 			}
 		}
 
@@ -366,7 +374,7 @@ func (ctrl *SiteController) AdminBatchProgress(c *gin.Context) {
 	fail := 0
 	running := 0
 	pending := 0
-	
+
 	type FailItem struct {
 		Domain string `json:"domain"`
 		Reason string `json:"reason"`
@@ -379,7 +387,7 @@ func (ctrl *SiteController) AdminBatchProgress(c *gin.Context) {
 			success++
 		case "fail":
 			fail++
-			
+
 			var payload services.SiteCreatePayload
 			_ = json.Unmarshal([]byte(t.Data), &payload)
 			domain := payload.Domain
@@ -404,7 +412,7 @@ func (ctrl *SiteController) AdminBatchProgress(c *gin.Context) {
 		"running":    running,
 		"pending":    pending,
 		"done":       success + fail,
-		"percent":    0, 
+		"percent":    0,
 		"fail_items": failItems,
 	})
 }
@@ -479,7 +487,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		if req.CnameMode != nil {
 			updates["cname_mode"] = *req.CnameMode
 		}
-		
+
 		// 如果更新了CNAME相关字段，需要重新计算CnameHostname
 		if req.CnameDomain != nil || req.CnameMode != nil {
 			// 获取更新的站点信息来重新计算CNAME
@@ -487,13 +495,13 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 			if err := tx.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
 				return err
 			}
-			
+
 			for _, site := range sites {
 				var pkg models.UserPackage
 				if err := tx.First(&pkg, site.UserPackageID).Error; err != nil {
 					continue
 				}
-				
+
 				// 重新计算CnameHostname
 				newCnameHostname := site.CnameHostname
 				siteMode := ""
@@ -502,12 +510,12 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 				} else {
 					siteMode = site.CnameMode
 				}
-				
+
 				cnameDomain := site.CnameDomain
 				if req.CnameDomain != nil {
 					cnameDomain = *req.CnameDomain
 				}
-				
+
 				// 根据模式重新计算CNAME
 				if siteMode == "package" || (siteMode == "" && pkg.CnameMode == "package") {
 					// Package模式
@@ -527,7 +535,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 						newCnameHostname = buildSiteCname(site.Domains[0], cnameDomain)
 					}
 				}
-				
+
 				if newCnameHostname != site.CnameHostname {
 					if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("cname_hostname", newCnameHostname).Error; err != nil {
 						return err
@@ -581,7 +589,6 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Batch update completed"})
 }
-
 
 // AdminBatchAction handles enable/disable/delete etc
 func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {

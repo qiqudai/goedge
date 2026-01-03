@@ -52,7 +52,9 @@ const errorCodes = [
   { key: 'traffic_limit', label: '\u6d41\u91cf\u8d85\u9650' },
   { key: 'site_locked', label: '\u7f51\u7ad9\u88ab\u9501' },
   { key: 'domain_invalid', label: '\u57df\u540d\u65e0\u6548' },
-  { key: 'conn_limit', label: '\u8fde\u63a5\u6570\u8d85\u9650' }
+  { key: 'conn_limit', label: '\u8fde\u63a5\u6570\u8d85\u9650' },
+  { key: 'timeout', label: '\u5957\u9910\u5230\u671f' },
+  { key: 'ip', label: '\u9650\u5236IP\u8bbf\u95ee' }
 ]
 
 const loadConfig = () => {

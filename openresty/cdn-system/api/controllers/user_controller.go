@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -200,3 +201,87 @@ func (ctr *UserController) Impersonate(c *gin.Context) {
 		"name":  user.Name,
 	})
 }
+
+// UpdateUser updates user information
+// PUT /api/v1/admin/users/:id
+func (ctr *UserController) UpdateUser(c *gin.Context) {
+	db.DB.AutoMigrate(&models.User{}) // Ensure columns exist
+	idStr := c.Param("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user id"})
+		return
+	}
+
+	var req struct {
+		Email       string `json:"email"`
+		Name        string `json:"name"`
+		Des         string `json:"des"`
+		Phone       string `json:"phone"`
+		QQ          string `json:"qq"`
+		Password    string `json:"password"`
+		GroupID     int    `json:"group_id"`
+		Enable      bool   `json:"enable"`
+		
+		// Real-name
+		CertName     string `json:"cert_name"`
+		CertNo       string `json:"cert_no"`
+		Company      string `json:"company"`
+		TeaCode      string `json:"tea_code"`
+		
+		// Secondary
+		SecondaryAuth         bool   `json:"secondary_auth"`
+		SecondaryAuthDeadline string `json:"secondary_auth_deadline"`
+		SecondaryAuthAction   string `json:"secondary_auth_action"`
+		
+		// Security
+		LoginCaptcha string `json:"login_captcha"`
+		WhiteIP      string `json:"white_ip"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// Fetch existing
+	var user models.User
+	if err := db.DB.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	updates["email"] = req.Email
+	updates["name"] = req.Name
+	updates["des"] = req.Des
+	updates["phone"] = req.Phone
+	updates["qq"] = req.QQ
+	updates["group_id"] = req.GroupID
+	updates["enable"] = req.Enable
+	
+	updates["cert_name"] = req.CertName
+	updates["cert_no"] = req.CertNo
+	updates["company"] = req.Company
+	updates["tea_code"] = req.TeaCode
+	
+	updates["secondary_auth"] = req.SecondaryAuth
+	updates["secondary_auth_deadline"] = req.SecondaryAuthDeadline
+	updates["secondary_auth_action"] = req.SecondaryAuthAction
+	
+	updates["login_captcha"] = req.LoginCaptcha
+	updates["white_ip"] = req.WhiteIP
+
+	if req.Password != "" {
+		hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		updates["password"] = string(hash)
+	}
+
+	if err := db.DB.Model(&user).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "User updated successfully"})
+}
+

@@ -68,9 +68,18 @@
           <span v-else>uid: {{ row.uid }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" width="320" show-overflow-tooltip />
+      <el-table-column prop="name" label="名称" width="320" show-overflow-tooltip>
+        <template #default="{row}">
+          <span class="link-type" @click="openEdit(row)">{{ row.name }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="type" label="类型" width="160" />
-      <el-table-column prop="domain" label="域名" width="240" show-overflow-tooltip />
+      <el-table-column prop="domain" label="域名" width="240" show-overflow-tooltip>
+        <template #default="{row}">
+           <span>{{ row.domain }}</span>
+           <el-icon class="copy-icon" @click.stop="copyText(row.domain)" v-if="row.domain"><CopyDocument /></el-icon>
+        </template>
+      </el-table-column>
       <el-table-column prop="create_at" label="创建时间" width="200">
         <template #default="{row}">
            {{ formatTime(row.create_at) }}
@@ -89,11 +98,12 @@
       </el-table-column>
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.state === 'waiting'" type="info" size="small">待签发</el-tag>
+          <el-tag v-if="!row.enable" type="danger" size="small">禁用</el-tag>
+          <el-tag v-else-if="row.state === 'waiting'" type="info" size="small">待签发</el-tag>
           <el-tag v-else-if="row.state === 'issuing'" type="warning" size="small">签发中</el-tag>
-          <el-tag v-else-if="row.state === 'ready' || row.state === 'success' || (row.enable && !row.state)" type="success" size="small">已签发</el-tag>
+          <el-tag v-else-if="row.state === 'ready' || row.state === 'success' || !row.state" type="success" size="small">已签发</el-tag>
           <el-tag v-else-if="row.state === 'fail'" type="danger" size="small">失败</el-tag>
-          <el-tag v-else type="info" size="small">{{ row.enable ? '正常' : '禁用' }}</el-tag>
+          <el-tag v-else type="info" size="small">正常</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="失败原因" min-width="150" show-overflow-tooltip>
@@ -124,106 +134,13 @@
       </el-table-column>
     </AppTable>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
-      <el-tabs v-model="dialogTab" type="card">
-        <el-tab-pane label="单个" name="single">
-          <el-form :model="form" label-width="90px">
-            <el-form-item label="用户" v-if="isAdmin">
-              <el-select
-                v-model="form.user_id"
-                filterable
-                remote
-                clearable
-                placeholder="搜索用户ID或账号"
-                :remote-method="loadUsers"
-                :loading="userLoading"
-                style="width: 100%">
-                <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="名称">
-              <el-input v-model="form.name" placeholder="输入证书名称" />
-            </el-form-item>
-            <el-form-item label="备注">
-              <el-input v-model="form.des" placeholder="备注" />
-            </el-form-item>
-            <el-form-item label="类型">
-              <el-radio-group v-model="form.type">
-                <el-radio value="upload">自己上传</el-radio>
-                <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
-                <el-radio value="letsencrypt">Let's Encrypt</el-radio>
-                <el-radio value="buypass">BuyPass</el-radio>
-                <el-radio value="google">Google CA</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="form.type === 'upload'" label="证书">
-              <el-input v-model="form.cert" type="textarea" :rows="4" placeholder="-----BEGIN CERTIFICATE-----" />
-            </el-form-item>
-            <el-form-item v-if="form.type === 'upload'" label="密钥">
-              <el-input v-model="form.key" type="textarea" :rows="4" placeholder="-----BEGIN PRIVATE KEY-----" />
-            </el-form-item>
-            <el-form-item v-if="form.type !== 'upload'" label="域名">
-              <el-input v-model="form.domain" placeholder="输入域名, 多个域名空格分隔" />
-            </el-form-item>
-            <el-form-item label="DNS API" v-if="form.type !== 'upload'">
-              <el-select v-model="form.dnsapi" clearable placeholder="请选择" style="width: 100%;">
-              <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
-              </el-select>
-              <div class="help-text">
-                这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
-              </div>
-            </el-form-item>
-            <!-- Auto Renew removed as requested -->
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="批量申请" name="batch">
-          <div v-if="!currentBatchId">
-            <el-form :model="batchForm" label-width="90px">
-              <el-form-item label="用户" v-if="isAdmin">
-                <el-select
-                  v-model="batchForm.user_id"
-                  filterable
-                  remote
-                  clearable
-                  placeholder="搜索用户ID或账号"
-                  :remote-method="loadUsers"
-                  :loading="userLoading"
-                  style="width: 100%">
-                  <el-option v-for="u in userOptions" :key="u.id" :label="formatUserLabel(u)" :value="u.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="类型">
-                <el-radio-group v-model="batchForm.type">
-                  <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
-                  <el-radio value="letsencrypt">Let's Encrypt</el-radio>
-                  <el-radio value="buypass">BuyPass</el-radio>
-                  <el-radio value="google">Google CA</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item label="域名">
-                <DomainBatchInput v-model="batchForm.domains" @validation="handleValidation" />
-              </el-form-item>
-              <el-form-item label="DNS API">
-                <el-select v-model="batchForm.dnsapi" clearable placeholder="请选择" style="width: 100%;">
-                <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
-                </el-select>
-                <div class="help-text">
-                  这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
-                </div>
-              </el-form-item>
-            </el-form>
-          </div>
-
-        </el-tab-pane>
-      </el-tabs>
-      <template #footer>
-        <span>
-          <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="submitForm">确定</el-button>
-        </span>
-      </template>
-    </el-dialog>
+    <CertEditPopup
+      v-model:visible="popupVisible"
+      :certId="editingId"
+      :isAdmin="isAdmin"
+      :initialData="currentCertData"
+      @saved="fetchList"
+    />
 
     <el-card v-if="activeTopTab === 'default'" class="default-card">
       <el-form :model="defaultForm" label-width="90px">
@@ -329,9 +246,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { ArrowDown, CircleCheckFilled, CircleCloseFilled, CopyDocument } from '@element-plus/icons-vue'
 import request from '@/utils/request'
-import DomainBatchInput from '@/components/DomainBatchInput.vue'
+import CertEditPopup from './CertEditPopup.vue'
 
 const activeTopTab = ref('list')
 const list = ref([])
@@ -371,29 +288,9 @@ const listQuery = reactive({
 })
 
 
-const dialogVisible = ref(false)
-const dialogTab = ref('single')
+const popupVisible = ref(false)
 const editingId = ref(0)
-const form = reactive({
-  name: '',
-  des: '',
-  type: 'upload',
-  domain: '',
-  dnsapi: '',
-  cert: '',
-  key: '',
-  // auto_renew: true // Default true implicit
-  user_id: null
-})
-const batchForm = reactive({
-  user_id: '',
-  type: 'zerossl',
-  domains: '',
-  dnsapi: '',
-  // auto_renew: true
-})
-
-const dialogTitle = computed(() => (editingId.value ? '编辑证书' : '添加证书'))
+const currentCertData = ref({})
 
 const handleTopTab = () => {}
 
@@ -442,118 +339,23 @@ const showError = (err) => {
 
 const openCreate = () => {
   editingId.value = 0
-  dialogTab.value = 'single'
-  form.name = ''
-  form.des = ''
-  form.type = 'upload'
-  form.domain = ''
-  form.dnsapi = ''
-  form.cert = ''
-  form.key = ''
-  form.auto_renew = false
-  batchForm.type = 'zerossl'
-  batchForm.domains = ''
-  batchForm.dnsapi = ''
-  batchForm.auto_renew = true
-  dialogVisible.value = true
+  currentCertData.value = {}
+  popupVisible.value = true
 }
 
 const openEdit = row => {
   editingId.value = row.id
-  dialogTab.value = 'single'
-  form.name = row.name || ''
-  form.des = row.des || ''
-  form.type = row.type || 'upload'
-  form.domain = row.domain || ''
-  form.dnsapi = row.dnsapi || ''
-  form.cert = row.cert || ''
-  form.key = row.key || ''
-  form.auto_renew = !!row.auto_renew
-  dialogVisible.value = true
+  currentCertData.value = { ...row }
+  popupVisible.value = true
 }
 
-const currentBatchId = ref('')
-const validBatchDomains = ref([])
-
-const handleValidation = (result) => {
-  validBatchDomains.value = result.valid
-}
-
-const resetBatch = () => {
-  currentBatchId.value = ''
-  batchForm.domains = ''
-}
-
-
-
-const submitForm = () => {
-  if (dialogTab.value === 'batch') {
-    if (isAdmin.value && !batchForm.user_id) {
-       ElMessage.warning('请选择用户')
-       return
-    }
-
-    if (validBatchDomains.value.length === 0) {
-      ElMessage.warning('请输入有效的域名')
-      return
-    }
-    // Convert valid domains to array if using DomainBatchInput, or split text
-    // DomainBatchInput emits validation result but we should use the bound value or validated list
-    const domainsList = validBatchDomains.value.length > 0 ? validBatchDomains.value : batchForm.domains.split('\n').map(d=>d.trim()).filter(Boolean)
-    
-    const payload = {
-        ...batchForm,
-        user_id: Number(batchForm.user_id) || 0,
-        domains: domainsList,
-        dnsapi: Number(batchForm.dnsapi) || 0
-    }
-
-    request.post('/certs/batch', payload).then(res => { 
-      ElMessage.success(res.message || '批量申请提交成功')
-      dialogVisible.value = false
-      fetchList()
-    })
-    return
-  }
-
-  const payload = { ...form }
-  // Check if Single Add (non-upload) -> Use Batch Task
-  if (!editingId.value && form.type !== 'upload') {
-     // Convert to Batch format
-     // Convert to Batch format with array domains
-     // Use regex to split by comma, space, newline
-     const domainList = form.domain.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean)
-
-     const batchPayload = {
-        user_id: Number(form.user_id) || 0,
-        type: form.type,
-        domains: domainList, 
-        dnsapi: Number(form.dnsapi) || 0,
-        auto_renew: true 
-     }
-
-     request.post('/certs/batch', batchPayload).then(res => {
-        ElMessage.success('申请任务已提交')
-        dialogVisible.value = false
-        fetchList()
-     })
-     return
-  }
-
-  if (editingId.value) {
-    request.put(`/certs/${editingId.value}`, payload).then(() => {
-      ElMessage.success('更新成功')
-      dialogVisible.value = false
-      fetchList()
-    })
-  } else {
-    // Legacy /certs (AdminCreate) -> Handles Upload type
-    request.post('/certs', payload).then(() => {
-      ElMessage.success('添加成功')
-      dialogVisible.value = false
-      fetchList()
-    })
-  }
+const copyText = (text) => {
+  if (!text) return
+  navigator.clipboard.writeText(text).then(() => {
+    ElMessage.success('已复制')
+  }).catch(() => {
+    ElMessage.error('复制失败')
+  })
 }
 
 const handleBatchAction = action => {
@@ -838,5 +640,21 @@ onMounted(() => {
   color: #909399;
   font-size: 12px;
   padding: 4px 0 4px 90px;
+}
+.link-type {
+  color: #409eff;
+  cursor: pointer;
+}
+.link-type:hover {
+  text-decoration: underline;
+}
+.copy-icon {
+  margin-left: 5px;
+  cursor: pointer;
+  color: #909399;
+  vertical-align: middle;
+}
+.copy-icon:hover {
+  color: #409eff;
 }
 </style>

@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -42,8 +43,24 @@ func IssueCertsAsync(batchID int64, ids []int64) {
 }
 
 func processUniqueIssueTask(batchID int64, certID int64) {
+	var task models.Task
+	var cert models.Cert
+	
+	defer func() {
+		if r := recover(); r != nil {
+			errReason := fmt.Sprintf("Panic: %v", r)
+			if task.ID != 0 {
+				failTask(&task, errReason)
+			}
+			// Update cert state if cert found
+			if cert.ID != 0 {
+				db.DB.Model(&models.Cert{ID: cert.ID}).Update("state", "fail")
+			}
+		}
+	}()
+
 	// 1. Create Task
-	task := models.Task{
+	task = models.Task{
 		Type:     "issue_cert",
 		Name:     "Issue Cert " + strings.TrimSpace(strconv.FormatInt(certID, 10)),
 		State:    "waiting",
@@ -56,7 +73,6 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 	}
 
 	// 2. Associate with Cert
-	var cert models.Cert
 	if err := db.DB.First(&cert, certID).Error; err != nil {
 		failTask(&task, "Cert not found")
 		return

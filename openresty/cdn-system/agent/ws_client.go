@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -74,6 +75,10 @@ func connectWS() error {
 
 	log.Println("[WS] Connected and Authenticated")
 
+	heartbeatDone := make(chan struct{})
+	go startWSHeartbeat(conn, heartbeatDone)
+	defer close(heartbeatDone)
+
 	// 2. Read Loop
 	for {
 		_, msg, err := conn.ReadMessage()
@@ -92,8 +97,8 @@ func connectWS() error {
 		switch header.Kind {
 		case "job_dispatch":
 			handleJobDispatch(msg)
-		case "pong":
-			// ignore
+		case "heartbeat_ack":
+			handleHeartbeatAck(msg)
 		}
 	}
 }
@@ -113,6 +118,127 @@ func sendAgentHello(conn *websocket.Conn) error {
 		"capabilities":  []string{"套餐同步", "ACL发布", "CC发布"},
 	}
 	return conn.WriteJSON(msg)
+}
+
+func startWSHeartbeat(conn *websocket.Conn, done <-chan struct{}) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			wsWriteLock.Lock()
+			err := conn.WriteJSON(map[string]interface{}{
+				"kind":      "heartbeat",
+				"timestamp": time.Now().Unix(),
+				"status":    "active",
+			})
+			wsWriteLock.Unlock()
+			if err != nil {
+				log.Printf("[WS] Heartbeat failed: %v", err)
+				return
+			}
+			retryPendingNodeSync(conn)
+		}
+	}
+}
+
+func handleHeartbeatAck(raw []byte) {
+	var resp struct {
+		Kind       string `json:"kind"`
+		SyncAction string `json:"sync_action"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return
+	}
+	if action := resp.SyncAction; action != "" {
+		if err := applyNodeSync(action); err != nil {
+			log.Printf("[Error] Sync node status failed: %v", err)
+		}
+	}
+}
+
+func sendNodeSync(action string, success bool) error {
+	wsWriteLock.Lock()
+	conn := wsConn
+	wsWriteLock.Unlock()
+	if conn == nil {
+		recordPendingNodeSync(action, success, errors.New("ws not connected"))
+		return errors.New("ws not connected")
+	}
+
+	msg := map[string]interface{}{
+		"kind":    "node_sync",
+		"action":  action,
+		"success": success,
+	}
+
+	wsWriteLock.Lock()
+	err := conn.WriteJSON(msg)
+	wsWriteLock.Unlock()
+	if err != nil {
+		log.Printf("[WS] Failed to send node sync: %v", err)
+		recordPendingNodeSync(action, success, err)
+		return err
+	}
+	return nil
+}
+
+func recordPendingNodeSync(action string, success bool, err error) {
+	localConfigMu.Lock()
+	defer localConfigMu.Unlock()
+
+	for i := range pendingNodeSyncs {
+		if pendingNodeSyncs[i].Action == action && pendingNodeSyncs[i].Success == success {
+			pendingNodeSyncs[i].Attempts++
+			pendingNodeSyncs[i].LastError = err.Error()
+			pendingNodeSyncs[i].LastAt = time.Now()
+			return
+		}
+	}
+	pendingNodeSyncs = append(pendingNodeSyncs, nodeSyncAck{
+		Action:    action,
+		Success:   success,
+		Attempts:  1,
+		LastError: err.Error(),
+		LastAt:    time.Now(),
+	})
+	if len(pendingNodeSyncs) > 10 {
+		pendingNodeSyncs = pendingNodeSyncs[len(pendingNodeSyncs)-10:]
+	}
+}
+
+func retryPendingNodeSync(conn *websocket.Conn) {
+	localConfigMu.Lock()
+	if len(pendingNodeSyncs) == 0 {
+		localConfigMu.Unlock()
+		return
+	}
+	pending := pendingNodeSyncs[0]
+	localConfigMu.Unlock()
+
+	msg := map[string]interface{}{
+		"kind":    "node_sync",
+		"action":  pending.Action,
+		"success": pending.Success,
+	}
+
+	wsWriteLock.Lock()
+	err := conn.WriteJSON(msg)
+	wsWriteLock.Unlock()
+	if err != nil {
+		log.Printf("[WS] Retry node sync failed: %v", err)
+		recordPendingNodeSync(pending.Action, pending.Success, err)
+		return
+	}
+
+	localConfigMu.Lock()
+	if len(pendingNodeSyncs) > 0 {
+		pendingNodeSyncs = pendingNodeSyncs[1:]
+	}
+	localConfigMu.Unlock()
 }
 
 // In main.go or tasks.go we have processTask

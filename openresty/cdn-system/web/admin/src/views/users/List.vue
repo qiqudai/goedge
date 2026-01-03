@@ -35,19 +35,22 @@
       <el-table-column :label="t.userName" min-width="150">
         <template #default="{ row }">
           <span class="link-type" @click="handleUpdate(row)">{{ row.name }}</span>
+          <el-icon class="copy-icon" @click.stop="copyText(row.name)" v-if="row.name"><CopyDocument /></el-icon>
           <el-tag v-if="row.type === 1" type="danger" size="small" style="margin-left: 5px">{{ t.admin }}</el-tag>
         </template>
       </el-table-column>
 
       <el-table-column :label="t.email" min-width="150" align="center">
         <template #default="{ row }">
-          <span>{{ row.email }}</span>
+          <span class="link-type" @click="handleUpdate(row)">{{ row.email }}</span>
+          <el-icon class="copy-icon" @click.stop="copyText(row.email)" v-if="row.email"><CopyDocument /></el-icon>
         </template>
       </el-table-column>
 
       <el-table-column :label="t.phone" width="120" align="center">
         <template #default="{ row }">
-          <span>{{ row.phone || '-' }}</span>
+          <span class="link-type" @click="handleUpdate(row)">{{ row.phone || '-' }}</span>
+          <el-icon class="copy-icon" @click.stop="copyText(row.phone)" v-if="row.phone"><CopyDocument /></el-icon>
         </template>
       </el-table-column>
 
@@ -97,15 +100,22 @@
         </template>
       </el-table-column>
     </AppTable>
+    
+    <UserEditPopup
+      v-model:visible="popupVisible"
+      :userData="currentUserData"
+      @saved="getList"
+    />
   </div>
 
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
-import { Search, Edit } from '@element-plus/icons-vue'
+import { Search, Edit, CopyDocument } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import UserEditPopup from './UserEditPopup.vue'
 
 const t = {
   keywordPlaceholder: '\u7528\u6237\u540d/\u90ae\u7bb1/\u624b\u673a\u53f7',
@@ -141,6 +151,9 @@ const list = ref([])
 const listLoading = ref(true)
 const total = ref(0)
 const initSwitchLock = ref(true)
+const popupVisible = ref(false)
+const currentUserData = ref({})
+
 const listQuery = reactive({
   page: 1,
   pageSize: 20,
@@ -178,11 +191,26 @@ const handleFilter = () => {
 }
 
 const handleCreate = () => {
-  ElMessage.info(t.createUserTip)
+   // Assuming create is same as edit but empty?
+   // Or kept as "Development"
+   // User requested: "Edit User Information". Did not explicitly ask for Create in this prompt.
+   // But let's assume create functionality is not the focus, prompt said: "http://localhost:5173/system/users 该页面 能点击用户名，邮箱 手机号 弹出编辑框"
+   // It implies update.
+   ElMessage.info(t.createUserTip)
 }
 
 const handleUpdate = row => {
-  ElMessage.info(t.editUserTip + (row.name || row.username || ''))
+  currentUserData.value = { ...row }
+  popupVisible.value = true
+}
+
+const copyText = (text) => {
+  if (!text) return
+  navigator.clipboard.writeText(text).then(() => {
+    ElMessage.success('已复制')
+  }).catch(() => {
+    ElMessage.error('复制失败')
+  })
 }
 
 const handleStatusChange = row => {
@@ -255,3 +283,21 @@ onMounted(() => {
   getList()
 })
 </script>
+<style scoped>
+.link-type {
+  color: #409eff;
+  cursor: pointer;
+}
+.link-type:hover {
+  text-decoration: underline;
+}
+.copy-icon {
+  margin-left: 5px;
+  cursor: pointer;
+  color: #909399;
+  vertical-align: middle;
+}
+.copy-icon:hover {
+  color: #409eff;
+}
+</style>

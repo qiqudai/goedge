@@ -1,6 +1,7 @@
 package main
 
 import (
+	fsutil "cdn-common/io"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -37,7 +39,7 @@ func pullConfig() error {
 
 		newVersion := extractVersion(body)
 		currentVersion := readLocalVersion()
-		if newVersion != 0 && newVersion <= currentVersion {
+		if newVersion != 0 && newVersion == currentVersion {
 			log.Printf("[Info] Config unchanged (version=%d). Skipping reload.", currentVersion)
 			return nil
 		}
@@ -51,6 +53,8 @@ func pullConfig() error {
 			log.Printf("[Error] Failed to generate dynamic configs: %v", err)
 			return err
 		}
+
+		syncRuntimeLuaAssets()
 
 		log.Printf("[Info] Config Updated (version=%d, %d bytes). Reloading Nginx...", newVersion, len(body))
 		if err := executeReload(); err != nil {
@@ -103,12 +107,14 @@ func writeConfigWithBackup(body []byte) error {
 	if current, err := ioutil.ReadFile(CONFIG_PATH); err == nil {
 		_ = ioutil.WriteFile(CONFIG_BAK, current, 0644)
 	}
-	// Write New
-	tmpPath := CONFIG_PATH + ".tmp"
-	if err := ioutil.WriteFile(tmpPath, body, 0644); err != nil {
-		return err
+	return fsutil.WriteFileAtomic(CONFIG_PATH, body, 0o644)
+}
+
+func syncRuntimeLuaAssets() {
+	if WorkDir == "" {
+		return
 	}
-	return os.Rename(tmpPath, CONFIG_PATH)
+	restoreDir("assets/lua", filepath.Join(WorkDir, "lua"))
 }
 
 func restoreBackup() error {
@@ -178,6 +184,8 @@ type edgeDomain struct {
 	LoadBalancePolicy string            `json:"load_balance_policy"`
 	Headers           map[string]string `json:"headers"`
 	ResponseHeaders   map[string]string `json:"response_headers"`
+	Status            string            `json:"status"`
+	ConnLimit         int               `json:"conn_limit"`
 	SSLCertData       string            `json:"ssl_cert_data"`
 	SSLKeyData        string            `json:"ssl_key_data"`
 	ACLDefaultAction  string            `json:"acl_default_action"`
@@ -230,10 +238,76 @@ type edgeNginxConfig struct {
 }
 
 type edgeConfig struct {
-	Domains   []edgeDomain     `json:"domains"`
-	Upstreams []edgeUpstream   `json:"upstreams"`
-	Streams   []edgeStream     `json:"streams"`
-	Nginx     *edgeNginxConfig `json:"nginx"`
+	Domains       []edgeDomain                `json:"domains"`
+	Upstreams     []edgeUpstream              `json:"upstreams"`
+	Streams       []edgeStream                `json:"streams"`
+	Nginx         *edgeNginxConfig            `json:"nginx"`
+	WAF           *edgeWAFConfig              `json:"waf,omitempty"`
+	Resources     *edgeResources              `json:"resources,omitempty"`
+	ErrorPages    map[string]string           `json:"error_pages,omitempty"`
+	DefaultConfig *edgeDefaultConfig          `json:"default_config,omitempty"`
+	CCRules       map[string][]edgeCCRuleItem `json:"cc_rules,omitempty"`
+	CCMatchers    map[string]edgeCCMatcher    `json:"cc_matchers,omitempty"`
+	CCFilters     map[string]edgeCCFilter     `json:"cc_filters,omitempty"`
+}
+
+type edgeWAFConfig struct {
+	Enable bool `json:"enable"`
+}
+
+type edgeResources struct {
+	Website edgeWebsiteResources `json:"website"`
+	Forward edgeForwardResources `json:"forward"`
+	Public  edgePublicResources  `json:"public"`
+}
+
+type edgeWebsiteResources struct {
+	DefaultListen80 bool   `json:"default_listen_80"`
+	LogStorageDir   string `json:"log_storage_dir"`
+	LogStorageHours int    `json:"log_storage_hours"`
+}
+
+type edgeForwardResources struct {
+	DisabledPorts string `json:"disabled_ports"`
+}
+
+type edgePublicResources struct {
+	DisabledCustomPorts string `json:"disabled_custom_ports"`
+}
+
+type edgeDefaultConfig struct {
+	Website  edgeSiteTemplate `json:"website"`
+	API      edgeSiteTemplate `json:"api"`
+	Download edgeSiteTemplate `json:"download"`
+}
+
+type edgeSiteTemplate struct {
+	CacheEnable bool   `json:"cache_enable"`
+	CacheTTL    int    `json:"cache_ttl"`
+	Gzip        bool   `json:"gzip"`
+	WAFEnable   bool   `json:"waf_enable"`
+	SSLCiphers  string `json:"ssl_ciphers"`
+}
+
+type edgeCCRuleItem struct {
+	MatcherID int64  `json:"matcher_id,omitempty"`
+	FilterID  int64  `json:"filter_id,omitempty"`
+	Action    string `json:"action,omitempty"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type edgeCCMatcher struct {
+	ID   int64  `json:"id"`
+	Data string `json:"data"`
+}
+
+type edgeCCFilter struct {
+	ID           int64  `json:"id"`
+	Type         string `json:"type"`
+	WithinSecond int    `json:"within_second"`
+	MaxReq       int    `json:"max_req"`
+	MaxReqPerURI int    `json:"max_req_per_uri"`
+	Extra        string `json:"extra,omitempty"`
 }
 
 func generateDynamicConfigs(payload []byte) error {
@@ -242,6 +316,25 @@ func generateDynamicConfigs(payload []byte) error {
 	}
 	var cfg edgeConfig
 	if err := json.Unmarshal(payload, &cfg); err != nil {
+		return err
+	}
+	if fallback := parseResourcesFallback(payload); fallback != nil {
+		if cfg.Resources == nil {
+			cfg.Resources = fallback
+		} else {
+			mergeResources(cfg.Resources, fallback)
+		}
+	}
+	if err := persistResources(cfg.Resources); err != nil {
+		return err
+	}
+	if err := persistErrorPages(cfg.ErrorPages); err != nil {
+		return err
+	}
+	if err := persistCCRules(cfg.CCRules, cfg.CCMatchers, cfg.CCFilters); err != nil {
+		return err
+	}
+	if err := persistDefaultConfig(cfg.DefaultConfig); err != nil {
 		return err
 	}
 	if err := writeHTTPConfig(cfg); err != nil {
@@ -260,6 +353,286 @@ func generateDynamicConfigs(payload []byte) error {
 		return err
 	}
 	return writeStreamGlobalConfig(cfg.Nginx)
+}
+
+func parseResourcesFallback(payload []byte) *edgeResources {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return nil
+	}
+	resRaw, ok := raw["resources"]
+	if !ok || resRaw == nil {
+		return nil
+	}
+	data, err := json.Marshal(resRaw)
+	if err != nil {
+		return nil
+	}
+	var res edgeResources
+	if err := json.Unmarshal(data, &res); err != nil {
+		return nil
+	}
+	return &res
+}
+
+func mergeResources(dst, src *edgeResources) {
+	if dst == nil || src == nil {
+		return
+	}
+	if dst.Website.LogStorageDir == "" && src.Website.LogStorageDir != "" {
+		dst.Website.LogStorageDir = src.Website.LogStorageDir
+	}
+	if dst.Website.LogStorageHours == 0 && src.Website.LogStorageHours > 0 {
+		dst.Website.LogStorageHours = src.Website.LogStorageHours
+	}
+	if dst.Forward.DisabledPorts == "" && src.Forward.DisabledPorts != "" {
+		dst.Forward.DisabledPorts = src.Forward.DisabledPorts
+	}
+	if dst.Public.DisabledCustomPorts == "" && src.Public.DisabledCustomPorts != "" {
+		dst.Public.DisabledCustomPorts = src.Public.DisabledCustomPorts
+	}
+}
+
+func persistResources(resources *edgeResources) error {
+	if resources == nil {
+		return nil
+	}
+	path := filepath.Join(WorkDir, "conf", "resources.json")
+	if err := fsutil.WriteJSONAtomic(path, resources, true); err != nil {
+		return err
+	}
+	setLocalResources(resources)
+	return nil
+}
+
+func persistErrorPages(pages map[string]string) error {
+	if len(pages) == 0 {
+		return nil
+	}
+	path := filepath.Join(WorkDir, "conf", "error_pages.json")
+	if err := fsutil.WriteJSONAtomic(path, pages, true); err != nil {
+		return err
+	}
+	setLocalErrorPages(pages)
+	return nil
+}
+
+func persistCCRules(rules map[string][]edgeCCRuleItem, matchers map[string]edgeCCMatcher, filters map[string]edgeCCFilter) error {
+	rulesPath := filepath.Join(WorkDir, "conf", "cc_rules.json")
+	matchersPath := filepath.Join(WorkDir, "conf", "cc_matchers.json")
+	filtersPath := filepath.Join(WorkDir, "conf", "cc_filters.json")
+
+	if len(rules) > 0 {
+		if err := fsutil.WriteJSONAtomic(rulesPath, rules, true); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(rulesPath)
+	}
+
+	if len(matchers) > 0 {
+		if err := fsutil.WriteJSONAtomic(matchersPath, matchers, true); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(matchersPath)
+	}
+
+	if len(filters) > 0 {
+		if err := fsutil.WriteJSONAtomic(filtersPath, filters, true); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(filtersPath)
+	}
+
+	localRules := parseCCRuleMap(rules)
+	localMatchers := parseCCMatcherMap(matchers)
+	localFilters := parseCCFilterMap(filters)
+	setLocalCCRules(localRules, localMatchers, localFilters)
+	return nil
+}
+
+func persistDefaultConfig(cfg *edgeDefaultConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	path := filepath.Join(WorkDir, "conf", "default_config.json")
+	if err := fsutil.WriteJSONAtomic(path, cfg, true); err != nil {
+		return err
+	}
+	setLocalDefaultConfig(cfg)
+	return nil
+}
+
+func setLocalResources(resources *edgeResources) {
+	if resources == nil {
+		return
+	}
+	localConfigMu.Lock()
+	LocalResources = resources
+	localConfigMu.Unlock()
+}
+
+func setLocalErrorPages(pages map[string]string) {
+	if len(pages) == 0 {
+		return
+	}
+	copyPages := make(map[string]string, len(pages))
+	for key, value := range pages {
+		copyPages[key] = value
+	}
+	localConfigMu.Lock()
+	LocalErrorPages = copyPages
+	localConfigMu.Unlock()
+}
+
+func setLocalCCRules(rules map[int64][]edgeCCRuleItem, matchers map[int64]edgeCCMatcher, filters map[int64]edgeCCFilter) {
+	copyRules := map[int64][]edgeCCRuleItem{}
+	for key, list := range rules {
+		items := make([]edgeCCRuleItem, 0, len(list))
+		items = append(items, list...)
+		copyRules[key] = items
+	}
+	copyMatchers := map[int64]edgeCCMatcher{}
+	for key, matcher := range matchers {
+		copyMatchers[key] = matcher
+	}
+	copyFilters := map[int64]edgeCCFilter{}
+	for key, filter := range filters {
+		copyFilters[key] = filter
+	}
+	localConfigMu.Lock()
+	LocalCCRules = copyRules
+	LocalCCMatchers = copyMatchers
+	LocalCCFilters = copyFilters
+	localConfigMu.Unlock()
+}
+
+func setLocalDefaultConfig(cfg *edgeDefaultConfig) {
+	if cfg == nil {
+		return
+	}
+	localConfigMu.Lock()
+	LocalDefaultConf = cfg
+	localConfigMu.Unlock()
+}
+
+func loadPersistedConfigs() {
+	if WorkDir == "" {
+		return
+	}
+
+	var resources edgeResources
+	if err := fsutil.ReadJSONFile(filepath.Join(WorkDir, "conf", "resources.json"), &resources); err == nil {
+		setLocalResources(&resources)
+	} else if !os.IsNotExist(err) {
+		log.Printf("[Warn] Load resources.json failed: %v", err)
+	}
+
+	var pages map[string]string
+	if err := fsutil.ReadJSONFile(filepath.Join(WorkDir, "conf", "error_pages.json"), &pages); err == nil {
+		setLocalErrorPages(pages)
+	} else if !os.IsNotExist(err) {
+		log.Printf("[Warn] Load error_pages.json failed: %v", err)
+	}
+
+	var defCfg edgeDefaultConfig
+	if err := fsutil.ReadJSONFile(filepath.Join(WorkDir, "conf", "default_config.json"), &defCfg); err == nil {
+		setLocalDefaultConfig(&defCfg)
+	} else if !os.IsNotExist(err) {
+		log.Printf("[Warn] Load default_config.json failed: %v", err)
+	}
+
+	ccRules, err := readCCRules(filepath.Join(WorkDir, "conf", "cc_rules.json"))
+	if err == nil {
+		ccMatchers, matchErr := readCCMatchers(filepath.Join(WorkDir, "conf", "cc_matchers.json"))
+		ccFilters, filterErr := readCCFilters(filepath.Join(WorkDir, "conf", "cc_filters.json"))
+		if matchErr == nil && filterErr == nil {
+			setLocalCCRules(ccRules, ccMatchers, ccFilters)
+		} else {
+			if matchErr != nil && !os.IsNotExist(matchErr) {
+				log.Printf("[Warn] Load cc_matchers.json failed: %v", matchErr)
+			}
+			if filterErr != nil && !os.IsNotExist(filterErr) {
+				log.Printf("[Warn] Load cc_filters.json failed: %v", filterErr)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		log.Printf("[Warn] Load cc_rules.json failed: %v", err)
+	}
+}
+
+func readCCRules(path string) (map[int64][]edgeCCRuleItem, error) {
+	var raw map[string][]edgeCCRuleItem
+	if err := fsutil.ReadJSONFile(path, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[int64][]edgeCCRuleItem, len(raw))
+	for key, items := range raw {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = items
+		}
+	}
+	return out, nil
+}
+
+func parseCCRuleMap(raw map[string][]edgeCCRuleItem) map[int64][]edgeCCRuleItem {
+	out := make(map[int64][]edgeCCRuleItem, len(raw))
+	for key, items := range raw {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = items
+		}
+	}
+	return out
+}
+
+func parseCCMatcherMap(raw map[string]edgeCCMatcher) map[int64]edgeCCMatcher {
+	out := make(map[int64]edgeCCMatcher, len(raw))
+	for key, item := range raw {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = item
+		}
+	}
+	return out
+}
+
+func parseCCFilterMap(raw map[string]edgeCCFilter) map[int64]edgeCCFilter {
+	out := make(map[int64]edgeCCFilter, len(raw))
+	for key, item := range raw {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = item
+		}
+	}
+	return out
+}
+
+func readCCMatchers(path string) (map[int64]edgeCCMatcher, error) {
+	var raw map[string]edgeCCMatcher
+	if err := fsutil.ReadJSONFile(path, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[int64]edgeCCMatcher, len(raw))
+	for key, item := range raw {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = item
+		}
+	}
+	return out, nil
+}
+
+func readCCFilters(path string) (map[int64]edgeCCFilter, error) {
+	var raw map[string]edgeCCFilter
+	if err := fsutil.ReadJSONFile(path, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[int64]edgeCCFilter, len(raw))
+	for key, item := range raw {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = item
+		}
+	}
+	return out, nil
 }
 
 func writeStreamConfig(streams []edgeStream) error {
@@ -331,6 +704,22 @@ func writeHTTPConfig(cfg edgeConfig) error {
 		return ioutil.WriteFile(confPath, []byte(""), 0644)
 	}
 
+	errorPageDir := filepath.Join(WorkDir, "conf", "error_pages")
+	if absDir, err := filepath.Abs(errorPageDir); err == nil {
+		errorPageDir = absDir
+	}
+	errorPages := normalizeErrorPages(cfg.ErrorPages)
+	if len(errorPages) > 0 {
+		if err := writeErrorPageFiles(errorPageDir, errorPages); err != nil {
+			return err
+		}
+	}
+
+	defaultListen80 := true
+	if cfg.Resources != nil {
+		defaultListen80 = cfg.Resources.Website.DefaultListen80
+	}
+
 	upstreamKeepalive := map[string]edgeDomain{}
 	for _, domain := range cfg.Domains {
 		if domain.UpstreamKey != "" && domain.UpstreamKeepalive {
@@ -368,39 +757,67 @@ func writeHTTPConfig(cfg edgeConfig) error {
 		if domain.Name == "" || domain.UpstreamKey == "" {
 			continue
 		}
-		writeDomainServers(&b, domain)
+		writeDomainServers(&b, domain, errorPages, errorPageDir, defaultListen80)
 	}
 
-	b.WriteString("server {\n")
-	b.WriteString("    listen 80 default_server;\n")
-	b.WriteString("    server_name _;\n")
-	b.WriteString("    return 404;\n")
-	b.WriteString("}\n")
+	if shouldBindDefaultHTTP(cfg.Domains, defaultListen80) {
+		b.WriteString("server {\n")
+		b.WriteString("    listen 80 default_server;\n")
+		b.WriteString("    server_name _;\n")
+		writeErrorPageDirectives(&b, errorPages, errorPageDir)
+		b.WriteString("    location / {\n")
+		b.WriteString("        return 404;\n")
+		b.WriteString("    }\n")
+		b.WriteString("}\n")
+	}
 
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
 }
 
-func writeDomainServers(b *strings.Builder, domain edgeDomain) {
+func shouldBindDefaultHTTP(domains []edgeDomain, defaultListen80 bool) bool {
+	if defaultListen80 {
+		return true
+	}
+	for _, domain := range domains {
+		if len(domain.HttpListen) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func writeDomainServers(b *strings.Builder, domain edgeDomain, errorPages map[string]string, errorPageDir string, defaultListen80 bool) {
 	httpPorts := domain.HttpListen
-	if len(httpPorts) == 0 {
+	if len(httpPorts) == 0 && defaultListen80 {
 		httpPorts = []string{"80"}
 	}
 	httpsPorts := domain.HttpsListen
 
+	blockedCode := blockedStatusCode(domain, errorPages)
+	if blockedCode > 0 {
+		for _, port := range httpPorts {
+			writeHTTPServer(b, domain, port, false, errorPages, errorPageDir, blockedCode)
+		}
+		for _, port := range httpsPorts {
+			writeHTTPServer(b, domain, port, true, errorPages, errorPageDir, blockedCode)
+		}
+		return
+	}
+
 	if domain.HTTPSForce && len(httpsPorts) > 0 {
-		writeHTTPSRedirectServer(b, domain, httpPorts, httpsPorts)
+		writeHTTPSRedirectServer(b, domain, httpPorts, httpsPorts, errorPages, errorPageDir)
 	} else {
 		for _, port := range httpPorts {
-			writeHTTPServer(b, domain, port, false)
+			writeHTTPServer(b, domain, port, false, errorPages, errorPageDir, 0)
 		}
 	}
 
 	for _, port := range httpsPorts {
-		writeHTTPServer(b, domain, port, true)
+		writeHTTPServer(b, domain, port, true, errorPages, errorPageDir, 0)
 	}
 }
 
-func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts []string, httpsPorts []string) {
+func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts []string, httpsPorts []string, errorPages map[string]string, errorPageDir string) {
 	redirectPort := domain.HTTPSRedirectPort
 	if redirectPort == "" {
 		redirectPort = "443"
@@ -412,12 +829,13 @@ func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts [
 		b.WriteString("server {\n")
 		b.WriteString("    listen " + port + ";\n")
 		b.WriteString("    server_name " + domain.Name + ";\n")
+		writeErrorPageDirectives(b, errorPages, errorPageDir)
 		b.WriteString("    return 301 https://$host:" + redirectPort + "$request_uri;\n")
 		b.WriteString("}\n")
 	}
 }
 
-func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls bool) {
+func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls bool, errorPages map[string]string, errorPageDir string, blockedCode int) {
 	port = strings.TrimSpace(port)
 	if port == "" {
 		return
@@ -451,6 +869,14 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		b.WriteString("    listen " + port + ";\n")
 	}
 	b.WriteString("    server_name " + domain.Name + ";\n")
+	if blockedCode > 0 {
+		writeErrorPageDirectives(b, errorPages, errorPageDir)
+		b.WriteString("    location / {\n")
+		b.WriteString(fmt.Sprintf("        return %d;\n", blockedCode))
+		b.WriteString("    }\n")
+		b.WriteString("}\n")
+		return
+	}
 	if domain.BodyLimit > 0 {
 		b.WriteString(fmt.Sprintf("    client_max_body_size %dm;\n", domain.BodyLimit))
 	}
@@ -463,12 +889,135 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 	if domain.LimitRate > 0 {
 		b.WriteString(fmt.Sprintf("    limit_rate %d;\n", domain.LimitRate))
 	}
+	if domain.ConnLimit > 0 {
+		b.WriteString(fmt.Sprintf("    limit_conn addr_conn %d;\n", domain.ConnLimit))
+	}
+
+	if _, ok := errorPages["conn_limit"]; ok {
+		b.WriteString("    limit_conn_status 429;\n")
+	}
+
+	writeErrorPageDirectives(b, errorPages, errorPageDir)
 
 	b.WriteString("    set $cc_rule_id " + fmt.Sprintf("%d", domain.CCRuleID) + ";\n")
 
 	writeCacheLocations(b, domain, tls)
 
 	b.WriteString("}\n")
+}
+
+func normalizeErrorPages(pages map[string]string) map[string]string {
+	if len(pages) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(pages))
+	for code, content := range pages {
+		key := strings.TrimSpace(code)
+		val := strings.TrimSpace(content)
+		if key == "" || val == "" {
+			continue
+		}
+		out[key] = val
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func writeErrorPageFiles(dir string, pages map[string]string) error {
+	if len(pages) == 0 {
+		return nil
+	}
+	if err := fsutil.EnsureDir(dir); err != nil {
+		return err
+	}
+	for code, content := range pages {
+		filename := filepath.Join(dir, code+".html")
+		if err := fsutil.WriteFileAtomic(filename, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isNumericStatus(code string) bool {
+	if len(code) != 3 {
+		return false
+	}
+	for _, r := range code {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func writeErrorPageDirectives(b *strings.Builder, pages map[string]string, dir string) {
+	if len(pages) == 0 {
+		return
+	}
+	for key := range pages {
+		status := errorPageStatusForKey(key)
+		if status == 0 {
+			continue
+		}
+		fileName := key + ".html"
+		uri := "/__cdn_error/" + fileName
+		filePath := filepath.ToSlash(filepath.Join(dir, fileName))
+		b.WriteString(fmt.Sprintf("    error_page %d %s;\n", status, uri))
+		b.WriteString("    location = " + uri + " {\n")
+		b.WriteString("        internal;\n")
+		b.WriteString("        default_type text/html;\n")
+		b.WriteString("        alias " + filePath + ";\n")
+		b.WriteString("    }\n")
+	}
+}
+
+func errorPageStatusForKey(key string) int {
+	if isNumericStatus(key) {
+		if v, err := strconv.Atoi(key); err == nil {
+			return v
+		}
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "traffic_limit":
+		return 509
+	case "site_locked":
+		return 451
+	case "domain_invalid":
+		return 404
+	case "conn_limit":
+		return 429
+	case "timeout":
+		return 410
+	case "ip":
+		return 418
+	default:
+		return 0
+	}
+}
+
+func blockedStatusCode(domain edgeDomain, pages map[string]string) int {
+	status := strings.ToLower(strings.TrimSpace(domain.Status))
+	var key string
+	switch status {
+	case "locked":
+		key = "site_locked"
+	case "expired":
+		key = "timeout"
+	case "traffic_limit":
+		key = "traffic_limit"
+	case "conn_limit":
+		key = "conn_limit"
+	default:
+		return 0
+	}
+	if _, ok := pages[key]; !ok {
+		return 0
+	}
+	return errorPageStatusForKey(key)
 }
 
 func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
@@ -773,7 +1322,6 @@ func writeHTTPDirectives(b *strings.Builder, httpCfg map[string]interface{}) {
 		"server_tokens":               "server_tokens",
 		"log_not_found":               "log_not_found",
 		"default_type":                "default_type",
-		"server":                      "server",
 	}
 	for key, directive := range directives {
 		if value, ok := httpCfg[key]; ok {
