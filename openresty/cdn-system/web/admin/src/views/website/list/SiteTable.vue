@@ -59,6 +59,14 @@
   >
     <el-table-column type="selection" width="55" align="center" />
     <el-table-column prop="id" label="ID" width="80" />
+    <el-table-column v-if="isAdmin" label="用户" min-width="160">
+      <template #default="{ row }">
+        <div class="user-cell">
+          <span class="user-label">{{ formatUserLabel(row) }}</span>
+          <el-icon class="copy-icon" @click.stop="copyUserAccount(row)"><CopyDocument /></el-icon>
+        </div>
+      </template>
+    </el-table-column>
     <el-table-column label="域名" min-width="200">
       <template #default="{ row }">
         <span class="clickable-text" @click="$emit('manage', row)">
@@ -155,6 +163,27 @@ const copyText = async (text) => {
     ElMessage.success({ message: '复制成功', duration: 1500 })
   } catch (e) {
     ElMessage.error('复制失败')
+  }
+}
+
+const formatUserLabel = (row) => {
+  const account = row.user_name || row.userName || row.account || ''
+  const id = row.user_id || row.uid
+  if (account && id) return `${account}(${id})`
+  if (account) return account
+  if (id) return `ID ${id}`
+  return '-'
+}
+
+const copyUserAccount = async (row) => {
+  const account = row.user_name || row.userName || row.account
+  const userId = row.user_id || row.uid
+  if (account) {
+    await copyText(account)
+    return
+  }
+  if (userId) {
+    await copyText(String(userId))
   }
 }
 </script>

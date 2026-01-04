@@ -1,10 +1,9 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" @focusin="cacheInputValue">
     <el-card>
       <template #header>
         <div class="card-header">
           <span>自定义错误页面</span>
-          <el-button type="primary" @click="saveConfig" :loading="loading">保存配置</el-button>
         </div>
       </template>
 
@@ -23,6 +22,7 @@
                 :rows="25"
                 placeholder="<!-- 请输入 HTML 内容 -->"
                 font-family="monospace"
+                @blur="saveConfig"
               />
 
               <div class="preview" v-html="errorPages[code.key]"></div>
@@ -35,7 +35,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
@@ -76,15 +76,52 @@ const loadConfig = () => {
   })
 }
 
-const saveConfig = () => {
-  loading.value = true
+const saving = ref(false)
+let saveQueued = false
+
+const cacheInputValue = (event) => {
+  const el = event?.target
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return
+  }
+  el.dataset.lastValue = el.value ?? ''
+}
+
+const shouldSkipBlurSave = (event) => {
+  const el = event?.target
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return false
+  }
+  const value = el.value ?? ''
+  const lastValue = el.dataset.lastValue ?? ''
+  if (value === '' || value === lastValue) {
+    return true
+  }
+  el.dataset.lastValue = value
+  return false
+}
+
+const saveConfig = async (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
   fullConfig.value.error_pages = errorPages
   request.post('/global_config', fullConfig.value).then(res => {
     if (res.code === 0) {
       ElMessage.success('\u4fdd\u5b58\u6210\u529f')
     }
   }).finally(() => {
-    loading.value = false
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      saveConfig()
+    }
   })
 }
 

@@ -1,29 +1,28 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" @focusin="cacheInputValue">
     <el-card>
       <template #header>
         <div class="card-header">
             <span>Nginx 全局配置</span>
-            <el-button type="primary" @click="saveConfig" :loading="loading">保存配置</el-button>
         </div>
       </template>
 
       <el-form label-width="200px" v-if="config.nginx">
         <h3>Worker 进程配置</h3>
         <el-form-item label="Worker Processes">
-             <el-input v-model="config.nginx.worker_processes" placeholder="auto" style="width: 200px;" />
+             <el-input v-model="config.nginx.worker_processes" placeholder="auto" style="width: 200px;" @blur="saveConfig" />
              <div class="tip">工作进程数，建议设置为 CPU 核心数 or "auto"</div>
         </el-form-item>
         <el-form-item label="Worker Connections">
-             <el-input-number v-model="config.nginx.worker_connections" :min="1024" :step="1024" />
+             <el-input-number v-model="config.nginx.worker_connections" :min="1024" :step="1024" @blur="saveConfig" />
              <div class="tip">每个工作进程的最大连接数</div>
         </el-form-item>
         <el-form-item label="Worker Rlimit Nofile">
-             <el-input-number v-model="config.nginx.worker_rlimit_nofile" :min="1024" :step="1024" />
+             <el-input-number v-model="config.nginx.worker_rlimit_nofile" :min="1024" :step="1024" @blur="saveConfig" />
              <div class="tip">最大打开文件描述符数 (ulimit -n)</div>
         </el-form-item>
         <el-form-item label="Worker Shutdown Timeout">
-             <el-input v-model="config.nginx.worker_shutdown_timeout" placeholder="60s" style="width: 200px;" />
+             <el-input v-model="config.nginx.worker_shutdown_timeout" placeholder="60s" style="width: 200px;" @blur="saveConfig" />
              <div class="tip">优雅退出超时时间</div>
         </el-form-item>
 
@@ -31,7 +30,7 @@
 
         <h3>路径配置</h3>
         <el-form-item label="日志目录 (Access/Error)">
-             <el-input v-model="config.nginx.log_directory" placeholder="/usr/local/nginx/logs/" />
+             <el-input v-model="config.nginx.log_directory" placeholder="/usr/local/nginx/logs/" @blur="saveConfig" />
              <div class="tip">Nginx 访问日志和错误日志的存放目录</div>
         </el-form-item>
 
@@ -39,13 +38,13 @@
 
         <h3>其他设置</h3>
          <el-form-item label="Keepalive Timeout">
-             <el-input-number v-model="config.nginx.keepalive_timeout" /> <span class="unit">秒</span>
+             <el-input-number v-model="config.nginx.keepalive_timeout" @blur="saveConfig" /> <span class="unit">秒</span>
         </el-form-item>
         <el-form-item label="开启 Gzip">
-            <el-switch v-model="config.nginx.gzip" />
+            <el-switch v-model="config.nginx.gzip" @change="saveConfig" />
         </el-form-item>
         <el-form-item label="自定义配置片段 (http block)">
-            <el-input type="textarea" v-model="config.nginx.custom_snippet" :rows="5" placeholder="# Custom nginx directives..." />
+            <el-input type="textarea" v-model="config.nginx.custom_snippet" :rows="5" placeholder="# Custom nginx directives..." @blur="saveConfig" />
         </el-form-item>
 
       </el-form>
@@ -54,7 +53,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
@@ -172,8 +171,41 @@ const loadConfig = () => {
     })
 }
 
-const saveConfig = () => {
-  loading.value = true
+const saving = ref(false)
+let saveQueued = false
+
+const cacheInputValue = (event) => {
+  const el = event?.target
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return
+  }
+  el.dataset.lastValue = el.value ?? ''
+}
+
+const shouldSkipBlurSave = (event) => {
+  const el = event?.target
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return false
+  }
+  const value = el.value ?? ''
+  const lastValue = el.dataset.lastValue ?? ''
+  if (value === '' || value === lastValue) {
+    return true
+  }
+  el.dataset.lastValue = value
+  return false
+}
+
+const saveConfig = async (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
   const updated = {
     ...rawNginxConfig.value
   }
@@ -208,7 +240,11 @@ const saveConfig = () => {
       ElMessage.success('Nginx config saved')
     })
     .finally(() => {
-      loading.value = false
+      saving.value = false
+      if (saveQueued) {
+        saveQueued = false
+        saveConfig()
+      }
     })
 }
 

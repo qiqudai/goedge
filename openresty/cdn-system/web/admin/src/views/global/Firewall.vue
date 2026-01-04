@@ -1,10 +1,9 @@
 ﻿<template>
-  <div class="app-container">
+  <div class="app-container" @focusin="cacheInputValue">
     <el-card>
       <template #header>
         <div class="card-header">
           <span>防火墙全局配置 (WAF)</span>
-          <el-button type="primary" @click="saveConfig" :loading="loading">保存配置</el-button>
         </div>
       </template>
 
@@ -12,12 +11,12 @@
         <el-tab-pane label="基础防护 & 拉黑策略">
           <el-form label-width="180px">
             <el-form-item label="全局 WAF 开启">
-              <el-switch v-model="config.waf.enable" active-text="开启" inactive-text="关闭" />
+              <el-switch v-model="config.waf.enable" active-text="开启" inactive-text="关闭" @change="saveConfig" />
             </el-form-item>
 
             <h4>默认拉黑方式</h4>
             <el-form-item label="拉黑动作">
-              <el-radio-group v-model="config.waf.default_block_action">
+              <el-radio-group v-model="config.waf.default_block_action" @change="saveConfig">
                 <el-radio value="ipset">IPSet (系统防火墙)</el-radio>
                 <el-radio value="disconnect">断开连接</el-radio>
                 <el-radio value="page">显示拦截页面</el-radio>
@@ -27,43 +26,43 @@
 
             <h4>IPSet 自动切换</h4>
             <el-form-item label="自动启用 IPSet">
-              <el-switch v-model="config.waf.auto_ipset_enable" />
+              <el-switch v-model="config.waf.auto_ipset_enable" @change="saveConfig" />
             </el-form-item>
             <el-form-item label="触发阈值" v-if="config.waf.auto_ipset_enable">
-              <el-input-number v-model="config.waf.auto_ipset_threshold" :min="1" />
+              <el-input-number v-model="config.waf.auto_ipset_threshold" :min="1" @blur="saveConfig" />
               <span class="unit">次/秒</span>
               <div class="tip">当单站每秒拉黑次数超过阈值时，自动升级为 IPSet 拉黑。</div>
             </el-form-item>
 
             <h4>拉黑页面限制 (防刷)</h4>
             <el-form-item label="限制访问频率">
-              <el-switch v-model="config.waf.block_page_rate_limit_enable" />
+              <el-switch v-model="config.waf.block_page_rate_limit_enable" @change="saveConfig" />
             </el-form-item>
             <el-form-item label="频率阈值" v-if="config.waf.block_page_rate_limit_enable">
-              <el-input-number v-model="config.waf.block_page_rate_limit" :min="1" />
+              <el-input-number v-model="config.waf.block_page_rate_limit" :min="1" @blur="saveConfig" />
               <span class="unit">次/60秒</span>
               <div class="tip">单 IP 访问拉黑页面超过此频率，直接升级 IPSet 拉黑。</div>
             </el-form-item>
             <el-form-item label="拉黑页不计流量">
-              <el-switch v-model="config.waf.block_page_traffic_free" />
+              <el-switch v-model="config.waf.block_page_traffic_free" @change="saveConfig" />
             </el-form-item>
 
             <h4>封禁与白名单时长</h4>
             <el-form-item label="黑名单封禁时长">
-              <el-input-number v-model="config.waf.blacklist_timeout" />
+              <el-input-number v-model="config.waf.blacklist_timeout" @blur="saveConfig" />
               <span class="unit">秒</span>
             </el-form-item>
             <el-form-item label="临时白名单时长">
-              <el-input-number v-model="config.waf.temp_whitelist_timeout" />
+              <el-input-number v-model="config.waf.temp_whitelist_timeout" @blur="saveConfig" />
               <span class="unit">秒</span>
             </el-form-item>
 
             <h4>临时白名单自动加入条件(5秒内)</h4>
             <el-form-item label="总请求数限制">
-              <el-input-number v-model="config.waf.temp_whitelist_limit_total" />
+              <el-input-number v-model="config.waf.temp_whitelist_limit_total" @blur="saveConfig" />
             </el-form-item>
             <el-form-item label="同URL请求限制">
-              <el-input-number v-model="config.waf.temp_whitelist_limit_url" />
+              <el-input-number v-model="config.waf.temp_whitelist_limit_url" @blur="saveConfig" />
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -74,26 +73,26 @@
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="白名单 IP">
-                  <el-input type="textarea" v-model="config.waf.whitelist_ips" :rows="10" placeholder="192.168.1.10&#10;10.0.0.0/24" />
+                  <el-input type="textarea" v-model="config.waf.whitelist_ips" :rows="10" placeholder="192.168.1.10&#10;10.0.0.0/24" @blur="saveConfig" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="黑名单 IP">
-                  <el-input type="textarea" v-model="config.waf.blacklist_ips" :rows="10" placeholder="1.2.3.4&#10;5.0.0.0/8" />
+                  <el-input type="textarea" v-model="config.waf.blacklist_ips" :rows="10" placeholder="1.2.3.4&#10;5.0.0.0/8" @blur="saveConfig" />
                 </el-form-item>
               </el-col>
             </el-row>
 
             <h4>系统安全</h4>
             <el-form-item label="防止 TLS 握手攻击">
-              <el-switch v-model="config.waf.prevent_tls_handshake" />
+              <el-switch v-model="config.waf.prevent_tls_handshake" @change="saveConfig" />
             </el-form-item>
             <el-form-item label="禁止未绑定域名访问">
-              <el-switch v-model="config.waf.block_unbound_domain" />
+              <el-switch v-model="config.waf.block_unbound_domain" @change="saveConfig" />
               <span class="tip">禁止直接通过节点 IP 访问。</span>
             </el-form-item>
             <el-form-item label="禁止 PING">
-              <el-switch v-model="config.waf.disable_ping" />
+              <el-switch v-model="config.waf.disable_ping" @change="saveConfig" />
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -102,19 +101,19 @@
           <el-form label-width="180px">
             <h4>默认页防护</h4>
             <el-form-item label="开启模式">
-              <el-radio-group v-model="config.waf.default_page_protection">
+              <el-radio-group v-model="config.waf.default_page_protection" @change="saveConfig">
                 <el-radio value="force">强制开启</el-radio>
                 <el-radio value="auto">自动开启</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="自动开启阈值" v-if="config.waf.default_page_protection === 'auto'">
-              <el-input-number v-model="config.waf.default_page_protection_threshold" />
+              <el-input-number v-model="config.waf.default_page_protection_threshold" @blur="saveConfig" />
               <span class="unit">请求/秒</span>
             </el-form-item>
 
             <h4>反 CC 页面设置</h4>
             <el-form-item label="验证方式">
-              <el-select v-model="config.waf.anti_cc_type">
+              <el-select v-model="config.waf.anti_cc_type" @change="saveConfig">
                 <el-option label="滑动验证" value="slide" />
                 <el-option label="点击验证" value="click" />
                 <el-option label="5秒盾 (自动跳转)" value="5s" />
@@ -123,21 +122,21 @@
               </el-select>
             </el-form-item>
             <el-form-item label="验证图片来源">
-              <el-radio-group v-model="config.waf.anti_cc_image_source">
+              <el-radio-group v-model="config.waf.anti_cc_image_source" @change="saveConfig">
                 <el-radio value="system">系统默认</el-radio>
                 <el-radio value="custom">自定义 URL</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="图片 URL" v-if="config.waf.anti_cc_image_source === 'custom'">
-              <el-input v-model="config.waf.anti_cc_image_custom_url" placeholder="http://..." />
+              <el-input v-model="config.waf.anti_cc_image_custom_url" placeholder="http://..." @blur="saveConfig" />
             </el-form-item>
             <el-form-item label="开启调试日志">
-              <el-switch v-model="config.waf.anti_cc_debug" />
+              <el-switch v-model="config.waf.anti_cc_debug" @change="saveConfig" />
             </el-form-item>
 
             <h4>规则设置</h4>
             <el-form-item label="CC 规则自动切换">
-              <el-switch v-model="config.waf.cc_rule_auto_switch" />
+              <el-switch v-model="config.waf.cc_rule_auto_switch" @change="saveConfig" />
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -146,10 +145,10 @@
           <el-form label-width="180px">
             <h4>系统配置</h4>
             <el-form-item label="通讯密钥">
-              <el-input v-model="config.waf.secret_key" show-password />
+              <el-input v-model="config.waf.secret_key" show-password @blur="saveConfig" />
             </el-form-item>
             <el-form-item label="节点日志清理">
-              <el-select v-model="config.waf.node_log_clean_strategy">
+              <el-select v-model="config.waf.node_log_clean_strategy" @change="saveConfig">
                 <el-option label="不清理" value="none" />
                 <el-option label="仅清理日志" value="log_only" />
                 <el-option label="清理日志和缓存" value="log_cache" />
@@ -159,21 +158,21 @@
 
             <h4>特殊路径防护 (.well-known)</h4>
             <el-form-item label="404 阈值">
-              <el-input-number v-model="config.waf.well_known_protection_threshold" />
+              <el-input-number v-model="config.waf.well_known_protection_threshold" @blur="saveConfig" />
               <span class="unit">次/60秒</span>
               <div class="tip">超过阈值 IP 将不再回源 300 秒（防止 ACME 验证泛滥）。</div>
             </el-form-item>
 
             <h4>内置资源防护 (防CC图片/JS)</h4>
             <el-form-item label="开启防护">
-              <el-switch v-model="config.waf.resource_protection_enable" />
+              <el-switch v-model="config.waf.resource_protection_enable" @change="saveConfig" />
             </el-form-item>
             <el-form-item label="开启阈值">
-              <el-input-number v-model="config.waf.resource_protection_threshold" />
+              <el-input-number v-model="config.waf.resource_protection_threshold" @blur="saveConfig" />
               <span class="unit">QPS</span>
             </el-form-item>
             <el-form-item label="拉黑时长">
-              <el-input-number v-model="config.waf.resource_protection_block_timeout" />
+              <el-input-number v-model="config.waf.resource_protection_block_timeout" @blur="saveConfig" />
               <span class="unit">秒</span>
             </el-form-item>
 
@@ -181,21 +180,21 @@
               <el-table :data="config.waf.resource_protection_rules" border style="width: 100%">
                 <el-table-column label="统计时长(秒)" width="150">
                   <template #default="{ row }">
-                    <el-input-number v-model="row.duration" size="small" :controls="false" />
+                    <el-input-number v-model="row.duration" size="small" :controls="false" @blur="saveConfig" />
                   </template>
                 </el-table-column>
                 <el-table-column label="最大请求数" width="150">
                   <template #default="{ row }">
-                    <el-input-number v-model="row.max_requests" size="small" :controls="false" />
+                    <el-input-number v-model="row.max_requests" size="small" :controls="false" @blur="saveConfig" />
                   </template>
                 </el-table-column>
                 <el-table-column label="操作">
                   <template #default="{ $index }">
-                    <el-button size="small" type="danger" link @click="config.waf.resource_protection_rules.splice($index, 1)">删除</el-button>
+                    <el-button size="small" type="danger" link @click="config.waf.resource_protection_rules.splice($index, 1); saveConfig()">删除</el-button>
                   </template>
                 </el-table-column>
               </el-table>
-              <el-button size="small" style="margin-top:5px" @click="config.waf.resource_protection_rules.push({ duration: 60, max_requests: 100 })">+ 添加规则</el-button>
+              <el-button size="small" style="margin-top:5px" @click="config.waf.resource_protection_rules.push({ duration: 60, max_requests: 100 }); saveConfig()">+ 添加规则</el-button>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -205,7 +204,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
@@ -266,14 +265,51 @@ const loadConfig = () => {
   })
 }
 
-const saveConfig = () => {
-  loading.value = true
+const saving = ref(false)
+let saveQueued = false
+
+const cacheInputValue = (event) => {
+  const el = event?.target
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return
+  }
+  el.dataset.lastValue = el.value ?? ''
+}
+
+const shouldSkipBlurSave = (event) => {
+  const el = event?.target
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return false
+  }
+  const value = el.value ?? ''
+  const lastValue = el.dataset.lastValue ?? ''
+  if (value === '' || value === lastValue) {
+    return true
+  }
+  el.dataset.lastValue = value
+  return false
+}
+
+const saveConfig = async (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
   request.post('/global_config', config.value).then(res => {
     if (res.code === 0) {
       ElMessage.success('WAF 配置已保存')
     }
   }).finally(() => {
-    loading.value = false
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      saveConfig()
+    }
   })
 }
 
