@@ -80,6 +80,8 @@ func processTask(id int64, taskType string, data string) (string, error) {
 		return "", pullConfig()
 	case "package_sync":
 		return syncUserPackageTask(data)
+	case "套餐同步":
+		return syncUserPackageTask(data)
 	default:
 		return "", fmt.Errorf("unknown task type: %s", taskType)
 	}

@@ -1,0 +1,10 @@
+{
+  "name": "my-skill",
+  "repo": "edge-node",
+  "local_repo_path": "E:/cdn/goedge/openresty",
+  "excluded_dirs": [
+    "node_modules", "dist", "build", ".tmp-ip2region", "codex",
+    ".venv", "venv", "__pycache__", ".git", "openresty",
+    ".idea", ".vscode", "cdn-api.exe"
+  ]
+}

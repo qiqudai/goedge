@@ -117,7 +117,7 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 	}
 
 	// 5. Create Task
-	// task.data: packages: [{package_id, version, node_ids, node_group_ids}]
+	// task.data: packages: [{package_id, version, node_ids, node_group_ids, config}]
 	taskPayload := map[string]interface{}{
 		"trigger": trigger,
 		"packages": []map[string]interface{}{
@@ -126,6 +126,7 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 				"version":        up.Version,
 				"node_ids":       nodeIDs,
 				"node_group_ids": groupIDs,
+				"config":         agentConfig,
 			},
 		},
 	}

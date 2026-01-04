@@ -37,6 +37,18 @@ local function match_patterns(value, patterns)
     return false
 end
 
+local function match_pattern_list(value, patterns)
+    if value == "" or type(patterns) ~= "table" then
+        return false
+    end
+    for _, pattern in ipairs(patterns) do
+        if pattern and pattern ~= "" and ngx.re.find(value, pattern, "ijo") then
+            return true
+        end
+    end
+    return false
+end
+
 local function has_syntactic_flag(config, key)
     if not config or not config.waf or not config.waf.syntactic then
         return false
@@ -129,6 +141,26 @@ function _M.check()
         end
         if in_list(config.waf.blacklist_ips, ip) then
             ngx.exit(418)
+        end
+    end
+
+    if config and config.waf and config.waf.access_control then
+        local ac = config.waf.access_control
+        local ua = ngx.var.http_user_agent or ""
+        if ac.block_empty_ua == true and ua == "" then
+            ngx.exit(418)
+        end
+
+        local ua_lower = string.lower(ua)
+        local ua_whitelisted = match_pattern_list(ua_lower, ac.white_ua)
+        if not ua_whitelisted and match_pattern_list(ua_lower, ac.black_ua) then
+            ngx.exit(418)
+        end
+
+        local uri = ngx.var.request_uri or ngx.var.uri or ""
+        local url_whitelisted = match_pattern_list(uri, ac.white_url)
+        if not url_whitelisted and match_pattern_list(uri, ac.black_url) then
+            ngx.exit(403)
         end
     end
 

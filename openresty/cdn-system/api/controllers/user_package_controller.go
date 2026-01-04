@@ -6,6 +6,7 @@ import (
 	"cdn-api/services"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -81,6 +82,7 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		return
 	}
 
+	isUserReq := isUserRequest(c)
 	var req struct {
 		Name           string  `json:"name"`
 		IPv6           *bool   `json:"ipv6"`
@@ -88,7 +90,7 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		RegionID       int64   `json:"region_id"`
 		NodeGroupID    int64   `json:"node_group_id"`
 		BackupGroupID  int64   `json:"backup_group_id"`
-		Traffic        string  `json:"traffic"`
+		Traffic        *string `json:"traffic"`
 		Bandwidth      *string `json:"bandwidth"` // Pointer to distinguish empty vs unchanged if needed, or just string
 		Connection     *string `json:"connection"`
 		Domain         *string `json:"domain"`
@@ -111,7 +113,7 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	}
 
 	query := db.DB.Model(&models.UserPackage{}).Where("id = ?", id)
-	if isUserRequest(c) {
+	if isUserReq {
 		uid := parseUserID(mustGet(c, "userID"))
 		if uid == 0 {
 			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "Forbidden"})
@@ -132,14 +134,28 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		}
 	}
 
-	// Groups
-	updates["region_id"] = req.RegionID
-	updates["node_group_id"] = req.NodeGroupID
-	updates["backup_node_group"] = req.BackupGroupID
+	// Groups: avoid writing zero IDs that violate FKs.
+	if req.RegionID > 0 {
+		updates["region_id"] = req.RegionID
+	} else if !isUserReq && req.RegionID != 0 {
+		updates["region_id"] = req.RegionID
+	}
+	if req.NodeGroupID > 0 {
+		updates["node_group_id"] = req.NodeGroupID
+	} else if !isUserReq && req.NodeGroupID != 0 {
+		updates["node_group_id"] = req.NodeGroupID
+	}
+	if req.BackupGroupID > 0 {
+		updates["backup_node_group"] = req.BackupGroupID
+	} else if !isUserReq && req.BackupGroupID != 0 {
+		updates["backup_node_group"] = req.BackupGroupID
+	}
 
 	// Resources - Handle "limited" vs "unlimited" (empty string or -1 usually)
 	// Frontend sends string or number.
-	updates["traffic"] = req.Traffic
+	if req.Traffic != nil {
+		updates["traffic"] = *req.Traffic
+	}
 	if req.Bandwidth != nil {
 		updates["bandwidth"] = *req.Bandwidth
 	}
@@ -165,22 +181,34 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		updates["websocket"] = *req.Websocket
 	}
 
-	// Price
-	updates["month_price"] = req.PriceMonthly
-	updates["quarter_price"] = req.PriceQuarterly
-	updates["year_price"] = req.PriceYearly
+	// Price (admin-only updates)
+	if !isUserReq {
+		updates["month_price"] = req.PriceMonthly
+		updates["quarter_price"] = req.PriceQuarterly
+		updates["year_price"] = req.PriceYearly
+	}
 
 	// CNAME
-	updates["cname_hostname"] = strings.TrimSpace(req.CnameHostname)
-	updates["cname_domain"] = strings.TrimSpace(req.CnameDomain)
-	updates["cname_mode"] = req.CnameMode
+	cnameHostname := strings.TrimSpace(req.CnameHostname)
+	cnameDomain := strings.TrimSpace(req.CnameDomain)
+	cnameMode := strings.TrimSpace(req.CnameMode)
+	if cnameHostname != "" || !isUserReq {
+		updates["cname_hostname"] = cnameHostname
+	}
+	if cnameDomain != "" || !isUserReq {
+		updates["cname_domain"] = cnameDomain
+	}
+	if cnameMode != "" || !isUserReq {
+		updates["cname_mode"] = cnameMode
+	}
 
 	// DEBUG LOG
 	fmt.Printf("[DEBUG] UpdateUserPackage ID=%d ReqDomain=%s UpdatesDomain=%v\n", id, req.CnameDomain, updates["cname_domain"])
 
 	if len(updates) > 0 {
 		if err := query.Updates(updates).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed"})
+			log.Printf("[Error] UpdateUserPackage id=%d updates=%v err=%v", id, updates, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "Update Failed: " + err.Error()})
 			return
 		}
 	}

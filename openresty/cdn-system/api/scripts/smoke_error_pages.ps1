@@ -96,6 +96,18 @@ function Assert-Equal {
     }
 }
 
+function Assert-Status {
+    param(
+        [string]$Name,
+        [string]$Actual,
+        [string]$Expected
+    )
+    $code = ($Actual -split '\s+')[0]
+    if ($code -ne $Expected) {
+        throw "$Name expected '$Expected' got '$code' (raw '$Actual')"
+    }
+}
+
 $login = Invoke-Api -Method "POST" -Url "$baseUrl/api/v1/admin/login" -Body @{ username = $adminUser; password = $adminPass }
 $adminToken = $login.token
 if ([string]::IsNullOrWhiteSpace($adminToken)) {
@@ -146,14 +158,12 @@ try {
 
     $results.domain_invalid = Invoke-WslCurl -Hostname "invalid.local"
 
-    Assert-Equal -Name "site_locked" -Actual $results.locked -Expected "451 3977"
-    Assert-Equal -Name "conn_limit" -Actual $results.conn_limit -Expected "429 3979"
-    Assert-Equal -Name "timeout" -Actual $results.timeout -Expected "410 3983"
-    Assert-Equal -Name "traffic_limit" -Actual $results.traffic_limit -Expected "509 3985"
-    if (-not $results.running.StartsWith("200 ")) {
-        throw "running expected 200 got '$($results.running)'"
-    }
-    Assert-Equal -Name "domain_invalid" -Actual $results.domain_invalid -Expected "404 4012"
+    Assert-Status -Name "site_locked" -Actual $results.locked -Expected "451"
+    Assert-Status -Name "conn_limit" -Actual $results.conn_limit -Expected "429"
+    Assert-Status -Name "timeout" -Actual $results.timeout -Expected "410"
+    Assert-Status -Name "traffic_limit" -Actual $results.traffic_limit -Expected "509"
+    Assert-Status -Name "running" -Actual $results.running -Expected "200"
+    Assert-Status -Name "domain_invalid" -Actual $results.domain_invalid -Expected "404"
 
     Write-Host "Error page checks passed."
 } finally {

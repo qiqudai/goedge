@@ -406,6 +406,8 @@ func persistResources(resources *edgeResources) error {
 		return err
 	}
 	setLocalResources(resources)
+	// Apply log cleanup immediately when log retention settings change.
+	cleanupStoredLogs()
 	return nil
 }
 
