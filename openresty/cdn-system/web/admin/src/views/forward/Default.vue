@@ -107,7 +107,12 @@ const handleTopTab = (name) => {
     monitor: '/forward/monitor'
   }
   const path = map[name]
-  if (path && name !== 'default') router.push(path)
+  if (name === 'default') {
+    fetchSettings()
+    loadGroups()
+    return
+  }
+  if (path) router.push(path)
 }
 
 const settings = ref([])

@@ -7,8 +7,8 @@
         </div>
       </template>
 
-      <el-tabs type="border-card" v-if="config.resources">
-        <el-tab-pane label="网站 (Website)">
+      <el-tabs v-if="config.resources" v-model="activeTab" v-loading="loading" type="border-card" @tab-change="handleTabChange">
+        <el-tab-pane label="网站 (Website)" name="website">
           <el-form label-width="220px">
             <h4>配置限制</h4>
             <el-form-item label="相关配置限制不低于">
@@ -72,7 +72,7 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="转发 (Forwarding)">
+        <el-tab-pane label="转发 (Forwarding)" name="forward">
           <el-form label-width="220px">
             <el-form-item label="禁用的端口">
               <el-input v-model="config.resources.forward.disabled_ports" placeholder="80 443" @blur="saveConfig" />
@@ -94,7 +94,7 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="公共 (Public)">
+        <el-tab-pane label="公共 (Public)" name="public">
           <el-form label-width="220px">
             <el-form-item label="禁用的自定义端口">
               <el-input v-model="config.resources.public.disabled_custom_ports" placeholder="22" @blur="saveConfig" />
@@ -117,6 +117,7 @@ import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
+const activeTab = ref('website')
 const config = ref({
   resources: {
     website: {},
@@ -185,6 +186,10 @@ const saveConfig = async (event) => {
       saveConfig()
     }
   })
+}
+
+const handleTabChange = () => {
+  loadConfig()
 }
 
 onMounted(() => {

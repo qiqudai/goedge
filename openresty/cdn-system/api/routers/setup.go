@@ -102,6 +102,8 @@ func Setup(r *gin.Engine) {
 			admin.GET("/stats/quality", statCtr.ListQuality)
 			admin.GET("/stats/origin", statCtr.ListOrigin)
             admin.GET("/stats/node_traffic", statCtr.ListNodeTraffic)
+			admin.GET("/stats/node_ranking", statCtr.ListNodeRanking)
+			admin.GET("/stats/node_metrics", statCtr.ListNodeMetrics)
 
 			// Dashboard
 			dashCtr := &controllers.DashboardController{}
@@ -295,6 +297,8 @@ func Setup(r *gin.Engine) {
 
 			// Orders
 			user.GET("/orders", (&controllers.FinanceController{}).ListUserOrders)
+			// Dashboard (shared UI entry, user uses /api/v1/user/dashboard via baseURL)
+			user.GET("/dashboard", (&controllers.DashboardController{}).Index)
 			user.GET("/logs/operation", (&controllers.LogController{}).ListOpLogsUser)
 			user.GET("/messages", (&controllers.MessageController{}).UserList)
 			user.POST("/messages/:id/read", (&controllers.MessageController{}).MarkRead)

@@ -1,5 +1,5 @@
 <template>
-  <el-form label-width="150px" class="config-form">
+  <el-form v-loading="loading" label-width="150px" class="config-form">
     <el-form-item label="默认证书类型" style="max-width: 600px;">
       <el-radio-group v-model="form.provider" @change="saveConfig">
         <el-radio value="zerossl">zerossl</el-radio>
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { reactive, onMounted } from 'vue'
+import { reactive, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { DNS_PROVIDERS, DNS_API_FIELD_LABELS } from '@/constants/dns'
@@ -43,6 +43,8 @@ const form = reactive({
   dnsapiType: '',
   dnsapiData: {}
 })
+
+const loading = ref(false)
 
 const saveConfig = async () => {
   try {
@@ -92,8 +94,13 @@ const handleDnsTypeChange = () => {
     saveConfig()
 }
 
-onMounted(() => {
-  loadConfig()
+onMounted(async () => {
+  loading.value = true
+  try {
+    await loadConfig()
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 

@@ -21,7 +21,7 @@
     </el-input>
   </div>
 
-  <AppTable :data="list" border fit highlight-current-row persist-key="cc-filters" @selection-change="handleSelectionChange">
+  <AppTable :data="list" :loading="loading" border fit highlight-current-row persist-key="cc-filters" @selection-change="handleSelectionChange">
     <el-table-column type="selection" width="55" />
     <el-table-column prop="id" label="ID" width="80" />
     <el-table-column v-if="isAdmin" label="用户" width="120">
@@ -204,6 +204,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 
 const list = ref([])
+const loading = ref(false)
 const query = reactive({ name: '' })
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
@@ -236,10 +237,15 @@ const form = reactive({
 })
 
 const fetchData = async () => {
+  loading.value = true
   try {
     const { data } = await request.get('/rules/cc/filters', { params: query })
     list.value = data.list || []
-  } catch(e){}
+  } catch (e) {
+    // ignore
+  } finally {
+    loading.value = false
+  }
 }
 
 const searchUsers = async (keyword) => {

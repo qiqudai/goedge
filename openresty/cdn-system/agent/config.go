@@ -1050,6 +1050,7 @@ func blockedStatusCode(domain edgeDomain, pages map[string]string) int {
 }
 
 func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
+	writeGuardLocations(b)
 	writeAcmeLocation(b)
 	cacheCfg := domain.Cache
 	rules := make([]edgeCacheRule, 0)
@@ -1072,6 +1073,33 @@ func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
 
 	b.WriteString("    location / {\n")
 	writeProxyBlock(b, domain, tls, cacheCfg, nil)
+	b.WriteString("    }\n")
+}
+
+func writeGuardLocations(b *strings.Builder) {
+	guardDir := filepath.Join(WorkDir, "conf", "guard")
+	if abs, err := filepath.Abs(guardDir); err == nil {
+		guardDir = abs
+	}
+	guardDir = filepath.ToSlash(guardDir) + "/"
+	b.WriteString("    location = /_guard/captcha.png {\n")
+	b.WriteString("        default_type image/png;\n")
+	b.WriteString("        content_by_lua_block {\n")
+	b.WriteString("            local guard = require \"lua.guard\"\n")
+	b.WriteString("            guard.serve_captcha_png()\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n")
+
+	b.WriteString("    location = /_guard/rotate_image {\n")
+	b.WriteString("        default_type image/jpeg;\n")
+	b.WriteString("        content_by_lua_block {\n")
+	b.WriteString("            local guard = require \"lua.guard\"\n")
+	b.WriteString("            guard.serve_rotate_image()\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n")
+
+	b.WriteString("    location ^~ /_guard/ {\n")
+	b.WriteString("        alias " + guardDir + ";\n")
 	b.WriteString("    }\n")
 }
 

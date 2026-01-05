@@ -7,8 +7,8 @@
         </div>
       </template>
 
-      <el-tabs type="border-card" v-if="config.waf">
-        <el-tab-pane label="基础防护 & 拉黑策略">
+      <el-tabs v-if="config.waf" v-model="activeTab" v-loading="loading" type="border-card" @tab-change="handleTabChange">
+        <el-tab-pane label="基础防护 & 拉黑策略" name="basic">
           <el-form label-width="180px">
             <el-form-item label="全局 WAF 开启">
               <el-switch v-model="config.waf.enable" active-text="开启" inactive-text="关闭" @change="saveConfig" />
@@ -67,7 +67,7 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="安全控制 & 名单">
+        <el-tab-pane label="安全控制 & 名单" name="access">
           <el-form label-width="180px">
             <h4>黑白名单 (一行一个，支持 CIDR)</h4>
             <el-row :gutter="20">
@@ -97,7 +97,7 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="CC 防护 & 验证">
+        <el-tab-pane label="CC 防护 & 验证" name="cc">
           <el-form label-width="180px">
             <h4>默认页防护</h4>
             <el-form-item label="开启模式">
@@ -141,7 +141,7 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane label="高级防护 & 系统">
+        <el-tab-pane label="高级防护 & 系统" name="advanced">
           <el-form label-width="180px">
             <h4>系统配置</h4>
             <el-form-item label="通讯密钥">
@@ -209,6 +209,7 @@ import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
+const activeTab = ref('basic')
 const defaultWaf = {
   enable: false,
   default_block_action: 'disconnect',
@@ -311,6 +312,10 @@ const saveConfig = async (event) => {
       saveConfig()
     }
   })
+}
+
+const handleTabChange = () => {
+  loadConfig()
 }
 
 onMounted(() => {

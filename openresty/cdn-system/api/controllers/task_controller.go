@@ -197,9 +197,18 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 
 // List returns tasks list
 func (c *TaskController) List(ctx *gin.Context) {
-	var list []models.Task
 	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("pageSize", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	// Hard cap to keep response size and UI rendering bounded.
+	if pageSize > 500 {
+		pageSize = 500
+	}
 	keyword := ctx.Query("keyword")
 	taskType := ctx.Query("type")
 	userID := int64(0)
@@ -225,9 +234,34 @@ func (c *TaskController) List(ctx *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to count tasks"})
+		return
+	}
 
-	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+	// Important: avoid returning huge payloads (Task.Data/Task.Res can be very large).
+	// The list page only needs summary fields.
+	type taskListItem struct {
+		ID       int64      `json:"id"`
+		PID      int64      `json:"pid"`
+		Pry      int        `json:"pry"`
+		Name     string     `json:"name"`
+		Type     string     `json:"type"`
+		Depend   string     `json:"depend"`
+		CreateAt time.Time  `json:"create_at"`
+		StartAt  *time.Time `json:"start_at"`
+		EndAt    *time.Time `json:"end_at"`
+		State    string     `json:"state"`
+		ErrTimes int        `json:"err_times"`
+		Progress string     `json:"progress"`
+	}
+
+	var list []taskListItem
+	if err := query.Select("id,pid,pry,name,type,depend,create_at,start_at,end_at,state,err_times,progress").
+		Order("id desc").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&list).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to fetch list"})
 		return
 	}

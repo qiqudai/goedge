@@ -225,10 +225,7 @@ import { Search, ArrowDown, Delete, Rank, Sort, Top, Bottom } from '@element-plu
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 
-const isAdmin = ref(true) // Should check store
-// Mock isAdmin logic:
-// const store = useStore() ...
-// For now, assume Admin based on usage context (Admin Rules). 
+const isAdmin = ref((localStorage.getItem('role') || 'user') === 'admin')
 
 const list = ref([])
 const total = ref(0)
@@ -306,7 +303,7 @@ const getOperatorName = (key) => Operators[key] || key
 const userLoading = ref(false)
 const userOptions = ref([])
 const searchUsers = async (kw) => {
-    if(!kw) return
+    if (!isAdmin.value || !kw) return
     userLoading.value = true
     try {
         const { data } = await request.get('/users', { params: { keyword: kw, size: 20 } })

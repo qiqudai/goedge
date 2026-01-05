@@ -24,7 +24,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="区域管理" name="region">
-          <RegionList />
+          <RegionList v-if="pageTab === 'region'" />
         </el-tab-pane>
       </el-tabs>
     </el-card>

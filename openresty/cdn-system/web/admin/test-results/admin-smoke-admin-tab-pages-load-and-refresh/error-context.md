@@ -1,0 +1,157 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic [ref=e6]: CDN Admin
+    - menubar [ref=e7]:
+      - menuitem "仪表盘" [ref=e8] [cursor=pointer]:
+        - img [ref=e10]
+        - generic [ref=e12]: 仪表盘
+      - menuitem "节点管理" [ref=e13]:
+        - generic [ref=e14] [cursor=pointer]:
+          - img [ref=e16]
+          - generic [ref=e18]: 节点管理
+          - img [ref=e20]
+      - menuitem "全局配置" [ref=e22]:
+        - generic [ref=e23] [cursor=pointer]:
+          - img [ref=e25]
+          - generic [ref=e27]: 全局配置
+          - img [ref=e29]
+      - menuitem "网站管理" [expanded] [ref=e31]:
+        - generic [ref=e32] [cursor=pointer]:
+          - img [ref=e34]
+          - generic [ref=e36]: 网站管理
+          - img [ref=e38]
+        - menu [ref=e40]:
+          - menuitem "网站列表" [ref=e41] [cursor=pointer]:
+            - generic [ref=e42]: 网站列表
+          - menuitem "网站分组" [ref=e43] [cursor=pointer]:
+            - generic [ref=e44]: 网站分组
+          - menuitem "证书管理" [ref=e45] [cursor=pointer]:
+            - generic [ref=e46]: 证书管理
+          - menuitem "刷新预热" [ref=e47] [cursor=pointer]:
+            - generic [ref=e48]: 刷新预热
+          - menuitem "规则管理" [ref=e49] [cursor=pointer]:
+            - generic [ref=e50]: 规则管理
+          - menuitem "数据统计" [ref=e51] [cursor=pointer]:
+            - generic [ref=e52]: 数据统计
+          - menuitem "拉黑日志" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]: 拉黑日志
+          - menuitem "访问日志" [ref=e55] [cursor=pointer]:
+            - generic [ref=e56]: 访问日志
+      - menuitem "四层转发" [ref=e57]:
+        - generic [ref=e58] [cursor=pointer]:
+          - img [ref=e60]
+          - generic [ref=e63]: 四层转发
+          - img [ref=e65]
+      - menuitem "套餐管理" [ref=e67]:
+        - generic [ref=e68] [cursor=pointer]:
+          - img [ref=e70]
+          - generic [ref=e74]: 套餐管理
+          - img [ref=e76]
+      - menuitem "系统管理" [ref=e78]:
+        - generic [ref=e79] [cursor=pointer]:
+          - img [ref=e81]
+          - generic [ref=e83]: 系统管理
+          - img [ref=e85]
+  - generic [ref=e87]:
+    - generic [ref=e89]:
+      - generic [ref=e90]: 管理后台
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - img [ref=e94]
+          - generic [ref=e96]:
+            - switch
+          - img [ref=e100]
+        - button [ref=e103] [cursor=pointer]:
+          - img [ref=e105]
+    - main [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e109]:
+          - tablist [ref=e113]:
+            - tab "日志查询" [selected] [ref=e114]
+            - tab "申请记录" [ref=e115]
+          - generic:
+            - tabpanel "日志查询"
+        - generic [ref=e116]:
+          - generic [ref=e118]:
+            - generic [ref=e120]:
+              - generic [ref=e121]:
+                - combobox [ref=e123]
+                - generic [ref=e124]: 所有域名
+              - img [ref=e127] [cursor=pointer]
+            - textbox "域名/URI/IP" [ref=e131]
+            - button "搜索" [ref=e132] [cursor=pointer]:
+              - img [ref=e134]
+              - generic [ref=e136]: 搜索
+            - button "申请下载" [ref=e137] [cursor=pointer]:
+              - generic [ref=e138]: 申请下载
+            - button "高级搜索" [active] [ref=e139] [cursor=pointer]:
+              - generic [ref=e140]:
+                - text: 高级搜索
+                - img [ref=e142]
+          - generic [ref=e145]:
+            - table [ref=e147]:
+              - rowgroup [ref=e167]:
+                - row "时间 域名 协议 方法 URI 状态码 客户端IP 字节数 耗时 回源耗时 回源地址 缓存状态 来源 浏览器 节点ID 节点IP SSL协议 SSL套件" [ref=e168]:
+                  - columnheader "时间" [ref=e169]:
+                    - generic [ref=e170]: 时间
+                  - columnheader "域名" [ref=e171]:
+                    - generic [ref=e172]: 域名
+                  - columnheader "协议" [ref=e173]:
+                    - generic [ref=e174]: 协议
+                  - columnheader "方法" [ref=e175]:
+                    - generic [ref=e176]: 方法
+                  - columnheader "URI" [ref=e177]:
+                    - generic [ref=e178]: URI
+                  - columnheader "状态码" [ref=e179]:
+                    - generic [ref=e180]: 状态码
+                  - columnheader "客户端IP" [ref=e181]:
+                    - generic [ref=e182]: 客户端IP
+                  - columnheader "字节数" [ref=e183]:
+                    - generic [ref=e184]: 字节数
+                  - columnheader "耗时" [ref=e185]:
+                    - generic [ref=e186]: 耗时
+                  - columnheader "回源耗时" [ref=e187]:
+                    - generic [ref=e188]: 回源耗时
+                  - columnheader "回源地址" [ref=e189]:
+                    - generic [ref=e190]: 回源地址
+                  - columnheader "缓存状态" [ref=e191]:
+                    - generic [ref=e192]: 缓存状态
+                  - columnheader "来源" [ref=e193]:
+                    - generic [ref=e194]: 来源
+                  - columnheader "浏览器" [ref=e195]:
+                    - generic [ref=e196]: 浏览器
+                  - columnheader "节点ID" [ref=e197]:
+                    - generic [ref=e198]: 节点ID
+                  - columnheader "节点IP" [ref=e199]:
+                    - generic [ref=e200]: 节点IP
+                  - columnheader "SSL协议" [ref=e201]:
+                    - generic [ref=e202]: SSL协议
+                  - columnheader "SSL套件" [ref=e203]:
+                    - generic [ref=e204]: SSL套件
+            - generic [ref=e208]:
+              - table:
+                - rowgroup
+              - generic [ref=e210]: 暂无数据
+          - generic [ref=e213]:
+            - generic [ref=e214]: 共 0 条
+            - generic [ref=e217] [cursor=pointer]:
+              - generic:
+                - combobox [ref=e219]
+                - generic [ref=e220]: 20条/页
+              - img [ref=e223]
+            - button "上一页" [disabled] [ref=e225]:
+              - generic:
+                - img
+            - list [ref=e226]:
+              - listitem "第 1 页" [ref=e227]: "1"
+            - button "下一页" [disabled] [ref=e228]:
+              - generic:
+                - img
+            - generic [ref=e229]:
+              - generic [ref=e230]: 前往
+              - spinbutton "页" [ref=e233]: "1"
+              - generic [ref=e234]: 页
+```

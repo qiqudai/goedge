@@ -29,7 +29,7 @@
         <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshRanking">刷新</el-button>
       </div>
 
-      <AppTable :data="ranking.list" border persist-key="node-ranking">
+      <AppTable :data="ranking.list" :loading="rankingLoading" border persist-key="node-ranking">
         <el-table-column prop="rank" label="排行" width="80" align="center" />
         <el-table-column prop="node" label="节点" min-width="160" />
         <el-table-column prop="nic" label="网卡" min-width="120" />
@@ -55,8 +55,10 @@
             <el-radio-button value="1h">1小时</el-radio-button>
             <el-radio-button value="6h">6小时</el-radio-button>
             <el-radio-button value="12h">12小时</el-radio-button>
+            <el-radio-button value="custom">自定义</el-radio-button>
           </el-radio-group>
           <el-date-picker
+            v-if="metrics.window === 'custom'"
             v-model="metrics.timeRange"
             type="datetimerange"
             range-separator="至"
@@ -71,7 +73,7 @@
         <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshMetrics">刷新</el-button>
       </div>
 
-      <AppTable :data="metrics.list" border persist-key="node-metrics">
+      <AppTable :data="metrics.list" :loading="metricsLoading" border persist-key="node-metrics">
         <el-table-column prop="time" label="时间" min-width="160" />
         <el-table-column prop="value" label="数值" min-width="120" />
       </AppTable>
@@ -86,7 +88,7 @@
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">时间</span>
-          <el-radio-group v-model="traffic.window" @change="refreshTraffic">
+          <el-radio-group v-model="traffic.window">
             <el-radio-button value="1d">1天</el-radio-button>
             <el-radio-button value="7d">7天</el-radio-button>
             <el-radio-button value="30d">30天</el-radio-button>
@@ -103,18 +105,19 @@
             clearable
             class="time-range"
             style="width: 320px;"
+            @change="handleTrafficTimeRangeChange"
           />
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">节点</span>
-          <el-select v-model="traffic.node" style="width: 220px;" filterable placeholder="选择节点">
+          <el-select v-model="traffic.node" style="width: 220px;" filterable placeholder="选择节点" @change="refreshTraffic">
             <el-option label="全部节点" value="all" />
             <el-option v-for="item in nodeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </div>
         <div class="toolbar-row">
           <span class="toolbar-label">排除网卡</span>
-          <el-input v-model="traffic.exclude" placeholder="排除网卡，多个网卡用空格分隔" style="width: 320px;" />
+          <el-input v-model="traffic.exclude" placeholder="排除网卡，多个网卡用空格分隔" style="width: 320px;" @change="refreshTraffic" />
         </div>
         <el-button type="primary" class="refresh-button" style="width: 96px;" @click="refreshTraffic">刷新</el-button>
       </div>
@@ -135,6 +138,8 @@ import * as echarts from 'echarts'
 const activeTab = ref('ranking')
 const trafficChartRef = ref(null)
 let myChart = null
+const rankingLoading = ref(false)
+const metricsLoading = ref(false)
 
 const ranking = reactive({
   metric: 'bandwidth',
@@ -162,11 +167,7 @@ const nodeOptions = ref([])
 
 onMounted(() => {
   fetchNodes()
-  // Mock ranking data for initial view
-  ranking.list = [
-      { rank: 1, node: 'node-1', nic: 'eth0', out: '100 Mbps', in: '10 Mbps' },
-      { rank: 2, node: 'node-2', nic: 'eth0', out: '80 Mbps', in: '8 Mbps' }
-  ]
+  refreshRanking()
 })
 
 const fetchNodes = () => {
@@ -180,14 +181,39 @@ const fetchNodes = () => {
   })
 }
 
-const refreshRanking = () => {
-    // Implement ranking refresh
-    console.log('Refresh ranking')
+const refreshRanking = async () => {
+  if (activeTab.value !== 'ranking') return
+  rankingLoading.value = true
+  try {
+    const res = await request.get('/stats/node_ranking', { params: { metric: ranking.metric, window: ranking.window } })
+    ranking.list = res.data?.list || []
+  } finally {
+    rankingLoading.value = false
+  }
 }
 
-const refreshMetrics = () => {
-    // Implement metrics refresh
-     console.log('Refresh metrics')
+const refreshMetrics = async () => {
+  if (activeTab.value !== 'metrics') return
+  if (metrics.window === 'custom') {
+    if (!metrics.timeRange?.[0] || !metrics.timeRange?.[1]) {
+      metrics.list = []
+      return
+    }
+  }
+  metricsLoading.value = true
+  try {
+    const res = await request.get('/stats/node_metrics', {
+      params: {
+        metric: metrics.metric,
+        window: metrics.window,
+        start_time: metrics.timeRange?.[0],
+        end_time: metrics.timeRange?.[1]
+      }
+    })
+    metrics.list = res.data?.list || []
+  } finally {
+    metricsLoading.value = false
+  }
 }
 
 // Chart Logic
@@ -204,6 +230,9 @@ const initChart = () => {
 
 const refreshTraffic = () => {
   if (!myChart) return // Wait for init
+  if (traffic.window === 'custom' && (!traffic.timeRange?.[0] || !traffic.timeRange?.[1])) {
+    return
+  }
   
   myChart.showLoading()
   request.get('/stats/node_traffic', {
@@ -211,8 +240,8 @@ const refreshTraffic = () => {
           window: traffic.window,
           node_id: traffic.node,
           exclude_nic: traffic.exclude,
-          start_time: traffic.timeRange?.[0],
-          end_time: traffic.timeRange?.[1]
+          start_time: traffic.window === 'custom' ? traffic.timeRange?.[0] : '',
+          end_time: traffic.window === 'custom' ? traffic.timeRange?.[1] : ''
       }
   }).then(res => {
       myChart.hideLoading()
@@ -266,11 +295,19 @@ const updateChartOption = (data) => {
 }
 
 watch(activeTab, (val) => {
-    if (val === 'traffic') {
-        nextTick(() => {
-            initChart()
-        })
-    }
+  if (val === 'traffic') {
+    nextTick(() => {
+      initChart()
+    })
+    return
+  }
+  if (val === 'ranking') {
+    refreshRanking()
+    return
+  }
+  if (val === 'metrics') {
+    refreshMetrics()
+  }
 })
 
 // Deep watch for traffic options to validation or reload
@@ -279,6 +316,46 @@ watch(() => [traffic.out, traffic.in], () => {
          refreshTraffic()
     }
 })
+
+watch(() => [ranking.metric, ranking.window], () => {
+  if (activeTab.value === 'ranking') {
+    refreshRanking()
+  }
+})
+
+watch(() => [metrics.metric, metrics.window], ([, window], [, prevWindow]) => {
+  if (window !== prevWindow && window !== 'custom') {
+    metrics.timeRange = []
+  }
+  if (activeTab.value === 'metrics') {
+    refreshMetrics()
+  }
+})
+
+watch(() => metrics.timeRange, () => {
+  if (activeTab.value !== 'metrics') return
+  if (metrics.window !== 'custom') return
+  if (metrics.timeRange?.[0] && metrics.timeRange?.[1]) {
+    refreshMetrics()
+  }
+}, { deep: true })
+
+watch(() => traffic.window, (val, prev) => {
+  if (val === prev) return
+  if (val !== 'custom') {
+    traffic.timeRange = []
+    if (activeTab.value === 'traffic') refreshTraffic()
+    return
+  }
+  // custom: wait for user to pick a full time range or click refresh.
+})
+
+const handleTrafficTimeRangeChange = () => {
+  if (traffic.window !== 'custom') return
+  if (traffic.timeRange?.[0] && traffic.timeRange?.[1] && activeTab.value === 'traffic') {
+    refreshTraffic()
+  }
+}
 
 </script>
 

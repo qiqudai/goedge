@@ -1,9 +1,9 @@
 <template>
   <div class="app-container">
     <el-card>
-      <el-tabs v-model="activeTab">
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="DNS配置" name="dns">
-          <el-form :model="form" label-width="120px" class="dns-form">
+          <el-form v-if="activeTab === 'dns'" v-loading="loading" :model="form" label-width="120px" class="dns-form">
             <el-form-item label="DNS提供商" required>
               <el-select v-model="form.type" placeholder="请选择" @change="handleTypeChange" style="width: 320px;">
                 <el-option v-for="t in providerTypes" :key="t.type" :label="getProviderLabel(t)" :value="t.type" />
@@ -39,7 +39,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="CNAME 域名" name="cname">
-          <div class="filter-container">
+          <div v-if="activeTab === 'cname'" class="filter-container">
             <div class="left">
               <el-button type="primary" @click="handleCreateCname">添加域名</el-button>
               <el-button type="danger" :disabled="selectedCnames.length === 0" @click="handleBatchDeleteCname">批量删除</el-button>
@@ -187,16 +187,18 @@ const applyProvider = item => {
   form.value.ip_weight = !!ipWeight
 }
 
-const loadProviders = () => {
+const loadProviders = (applyFirst = true) => {
   loading.value = true
   request.get('/dns/providers').then(res => {
     if (res.code === 0) {
       const list = res.data.list || []
       providers.value = list
-      if (list.length > 0) {
+      if (applyFirst && list.length > 0) {
         applyProvider(list[0])
       } else {
-        currentProviderId.value = 0
+        if (list.length === 0) {
+          currentProviderId.value = 0
+        }
       }
     }
   }).finally(() => {
@@ -423,6 +425,19 @@ const handleCnameSelectionChange = val => {
   selectedCnames.value = val
 }
 
+const handleTabChange = (name) => {
+  if (name === 'dns') {
+    loadProviders(true)
+    loadTypes()
+    return
+  }
+  if (name === 'cname') {
+    // Ensure provider list available for label mapping.
+    loadProviders(false)
+    getCnameList()
+  }
+}
+
 
 watch(
   () => form.value.type,
@@ -436,9 +451,7 @@ const handleBatchDeleteCname = () => {
 }
 
 onMounted(() => {
-  loadProviders()
-  loadTypes()
-  getCnameList()
+  handleTabChange(activeTab.value)
 })
 </script>
 

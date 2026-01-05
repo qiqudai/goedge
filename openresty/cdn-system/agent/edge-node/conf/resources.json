@@ -1,13 +1,13 @@
 {
   "website": {
     "default_listen_80": false,
-    "log_storage_dir": "/data/download-temp/",
-    "log_storage_hours": 12
+    "log_storage_dir": "logs",
+    "log_storage_hours": 1
   },
   "forward": {
-    "disabled_ports": ""
+    "disabled_ports": "-e2e"
   },
   "public": {
-    "disabled_custom_ports": ""
+    "disabled_custom_ports": "22"
   }
 }

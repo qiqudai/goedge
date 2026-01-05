@@ -7,12 +7,14 @@
         <el-option label="预热" value="preheat" />
       </el-select>
       <el-input v-model="filters.keyword" placeholder="关键词" style="width: 240px;" />
-      <el-button type="primary" @click="loadList">查询</el-button>
+      <el-button type="primary" :loading="loading" @click="loadList">查询</el-button>
     </div>
 
     <AppTable
       :data="list"
+      :loading="loading"
       border
+      row-key="id"
       style="width: 100%;"
       v-model:current-page="filters.page"
       v-model:page-size="filters.pageSize"
@@ -66,6 +68,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 const list = ref([])
 const total = ref(0)
+const loading = ref(false)
 
 const filters = reactive({
   type: '',
@@ -75,10 +78,15 @@ const filters = reactive({
 })
 
 const loadList = () => {
-  request.get('/tasks', { params: filters }).then(res => {
-    list.value = res.data?.list || res.list || []
-    total.value = res.data?.total || res.total || 0
-  })
+  if (loading.value) return
+  loading.value = true
+  request.get('/tasks', { params: { ...filters } }).then(res => {
+      list.value = res.data?.list || res.list || []
+      total.value = res.data?.total || res.total || 0
+    })
+    .finally(() => {
+      loading.value = false
+    })
 }
 
 const handleResubmit = (row) => {

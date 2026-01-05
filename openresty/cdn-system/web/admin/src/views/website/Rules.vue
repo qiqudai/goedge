@@ -1,20 +1,20 @@
 <template>
   <div class="app-container">
     <el-card shadow="never">
-      <el-alert
-        v-if="!canCustomCCRule"
-        type="warning"
-        show-icon
-        title="当前套餐未开启自定义 CC 规则"
-        description="请联系管理员开通套餐权限。"
-      />
-      <el-tabs v-else v-model="activeTab" type="card" class="rules-tabs">
+      <el-tabs v-model="activeTab" type="card" class="rules-tabs">
         <el-tab-pane label="CC规则" name="cc">
-          <CCRules />
+          <el-alert
+            v-if="activeTab === 'cc' && permissionLoaded && !canCustomCCRule"
+            type="warning"
+            show-icon
+            title="当前套餐未开启自定义 CC 规则"
+            description="请联系管理员开通套餐权限。"
+          />
+          <CCRules v-else-if="activeTab === 'cc' && canCustomCCRule" />
         </el-tab-pane>
 
         <el-tab-pane label="ACL规则" name="acl">
-          <AclList />
+          <AclList v-if="activeTab === 'acl'" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -28,12 +28,14 @@ import CCRules from './rules/CCRules.vue'
 import AclList from './rules/AclList.vue'
 
 const activeTab = ref('cc')
-const canCustomCCRule = ref(true)
+const canCustomCCRule = ref(false)
+const permissionLoaded = ref(false)
 const isAdmin = (localStorage.getItem('role') || 'user') === 'admin'
 
 const loadPermission = async () => {
   if (isAdmin) {
     canCustomCCRule.value = true
+    permissionLoaded.value = true
     return
   }
   try {
@@ -42,6 +44,8 @@ const loadPermission = async () => {
     canCustomCCRule.value = list.some(item => item.custom_cc_rule && item.status !== 'expired')
   } catch {
     canCustomCCRule.value = false
+  } finally {
+    permissionLoaded.value = true
   }
 }
 

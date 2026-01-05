@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { useLoading } from '@/composables/useLoading'
 
 // Create axios instance
 const service = axios.create({
@@ -7,9 +8,14 @@ const service = axios.create({
   timeout: 5000
 })
 
+const { showLoading, hideLoading } = useLoading()
+
 // Request interceptor
 service.interceptors.request.use(
   config => {
+    if (!config.skipLoading) {
+      showLoading()
+    }
     const role = localStorage.getItem('role') || 'user'
     if (config.baseURL === '/api/v1/admin') {
       config.baseURL = role === 'admin' ? '/api/v1/admin' : '/api/v1/user'
@@ -22,6 +28,9 @@ service.interceptors.request.use(
     return config
   },
   error => {
+    if (!error.config?.skipLoading) {
+      hideLoading()
+    }
     return Promise.reject(error)
   }
 )
@@ -29,6 +38,9 @@ service.interceptors.request.use(
 // Response interceptor
 service.interceptors.response.use(
   response => {
+    if (!response.config?.skipLoading) {
+      hideLoading()
+    }
     const res = response.data
     // If backend returns code, check it (assuming 0 is success)
     if (res.code !== undefined && res.code !== 0) {
@@ -43,6 +55,9 @@ service.interceptors.response.use(
     }
   },
   error => {
+    if (!error.config?.skipLoading) {
+      hideLoading()
+    }
     if (error.response && error.response.status === 401) {
       ElMessage({
         message: '登录失效，请重新登录',

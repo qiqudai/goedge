@@ -1,6 +1,6 @@
 ﻿<template>
   <div class="app-container">
-    <el-tabs v-model="activeTab" @tab-click="handleTabClick">
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="当前封禁" name="current">
         <div class="filter-container">
           <el-button type="primary" class="filter-item" @click="handleUnblockBatch">批量解封</el-button>
@@ -205,7 +205,6 @@ const statsTotal = ref(0)
 const statsQuery = reactive({ page: 1, pageSize: 10 })
 
 const fetchStatsList = async () => {
-  if (activeTab.value !== 'stats') return
   loading.value = true
   try {
     const res = await request.get('/logs/block/stats', {
@@ -238,14 +237,15 @@ const handleHistoryFilterCommand = command => {
 }
 
 const fetchHistoryList = async () => {
-  if (activeTab.value !== 'history') return
   loading.value = true
   try {
     const res = await request.get('/logs/block/history', {
       params: {
         ...historyQuery,
         type: historyFilter.type,
-        keyword: historyFilter.keyword
+        keyword: historyFilter.keyword,
+        start_time: historyFilter.dateRange?.[0],
+        end_time: historyFilter.dateRange?.[1]
       }
     })
     historyList.value = res.data?.list || []
@@ -264,12 +264,16 @@ const handleExportHistory = () => {
   ElMessage.info('\u8bf7\u5148\u9009\u62e9\u8bb0\u5f55')
 }
 
-const handleTabClick = tab => {
-  if (tab.props.name === 'current') {
+const handleTabChange = name => {
+  if (name === 'current') {
     fetchCurrentList()
-  } else if (tab.props.name === 'stats') {
+    return
+  }
+  if (name === 'stats') {
     fetchStatsList()
-  } else if (tab.props.name === 'history') {
+    return
+  }
+  if (name === 'history') {
     fetchHistoryList()
   }
 }

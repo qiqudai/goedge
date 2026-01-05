@@ -5,7 +5,7 @@
     <el-button size="small" type="primary" :icon="Search" @click="fetchData">查询</el-button>
   </div>
 
-  <AppTable :data="list" border fit highlight-current-row persist-key="cc-matchers">
+  <AppTable :data="list" :loading="loading" border fit highlight-current-row persist-key="cc-matchers">
     <el-table-column type="selection" width="55" />
     <el-table-column prop="id" label="ID" width="80" />
     <el-table-column v-if="isAdmin" prop="user" label="用户" width="120">
@@ -127,6 +127,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 
 const list = ref([])
+const loading = ref(false)
 const query = reactive({ name: '' })
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
@@ -175,8 +176,13 @@ const operatorOptions = [
 ]
 
 const fetchData = async () => {
-  const { data } = await request.get('/rules/cc/matchers', { params: query })
-  list.value = data.list || []
+  loading.value = true
+  try {
+    const { data } = await request.get('/rules/cc/matchers', { params: query })
+    list.value = data.list || []
+  } finally {
+    loading.value = false
+  }
 }
 
 const searchUsers = async (query) => {

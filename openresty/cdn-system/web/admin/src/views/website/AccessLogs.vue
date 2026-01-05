@@ -1,6 +1,6 @@
 <template>
   <div class="app-container">
-    <el-tabs v-model="activeTab" type="card">
+    <el-tabs v-model="activeTab" type="card" @tab-change="handleTabChange">
       <el-tab-pane label="日志查询" name="query" />
       <el-tab-pane label="申请记录" name="history" />
     </el-tabs>
@@ -305,6 +305,12 @@ const handleFilter = () => {
 
 const handleDownload = () => {
   // TODO: Implement download logic
+}
+
+const handleTabChange = (name) => {
+  if (name === 'query') {
+    handleFilter()
+  }
 }
 
 onMounted(() => {

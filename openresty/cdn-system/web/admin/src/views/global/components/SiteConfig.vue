@@ -1,5 +1,5 @@
 <template>
-  <el-form label-width="150px" class="config-form">
+  <el-form v-loading="loading" label-width="150px" class="config-form">
     <div class="section-title">HTTP</div>
     <el-form-item label="监听端口" style="max-width: 500px;">
       <el-input v-model="form.httpListen" @change="saveConfig" />
@@ -403,6 +403,8 @@ const form = reactive({
   ipv6Enable: false
 })
 
+const loading = ref(false)
+
 const ccRules = ref([
   { label: '关闭', value: 10002 },
   { label: '宽松', value: 10003 },
@@ -600,5 +602,12 @@ async function loadCcRules() {
   if (list.length > 0) ccRules.value = list.map((item) => ({ label: item.name, value: item.id }))
 }
 
-onMounted(() => { loadConfig(); loadCcRules() })
+onMounted(async () => {
+  loading.value = true
+  try {
+    await Promise.all([loadConfig(), loadCcRules()])
+  } finally {
+    loading.value = false
+  }
+})
 </script>

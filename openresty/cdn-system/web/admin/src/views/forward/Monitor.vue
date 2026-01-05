@@ -5,7 +5,7 @@
         <el-tab-pane label="转发列表" name="list" />
         <el-tab-pane label="默认设置" name="default" />
         <el-tab-pane label="实时监控" name="monitor">
-          <el-tabs v-model="activeTab" class="monitor-inner-tabs">
+          <el-tabs v-model="activeTab" class="monitor-inner-tabs" @tab-change="handleInnerTab">
             <el-tab-pane label="带宽流量" name="traffic">
               <div class="filter-container">
                 <el-input v-model="query.keyword" placeholder="端口检索 (如: 88/TCP)" style="width: 200px; margin-right: 12px;" />
@@ -76,7 +76,12 @@ const handleTopTab = (name) => {
     monitor: '/forward/monitor'
   }
   const path = map[name]
-  if (path && name !== 'monitor') router.push(path)
+  if (name === 'monitor') {
+    reload()
+    reloadRanking()
+    return
+  }
+  if (path) router.push(path)
 }
 
 const buildChartOption = (title, color, data) => ({
@@ -126,6 +131,16 @@ const loadRanking = () => {
 }
 
 const reloadRanking = () => loadRanking()
+
+const handleInnerTab = (name) => {
+  if (name === 'traffic') {
+    reload()
+    return
+  }
+  if (name === 'ranking') {
+    reloadRanking()
+  }
+}
 
 const setRange = (val) => { range.value = val; reload() }
 

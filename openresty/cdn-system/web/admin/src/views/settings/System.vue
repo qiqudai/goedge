@@ -1,6 +1,6 @@
 ﻿<template>
   <div class="app-container">
-    <el-tabs v-model="activeTab" type="border-card">
+    <el-tabs v-model="activeTab" v-loading="loading" type="border-card">
       <el-tab-pane label="系统配置" name="system">
         <BasicConfig :configItems="configItems" @saved="loadData" />
         <el-divider />
@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import request from '@/utils/request'
 import BasicConfig from './components/BasicConfig.vue'
 import PackageConfig from './components/PackageConfig.vue'
@@ -43,14 +43,25 @@ import OtherConfig from './components/OtherConfig.vue'
 
 const activeTab = ref('system')
 const configItems = ref([])
+const loading = ref(false)
 
 const loadData = () => {
-  request.get('/config_items', { params: { type: 'system' } }).then(res => {
-    configItems.value = res.list || []
-  })
+  loading.value = true
+  request
+    .get('/config_items', { params: { type: 'system' } })
+    .then(res => {
+      configItems.value = res.list || []
+    })
+    .finally(() => {
+      loading.value = false
+    })
 }
 
 onMounted(() => {
+  loadData()
+})
+
+watch(activeTab, () => {
   loadData()
 })
 </script>

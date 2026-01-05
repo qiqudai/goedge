@@ -1,9 +1,10 @@
 ﻿<template>
   <div class="app-container">
     <el-card shadow="never" class="layout-card">
-      <el-tabs v-model="activeTab" class="custom-tabs">
+      <el-tabs v-model="activeTab" class="custom-tabs" @tab-change="handleTabChange">
         <el-tab-pane label="网站列表" name="list">
           <SiteTable
+            v-if="activeTab === 'list'"
             :list="siteList"
             :total="totalSites"
             :loading="listLoading"
@@ -19,15 +20,15 @@
         </el-tab-pane>
 
         <el-tab-pane label="默认设置" name="default">
-          <DefaultSettings :is-admin="isAdmin" />
+          <DefaultSettings v-if="activeTab === 'default'" :is-admin="isAdmin" />
         </el-tab-pane>
 
         <el-tab-pane label="DNS API" name="dns">
-          <DnsApiList />
+          <DnsApiList v-if="activeTab === 'dns'" />
         </el-tab-pane>
 
         <el-tab-pane label="解析检测" name="resolve">
-          <ResolvePage :hide-tabs="true" />
+          <ResolvePage v-if="activeTab === 'resolve'" :hide-tabs="true" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -99,6 +100,13 @@ const batchEditIds = ref([])
 
 const advancedVisible = ref(false)
 const advQuery = reactive({ status: '' })
+
+const handleTabChange = (name) => {
+  if (name === 'list') {
+    fetchSites()
+    loadDomainUsage()
+  }
+}
 
 const fetchSites = async () => {
   listLoading.value = true
