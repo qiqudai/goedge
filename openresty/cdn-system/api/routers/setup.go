@@ -147,10 +147,6 @@ func Setup(r *gin.Engine) {
 			admin.PUT("/announcements/:id", annCtr.Update)
 			admin.DELETE("/announcements/:id", annCtr.Delete)
 
-			// System
-			admin.GET("/system_info", (&controllers.SystemController{}).GetInfo)
-			admin.POST("/system_info", (&controllers.SystemController{}).UpdateInfo)
-
 			admin.POST("/upload/image", (&controllers.UploadController{}).UploadImage)
             
             // API Key
@@ -250,6 +246,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/tasks", taskCtr.List)
 			admin.POST("/tasks", taskCtr.Create)
 			admin.GET("/tasks/usage", taskCtr.Usage)
+			admin.GET("/tasks/:id", taskCtr.Get)
 			admin.POST("/tasks/:id/resubmit", taskCtr.Resubmit)
 
 			// Rules Management (CC/ACL)
@@ -279,6 +276,7 @@ func Setup(r *gin.Engine) {
 		// 2. User Routes (Require User Auth Middleware)
 		user := v1.Group("/user")
 		user.Use(middleware.AuthRequired("user"))
+		user.Use(middleware.MaintenanceRequired())
 		user.Use(middleware.OperationLog())
 		{
 			// Domain Management
@@ -301,6 +299,7 @@ func Setup(r *gin.Engine) {
 			user.GET("/dashboard", (&controllers.DashboardController{}).Index)
 			user.GET("/logs/operation", (&controllers.LogController{}).ListOpLogsUser)
 			user.GET("/messages", (&controllers.MessageController{}).UserList)
+			user.GET("/messages/unread", (&controllers.MessageController{}).UserUnread)
 			user.POST("/messages/:id/read", (&controllers.MessageController{}).MarkRead)
 			user.GET("/message_sub", (&controllers.MessageController{}).GetSubscriptions)
 			user.PUT("/message_sub", (&controllers.MessageController{}).UpdateSubscriptions)
@@ -333,6 +332,7 @@ func Setup(r *gin.Engine) {
 			user.GET("/tasks", userTaskCtr.List)
 			user.POST("/tasks", userTaskCtr.Create)
 			user.GET("/tasks/usage", userTaskCtr.Usage)
+			user.GET("/tasks/:id", userTaskCtr.Get)
 			user.POST("/tasks/:id/resubmit", userTaskCtr.Resubmit)
 
 			userPlanCtr := &controllers.PlanController{}
@@ -429,6 +429,7 @@ func Setup(r *gin.Engine) {
 			agentGroup.POST("/heartbeat", agentCtr.Heartbeat)
 			agentGroup.POST("/node/sync", agentCtr.SyncNodeStatus)
 			agentGroup.GET("/config", agentCtr.GetConfig)
+			agentGroup.GET("/upgrade", agentCtr.GetUpgrade)
 			agentGroup.GET("/tasks", agentCtr.GetTasks)
 			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
 			agentGroup.GET("/l2/nodes", agentCtr.GetL2Nodes)

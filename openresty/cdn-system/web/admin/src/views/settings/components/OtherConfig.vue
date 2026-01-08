@@ -1,10 +1,10 @@
 <template>
-  <el-form label-width="180px">
+  <el-form label-width="180px" @focusin="cacheInputValue">
     <!-- Group 1: Master Source IP -->
     <el-card shadow="never" class="mb-20">
       <template #header>主控获取源IP</template>
       <el-form-item label="源IP请求头">
-        <el-input v-model="form.master_client_ip_header" placeholder="X-Real-IP" />
+        <el-input v-model="form.master_client_ip_header" placeholder="X-Real-IP"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
 
@@ -12,14 +12,14 @@
     <el-card shadow="never" class="mb-20">
       <template #header>记录相关</template>
       <el-form-item label="记录定时修复">
-        <el-radio-group v-model.number="form.record_repair_enable">
+        <el-radio-group v-model.number="form.record_repair_enable" @change="handleSave">
           <el-radio :label="0">关闭</el-radio>
           <el-radio :label="1">定时修复记录</el-radio>
           <el-radio :label="2">定时修复并删除多余记录</el-radio>
         </el-radio-group>
       </el-form-item>
       <el-form-item label="DNS记录保护">
-        <el-input v-model="form.dns_rs_protect" placeholder="输入主机名,即域名的前面部分,多个以逗号分隔" />
+        <el-input v-model="form.dns_rs_protect" placeholder="输入主机名,即域名的前面部分,多个以逗号分隔"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
 
@@ -27,10 +27,10 @@
     <el-card shadow="never" class="mb-20">
       <template #header>配置同步</template>
       <el-form-item label="单次同步站点最大个数">
-        <el-input v-model.number="form.max_site_stream_sync_one_time" />
+        <el-input v-model.number="form.max_site_stream_sync_one_time"  @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="同步范围">
-        <el-radio-group v-model="form.sync_site_config_scope">
+        <el-radio-group v-model="form.sync_site_config_scope" @change="handleSave">
           <el-radio label="region">按区域</el-radio>
           <el-radio label="group">按线路组</el-radio>
         </el-radio-group>
@@ -41,7 +41,7 @@
     <el-card shadow="never" class="mb-20">
       <template #header>资源限制</template>
       <el-form-item label="资源排行显示的数量">
-        <el-input v-model.number="form.res_rank_size" />
+        <el-input v-model.number="form.res_rank_size"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
 
@@ -49,7 +49,7 @@
     <el-card shadow="never" class="mb-20">
       <template #header>http代理设置</template>
       <el-form-item label="http代理">
-        <el-input v-model="form.http_proxy" placeholder="格式为 http://用户名:密码@代理ip:代理端口" />
+        <el-input v-model="form.http_proxy" placeholder="格式为 http://用户名:密码@代理ip:代理端口"  @blur="handleBlurSave" />
         <div class="form-helper">当设置时，用户添加的dns api使用代理连接，系统提供的免费代理为:http://cdn:6d0d3e31@proxy.lotcdn.com:8888</div>
       </el-form-item>
     </el-card>
@@ -71,7 +71,7 @@
              <el-button link type="primary" class="ml-10" @click="copy(apiKeyInfo.api_secret)"><el-icon><CopyDocument /></el-icon></el-button>
            </el-form-item>
            <el-form-item label="IP白名单">
-             <el-input v-model="apiKeyInfo.api_ip" placeholder="多个IP以|分隔 (例如: 1.2.3.4|5.6.7.8)" />
+             <el-input v-model="apiKeyInfo.api_ip" placeholder="多个IP以|分隔 (例如: 1.2.3.4|5.6.7.8)"  @blur="handleBlurSave" />
              <div class="form-helper">只允许指定IP访问API，留空表示不限制</div>
            </el-form-item>
            <el-form-item>
@@ -84,7 +84,7 @@
     <el-card shadow="never" class="mb-20">
       <template #header>流量计算</template>
       <el-form-item label="TCP系数">
-        <el-radio-group v-model.number="form.tcp_traffic_factor">
+        <el-radio-group v-model.number="form.tcp_traffic_factor" @change="handleSave">
           <el-radio :label="1.0">1.0</el-radio>
           <el-radio :label="1.1">1.1</el-radio>
         </el-radio-group>
@@ -101,25 +101,22 @@
       <template #header>默认HTTPS证书</template>
       <el-alert title="此证书用于节点未匹配到站点证书时的默认HTTPS响应" type="info" :closable="false" class="mb-10"/>
       <el-form-item label="证书内容 (PEM)">
-        <el-input v-model="form.cert_content" type="textarea" :rows="6" placeholder="-----BEGIN CERTIFICATE-----..." />
+        <el-input v-model="form.cert_content" type="textarea" :rows="6" placeholder="-----BEGIN CERTIFICATE-----..."  @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="私钥内容 (PEM)">
-        <el-input v-model="form.key_content" type="textarea" :rows="6" placeholder="-----BEGIN PRIVATE KEY-----..." />
+        <el-input v-model="form.key_content" type="textarea" :rows="6" placeholder="-----BEGIN PRIVATE KEY-----..."  @blur="handleBlurSave" />
       </el-form-item>
       <el-alert title="保存后需要重启Master服务生效" type="warning" show-icon class="mt-10" />
     </el-card>
-
-    <el-form-item>
-      <el-button type="primary" @click="save">保存</el-button>
-    </el-form-item>
-  </el-form>
+</el-form>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument } from '@element-plus/icons-vue'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   configItems: {
@@ -184,6 +181,36 @@ const apiKeyInfo = ref({
   api_ip: ''
 })
 
+const saving = ref(false)
+let saveQueued = false
+
+const queueSave = async () => {
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
+  save().finally(() => {
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      queueSave()
+    }
+  })
+}
+
+const handleSave = () => {
+  queueSave()
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  queueSave()
+}
+
 watch(() => props.configItems, (items) => {
   if (!items) return
 
@@ -213,17 +240,18 @@ watch(() => props.configItems, (items) => {
 }, { immediate: true, deep: true })
 
 const fetchApiKey = () => {
-    request.get('/api_key').then(res => {
+    return request.get('/api_key').then(res => {
         if(res.code === 0 && res.data) {
             apiKeyInfo.value = res.data
         }
     })
 }
 
-const handleApiKeyStatusChange = (val) => {
+const handleApiKeyStatusChange = async (val) => {
     if (val === '1') {
-        fetchApiKey()
+        await fetchApiKey()
     }
+    handleSave()
 }
 
 const resetSecret = () => {

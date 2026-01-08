@@ -1,5 +1,5 @@
 <template>
-  <div class="origin-config">
+  <div class="origin-config" @focusin="cacheInputValue">
     <!-- 回源协议与端口 -->
     <div class="section-title">回源协议与端口</div>
     <el-form label-width="150px" class="config-form">
@@ -25,7 +25,7 @@
         v-if="['http', 'follow'].includes(originSettings.protocol)" 
         style="width: 520px"
       >
-        <el-input v-model="originSettings.httpPort" @change="handleSave" />
+        <el-input v-model="originSettings.httpPort"  @blur="handleBlurSave" />
         <div class="form-helper">当节点与源使用HTTP连接时所使用的端口</div>
       </el-form-item>
       
@@ -34,7 +34,7 @@
         v-if="['https', 'follow'].includes(originSettings.protocol)" 
         style="width: 520px"
       >
-        <el-input v-model="originSettings.httpsPort" @change="handleSave" />
+        <el-input v-model="originSettings.httpsPort"  @blur="handleBlurSave" />
         <div class="form-helper">当节点与源使用HTTPS连接时所使用的端口</div>
       </el-form-item>
 
@@ -49,8 +49,7 @@
           v-model="originSettings.hostValue" 
           placeholder="请输入自定义回源HOST"
           style="margin-top: 10px"
-          @change="handleSave"
-        />
+         @blur="handleBlurSave" />
         <div class="form-helper">节点回源时发送的 Host 头部。自动跟随：跟随用户请求的 Host；网站域名：使用当前网站配置的第一个域名。</div>
       </el-form-item>
     </el-form>
@@ -61,12 +60,12 @@
     <div class="section-title">回源超时</div>
     <el-form label-width="150px" class="config-form">
       <el-form-item label="回源超时" style="width: 320px">
-        <el-input v-model="originSettings.timeout" @change="handleSave">
+        <el-input v-model="originSettings.timeout" @blur="handleBlurSave">
           <template #append>秒</template>
         </el-input>
       </el-form-item>
       <el-form-item label="连接超时" style="width: 320px">
-        <el-input style="width: 320px" v-model="originSettings.connTimeout" @change="handleSave">
+        <el-input style="width: 320px" v-model="originSettings.connTimeout" @blur="handleBlurSave">
           <template #append>秒</template>
         </el-input>
       </el-form-item>
@@ -76,6 +75,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   modelValue: { 
@@ -112,6 +112,13 @@ const handleSave = () => {
    // Calling saveSettings saves the STALE state.
    // This is CORRECT: we don't save invalid state.
    saveSettings(true)
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+    return
+  }
+  handleSave()
 }
 
 // 监听本地变化并同步

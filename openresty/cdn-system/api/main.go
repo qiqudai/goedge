@@ -68,6 +68,8 @@ func main() {
 	services.StartUserPackageExpirationWorker()
 	// Start User Package Traffic Worker
 	services.StartUserPackageTrafficWorker()
+	// Start Cleanup & Backup Worker
+	services.StartCleanupAndBackupWorker()
 
 	// 4. Start Server
 	// Recommend running behind Nginx Load Balancer for HA

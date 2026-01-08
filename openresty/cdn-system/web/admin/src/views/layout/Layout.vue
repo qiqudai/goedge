@@ -47,6 +47,9 @@
           <div class="header-content">
             <div class="header-title">管理后台</div>
             <div class="header-actions">
+              <el-badge v-if="!isAdmin" :is-dot="unreadCount > 0" class="message-badge">
+                <el-icon class="message-icon" @click="goMessages"><Bell /></el-icon>
+              </el-badge>
               <div class="theme-toggle">
                 <el-icon class="theme-icon" :class="{ active: !isDark }"><Sunny /></el-icon>
                 <el-switch v-model="isDark" @change="toggleTheme" />
@@ -76,7 +79,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   User,
@@ -90,8 +93,11 @@ import {
   FullScreen,
   Monitor,
   Sunny,
-  Moon
+  Moon,
+  Bell
 } from '@element-plus/icons-vue'
+import { ElNotification } from 'element-plus'
+import request from '@/utils/request'
 
 const router = useRouter()
 const route = useRoute()
@@ -100,6 +106,9 @@ const role = localStorage.getItem('role') || 'user'
 const isAdmin = computed(() => role === 'admin')
 
 const isDark = ref(false)
+const unreadCount = ref(0)
+const lastMessageId = ref(Number(localStorage.getItem('last_message_id') || 0))
+let messageTimer = null
 
 const menuBackground = 'var(--sidebar-bg)'
 const menuTextColor = 'var(--sidebar-text)'
@@ -121,6 +130,10 @@ const goSystemSettings = () => {
 
 const goProfile = () => {
   router.push('/account/profile')
+}
+
+const goMessages = () => {
+  router.push('/account/messages')
 }
 
 const logout = () => {
@@ -188,10 +201,58 @@ const resolvePath = (routeItem, childItem) => {
   return '/' + parentPath
 }
 
+const pollUnread = async () => {
+  if (isAdmin.value) {
+    return
+  }
+  try {
+    const res = await request.get('/messages/unread', { skipLoading: true })
+    const data = res.data || {}
+    const count = data.count || 0
+    unreadCount.value = count
+    const latest = data.latest || {}
+    if (latest.id && latest.id !== lastMessageId.value) {
+      lastMessageId.value = latest.id
+      localStorage.setItem('last_message_id', String(latest.id))
+      ElNotification({
+        title: '新消息',
+        message: latest.title || '收到新通知',
+        type: 'info',
+        duration: 4500,
+        onClick: goMessages
+      })
+    }
+  } catch (e) {
+    // ignore polling errors
+  }
+}
+
+const startPolling = () => {
+  if (messageTimer) {
+    return
+  }
+  messageTimer = setInterval(pollUnread, 30000)
+}
+
+const stopPolling = () => {
+  if (messageTimer) {
+    clearInterval(messageTimer)
+    messageTimer = null
+  }
+}
+
 onMounted(() => {
   const savedTheme = localStorage.getItem('theme') || 'light'
   isDark.value = savedTheme === 'dark'
   applyTheme()
+  if (!isAdmin.value) {
+    pollUnread()
+    startPolling()
+  }
+})
+
+onBeforeUnmount(() => {
+  stopPolling()
 })
 </script>
 
@@ -236,6 +297,19 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+.message-badge {
+  cursor: pointer;
+}
+.message-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
 }
 .theme-toggle {
   display: flex;

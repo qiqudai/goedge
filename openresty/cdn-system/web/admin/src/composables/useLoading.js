@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+﻿import { computed, ref } from 'vue'
 
 // Global singleton loading state.
 const loadingCount = ref(0)
@@ -56,3 +56,4 @@ export function useLoading() {
     withLoading
   }
 }
+

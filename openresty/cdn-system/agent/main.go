@@ -75,8 +75,6 @@ func main() {
 	initEnvironment()
 
 	// 2. Start Tickers
-	go startConfigPull()
-	go startTaskPull()
 	go startWebSocketClient() // Persistent Connection
 	log.Printf("[Info] Access log ship enabled")
 	go startAccessLogShip()

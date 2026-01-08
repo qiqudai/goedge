@@ -978,8 +978,6 @@ insert into config values ('dns_rs_protect','','system','0','global', now(),now(
 
 insert into config values ('node_health_check','1','system','0','global', now(),now(),1,null); 
 insert into config values ('node_max_failed','2','system','0','global', now(),now(),1,null); 
-insert into config values ('record_repair','0','system','0','global', now(),now(),1,null); 
-insert into config values ('record_sync','1','system','0','global', now(),now(),1,null);
 
 insert into config values ('package_expire_close_site','1','system','0','global', now(),now(),1,null); 
 insert into config values ('traffic_excceed_close_site','1','system','0','global', now(),now(),1,null); 

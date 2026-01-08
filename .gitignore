@@ -1,0 +1,8 @@
+/openresty/.run
+/openresty/edge-node
+!*.*
+*.log
+*.exe*
+/openresty/cdn-system/agent/assets/conf/guard/rotate
+/openresty/cdnfly-agent-v5.3.5
+/openresty/cdnfly-master-v5.3.6

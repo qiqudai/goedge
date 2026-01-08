@@ -28,6 +28,12 @@
     >
       <el-table-column prop="type_label" label="类型" width="160" />
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
+      <el-table-column label="状态" width="100">
+        <template #default="{ row }">
+          <el-tag v-if="!row.is_read" size="small" type="danger">未读</el-tag>
+          <el-tag v-else size="small" type="info">已读</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="site_id" label="网站ID" width="120" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="120" align="center">
@@ -89,7 +95,9 @@ const openDetail = row => {
   detail.email = row.content
   detail.sms = row.phone
   detailVisible.value = true
-  request.post(`/messages/${row.id}/read`)
+  request.post(`/messages/${row.id}/read`).then(() => {
+    row.is_read = true
+  })
 }
 
 onMounted(() => applyFilter())

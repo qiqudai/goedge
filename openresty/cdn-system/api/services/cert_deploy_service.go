@@ -49,5 +49,9 @@ func CreateDeployTask(certID int64) error {
 		CreateAt: time.Now(),
 	}
 
-	return db.DB.Create(&task).Error
+	if err := db.DB.Create(&task).Error; err != nil {
+		return err
+	}
+	TriggerDispatchPending()
+	return nil
 }

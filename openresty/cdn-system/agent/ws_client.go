@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,8 @@ import (
 var (
 	wsConn      *websocket.Conn
 	wsWriteLock sync.Mutex
+	l2Waiters   = make(map[string]chan L2NodesResponseMsg)
+	l2WaiterMu  sync.Mutex
 )
 
 // StartWebSocketClient initiates the persistent connection
@@ -99,6 +103,8 @@ func connectWS() error {
 			handleJobDispatch(msg)
 		case "heartbeat_ack":
 			handleHeartbeatAck(msg)
+		case "l2_nodes_response":
+			handleL2NodesResponse(msg)
 		}
 	}
 }
@@ -129,13 +135,11 @@ func startWSHeartbeat(conn *websocket.Conn, done <-chan struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
-			wsWriteLock.Lock()
-			err := conn.WriteJSON(map[string]interface{}{
+			err := sendWSJSON(map[string]interface{}{
 				"kind":      "heartbeat",
 				"timestamp": time.Now().Unix(),
 				"status":    "active",
 			})
-			wsWriteLock.Unlock()
 			if err != nil {
 				log.Printf("[WS] Heartbeat failed: %v", err)
 				return
@@ -161,24 +165,12 @@ func handleHeartbeatAck(raw []byte) {
 }
 
 func sendNodeSync(action string, success bool) error {
-	wsWriteLock.Lock()
-	conn := wsConn
-	wsWriteLock.Unlock()
-	if conn == nil {
-		recordPendingNodeSync(action, success, errors.New("ws not connected"))
-		return errors.New("ws not connected")
-	}
-
 	msg := map[string]interface{}{
 		"kind":    "node_sync",
 		"action":  action,
 		"success": success,
 	}
-
-	wsWriteLock.Lock()
-	err := conn.WriteJSON(msg)
-	wsWriteLock.Unlock()
-	if err != nil {
+	if err := sendWSJSON(msg); err != nil {
 		log.Printf("[WS] Failed to send node sync: %v", err)
 		recordPendingNodeSync(action, success, err)
 		return err
@@ -224,11 +216,7 @@ func retryPendingNodeSync(conn *websocket.Conn) {
 		"action":  pending.Action,
 		"success": pending.Success,
 	}
-
-	wsWriteLock.Lock()
-	err := conn.WriteJSON(msg)
-	wsWriteLock.Unlock()
-	if err != nil {
+	if err := sendWSJSON(msg); err != nil {
 		log.Printf("[WS] Retry node sync failed: %v", err)
 		recordPendingNodeSync(pending.Action, pending.Success, err)
 		return
@@ -266,11 +254,22 @@ func handleJobDispatch(raw []byte) {
 		return
 	}
 
-	log.Printf("[WS] Received Job %d (Type: %s)", msg.Job.JobID, msg.Job.JobType)
+	jobType := strings.TrimSpace(msg.Job.JobType)
+	if jobType == "" {
+		jobType = strings.TrimSpace(msg.Task.TaskType)
+	}
+	jobID := msg.Job.JobID
+	taskID := msg.Task.TaskID
+	runID := jobID
+	if runID == 0 {
+		runID = taskID
+	}
+
+	log.Printf("[WS] Received Job %d (Type: %s)", jobID, jobType)
 
 	// Execute
 	// We call the existing processTask function in tasks.go
-	ret, err := processTask(msg.Job.JobID, msg.Job.JobType, msg.Job.Payload)
+	ret, err := processTask(runID, jobType, msg.Job.Payload)
 
 	status := "success"
 	errMsg := ""
@@ -288,27 +287,17 @@ func handleJobDispatch(raw []byte) {
 	// ret usually contains the JSON result if success
 	// We need to parse ret to put into 'applied' if it's JSON?
 	// The ACK struct expects `applied` as RawMessage.
-
-	sendJobAck(msg.MsgID, msg.Task.TaskID, msg.Job.JobID, msg.Job.JobType, status, ret, errMsg)
+	sendJobAck(msg.MsgID, taskID, jobID, jobType, status, ret, errMsg)
 }
 
 func sendJobAck(msgID string, taskID, jobID int64, jobType, status, ret, errorMsg string) {
-	wsWriteLock.Lock()
-	conn := wsConn
-	wsWriteLock.Unlock()
-
-	if conn == nil {
-		return
-	}
-
 	// Try to treat ret as JSON object if possible, else string
 	var applied json.RawMessage
+	retValue := ""
 	if ret != "" && (ret[0] == '{' || ret[0] == '[') {
 		applied = json.RawMessage(ret)
 	} else {
-		// If plain string, maybe wrap it? Or just leave nil?
-		// Spec says "applied": [ ... ].
-		// If ret is not JSON, applied might be null.
+		retValue = ret
 	}
 
 	ack := map[string]interface{}{
@@ -320,10 +309,150 @@ func sendJobAck(msgID string, taskID, jobID int64, jobType, status, ret, errorMs
 		"job_type": jobType,
 		"status":   status,
 		"applied":  applied,
+		"ret":      retValue,
 		"error":    errorMsg,
 	}
 
-	if err := conn.WriteJSON(ack); err != nil {
+	if err := sendWSJSON(ack); err != nil {
 		log.Printf("[WS] Failed to send ACK: %v", err)
 	}
+}
+
+type L2NodesResponseMsg struct {
+	Kind  string       `json:"kind"`
+	MsgID string       `json:"msg_id"`
+	Nodes []l2NodeInfo `json:"nodes"`
+}
+
+func sendAccessLogs(lines []string) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	msg := map[string]interface{}{
+		"kind":    "agent_logs_access",
+		"node_id": NodeID,
+		"node_ip": "",
+		"lines":   lines,
+	}
+	return sendWSJSON(msg)
+}
+
+func sendMetrics(content string) error {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	msg := map[string]interface{}{
+		"kind":    "agent_logs_metrics",
+		"node_id": NodeID,
+		"node_ip": "",
+		"content": content,
+	}
+	return sendWSJSON(msg)
+}
+
+func sendEvents(eventType string, payloads []string) error {
+	if strings.TrimSpace(eventType) == "" || len(payloads) == 0 {
+		return nil
+	}
+	msg := map[string]interface{}{
+		"kind":     "agent_logs_events",
+		"node_id":  NodeID,
+		"node_ip":  "",
+		"type":     eventType,
+		"payloads": payloads,
+	}
+	return sendWSJSON(msg)
+}
+
+func requestL2Nodes(timeout time.Duration) ([]l2NodeInfo, error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	msgID := fmt.Sprintf("l2-%d", time.Now().UnixNano())
+	waiter := registerL2Waiter(msgID)
+	if err := sendWSJSON(map[string]interface{}{
+		"kind":   "l2_nodes_request",
+		"msg_id": msgID,
+	}); err != nil {
+		unregisterL2Waiter(msgID)
+		return nil, err
+	}
+	select {
+	case resp := <-waiter:
+		unregisterL2Waiter(msgID)
+		return resp.Nodes, nil
+	case <-time.After(timeout):
+		unregisterL2Waiter(msgID)
+		return nil, errors.New("l2 nodes request timeout")
+	}
+}
+
+func handleL2NodesResponse(raw []byte) {
+	var resp L2NodesResponseMsg
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return
+	}
+	if resp.MsgID == "" {
+		return
+	}
+	l2WaiterMu.Lock()
+	ch, ok := l2Waiters[resp.MsgID]
+	l2WaiterMu.Unlock()
+	if ok {
+		ch <- resp
+	}
+}
+
+func registerL2Waiter(msgID string) chan L2NodesResponseMsg {
+	ch := make(chan L2NodesResponseMsg, 1)
+	l2WaiterMu.Lock()
+	l2Waiters[msgID] = ch
+	l2WaiterMu.Unlock()
+	return ch
+}
+
+func unregisterL2Waiter(msgID string) {
+	l2WaiterMu.Lock()
+	if ch, ok := l2Waiters[msgID]; ok {
+		delete(l2Waiters, msgID)
+		close(ch)
+	}
+	l2WaiterMu.Unlock()
+}
+
+func sendL2Heartbeat(nodes []int64) error {
+	if len(nodes) == 0 {
+		return nil
+	}
+	msg := map[string]interface{}{
+		"kind":  "l2_heartbeat",
+		"nodes": nodes,
+	}
+	return sendWSJSON(msg)
+}
+
+func sendCertIssued(taskID int64, certID int64, certPEM string, keyPEM string, rateLimited bool, rateCooldown int) error {
+	msg := map[string]interface{}{
+		"kind":          "cert_issued",
+		"cert_id":       certID,
+		"cert":          certPEM,
+		"key":           keyPEM,
+		"issue_task_id": taskID,
+	}
+	if rateLimited {
+		msg["rate_limited"] = true
+		if rateCooldown > 0 {
+			msg["rate_cooldown"] = rateCooldown
+		}
+	}
+	return sendWSJSON(msg)
+}
+
+func sendWSJSON(msg interface{}) error {
+	wsWriteLock.Lock()
+	defer wsWriteLock.Unlock()
+	if wsConn == nil {
+		return errors.New("ws not connected")
+	}
+	return wsConn.WriteJSON(msg)
 }

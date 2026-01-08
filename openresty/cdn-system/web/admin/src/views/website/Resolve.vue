@@ -189,7 +189,7 @@ for (let i = 0; i < rows.length; i += batchSize) {
     }
     row.resolveStatus = 'checking'
     try {
-        const res = await request.get('/sites/resolve', { params: { domain: row.domain } })
+        const res = await request.get('/sites/resolve', { params: { domain: row.domain }, skipLoading: true })
         row.resolveResult = res // { domain, cname, ips }
         
         const resolvedCname = normalizeCname(res.cname)

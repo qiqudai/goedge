@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -21,40 +19,12 @@ func startHeartbeat() {
 }
 
 func sendHeartbeat() {
-	data := map[string]interface{}{
-		"node_id":   NodeID,
+	if err := sendWSJSON(map[string]interface{}{
+		"kind":      "heartbeat",
 		"timestamp": time.Now().Unix(),
 		"status":    "active",
-		// Add Load/CPU/Mem stats here later
-	}
-	jsonData, _ := json.Marshal(data)
-
-	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/heartbeat", bytes.NewBuffer(jsonData))
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	readBody := true
-	respBody, status, err := doRequest(req, 5*time.Second, readBody)
-	if err != nil {
+	}); err != nil {
 		log.Printf("[Error] Heartbeat Failed: %v", err)
-		return
-	}
-	debugLogInteraction("POST", req.URL.String(), status, jsonData, respBody)
-
-	if status == 200 {
-		log.Println("[Info] Heartbeat OK")
-		var resp struct {
-			SyncAction string `json:"sync_action"`
-		}
-		if len(respBody) > 0 && json.Unmarshal(respBody, &resp) == nil {
-			if action := strings.ToLower(strings.TrimSpace(resp.SyncAction)); action != "" {
-				if err := applyNodeSync(action); err != nil {
-					log.Printf("[Error] Sync node status failed: %v", err)
-				}
-			}
-		}
-	} else {
-		log.Printf("[Warn] Heartbeat Status: %d", status)
 	}
 }
 
@@ -96,10 +66,6 @@ type l2NodeInfo struct {
 	CheckTimeout  int    `json:"check_timeout"`
 }
 
-type l2NodesResponse struct {
-	Nodes []l2NodeInfo `json:"nodes"`
-}
-
 func startL2Monitor() {
 	ticker := time.NewTicker(L2_CHECK_INT)
 	for range ticker.C {
@@ -135,40 +101,11 @@ func checkL2Nodes() {
 }
 
 func fetchL2Nodes() ([]l2NodeInfo, error) {
-	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/l2/nodes?node_id="+NodeID, nil)
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-
-	body, status, err := doRequest(req, 10*time.Second, true)
-	if err != nil {
-		return nil, err
-	}
-	if status != 200 {
-		return nil, fmt.Errorf("unexpected status: %d", status)
-	}
-	var resp l2NodesResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Nodes, nil
+	return requestL2Nodes(5 * time.Second)
 }
 
 func reportL2Heartbeat(nodes []int64) error {
-	payload := map[string]interface{}{
-		"nodes": nodes,
-	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/l2/heartbeat", bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	_, status, err := doRequest(req, 10*time.Second, true)
-	if err != nil {
-		return err
-	}
-	if status != 200 {
-		return fmt.Errorf("unexpected status: %d", status)
-	}
-	return nil
+	return sendL2Heartbeat(nodes)
 }
 
 func isL2Alive(node l2NodeInfo) bool {

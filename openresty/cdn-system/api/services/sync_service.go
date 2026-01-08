@@ -80,14 +80,16 @@ func NotifyConfigChanged(change ConfigChange) {
 	data, _ := json.Marshal(change)
 	now := time.Now()
 	task := models.Task{
-		Type:      "config_sync",
-		State:     "waiting",
-		Enable:    true,
-		Data:      string(data),
-		CreateAt:  now,
-		StartAt:   &now, // 设置开始时间为创建时间，避免MySQL严格模式下的日期错误
-		EndAt:     &now, // 设置结束时间为创建时间
-		RetryAt:   &now, // Ensure it's picked up immediately
+		Type:     "config_sync",
+		State:    "waiting",
+		Enable:   true,
+		Data:     string(data),
+		CreateAt: now,
+		StartAt:  &now, // 设置开始时间为创建时间，避免MySQL严格模式下的日期错误
+		EndAt:    &now, // 设置结束时间为创建时间
+		RetryAt:  &now, // Ensure it's picked up immediately
 	}
-	db.DB.Create(&task)
+	if err := db.DB.Create(&task).Error; err == nil {
+		TriggerDispatchPending()
+	}
 }

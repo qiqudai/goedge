@@ -105,15 +105,12 @@
         :variables="['{{username}}', '{{ip}}', '{{time}}', '{{code}}']"
       />
 
-      <el-form-item label-width="140px">
-        <el-button type="primary" @click="save">保存所有配置</el-button>
-      </el-form-item>
     </el-form>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import NotifyItemConfig from './NotifyItemConfig.vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
@@ -169,9 +166,50 @@ const parseJSON = (str) => {
   }
 }
 
+const saving = ref(false)
+let saveQueued = false
+let saveTimer = null
+const suspendSave = ref(true)
+
+const queueSave = async () => {
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
+  save().finally(() => {
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      queueSave()
+    }
+  })
+}
+
+const scheduleSave = () => {
+  if (suspendSave.value) {
+    return
+  }
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  saveTimer = setTimeout(() => {
+    queueSave()
+  }, 400)
+}
+
+onBeforeUnmount(() => {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+})
+
 // Watch for props change to initialize
 watch(() => props.configItems, (items) => {
   if (!items) return
+
+  suspendSave.value = true
 
   jsonKeys.forEach(key => {
     const item = items.find(i => i.name === key)
@@ -185,6 +223,9 @@ watch(() => props.configItems, (items) => {
     if (item) configs.value[key] = item.value
   })
 
+  nextTick(() => {
+    suspendSave.value = false
+  })
 }, { immediate: true, deep: true })
 
 const save = () => {
@@ -205,7 +246,7 @@ const save = () => {
   })
 
   // We are saving these as individual keys in 'system' type 'global' scope
-  request.post('/config_items', {
+  return request.post('/config_items', {
     type: 'system',
     scope_name: 'global',
     items: items
@@ -214,6 +255,10 @@ const save = () => {
     emit('saved')
   })
 }
+
+watch(configs, () => {
+  scheduleSave()
+}, { deep: true })
 </script>
 
 <style scoped>

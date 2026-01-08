@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -144,26 +142,11 @@ func shipAccessLogs() {
 	}
 
 	newOffset, _ := file.Seek(0, io.SeekCurrent)
-	payload := map[string]interface{}{
-		"node_id": NodeID,
-		"node_ip": "",
-		"lines":   lines,
-	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/logs/access", bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	readBody := DebugMode
-	respBody, status, err := doRequest(req, 10*time.Second, readBody)
-	if err != nil {
+	if err := sendAccessLogs(lines); err != nil {
 		log.Printf("[Error] Access log ship failed: %v", err)
 		return
 	}
-	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
-	if status == 200 {
-		saveOffset(offsetPath, newOffset)
-	}
+	saveOffset(offsetPath, newOffset)
 }
 
 func shipMetrics() {
@@ -172,23 +155,9 @@ func shipMetrics() {
 	if err != nil || status != 200 {
 		return
 	}
-	payload := map[string]interface{}{
-		"node_id": NodeID,
-		"node_ip": "",
-		"content": string(body),
-	}
-	jsonBody, _ := json.Marshal(payload)
-	postReq, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/logs/metrics", bytes.NewBuffer(jsonBody))
-	postReq.Header.Set("Authorization", "Bearer "+AuthToken)
-	postReq.Header.Set("Content-Type", "application/json")
-
-	readBody := DebugMode
-	respBody, status, err := doRequest(postReq, 10*time.Second, readBody)
-	if err != nil {
+	if err := sendMetrics(string(body)); err != nil {
 		log.Printf("[Error] Metrics ship failed: %v", err)
-		return
 	}
-	debugLogInteraction("POST", postReq.URL.String(), status, jsonBody, respBody)
 }
 
 func loadOffset(path string) int64 {

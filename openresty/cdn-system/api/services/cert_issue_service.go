@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -45,7 +46,8 @@ func IssueCertsAsync(batchID int64, ids []int64) {
 func processUniqueIssueTask(batchID int64, certID int64) {
 	var task models.Task
 	var cert models.Cert
-	
+	log.Printf("[CertIssue] start batch=%d cert_id=%d", batchID, certID)
+
 	defer func() {
 		if r := recover(); r != nil {
 			errReason := fmt.Sprintf("Panic: %v", r)
@@ -69,11 +71,13 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 		CreateAt: time.Now(),
 	}
 	if err := db.DB.Create(&task).Error; err != nil {
+		log.Printf("[CertIssue] create task failed cert_id=%d err=%v", certID, err)
 		return
 	}
 
 	// 2. Associate with Cert
 	if err := db.DB.First(&cert, certID).Error; err != nil {
+		log.Printf("[CertIssue] cert not found cert_id=%d err=%v", certID, err)
 		failTask(&task, "Cert not found")
 		return
 	}
@@ -82,34 +86,65 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 		"task_id":       task.ID,
 		"state":         "issuing",
 	})
-	db.DB.Model(&task).Update("state", "running")
 
-	// 3. Issue
-	if err := issueCertLocal(cert); err != nil {
-		// handle retry or fail
-		// Simple fail for now as user asked for fail reason
-		failTask(&task, err.Error())
-		db.DB.Model(&cert).Update("state", "fail")
+	// 3. Issue with retry
+	started := false
+	for {
+		if err := db.DB.First(&cert, certID).Error; err != nil {
+			failTask(&task, "Cert not found")
+			return
+		}
+		if !started {
+			now := time.Now()
+			db.DB.Model(&task).Updates(map[string]interface{}{
+				"state":    "running",
+				"start_at": &now,
+			})
+			started = true
+		} else {
+			db.DB.Model(&task).Update("state", "running")
+		}
+
+		if err := issueCertLocal(cert); err != nil {
+			log.Printf("[CertIssue] issue failed cert_id=%d err=%v", certID, err)
+			if isFatalIssueError(err) {
+				failTask(&task, err.Error())
+				db.DB.Model(&models.Cert{ID: cert.ID}).Update("state", "fail")
+				return
+			}
+
+			delay := nextCertRetryDelay(task.ErrTimes)
+			retryAt := time.Now().Add(delay)
+			task.ErrTimes++
+			db.DB.Model(&task).Updates(map[string]interface{}{
+				"state":     "retrying",
+				"ret":       err.Error(),
+				"retry_at":  retryAt,
+				"err_times": task.ErrTimes,
+			})
+			time.Sleep(delay)
+			continue
+		}
+
+		// Success
+		completeTask(&task)
+		log.Printf("[CertIssue] success cert_id=%d", certID)
 		return
 	}
-
-	// 4. Success
-	completeTask(&task)
-	// UpdateIssuedCert already updates cert state (if I check it)
 }
 
 func failTask(task *models.Task, reason string) {
 	db.DB.Model(task).Updates(map[string]interface{}{
-		"state": "fail",
-		"ret":   reason,
+		"state":  "fail",
+		"ret":    reason,
 		"end_at": time.Now(),
 	})
 }
 
 func completeTask(task *models.Task) {
 	db.DB.Model(task).Updates(map[string]interface{}{
-		"state": "success",
-		"ret":   "",
+		"state":  "success",
+		"ret":    "",
 		"end_at": time.Now(),
 	})
 }
@@ -243,6 +278,7 @@ func createIssueTask(nodeID int64, payload IssueCertTaskPayload) error {
 	for _, item := range payload.Items {
 		_ = db.DB.Model(&models.Cert{}).Where("id = ?", item.CertID).Update("issue_task_id", task.ID).Error
 	}
+	TriggerDispatchPending()
 	return nil
 }
 
@@ -259,4 +295,21 @@ func loadAvailableNodes() ([]models.Node, error) {
 		filtered = append(filtered, node)
 	}
 	return filtered, nil
+}
+
+func nextCertRetryDelay(errTimes int) time.Duration {
+	delays := []int{5, 10, 20, 30, 60, 60, 60}
+	if errTimes < len(delays) {
+		return time.Duration(delays[errTimes]) * time.Minute
+	}
+	return 60 * time.Minute
+}
+
+func isFatalIssueError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(msg, "cert not found") ||
+		strings.Contains(msg, "domain is empty")
 }

@@ -17,11 +17,7 @@ import (
 
 // startConfigPull checks for config updates
 func startConfigPull() {
-	// Pull every minute or use HTTP Long-Polling / Websocket in production
-	ticker := time.NewTicker(60 * time.Second)
-	for range ticker.C {
-		_ = pullConfig()
-	}
+	log.Printf("[Info] Config pull disabled; waiting for WS dispatch")
 }
 
 func pullConfig() error {
@@ -36,39 +32,7 @@ func pullConfig() error {
 
 	if status == 200 {
 		debugLogInteraction("GET", req.URL.String(), status, nil, body)
-
-		newVersion := extractVersion(body)
-		currentVersion := readLocalVersion()
-		if newVersion != 0 && newVersion == currentVersion {
-			log.Printf("[Info] Config unchanged (version=%d). Skipping reload.", currentVersion)
-			return nil
-		}
-
-		if err := writeConfigWithBackup(body); err != nil {
-			log.Printf("[Error] Failed to write config file: %v", err)
-			return err
-		}
-
-		if err := generateDynamicConfigs(body); err != nil {
-			log.Printf("[Error] Failed to generate dynamic configs: %v", err)
-			return err
-		}
-
-		syncRuntimeLuaAssets()
-
-		log.Printf("[Info] Config Updated (version=%d, %d bytes). Reloading Nginx...", newVersion, len(body))
-		if err := executeReload(); err != nil {
-			log.Printf("[Error] Reload Nginx Failed: %v", err)
-			if restoreErr := restoreBackup(); restoreErr != nil {
-				log.Printf("[Error] Failed to restore backup: %v", restoreErr)
-				return fmt.Errorf("reload failed and restore failed: %v", restoreErr)
-			}
-			if retryErr := executeReload(); retryErr != nil {
-				log.Printf("[Error] Reload after rollback failed: %v", retryErr)
-				return fmt.Errorf("reload failed and rollback reload failed: %v", retryErr)
-			} else {
-				log.Println("[Warn] Rolled back to previous config")
-			}
+		if _, err := applyConfigPayload(body); err != nil {
 			return err
 		}
 		return nil
@@ -76,6 +40,46 @@ func pullConfig() error {
 
 	debugLogInteraction("GET", req.URL.String(), status, nil, nil)
 	return fmt.Errorf("config pull status: %d", status)
+}
+
+func applyConfigPayload(body []byte) (string, error) {
+	if len(body) == 0 {
+		return "", fmt.Errorf("empty config payload")
+	}
+	newVersion := extractVersion(body)
+	currentVersion := readLocalVersion()
+	if newVersion != 0 && newVersion == currentVersion {
+		log.Printf("[Info] Config unchanged (version=%d). Skipping reload.", currentVersion)
+		return "skipped", nil
+	}
+
+	if err := writeConfigWithBackup(body); err != nil {
+		log.Printf("[Error] Failed to write config file: %v", err)
+		return "", err
+	}
+
+	if err := generateDynamicConfigs(body); err != nil {
+		log.Printf("[Error] Failed to generate dynamic configs: %v", err)
+		return "", err
+	}
+
+	syncRuntimeLuaAssets()
+
+	log.Printf("[Info] Config Updated (version=%d, %d bytes). Reloading Nginx...", newVersion, len(body))
+	if err := executeReload(); err != nil {
+		log.Printf("[Error] Reload Nginx Failed: %v", err)
+		if restoreErr := restoreBackup(); restoreErr != nil {
+			log.Printf("[Error] Failed to restore backup: %v", restoreErr)
+			return "", fmt.Errorf("reload failed and restore failed: %v", restoreErr)
+		}
+		if retryErr := executeReload(); retryErr != nil {
+			log.Printf("[Error] Reload after rollback failed: %v", retryErr)
+			return "", fmt.Errorf("reload failed and rollback reload failed: %v", retryErr)
+		}
+		log.Println("[Warn] Rolled back to previous config")
+		return "", err
+	}
+	return "ok", nil
 }
 
 func extractVersion(body []byte) int64 {
@@ -242,6 +246,8 @@ type edgeConfig struct {
 	Upstreams     []edgeUpstream              `json:"upstreams"`
 	Streams       []edgeStream                `json:"streams"`
 	Nginx         *edgeNginxConfig            `json:"nginx"`
+	FallbackCertData string                   `json:"fallback_cert_data"`
+	FallbackKeyData  string                   `json:"fallback_key_data"`
 	WAF           *edgeWAFConfig              `json:"waf,omitempty"`
 	Resources     *edgeResources              `json:"resources,omitempty"`
 	ErrorPages    map[string]string           `json:"error_pages,omitempty"`
@@ -252,7 +258,8 @@ type edgeConfig struct {
 }
 
 type edgeWAFConfig struct {
-	Enable bool `json:"enable"`
+	Enable             bool `json:"enable"`
+	BlockUnboundDomain bool `json:"block_unbound_domain"`
 }
 
 type edgeResources struct {
@@ -335,6 +342,9 @@ func generateDynamicConfigs(payload []byte) error {
 		return err
 	}
 	if err := persistDefaultConfig(cfg.DefaultConfig); err != nil {
+		return err
+	}
+	if err := persistFallbackCert(cfg.FallbackCertData, cfg.FallbackKeyData); err != nil {
 		return err
 	}
 	if err := writeHTTPConfig(cfg); err != nil {
@@ -468,6 +478,25 @@ func persistDefaultConfig(cfg *edgeDefaultConfig) error {
 		return err
 	}
 	setLocalDefaultConfig(cfg)
+	return nil
+}
+
+func persistFallbackCert(certData, keyData string) error {
+	if strings.TrimSpace(certData) == "" || strings.TrimSpace(keyData) == "" {
+		return nil
+	}
+	certDir := filepath.Join(WorkDir, "cert")
+	if err := fsutil.EnsureDir(certDir); err != nil {
+		return err
+	}
+	certPath := filepath.Join(certDir, "fallback.pem")
+	keyPath := filepath.Join(certDir, "fallback.key")
+	if err := fsutil.WriteFileAtomic(certPath, []byte(certData), 0o644); err != nil {
+		return err
+	}
+	if err := fsutil.WriteFileAtomic(keyPath, []byte(keyData), 0o600); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -789,15 +818,26 @@ func writeHTTPConfig(cfg edgeConfig) error {
 		writeDomainServers(&b, domain, errorPages, errorPageDir, defaultListen80)
 	}
 
-	if shouldBindDefaultHTTP(cfg.Domains, defaultListen80) {
-		b.WriteString("server {\n")
-		b.WriteString("    listen 80 default_server;\n")
-		b.WriteString("    server_name _;\n")
-		writeErrorPageDirectives(&b, errorPages, errorPageDir)
-		b.WriteString("    location / {\n")
-		b.WriteString("        return 404;\n")
-		b.WriteString("    }\n")
-		b.WriteString("}\n")
+	blockUnbound := cfg.WAF != nil && cfg.WAF.BlockUnboundDomain
+	if blockUnbound {
+		blockedStatus := errorPageStatusForKey("ip")
+		if blockedStatus == 0 {
+			blockedStatus = 418
+		}
+
+		httpPorts := collectHTTPPorts(cfg.Domains, defaultListen80)
+		if shouldBindDefaultHTTP(cfg.Domains, defaultListen80) {
+			httpPorts = appendUniquePort(httpPorts, "80")
+		}
+		for _, port := range httpPorts {
+			writeDefaultHTTPServer(&b, port, errorPages, errorPageDir, blockedStatus)
+		}
+
+		for _, port := range collectHTTPSPorts(cfg.Domains) {
+			writeDefaultHTTPSServer(&b, port, errorPages, errorPageDir, blockedStatus)
+		}
+	} else if shouldBindDefaultHTTP(cfg.Domains, defaultListen80) {
+		writeDefaultHTTPServer(&b, "80", errorPages, errorPageDir, 404)
 	}
 
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
@@ -813,6 +853,92 @@ func shouldBindDefaultHTTP(domains []edgeDomain, defaultListen80 bool) bool {
 		}
 	}
 	return false
+}
+
+func collectHTTPPorts(domains []edgeDomain, defaultListen80 bool) []string {
+	ports := map[string]struct{}{}
+	if defaultListen80 {
+		ports["80"] = struct{}{}
+	}
+	for _, domain := range domains {
+		for _, port := range domain.HttpListen {
+			port = strings.TrimSpace(port)
+			if port != "" {
+				ports[port] = struct{}{}
+			}
+		}
+	}
+	return sortedPorts(ports)
+}
+
+func collectHTTPSPorts(domains []edgeDomain) []string {
+	ports := map[string]struct{}{}
+	for _, domain := range domains {
+		for _, port := range domain.HttpsListen {
+			port = strings.TrimSpace(port)
+			if port != "" {
+				ports[port] = struct{}{}
+			}
+		}
+	}
+	return sortedPorts(ports)
+}
+
+func sortedPorts(ports map[string]struct{}) []string {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ports))
+	for port := range ports {
+		out = append(out, port)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func appendUniquePort(ports []string, port string) []string {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return ports
+	}
+	for _, existing := range ports {
+		if existing == port {
+			return ports
+		}
+	}
+	return append(ports, port)
+}
+
+func writeDefaultHTTPServer(b *strings.Builder, port string, errorPages map[string]string, errorPageDir string, status int) {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return
+	}
+	b.WriteString("server {\n")
+	b.WriteString("    listen " + port + " default_server;\n")
+	b.WriteString("    server_name _;\n")
+	writeErrorPageDirectives(b, errorPages, errorPageDir)
+	b.WriteString("    location / {\n")
+	b.WriteString(fmt.Sprintf("        return %d;\n", status))
+	b.WriteString("    }\n")
+	b.WriteString("}\n")
+}
+
+func writeDefaultHTTPSServer(b *strings.Builder, port string, errorPages map[string]string, errorPageDir string, status int) {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return
+	}
+	b.WriteString("server {\n")
+	b.WriteString("    listen " + port + " ssl default_server;\n")
+	b.WriteString("    ssl_certificate cert/fallback.pem;\n")
+	b.WriteString("    ssl_certificate_key cert/fallback.key;\n")
+	b.WriteString("    server_name _;\n")
+	writeErrorPageDirectives(b, errorPages, errorPageDir)
+	b.WriteString("    location / {\n")
+	b.WriteString(fmt.Sprintf("        return %d;\n", status))
+	b.WriteString("    }\n")
+	b.WriteString("}\n")
 }
 
 func writeDomainServers(b *strings.Builder, domain edgeDomain, errorPages map[string]string, errorPageDir string, defaultListen80 bool) {
@@ -871,10 +997,9 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 	}
 	b.WriteString("server {\n")
 	if tls {
+		b.WriteString("    listen " + port + " ssl;\n")
 		if domain.HTTPSHTTP2 {
-			b.WriteString("    listen " + port + " ssl http2;\n")
-		} else {
-			b.WriteString("    listen " + port + " ssl;\n")
+			b.WriteString("    http2 on;\n")
 		}
 		b.WriteString("    ssl_certificate cert/fallback.pem;\n")
 		b.WriteString("    ssl_certificate_key cert/fallback.key;\n")
@@ -1338,9 +1463,16 @@ func writeMainConfig(cfg *edgeNginxConfig) error {
 	if v := strings.TrimSpace(cfg.WorkerShutdownTimeout); v != "" {
 		b.WriteString("worker_shutdown_timeout " + v + ";\n")
 	}
+	var pidPath string
 	if logs := strings.TrimSpace(cfg.LogsDir); logs != "" {
 		logs = strings.TrimRight(logs, "/")
+		pidPath = logs + "/nginx.pid"
 		b.WriteString("error_log " + logs + "/error.log warn;\n")
+	} else if WorkDir != "" {
+		pidPath = filepath.ToSlash(filepath.Join(WorkDir, "logs", "nginx.pid"))
+	}
+	if pidPath != "" {
+		b.WriteString("pid " + pidPath + ";\n")
 	}
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
 }

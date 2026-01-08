@@ -251,8 +251,8 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 		return
 	}
 
-	// Generate BatchID (int64 stored in PID)
-	batchID := time.Now().UnixNano()
+	// Generate BatchID (fits in int(11) pid)
+	batchID := time.Now().Unix()
 
 	now := time.Now()
 	var createdIDs []int64
@@ -309,7 +309,7 @@ func (ctrl *CertController) Reissue(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "acme_email is required"})
 		return
 	}
-	services.IssueCertsAsync(time.Now().UnixNano(), req.IDs)
+	services.IssueCertsAsync(time.Now().Unix(), req.IDs)
 	c.JSON(http.StatusOK, gin.H{"message": "Reissue submitted"})
 }
 

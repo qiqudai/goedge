@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"cdn-api/utils"
 	"encoding/json"
 	"errors"
@@ -188,7 +189,8 @@ func (ctr *UserController) Impersonate(c *gin.Context) {
 	if user.Type == 1 {
 		role = "admin"
 	}
-	token, err := utils.GenerateToken(user.ID, role)
+	tokenTTL := services.ResolveLoginSessionTTL()
+	token, err := utils.GenerateTokenWithExpiry(user.ID, role, tokenTTL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Failed to generate token"})
 		return
@@ -284,4 +286,3 @@ func (ctr *UserController) UpdateUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "User updated successfully"})
 }
-

@@ -7,6 +7,11 @@ const publicRoutes = [
     path: '/login',
     name: 'Login',
     component: () => import('../views/Login.vue')
+  },
+  {
+    path: '/maintenance',
+    name: 'Maintenance',
+    component: () => import('../views/Maintenance.vue')
   }
 ]
 
@@ -143,8 +148,9 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('admin_token')
   const role = localStorage.getItem('role') || 'user'
+  const publicPaths = ['/login', '/maintenance']
 
-  if (to.path !== '/login' && !token) {
+  if (!publicPaths.includes(to.path) && !token) {
     next('/login')
   } else {
     if (to.meta && to.meta.roles) {

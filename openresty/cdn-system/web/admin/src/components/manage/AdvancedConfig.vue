@@ -1,5 +1,5 @@
 <template>
-  <div class="advanced-config">
+  <div class="advanced-config" @focusin="cacheInputValue">
     <el-form label-width="150px" class="config-form">
       <div class="section-title">上传大小限制</div>
       <el-form-item label="大小限制">
@@ -13,8 +13,7 @@
             v-model="advancedSettings.uploadLimitValue" 
             style="width: 150px" 
             placeholder="100"
-            @change="handleSave"
-          >
+           @blur="handleBlurSave">
             <template #append>MB</template>
           </el-input>
         </div>
@@ -40,7 +39,7 @@
         <el-switch v-model="advancedSettings.searchEngineOrigin" @change="handleSave" />
       </el-form-item>
       <el-form-item label="回源IP" v-if="advancedSettings.searchEngineOrigin">
-        <el-input v-model="advancedSettings.searchEngineOriginIp" placeholder="请输入源IP" style="width: 200px;" @change="handleSave" />
+        <el-input v-model="advancedSettings.searchEngineOriginIp" placeholder="请输入源IP" style="width: 200px;"  @blur="handleBlurSave" />
         <div class="form-helper" style="color: #F56C6C;">谨慎使用，有泄露源IP的风险!</div>
       </el-form-item>
 
@@ -108,7 +107,7 @@
         <div class="form-helper">建议只在调试时开启，始终开启对节点性能消耗较大</div>
       </el-form-item>
       <el-form-item label="请求体大小限制">
-        <el-input v-model="advancedSettings.logRequestBodySizeLimit" placeholder="16" style="width: 200px;" @change="handleSave">
+        <el-input v-model="advancedSettings.logRequestBodySizeLimit" placeholder="16" style="width: 200px;" @blur="handleBlurSave">
           <template #append>KB</template>
         </el-input>
       </el-form-item>
@@ -164,11 +163,19 @@
 import { ref, watch } from 'vue'
 import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const { saveSettings } = useSiteSettings()
 
 const handleSave = () => {
   saveSettings(true)
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+    return
+  }
+  handleSave()
 }
 
 const props = defineProps({

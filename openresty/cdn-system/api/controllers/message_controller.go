@@ -199,6 +199,64 @@ func (ctr *MessageController) UserList(c *gin.Context) {
 	})
 }
 
+// UserUnread
+// GET /api/v1/user/messages/unread
+func (ctr *MessageController) UserUnread(c *gin.Context) {
+	userIDAny, _ := c.Get("userID")
+	userID, _ := userIDAny.(int64)
+	if userID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Invalid user"})
+		return
+	}
+
+	var total int64
+	baseQuery := db.DB.Table("message as m").
+		Joins("left join message_read r on r.msg_id = m.id and r.uid = ?", userID).
+		Where("m.receive = ? AND r.msg_id IS NULL", userID)
+	if err := baseQuery.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
+		return
+	}
+
+	var latest messageRow
+	if total > 0 {
+		var msg struct {
+			ID        int64     `gorm:"column:id"`
+			Type      string    `gorm:"column:type"`
+			Title     string    `gorm:"column:title"`
+			Content   string    `gorm:"column:content"`
+			Phone     string    `gorm:"column:phone_content"`
+			SiteID    int64     `gorm:"column:site_id"`
+			CreatedAt time.Time `gorm:"column:create_at"`
+		}
+		latestQuery := db.DB.Table("message as m").
+			Joins("left join message_read r on r.msg_id = m.id and r.uid = ?", userID).
+			Where("m.receive = ? AND r.msg_id IS NULL", userID)
+		if err := latestQuery.Select("m.id, m.type, m.title, m.content, m.phone_content, m.site_id, m.create_at").
+			Order("m.id desc").Limit(1).Scan(&msg).Error; err == nil && msg.ID > 0 {
+			latest = messageRow{
+				ID:        msg.ID,
+				Type:      msg.Type,
+				TypeLabel: typeLabel(msg.Type),
+				Title:     msg.Title,
+				Content:   msg.Content,
+				Phone:     msg.Phone,
+				SiteID:    msg.SiteID,
+				CreatedAt: msg.CreatedAt.Format("2006-01-02 15:04:05"),
+				IsRead:    false,
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"count":  total,
+			"latest": latest,
+		},
+	})
+}
+
 // MarkRead
 // POST /api/v1/user/messages/:id/read
 func (ctr *MessageController) MarkRead(c *gin.Context) {

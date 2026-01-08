@@ -38,6 +38,7 @@
 import { ref, onMounted, reactive, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const loading = ref(false)
 const activeCode = ref('403')
@@ -78,28 +79,6 @@ const loadConfig = () => {
 
 const saving = ref(false)
 let saveQueued = false
-
-const cacheInputValue = (event) => {
-  const el = event?.target
-  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
-    return
-  }
-  el.dataset.lastValue = el.value ?? ''
-}
-
-const shouldSkipBlurSave = (event) => {
-  const el = event?.target
-  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
-    return false
-  }
-  const value = el.value ?? ''
-  const lastValue = el.dataset.lastValue ?? ''
-  if (value === '' || value === lastValue) {
-    return true
-  }
-  el.dataset.lastValue = value
-  return false
-}
 
 const saveConfig = async (event) => {
   if (shouldSkipBlurSave(event)) {

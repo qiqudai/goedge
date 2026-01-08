@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"cdn-api/utils"
 	"errors"
 	"fmt"
@@ -66,19 +67,26 @@ func (ctr *AuthController) Login(c *gin.Context) {
 		return
 	}
 
-	if !verifyPassword(user.Password, req.Password) {
-		writeLoginLog(c, user.ID, false, "password mismatch")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials (password mismatch)"})
-		return
-	}
-
 	// Map Type to Role (1=Admin, others=User)
 	role := "user"
 	if user.Type == 1 {
 		role = "admin"
 	}
 
-	token, err := utils.GenerateToken(user.ID, role)
+	if !isLoginHostAllowed(c, role) {
+		writeLoginLog(c, 0, false, "login host not allowed")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials (user not found)"})
+		return
+	}
+
+	if !verifyPassword(user.Password, req.Password) {
+		writeLoginLog(c, user.ID, false, "password mismatch")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials (password mismatch)"})
+		return
+	}
+
+	tokenTTL := services.ResolveLoginSessionTTL()
+	token, err := utils.GenerateTokenWithExpiry(user.ID, role, tokenTTL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
@@ -98,4 +106,82 @@ func verifyPassword(stored, provided string) bool {
 		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(provided)) == nil
 	}
 	return stored == provided
+}
+
+func isLoginHostAllowed(c *gin.Context, role string) bool {
+	cfg, err := services.LoadSystemConfig()
+	if err != nil {
+		return true
+	}
+	host := resolveRequestHost(c)
+	if host == "" {
+		return true
+	}
+
+	bindHosts := services.SplitHostList(cfg["bind-master-host"])
+	var limitValue string
+	if role == "admin" {
+		limitValue = strings.TrimSpace(cfg["limit_admin_login_domain"])
+	} else {
+		limitValue = strings.TrimSpace(cfg["limit_user_login_domain"])
+	}
+	return hostAllowedByLimit(host, limitValue, bindHosts)
+}
+
+func resolveRequestHost(c *gin.Context) string {
+	host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host"))
+	if host == "" {
+		host = c.Request.Host
+	}
+	if strings.Contains(host, ",") {
+		host = strings.TrimSpace(strings.Split(host, ",")[0])
+	}
+	return services.NormalizeHost(host)
+}
+
+func hostAllowedByLimit(host string, limitValue string, bindHosts []string) bool {
+	if limitValue == "" {
+		return true
+	}
+	host = services.NormalizeHost(host)
+	if host == "" {
+		return true
+	}
+	limits := services.SplitHostList(limitValue)
+	if len(limits) == 0 {
+		return true
+	}
+	hasDot := false
+	for _, item := range limits {
+		if strings.Contains(item, ".") {
+			hasDot = true
+			break
+		}
+	}
+	if hasDot {
+		for _, item := range limits {
+			if host == item {
+				return true
+			}
+		}
+		return false
+	}
+	if len(bindHosts) == 0 {
+		return true
+	}
+	for _, prefix := range limits {
+		prefix = strings.TrimSuffix(prefix, ".")
+		if prefix == "" {
+			continue
+		}
+		for _, base := range bindHosts {
+			if base == "" {
+				continue
+			}
+			if host == prefix+"."+base {
+				return true
+			}
+		}
+	}
+	return false
 }

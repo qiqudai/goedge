@@ -1,69 +1,78 @@
 <template>
-  <el-form label-width="160px">
+  <el-form label-width="160px" @focusin="cacheInputValue">
     <el-card shadow="never" class="mb-20">
       <template #header>用户相关</template>
       <el-form-item label="Session有效时间">
-        <el-input v-model.number="form.session_life" @blur="save"><template #append>秒</template></el-input>
+        <el-input v-model.number="form.session_life" @blur="handleBlurSave"><template #append>秒</template></el-input>
       </el-form-item>
-      <el-form-item label="限制普通用户登录域名">
-        <el-switch v-model="form.limit_user_login_domain" @change="save" />
-        <div class="form-helper">开启后，普通用户只能通过绑定的域名登录</div>
+            <el-form-item label="????????????????>
+        <el-input
+          v-model="form.limit_user_login_domain"
+          placeholder="?? user ? user.example.com"
+          @blur="handleBlurSave"
+        />
+        <div class="form-helper">???????????????????????????????????bind-master-host???</div>
       </el-form-item>
-      <el-form-item label="限制管理员登录域名">
-        <el-switch v-model="form.limit_admin_login_domain" @change="save" />
-        <div class="form-helper">开启后，管理员只能通过绑定的域名登录</div>
+            <el-form-item label="??????????????>
+        <el-input
+          v-model="form.limit_admin_login_domain"
+          placeholder="?? admin.example.com"
+          @blur="handleBlurSave"
+        />
+        <div class="form-helper">???????????????????????????????????bind-master-host???</div>
       </el-form-item>
 
       <el-divider>登录方式</el-divider>
       <el-form-item label="启用邮箱登录">
-        <el-switch v-model="form.enable_email_login" @change="save" />
+        <el-switch v-model="form.enable_email_login" @change="handleSave" />
       </el-form-item>
       <el-form-item label="启用短信登录">
-        <el-switch v-model="form.enable_sms_login" @change="save" />
+        <el-switch v-model="form.enable_sms_login" @change="handleSave" />
       </el-form-item>
 
       <el-divider>注册设置</el-divider>
       <el-form-item label="开放注册">
-        <el-switch v-model="form.open_register" @change="save" />
+        <el-switch v-model="form.open_register" @change="handleSave" />
       </el-form-item>
 
       <el-divider>邮件模板</el-divider>
       <el-form-item label="注册成功标题">
-        <el-input v-model="form.register_mail_title" @blur="save" />
+        <el-input v-model="form.register_mail_title" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="注册成功内容">
-        <el-input type="textarea" v-model="form.register_mail_content" :rows="4" @blur="save" />
+        <el-input type="textarea" v-model="form.register_mail_content" :rows="4" @blur="handleBlurSave" />
       </el-form-item>
 
       <el-form-item label="找回密码标题">
-        <el-input v-model="form.reset_pwd_mail_title" @blur="save" />
+        <el-input v-model="form.reset_pwd_mail_title" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="找回密码内容">
-        <el-input type="textarea" v-model="form.reset_pwd_mail_content" :rows="4" @blur="save" />
+        <el-input type="textarea" v-model="form.reset_pwd_mail_content" :rows="4" @blur="handleBlurSave" />
       </el-form-item>
 
       <el-form-item label="邮箱验证标题">
-        <el-input v-model="form.verify_mail_title" @blur="save" />
+        <el-input v-model="form.verify_mail_title" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="邮箱验证内容">
-        <el-input type="textarea" v-model="form.verify_mail_content" :rows="4" @blur="save" />
+        <el-input type="textarea" v-model="form.verify_mail_content" :rows="4" @blur="handleBlurSave" />
       </el-form-item>
 
       <el-divider>短信模板</el-divider>
       <el-form-item label="验证码模板ID">
-        <el-input v-model="form.phone_captcha_templ_id" @blur="save" placeholder="如: SMS_123456789" />
+        <el-input v-model="form.phone_captcha_templ_id" @blur="handleBlurSave" placeholder="如: SMS_123456789" />
       </el-form-item>
       <el-form-item label="验证码模板内容">
-        <el-input type="textarea" v-model="form.phone_captcha_templ" :rows="3" @blur="save" placeholder="您的验证码是${code}，5分钟内有效。" />
+        <el-input type="textarea" v-model="form.phone_captcha_templ" :rows="3" @blur="handleBlurSave" placeholder="您的验证码是${code}，5分钟内有效。" />
       </el-form-item>
     </el-card>
   </el-form>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   configItems: {
@@ -76,8 +85,8 @@ const emit = defineEmits(['saved'])
 
 const form = ref({
   session_life: 86400,
-  limit_user_login_domain: false,
-  limit_admin_login_domain: false,
+  limit_user_login_domain: '',
+  limit_admin_login_domain: '',
   enable_email_login: false,
   enable_sms_login: false,
   open_register: true,
@@ -110,10 +119,10 @@ watch(() => props.configItems, (items) => {
         form.value.session_life = parseInt(val) || 86400
         break
       case 'limit_user_login_domain':
-        form.value.limit_user_login_domain = val === '1' || val === 'true'
+        form.value.limit_user_login_domain = normalizeDomainValue(val)
         break
       case 'limit_admin_login_domain':
-        form.value.limit_admin_login_domain = val === '1' || val === 'true'
+        form.value.limit_admin_login_domain = normalizeDomainValue(val)
         break
       case 'allow-enable-email-captcha-login':
         form.value.enable_email_login = val === '1' || val === 'true'
@@ -159,8 +168,8 @@ const save = () => {
   const items = []
   
   items.push({ name: 'login_session_valid_time', value: String(form.value.session_life) })
-  items.push({ name: 'limit_user_login_domain', value: form.value.limit_user_login_domain ? '1' : '0' })
-  items.push({ name: 'limit_admin_login_domain', value: form.value.limit_admin_login_domain ? '1' : '0' })
+  items.push({ name: 'limit_user_login_domain', value: String(form.value.limit_user_login_domain || '') })
+  items.push({ name: 'limit_admin_login_domain', value: String(form.value.limit_admin_login_domain || '') })
   items.push({ name: 'allow-enable-email-captcha-login', value: form.value.enable_email_login ? '1' : '0' })
   items.push({ name: 'allow-enable-sms-captcha-login', value: form.value.enable_sms_login ? '1' : '0' })
   items.push({ name: 'allow_register', value: form.value.open_register ? '1' : '0' })
@@ -193,7 +202,7 @@ const save = () => {
       value: form.value.phone_captcha_templ
   })
 
-  request.post('/config_items', {
+  return request.post('/config_items', {
     type: 'system',
     scope_name: 'global',
     items: items
@@ -201,6 +210,44 @@ const save = () => {
     ElMessage.success('保存成功')
     emit('saved')
   })
+}
+
+const normalizeDomainValue = (value) => {
+  const raw = String(value || '').trim()
+  if (['0', '1', 'true', 'false'].includes(raw)) {
+    return ''
+  }
+  return raw
+}
+
+const saving = ref(false)
+let saveQueued = false
+
+const queueSave = async () => {
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
+  save().finally(() => {
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      queueSave()
+    }
+  })
+}
+
+const handleSave = () => {
+  queueSave()
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  queueSave()
 }
 </script>
 

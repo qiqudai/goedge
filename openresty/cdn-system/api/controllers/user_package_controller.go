@@ -343,6 +343,33 @@ func (ctr *UserPackageController) SwitchUserPackage(c *gin.Context) {
 		return
 	}
 
+	currentPkg := (*models.Package)(nil)
+	if pack.PackageID > 0 {
+		var existing models.Package
+		if err := db.DB.Where("id = ?", pack.PackageID).First(&existing).Error; err == nil {
+			currentPkg = &existing
+		}
+	}
+	changeType := classifyPackageChange(pack, currentPkg, pkg)
+	allowUpgrade := true
+	allowDowngrade := true
+	if cfg, err := services.LoadSystemConfig(); err == nil {
+		if val, ok := cfg["package_allow_upgrade"]; ok {
+			allowUpgrade = services.ParseBoolFlag(val)
+		}
+		if val, ok := cfg["package_allow_downgrade"]; ok {
+			allowDowngrade = services.ParseBoolFlag(val)
+		}
+	}
+	if changeType == "upgrade" && !allowUpgrade {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "Upgrade is disabled"})
+		return
+	}
+	if changeType == "downgrade" && !allowDowngrade {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "Downgrade is disabled"})
+		return
+	}
+
 	updates := map[string]interface{}{
 		"name":              pkg.Name,
 		"package":           pkg.ID,
@@ -447,4 +474,84 @@ func parseIntValue(val string) int {
 		return i
 	}
 	return 0
+}
+
+func classifyPackageChange(current models.UserPackage, currentPkg *models.Package, target models.Package) string {
+	currentScore := 0.0
+	if currentPkg != nil {
+		currentScore = packageScore(*currentPkg)
+	} else {
+		currentScore = userPackageScore(current)
+	}
+	targetScore := packageScore(target)
+	return comparePackageScore(currentScore, targetScore)
+}
+
+func comparePackageScore(current, target float64) string {
+	const epsilon = 0.0001
+	if target > current+epsilon {
+		return "upgrade"
+	}
+	if target < current-epsilon {
+		return "downgrade"
+	}
+	return "same"
+}
+
+func packageScore(pkg models.Package) float64 {
+	price := normalizedPrice(pkg.MonthPrice, pkg.QuarterPrice, pkg.YearPrice)
+	if price > 0 {
+		return float64(price)
+	}
+	return resourceScore(pkg.Traffic, pkg.Bandwidth, pkg.Connection, pkg.DomainLimit)
+}
+
+func userPackageScore(pkg models.UserPackage) float64 {
+	price := normalizedPrice(pkg.MonthPrice, pkg.QuarterPrice, pkg.YearPrice)
+	if price > 0 {
+		return float64(price)
+	}
+	return resourceScore(int64(pkg.Traffic), pkg.Bandwidth, int64(pkg.Connection), int64(pkg.DomainLimit))
+}
+
+func normalizedPrice(month, quarter, year int64) int64 {
+	if month > 0 {
+		return month
+	}
+	if quarter > 0 {
+		return quarter / 3
+	}
+	if year > 0 {
+		return year / 12
+	}
+	return 0
+}
+
+func resourceScore(traffic int64, bandwidth string, connection int64, domain int64) float64 {
+	score := float64(traffic) + float64(connection) + float64(domain)
+	score += parseBandwidthMbps(bandwidth)
+	return score
+}
+
+func parseBandwidthMbps(raw string) float64 {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" || value == "0" || value == "unlimited" || value == "unlimit" {
+		return 0
+	}
+	multiplier := 1.0
+	switch {
+	case strings.HasSuffix(value, "g"):
+		multiplier = 1024
+		value = strings.TrimSuffix(value, "g")
+	case strings.HasSuffix(value, "m"):
+		value = strings.TrimSuffix(value, "m")
+	case strings.HasSuffix(value, "k"):
+		multiplier = 1.0 / 1024
+		value = strings.TrimSuffix(value, "k")
+	}
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0
+	}
+	return parsed * multiplier
 }

@@ -1,33 +1,31 @@
 <template>
-  <el-form label-width="120px">
+  <el-form label-width="120px" @focusin="cacheInputValue">
     <el-card shadow="never" class="mb-20">
       <template #header>维护升级</template>
       <el-form-item label="系统维护模式">
-        <el-switch v-model="maintain.enable" :active-value="1" :inactive-value="0" />
+        <el-switch v-model="maintain.enable" :active-value="1" :inactive-value="0" @change="handleSave" />
         <div class="form-helper">开启后，用户访问将显示维护页面</div>
       </el-form-item>
       <el-form-item label="维护公告">
-        <el-input v-model="maintain.msg" placeholder="系统维护中，请稍后重试..." />
+        <el-input v-model="maintain.msg" placeholder="系统维护中，请稍后重试..." @blur="handleBlurSave" />
       </el-form-item>
       
       <el-divider />
       
       <el-form-item label="Agent自动升级">
-        <el-switch v-model="autoUpgradeAgent" active-value="1" inactive-value="0" />
+        <el-switch v-model="autoUpgradeAgent" active-value="1" inactive-value="0" @change="handleSave" />
         <div class="form-helper">开启后，节点Agent将尝试自动升级到最新版本</div>
       </el-form-item>
 
-      <el-form-item>
-        <el-button type="primary" @click="save">保存</el-button>
-      </el-form-item>
     </el-card>
   </el-form>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   configItems: {
@@ -78,13 +76,43 @@ const save = () => {
     value: autoUpgradeAgent.value
   })
 
-  request.post('/config_items', {
+  return request.post('/config_items', {
     type: 'system',
     scope_name: 'global',
     items: items
   }).then(() => {
     ElMessage.success('保存成功')
   })
+}
+
+const saving = ref(false)
+let saveQueued = false
+
+const queueSave = async () => {
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
+  save().finally(() => {
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      queueSave()
+    }
+  })
+}
+
+const handleSave = () => {
+  queueSave()
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  queueSave()
 }
 </script>
 

@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -94,6 +95,7 @@ func (c *TaskController) Create(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to create task"})
 		return
 	}
+	services.TriggerDispatchPending()
 
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
 }
@@ -192,6 +194,7 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to create task"})
 		return
 	}
+	services.TriggerDispatchPending()
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "msg": "Success"})
 }
 
@@ -276,6 +279,53 @@ func (c *TaskController) List(ctx *gin.Context) {
 		"list":  list,
 		"total": total,
 		"page":  page,
+	})
+}
+
+// Get returns a single task with progress/log details (admin or the task owner).
+func (c *TaskController) Get(ctx *gin.Context) {
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "Invalid id"})
+		return
+	}
+
+	var task models.Task
+	if err := db.DB.Where("id = ?", id).First(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"code": 1, "msg": "Task not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": "Failed to load task"})
+		return
+	}
+
+	if isTaskUserRequest(ctx) {
+		userID := parseTaskUserIDAny(taskMustGet(ctx, "userID"))
+		meta := parseTaskMeta(task.Res)
+		if userID == 0 || meta.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "Forbidden"})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"id":        task.ID,
+			"pid":       task.PID,
+			"pry":       task.Pry,
+			"name":      task.Name,
+			"type":      task.Type,
+			"depend":    task.Depend,
+			"create_at": task.CreateAt,
+			"start_at":  task.StartAt,
+			"end_at":    task.EndAt,
+			"state":     task.State,
+			"err_times": task.ErrTimes,
+			"progress":  task.Progress,
+			"ret":       task.Ret,
+		},
 	})
 }
 

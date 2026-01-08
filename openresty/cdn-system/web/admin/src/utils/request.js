@@ -10,6 +10,14 @@ const service = axios.create({
 
 const { showLoading, hideLoading } = useLoading()
 
+const redirectToMaintenance = payload => {
+  const message = payload?.msg || payload?.data?.message || '系统维护中'
+  localStorage.setItem('maintenance_msg', message)
+  if (window.location.pathname !== '/maintenance') {
+    window.location.href = '/maintenance'
+  }
+}
+
 // Request interceptor
 service.interceptors.request.use(
   config => {
@@ -42,6 +50,10 @@ service.interceptors.response.use(
       hideLoading()
     }
     const res = response.data
+    if (res?.maintenance) {
+      redirectToMaintenance(res)
+      return Promise.reject(new Error(res.msg || 'maintenance'))
+    }
     // If backend returns code, check it (assuming 0 is success)
     if (res.code !== undefined && res.code !== 0) {
       ElMessage({
@@ -57,6 +69,10 @@ service.interceptors.response.use(
   error => {
     if (!error.config?.skipLoading) {
       hideLoading()
+    }
+    if (error.response && error.response.status === 503 && error.response.data?.maintenance) {
+      redirectToMaintenance(error.response.data)
+      return Promise.reject(new Error(error.response.data?.msg || 'maintenance'))
     }
     if (error.response && error.response.status === 401) {
       ElMessage({

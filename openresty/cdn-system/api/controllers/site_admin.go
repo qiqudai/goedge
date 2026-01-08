@@ -484,6 +484,28 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		return
 	}
 
+	if req.CnameDomain != nil {
+		if err := ensureCnameTable(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to init cname table"})
+			return
+		}
+		normalized := normalizeDomainInput(*req.CnameDomain)
+		if normalized == "" || !isValidDomain(normalized) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cname_domain"})
+			return
+		}
+		var cd models.CnameDomain
+		if err := db.DB.Where("domain = ?", normalized).First(&cd).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cname_domain not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate cname_domain"})
+			return
+		}
+		req.CnameDomain = &normalized
+	}
+
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
 		if req.UserPackageID != nil {
@@ -640,7 +662,8 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 		return
 	}
 
-	switch strings.ToLower(req.Action) {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	switch action {
 	case "enable":
 		if err := db.DB.Model(&models.Site{}).Where("id IN ?", req.IDs).Updates(map[string]interface{}{
 			"enable": true,
@@ -668,14 +691,40 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Delete failed"})
 			return
 		}
-	case "unlock", "clear_cache":
+	case "unlock":
 		// No-op for now; placeholder to keep UI consistent
+	case "clear_cache":
+		// Create a cache clear task that will be pulled by all agents.
+		now := time.Now()
+		payload := map[string]interface{}{
+			"action":   "clear_cache",
+			"site_ids": req.IDs,
+		}
+		raw, _ := json.Marshal(payload)
+		task := models.Task{
+			Type:     "clear_cache",
+			Name:     "清空缓存",
+			Data:     string(raw),
+			State:    "waiting",
+			Enable:   true,
+			CreateAt: now,
+			RetryAt:  &now,
+		}
+		if err := db.DB.Create(&task).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Create task failed"})
+			return
+		}
+		services.TriggerDispatchPending()
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"task_id": task.ID}})
+		return
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown action"})
 		return
 	}
 
-	services.BumpConfigVersion("site", req.IDs)
+	if action != "unlock" {
+		services.BumpConfigVersion("site", req.IDs)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Action completed"})
 }
@@ -696,24 +745,139 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 
 	var sites []models.Site
 	if err := db.DB.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load sites"})
+		return
+	}
+	if len(sites) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
 		return
 	}
 
-	for i := range sites {
-		if len(sites[i].HttpsListen) == 0 {
-			sites[i].HttpsListen = []string{"443"}
-		}
-		sites[i].UpdatedAt = time.Now()
-		if err := db.DB.Save(&sites[i]).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Update failed"})
+	createdIDs := make([]int64, 0, len(sites))
+	for _, site := range sites {
+		if len(site.Domains) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "site domains are empty"})
 			return
 		}
+		if err := ensureNoExistingCert(site.UserID, site.Domains); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		certType, dnsapi := resolveCertDefaults(site.UserID)
+		cert := models.Cert{
+			UserID:      int(site.UserID),
+			Name:        defaultCertName(site.Domains[0]),
+			Description: fmt.Sprintf("site_id:%d", site.ID),
+			Type:        certType,
+			Domain:      strings.Join(site.Domains, ","),
+			DNSAPI:      dnsapi,
+			AutoRenew:   true,
+			Enable:      false,
+			State:       "issuing",
+			CreateAt:    time.Now(),
+			UpdateAt:    time.Now(),
+		}
+
+		if err := db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Select(
+				"UserID",
+				"Name",
+				"Description",
+				"Type",
+				"Domain",
+				"DNSAPI",
+				"Cert",
+				"Key",
+				"StartTime",
+				"ExpireTime",
+				"AutoRenew",
+				"CreateAt",
+				"UpdateAt",
+				"Enable",
+				"State",
+				"Version",
+			).Create(&cert).Error; err != nil {
+				return err
+			}
+			now := time.Now()
+			if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("update_at", now).Error; err != nil {
+				return err
+			}
+			if len(site.HttpsListen) == 0 && strings.TrimSpace(site.HttpsListenRaw) == "" {
+				if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).
+					Update("https_listen", encodeList([]string{"443"})).Error; err != nil {
+					return err
+				}
+			}
+			if tx.Migrator().HasColumn(&models.Site{}, "cert_id") {
+				if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("cert_id", cert.ID).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create cert: " + err.Error()})
+			return
+		}
+
+		createdIDs = append(createdIDs, int64(cert.ID))
 	}
 
 	services.BumpConfigVersion("site", req.IDs)
+	services.BumpConfigVersion("cert", createdIDs)
+	services.IssueCertsAsync(time.Now().Unix(), createdIDs)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Certificate apply queued"})
+}
+
+func ensureNoExistingCert(userID int64, domains []string) error {
+	if len(domains) == 0 {
+		return errors.New("domain is required")
+	}
+	for _, domain := range domains {
+		domain = strings.TrimSpace(domain)
+		if domain == "" {
+			continue
+		}
+		if exists, err := certExistsForDomain(userID, domain); err != nil {
+			return err
+		} else if exists {
+			return fmt.Errorf("certificate already exists for domain %s", domain)
+		}
+	}
+	return nil
+}
+
+func certExistsForDomain(userID int64, domain string) (bool, error) {
+	var cert models.Cert
+	patterns := []string{
+		domain,
+		domain + ",%",
+		"%," + domain,
+		"%," + domain + ",%",
+	}
+	query := db.DB.Where("uid = ?", userID).
+		Where("(domain = ? OR domain LIKE ? OR domain LIKE ? OR domain LIKE ?)", patterns[0], patterns[1], patterns[2], patterns[3])
+	if err := query.First(&cert).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func resolveCertDefaults(userID int64) (string, int) {
+	if userID != 0 {
+		if settings, err := loadCertDefaultSettings("system", "user", int(userID)); err == nil && settings != nil {
+			return normalizeCertType(settings.Type), settings.DNSAPI
+		}
+	}
+	if settings, err := loadCertDefaultSettings("system", "global", 0); err == nil && settings != nil {
+		return normalizeCertType(settings.Type), settings.DNSAPI
+	}
+	return "letsencrypt", 0
 }
 
 // AdminExport exports list as CSV

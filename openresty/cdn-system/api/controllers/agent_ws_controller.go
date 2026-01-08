@@ -24,6 +24,7 @@ type AgentWSController struct {
 }
 
 func NewAgentWSController() *AgentWSController {
+	initDispatchLoop()
 	return &AgentWSController{
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -37,10 +38,12 @@ func NewAgentWSController() *AgentWSController {
 
 // Global Connection Manager
 var (
-	agentConns = make(map[int64]*websocket.Conn)
-	agentMutex sync.RWMutex
-	ackWaiters = make(map[string]chan JobAckMsg)
-	ackMutex   sync.Mutex
+	agentConns     = make(map[int64]*websocket.Conn)
+	agentMutex     sync.RWMutex
+	ackWaiters     = make(map[string]chan JobAckMsg)
+	ackMutex       sync.Mutex
+	dispatchOnce   sync.Once
+	dispatchSignal = make(chan struct{}, 1)
 )
 
 // Message Types
@@ -52,6 +55,13 @@ const (
 	MsgHeartbeatAck = "heartbeat_ack"
 	MsgNodeSync     = "node_sync"
 	MsgNodeSyncAck  = "node_sync_ack"
+	MsgLogsAccess   = "agent_logs_access"
+	MsgLogsMetrics  = "agent_logs_metrics"
+	MsgLogsEvents   = "agent_logs_events"
+	MsgL2NodesReq   = "l2_nodes_request"
+	MsgL2NodesResp  = "l2_nodes_response"
+	MsgL2Heartbeat  = "l2_heartbeat"
+	MsgCertIssued   = "cert_issued"
 )
 
 // Payloads
@@ -117,6 +127,69 @@ type JobAckMsg struct {
 	Status  string          `json:"status"` // success, fail, ignored
 	Applied json.RawMessage `json:"applied"`
 	Error   string          `json:"error"`
+	Ret     string          `json:"ret,omitempty"`
+}
+
+type AccessLogsMsg struct {
+	Kind   string   `json:"kind"`
+	NodeID string   `json:"node_id"`
+	NodeIP string   `json:"node_ip"`
+	Lines  []string `json:"lines"`
+	MsgID  string   `json:"msg_id,omitempty"`
+}
+
+type MetricsMsg struct {
+	Kind    string `json:"kind"`
+	NodeID  string `json:"node_id"`
+	NodeIP  string `json:"node_ip"`
+	Content string `json:"content"`
+	MsgID   string `json:"msg_id,omitempty"`
+}
+
+type EventsMsg struct {
+	Kind     string   `json:"kind"`
+	NodeID   string   `json:"node_id"`
+	NodeIP   string   `json:"node_ip"`
+	Type     string   `json:"type"`
+	Payloads []string `json:"payloads"`
+	MsgID    string   `json:"msg_id,omitempty"`
+}
+
+type l2NodeInfo struct {
+	ID            int64  `json:"id"`
+	IP            string `json:"ip"`
+	Port          int    `json:"port"`
+	CheckProtocol string `json:"check_protocol"`
+	CheckPort     int    `json:"check_port"`
+	CheckHost     string `json:"check_host"`
+	CheckPath     string `json:"check_path"`
+	CheckTimeout  int    `json:"check_timeout"`
+}
+
+type L2NodesRequestMsg struct {
+	Kind  string `json:"kind"`
+	MsgID string `json:"msg_id"`
+}
+
+type L2NodesResponseMsg struct {
+	Kind  string       `json:"kind"`
+	MsgID string       `json:"msg_id"`
+	Nodes []l2NodeInfo `json:"nodes"`
+}
+
+type L2HeartbeatMsg struct {
+	Kind  string  `json:"kind"`
+	Nodes []int64 `json:"nodes"`
+}
+
+type CertIssuedMsg struct {
+	Kind         string `json:"kind"`
+	CertID       int64  `json:"cert_id"`
+	CertPEM      string `json:"cert"`
+	KeyPEM       string `json:"key"`
+	IssueTaskID  int64  `json:"issue_task_id"`
+	RateLimited  bool   `json:"rate_limited"`
+	RateCooldown int    `json:"rate_cooldown"`
 }
 
 type WSDispatchRequest struct {
@@ -179,6 +252,9 @@ func (c *AgentWSController) HandleWS(ctx *gin.Context) {
 			// Register
 			c.registerConn(nodeID, conn)
 			log.Printf("[WS] Node %d connected (ver: %s)", nodeID, hello.AgentVersion)
+			if strings.TrimSpace(hello.AgentVersion) != "" {
+				_ = services.UpsertNodeConfigItem(nodeID, "agent_version", strings.TrimSpace(hello.AgentVersion))
+			}
 
 			// Agent is persistent client.
 			conn.SetReadDeadline(time.Time{})
@@ -211,6 +287,18 @@ func (c *AgentWSController) HandleWS(ctx *gin.Context) {
 			c.handleHeartbeat(nodeID, conn, msg)
 		case MsgNodeSync:
 			c.handleNodeSync(nodeID, msg)
+		case MsgLogsAccess:
+			c.handleAccessLogs(nodeID, msg)
+		case MsgLogsMetrics:
+			c.handleMetrics(nodeID, msg)
+		case MsgLogsEvents:
+			c.handleEvents(nodeID, msg)
+		case MsgL2NodesReq:
+			c.handleL2NodesRequest(nodeID, conn, msg)
+		case MsgL2Heartbeat:
+			c.handleL2Heartbeat(nodeID, msg)
+		case MsgCertIssued:
+			c.handleCertIssued(nodeID, msg)
 		}
 	}
 }
@@ -244,7 +332,7 @@ func findNodeByHint(nodeHint string) (*models.Node, error) {
 		}
 		return &node, nil
 	}
-	if err := db.DB.Where("name = ? OR unique_id = ?", nodeHint, nodeHint).First(&node).Error; err != nil {
+	if err := db.DB.Where("name = ? OR host = ? OR ip = ?", nodeHint, nodeHint, nodeHint).First(&node).Error; err != nil {
 		return nil, err
 	}
 	return &node, nil
@@ -260,7 +348,8 @@ func (c *AgentWSController) registerConn(nodeID int64, conn *websocket.Conn) {
 	agentConns[nodeID] = conn
 
 	// Update Node Status Online? (Optional)
-	db.DB.Model(&models.Node{}).Where("id = ?", nodeID).Update("is_on", 1)
+	services.MarkNodeOnline(nodeID, time.Now())
+	triggerDispatchPending()
 }
 
 func (c *AgentWSController) unregisterConn(nodeID int64) {
@@ -276,6 +365,10 @@ func (c *AgentWSController) unregisterConn(nodeID int64) {
 
 func (c *AgentWSController) handleJobAck(nodeID int64, ack JobAckMsg) {
 	notifyAckWaiter(ack)
+	if ack.JobID == 0 && ack.TaskID != 0 {
+		c.handleTaskAck(nodeID, ack)
+		return
+	}
 	if ack.JobID == 0 {
 		log.Printf("[WS] Job ACK from Node %d (no job id): %s", nodeID, ack.Status)
 		return
@@ -296,7 +389,7 @@ func (c *AgentWSController) handleJobAck(nodeID int64, ack JobAckMsg) {
 
 	updates := map[string]interface{}{
 		"state":      state,
-		"ret":        ack.Error,
+		"ret":        buildAckRet(ack),
 		"updated_at": time.Now(),
 	}
 
@@ -312,6 +405,67 @@ func (c *AgentWSController) handleJobAck(nodeID int64, ack JobAckMsg) {
 	// Also check Task Progress if needed (Aggregator logic)
 	// For now, minimal update.
 	log.Printf("[WS] Job %d ACK from Node %d: %s", ack.JobID, nodeID, ack.Status)
+}
+
+func buildAckRet(ack JobAckMsg) string {
+	if strings.TrimSpace(ack.Error) != "" {
+		return strings.TrimSpace(ack.Error)
+	}
+	if strings.TrimSpace(ack.Ret) != "" {
+		return strings.TrimSpace(ack.Ret)
+	}
+	if len(ack.Applied) > 0 {
+		return string(ack.Applied)
+	}
+	return ""
+}
+
+func (c *AgentWSController) handleTaskAck(nodeID int64, ack JobAckMsg) {
+	state := "fail"
+	switch ack.Status {
+	case "success", "ignored":
+		state = "done"
+	case "fail":
+		state = "fail"
+	}
+
+	var task models.Task
+	if err := db.DB.Where("id = ?", ack.TaskID).First(&task).Error; err != nil {
+		log.Printf("[WS] Task ACK load failed: %v", err)
+		return
+	}
+
+	nodeIDStr := strconv.FormatInt(nodeID, 10)
+	progress := updateTaskProgress(task.Progress, nodeIDStr, state)
+	retLog := appendTaskLog(task.Ret, nodeIDStr, state, buildAckRet(ack), task.ErrTimes)
+	updates := map[string]interface{}{
+		"ret":      retLog,
+		"progress": progress,
+	}
+
+	if state == "fail" {
+		nextErrTimes := task.ErrTimes + 1
+		maxRetries := 3
+		retLog = appendTaskLog(retLog, nodeIDStr, "retry", fmt.Sprintf("retry %d/%d", nextErrTimes, maxRetries), nextErrTimes)
+		updates["ret"] = retLog
+		updates["err_times"] = nextErrTimes
+		if nextErrTimes >= maxRetries {
+			updates["state"] = "fail"
+			updates["end_at"] = time.Now()
+		} else {
+			updates["state"] = "waiting"
+			updates["retry_at"] = time.Now().Add(time.Duration(nextErrTimes*30) * time.Second)
+		}
+	} else {
+		updates["state"] = deriveTaskState(progress)
+		if updates["state"] == "done" {
+			updates["end_at"] = time.Now()
+		}
+	}
+
+	if err := db.DB.Model(&models.Task{}).Where("id = ?", ack.TaskID).Updates(updates).Error; err != nil {
+		log.Printf("[WS] Task ACK update failed: %v", err)
+	}
 }
 
 func (c *AgentWSController) handleHeartbeat(nodeID int64, conn *websocket.Conn, raw []byte) {
@@ -371,6 +525,311 @@ func (c *AgentWSController) handleNodeSync(nodeID int64, raw []byte) {
 		log.Printf("[WS] Node %d sync update failed: %v", nodeID, err)
 		return
 	}
+}
+
+func (c *AgentWSController) handleAccessLogs(nodeID int64, raw []byte) {
+	var req AccessLogsMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.NodeID) == "" {
+		req.NodeID = strconv.FormatInt(nodeID, 10)
+	}
+	inserted := services.InsertAccessLogs(req.NodeID, req.NodeIP, req.Lines)
+	log.Printf("[CK] Access logs inserted: %d", inserted)
+}
+
+func (c *AgentWSController) handleMetrics(nodeID int64, raw []byte) {
+	var req MetricsMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.NodeID) == "" {
+		req.NodeID = strconv.FormatInt(nodeID, 10)
+	}
+	inserted := services.InsertMetrics(req.NodeID, req.NodeIP, req.Content)
+	log.Printf("[CK] Metrics inserted: %d", inserted)
+}
+
+func (c *AgentWSController) handleEvents(nodeID int64, raw []byte) {
+	var req EventsMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.NodeID) == "" {
+		req.NodeID = strconv.FormatInt(nodeID, 10)
+	}
+	if strings.TrimSpace(req.Type) == "" {
+		req.Type = "event"
+	}
+	inserted := services.InsertEventLogs(req.NodeID, req.NodeIP, req.Type, req.Payloads)
+	log.Printf("[CK] Events inserted: %d", inserted)
+}
+
+func (c *AgentWSController) handleL2NodesRequest(nodeID int64, conn *websocket.Conn, raw []byte) {
+	var req L2NodesRequestMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	nodes, err := fetchL2NodesForNode(nodeID)
+	if err != nil {
+		log.Printf("[WS] L2 nodes fetch failed: %v", err)
+		return
+	}
+	resp := L2NodesResponseMsg{
+		Kind:  MsgL2NodesResp,
+		MsgID: req.MsgID,
+		Nodes: nodes,
+	}
+	agentMutex.Lock()
+	_ = conn.WriteJSON(resp)
+	agentMutex.Unlock()
+}
+
+func (c *AgentWSController) handleL2Heartbeat(nodeID int64, raw []byte) {
+	var req L2HeartbeatMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	if len(req.Nodes) == 0 {
+		return
+	}
+	now := time.Now()
+	for _, id := range req.Nodes {
+		services.MarkNodeOnline(id, now)
+	}
+}
+
+func (c *AgentWSController) handleCertIssued(nodeID int64, raw []byte) {
+	var req CertIssuedMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	if req.CertID == 0 {
+		return
+	}
+	if req.RateLimited && nodeID != 0 {
+		cooldown := time.Minute * 10
+		if req.RateCooldown > 0 {
+			cooldown = time.Duration(req.RateCooldown) * time.Second
+		}
+		services.MarkNodeRateLimited(nodeID, cooldown)
+	}
+	if strings.TrimSpace(req.CertPEM) == "" || strings.TrimSpace(req.KeyPEM) == "" {
+		return
+	}
+	notBefore, notAfter, err := services.ParseCertTimes(req.CertPEM)
+	if err != nil {
+		return
+	}
+	var existingCert models.Cert
+	if err := db.DB.First(&existingCert, req.CertID).Error; err != nil {
+		return
+	}
+	encryptedKey, err := services.Crypto.Encrypt(req.KeyPEM)
+	if err != nil {
+		return
+	}
+	if err := services.UpdateIssuedCert(req.CertID, req.CertPEM, encryptedKey, notBefore, notAfter, req.IssueTaskID); err != nil {
+		log.Printf("[WS] Update issued cert failed: %v", err)
+	}
+}
+
+func initDispatchLoop() {
+	dispatchOnce.Do(func() {
+		services.SetDispatchPendingHook(triggerDispatchPending)
+		go dispatchWorker()
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				triggerDispatchPending()
+			}
+		}()
+	})
+}
+
+func triggerDispatchPending() {
+	select {
+	case dispatchSignal <- struct{}{}:
+	default:
+	}
+}
+
+func dispatchWorker() {
+	for range dispatchSignal {
+		dispatchPendingForConnected()
+	}
+}
+
+func dispatchPendingForConnected() {
+	nodeIDs := connectedNodeIDs()
+	for _, nodeID := range nodeIDs {
+		dispatchPendingTasksForNode(nodeID)
+		dispatchPendingJobsForNode(nodeID)
+	}
+}
+
+func connectedNodeIDs() []int64 {
+	agentMutex.RLock()
+	defer agentMutex.RUnlock()
+	ids := make([]int64, 0, len(agentConns))
+	for id := range agentConns {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func dispatchPendingTasksForNode(nodeID int64) {
+	nodeIDStr := strconv.FormatInt(nodeID, 10)
+	now := time.Now()
+	var tasks []models.Task
+	if err := db.DB.Where("enable = ? AND state IN ? AND (retry_at IS NULL OR retry_at <= ?)", true, []string{"waiting", "running"}, now).
+		Order("id asc").Limit(100).Find(&tasks).Error; err != nil {
+		return
+	}
+	filtered := make([]models.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if task.RetryAt != nil && task.RetryAt.After(now) {
+			continue
+		}
+		if strings.EqualFold(task.Type, "issue_cert") {
+			if target := parseIssueTaskTarget(task.Res); target != "" && target != nodeIDStr {
+				continue
+			}
+		}
+		if nodeIDStr == "" || !taskProgressHasNode(task.Progress, nodeIDStr) {
+			filtered = append(filtered, task)
+		}
+	}
+	if len(filtered) > 0 {
+		for _, task := range filtered {
+			progress := updateTaskProgress(task.Progress, nodeIDStr, "running")
+			db.DB.Model(&models.Task{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
+				"state":    "running",
+				"start_at": time.Now(),
+				"progress": progress,
+			})
+		}
+	}
+	for _, task := range filtered {
+		payload := task.Data
+		if strings.EqualFold(task.Type, "config_sync") {
+			cfg, err := services.NewConfigService().GenerateConfigForNode(nodeIDStr)
+			if err != nil {
+				continue
+			}
+			if raw, err := json.Marshal(cfg); err == nil {
+				payload = string(raw)
+			}
+		}
+		_ = dispatchTaskToNode(nodeID, task, payload)
+	}
+}
+
+func dispatchPendingJobsForNode(nodeID int64) {
+	var jobs []models.Job
+	if err := db.DB.Where("state = ? AND node_id = ?", "waiting", nodeID).
+		Order("id asc").Limit(100).Find(&jobs).Error; err != nil {
+		return
+	}
+	for _, job := range jobs {
+		var task models.Task
+		if err := db.DB.Where("id = ?", job.TaskID).First(&task).Error; err != nil {
+			continue
+		}
+		if err := DispatchJobToNode(nodeID, &task, &job, job.Data); err != nil {
+			continue
+		}
+		db.DB.Model(&models.Job{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
+			"state":      "running",
+			"updated_at": time.Now(),
+		})
+	}
+}
+
+func dispatchTaskToNode(nodeID int64, task models.Task, payload string) error {
+	agentMutex.RLock()
+	conn, ok := agentConns[nodeID]
+	agentMutex.RUnlock()
+	if !ok {
+		return fmt.Errorf("node %d not connected", nodeID)
+	}
+	msg := JobDispatchMsg{
+		Kind:  MsgJobDispatch,
+		MsgID: fmt.Sprintf("task-%d-%d", task.ID, nodeID),
+		Task: TaskSummary{
+			TaskID:   int64(task.ID),
+			TaskType: task.Type,
+			TaskName: task.Name,
+		},
+		Job: JobPayload{
+			JobID:   0,
+			JobType: task.Type,
+			Payload: payload,
+		},
+	}
+	agentMutex.Lock()
+	defer agentMutex.Unlock()
+	return conn.WriteJSON(msg)
+}
+
+func fetchL2NodesForNode(nodeID int64) ([]l2NodeInfo, error) {
+	if nodeID == 0 {
+		return []l2NodeInfo{}, nil
+	}
+
+	var self models.Node
+	if err := db.DB.Where("id = ?", nodeID).First(&self).Error; err != nil {
+		return nil, err
+	}
+	if self.Level != 1 {
+		return []l2NodeInfo{}, nil
+	}
+
+	var groupIDs []int64
+	if err := db.DB.Model(&models.Line{}).
+		Select("distinct node_group_id").
+		Where("node_id = ?", nodeID).
+		Pluck("node_group_id", &groupIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(groupIDs) == 0 {
+		return []l2NodeInfo{}, nil
+	}
+
+	var l2NodeIDs []int64
+	if err := db.DB.Model(&models.Line{}).
+		Select("distinct node_id").
+		Where("node_group_id IN ?", groupIDs).
+		Where("node_id <> ?", nodeID).
+		Pluck("node_id", &l2NodeIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(l2NodeIDs) == 0 {
+		return []l2NodeInfo{}, nil
+	}
+
+	var nodes []models.Node
+	if err := db.DB.Where("id IN ? AND level = ? AND enable = ?", l2NodeIDs, 2, true).
+		Select("id", "ip", "port", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
+		Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	result := make([]l2NodeInfo, 0, len(nodes))
+	for _, n := range nodes {
+		result = append(result, l2NodeInfo{
+			ID:            n.ID,
+			IP:            n.IP,
+			Port:          n.Port,
+			CheckProtocol: n.CheckProtocol,
+			CheckPort:     n.CheckPort,
+			CheckHost:     n.CheckHost,
+			CheckPath:     n.CheckPath,
+			CheckTimeout:  n.CheckTimeout,
+		})
+	}
+	return result, nil
 }
 
 // DispatchTest dispatches a job to a connected node (admin testing helper).

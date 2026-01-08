@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"cdn-common/acme"
 	"crypto/md5"
 	"crypto/tls"
@@ -19,51 +18,11 @@ import (
 )
 
 func startTaskPull() {
-	ticker := time.NewTicker(30 * time.Second)
-	for range ticker.C {
-		pullTasks()
-	}
+	log.Printf("[Info] Task pull disabled; waiting for WS dispatch")
 }
 
 func pullTasks() {
-	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-
-	body, status, err := doRequest(req, 10*time.Second, true)
-	if err != nil {
-		log.Printf("[Error] Task Pull Failed: %v", err)
-		return
-	}
-
-	if status != 200 {
-		debugLogInteraction("GET", req.URL.String(), status, nil, nil)
-		log.Printf("[Warn] Task Pull Status: %d", status)
-		return
-	}
-
-	debugLogInteraction("GET", req.URL.String(), status, nil, body)
-	var payload struct {
-		Tasks []struct {
-			ID   int64  `json:"id"`
-			Type string `json:"type"`
-			Data string `json:"data"`
-		} `json:"tasks"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		log.Printf("[Error] Task Pull Decode Failed: %v", err)
-		return
-	}
-
-	for _, task := range payload.Tasks {
-		if ret, err := processTask(task.ID, task.Type, task.Data); err != nil {
-			reportTask(task.ID, "fail", err.Error())
-		} else {
-			if ret == "" {
-				ret = "ok"
-			}
-			reportTask(task.ID, "done", ret)
-		}
-	}
+	log.Printf("[Info] Task pull disabled; waiting for WS dispatch")
 }
 
 func processTask(id int64, taskType string, data string) (string, error) {
@@ -72,12 +31,18 @@ func processTask(id int64, taskType string, data string) (string, error) {
 		return "", purgeURLs(splitLines(data))
 	case "refresh_dir":
 		return "", purgeDirs(splitLines(data))
+	case "clear_cache":
+		cacheDir := filepath.Join(WorkDir, "cache")
+		return "", clearCacheDir(cacheDir)
 	case "preheat":
 		return "", preheatURLs(splitLines(data))
 	case "issue_cert":
 		return "", issueCertTask(id, data)
 	case "config_sync":
-		return "", pullConfig()
+		if strings.TrimSpace(data) == "" {
+			return "", fmt.Errorf("empty config payload")
+		}
+		return applyConfigPayload([]byte(data))
 	case "package_sync":
 		return syncUserPackageTask(data)
 	case "套餐同步":
@@ -124,6 +89,7 @@ func issueCertTask(taskID int64, raw string) error {
 		result, err := issuer.Issue(item.Domains)
 		if err != nil {
 			if acme.IsRegisterRateLimited(err) {
+				_ = sendCertIssued(taskID, 0, "", "", true, 0)
 				return fmt.Errorf("RATE_LIMITED: %s", err.Error())
 			}
 			return err
@@ -136,44 +102,15 @@ func issueCertTask(taskID int64, raw string) error {
 }
 
 func reportIssuedCert(taskID int64, certID int64, certPEM string, keyPEM string) error {
-	payload := map[string]interface{}{
-		"cert_id":       certID,
-		"cert":          certPEM,
-		"key":           keyPEM,
-		"issue_task_id": taskID,
-	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", API_BaseURL+"/api/v1/agent/certs/issued", bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-	respBody, status, err := doRequest(req, 15*time.Second, DebugMode)
-	if err != nil {
-		return err
-	}
-	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
-	if status != 200 {
-		return fmt.Errorf("cert report failed: %d", status)
-	}
-	return nil
+	return sendCertIssued(taskID, certID, certPEM, keyPEM, false, 0)
 }
 
 func reportTask(id int64, state string, ret string) {
-	payload := map[string]string{
-		"state": state,
-		"ret":   ret,
+	status := "success"
+	if strings.ToLower(strings.TrimSpace(state)) == "fail" {
+		status = "fail"
 	}
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/agent/tasks/%d/finish", API_BaseURL, id), bytes.NewBuffer(body))
-	req.Header.Set("Authorization", "Bearer "+AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	readBody := DebugMode
-	respBody, status, err := doRequest(req, 5*time.Second, readBody)
-	if err != nil {
-		log.Printf("[Error] Task Report Failed: %v", err)
-		return
-	}
-	debugLogInteraction("POST", req.URL.String(), status, body, respBody)
+	sendJobAck("", id, 0, "", status, ret, "")
 }
 
 func purgeURLs(urls []string) error {
@@ -228,6 +165,9 @@ func purgeURL(raw string) error {
 func clearCacheDir(dir string) error {
 	entries, err := ioutil.ReadDir(dir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	for _, entry := range entries {

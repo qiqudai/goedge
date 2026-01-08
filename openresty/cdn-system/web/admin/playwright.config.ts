@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test'
 
-const baseURL = process.env.PW_BASE_URL || 'http://127.0.0.1:5173'
+const baseURL = process.env.PW_BASE_URL || 'http://127.0.0.1:5176'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -15,4 +15,3 @@ export default defineConfig({
   },
   reporter: [['list'], ['html', { open: 'never' }]]
 })
-

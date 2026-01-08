@@ -14,6 +14,11 @@ import (
 
 type ConfigService struct{}
 
+var (
+	ErrNodeNotFound  = errors.New("node not found")
+	ErrNodeIDMissing = errors.New("node_id is required")
+)
+
 // NewConfigService creates a new instance
 func NewConfigService() *ConfigService {
 	return &ConfigService{}
@@ -41,6 +46,15 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	}
 	if nginxCfg := loadNginxConfig(); nginxCfg != nil {
 		payload.Nginx = nginxCfg
+	}
+
+	expireCloseEnabled := true
+	if systemCfg, err := LoadSystemConfig(); err == nil {
+		if val, ok := systemCfg["package_expire_close_site"]; ok {
+			expireCloseEnabled = ParseBoolFlag(val)
+		}
+		payload.FallbackCertData = strings.TrimSpace(systemCfg["https_cert"])
+		payload.FallbackKeyData = strings.TrimSpace(systemCfg["https_key"])
 	}
 
 	// 1. Find Node Groups this node belongs to
@@ -119,7 +133,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		responseHeaders := buildResponseHeaderMap(effectiveSite.Settings)
 		hasHTTPS := len(effectiveSite.HttpsListen) > 0 || strings.TrimSpace(effectiveSite.HttpsListenRaw) != ""
 		if pkg, ok := userPackageMap[effectiveSite.UserPackageID]; ok {
-			if !pkg.EndAt.IsZero() && pkg.EndAt.Before(now) {
+			if expireCloseEnabled && !pkg.EndAt.IsZero() && pkg.EndAt.Before(now) {
 				status = "expired"
 			}
 		}
@@ -235,8 +249,9 @@ func hashConfigVersion(cfg *models.EdgeConfig) int64 {
 }
 
 func findNode(nodeID string) (*models.Node, error) {
+	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {
-		return nil, errors.New("node_id is required")
+		return nil, ErrNodeIDMissing
 	}
 
 	var node models.Node
@@ -246,8 +261,8 @@ func findNode(nodeID string) (*models.Node, error) {
 		}
 	}
 
-	if err := db.DB.Where("name = ?", nodeID).First(&node).Error; err != nil {
-		return nil, errors.New("node not found")
+	if err := db.DB.Where("name = ? OR host = ? OR ip = ?", nodeID, nodeID, nodeID).First(&node).Error; err != nil {
+		return nil, ErrNodeNotFound
 	}
 	return &node, nil
 }
@@ -900,7 +915,7 @@ func extractHTTPSConfig(settings map[string]interface{}) httpsConfig {
 	cfg.http2 = parseBoolValue(httpsCfg["http2"], false)
 	cfg.sslProtocols = parseString(httpsCfg["ssl_protocols"])
 	cfg.sslCiphers = parseString(httpsCfg["ssl_ciphers"])
-	cfg.sslPreferServerCiphers = parseString(httpsCfg["ssl_prefer_server_ciphers"])
+	cfg.sslPreferServerCiphers = normalizeOnOff(httpsCfg["ssl_prefer_server_ciphers"])
 	return cfg
 }
 
@@ -1297,6 +1312,39 @@ func parseString(value interface{}) string {
 		return strings.TrimSpace(string(v))
 	default:
 		return fmt.Sprintf("%v", v)
+	}
+}
+
+func normalizeOnOff(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case bool:
+		if v {
+			return "on"
+		}
+		return "off"
+	case string:
+		s := strings.TrimSpace(strings.ToLower(v))
+		switch s {
+		case "true", "1", "yes", "on":
+			return "on"
+		case "false", "0", "no", "off":
+			return "off"
+		default:
+			return strings.TrimSpace(v)
+		}
+	default:
+		s := strings.TrimSpace(strings.ToLower(fmt.Sprintf("%v", v)))
+		switch s {
+		case "true", "1", "yes", "on":
+			return "on"
+		case "false", "0", "no", "off":
+			return "off"
+		default:
+			return strings.TrimSpace(fmt.Sprintf("%v", v))
+		}
 	}
 }
 

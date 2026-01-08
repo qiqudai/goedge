@@ -25,7 +25,15 @@ type Claims struct {
 
 // GenerateToken creates a JWT token for a user
 func GenerateToken(userID int64, role string) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
+	return GenerateTokenWithExpiry(userID, role, 24*time.Hour)
+}
+
+// GenerateTokenWithExpiry creates a JWT token for a user with a custom TTL.
+func GenerateTokenWithExpiry(userID int64, role string, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	expirationTime := time.Now().Add(ttl)
 	claims := &Claims{
 		UserID: userID,
 		Role:   role,

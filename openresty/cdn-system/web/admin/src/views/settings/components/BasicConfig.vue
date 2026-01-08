@@ -1,9 +1,9 @@
 <template>
-  <el-form label-width="120px">
+  <el-form label-width="120px" @focusin="cacheInputValue">
     <el-card shadow="never" class="mb-20">
       <template #header>基本信息</template>
       <el-form-item label="系统名称">
-         <el-input v-model="systemInfo.sys_name" placeholder="CDN 4.0" />
+         <el-input v-model="systemInfo.sys_name" placeholder="CDN 4.0" @blur="handleBlurSave" />
       </el-form-item>
 
       <el-row :gutter="20">
@@ -55,33 +55,31 @@
       </el-row>
 
       <el-form-item label="普通用户标题">
-         <el-input v-model="systemInfo.user_console_title" placeholder="CDN用户控制台" />
+         <el-input v-model="systemInfo.user_console_title" placeholder="CDN用户控制台" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="管理员标题">
-         <el-input v-model="systemInfo.admin_console_title" placeholder="CDN管理员控制台" />
+         <el-input v-model="systemInfo.admin_console_title" placeholder="CDN管理员控制台" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="底部链接">
-        <el-input type="textarea" :rows="3" v-model="systemInfo.footer_link" placeholder="名称|URL (换行分隔)" />
+        <el-input type="textarea" :rows="3" v-model="systemInfo.footer_link" placeholder="名称|URL (换行分隔)" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="底部版权">
-        <el-input type="textarea" :rows="2" v-model="systemInfo.footer_copyright" placeholder="" />
+        <el-input type="textarea" :rows="2" v-model="systemInfo.footer_copyright" placeholder="" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="Master Host">
-        <el-input v-model="bindMasterHost" placeholder="" />
+        <el-input v-model="bindMasterHost" placeholder="" @blur="handleBlurSave" />
         <div class="form-helper">绑定主节点Host，用于节点通信。</div>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="save">保存</el-button>
       </el-form-item>
     </el-card>
   </el-form>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   configItems: {
@@ -113,6 +111,7 @@ const handleUploadSuccess = (res, field) => {
     if (res.code === 0) {
         systemInfo.value[field] = res.url
         ElMessage.success('上传成功')
+        handleSave()
     } else {
         ElMessage.error(res.msg || '上传失败')
     }
@@ -163,7 +162,7 @@ const save = () => {
     value: bindMasterHost.value
   })
 
-  request.post('/config_items', {
+  return request.post('/config_items', {
     type: 'system',
     scope_name: 'global',
     items: items
@@ -171,6 +170,36 @@ const save = () => {
     ElMessage.success('保存成功')
     emit('saved')
   })
+}
+
+const saving = ref(false)
+let saveQueued = false
+
+const queueSave = async () => {
+  if (saving.value) {
+    saveQueued = true
+    return
+  }
+  saving.value = true
+  await nextTick()
+  save().finally(() => {
+    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      queueSave()
+    }
+  })
+}
+
+const handleSave = () => {
+  queueSave()
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event)) {
+    return
+  }
+  queueSave()
 }
 </script>
 

@@ -4,9 +4,10 @@ local ssl = require "ngx.ssl"
 
 -- LRU cache for parsed certs/keys to avoid re-parsing on every handshake
 -- Capacity: 1000 items (adjust based on memory)
-local cert_cache = require "resty.lrucache":new(1000)
+local lrucache = require "resty.lrucache"
+local cert_cache, cache_err = lrucache.new(1000)
 if not cert_cache then
-    ngx.log(ngx.ERR, "failed to create ssl lrucache")
+    ngx.log(ngx.ERR, "failed to create ssl lrucache: ", cache_err or "unknown error")
 end
 
 function _M.set_certificate()

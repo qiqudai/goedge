@@ -31,6 +31,20 @@ const isVisibleElement = (el) => {
 }
 
 const findTargetRect = () => {
+  const wrappers = Array.from(document.querySelectorAll('.el-dialog__wrapper'))
+  const visibleWrappers = wrappers.filter(isVisibleElement)
+  const activeWrapper = visibleWrappers[visibleWrappers.length - 1]
+  if (activeWrapper) {
+    const dialog = activeWrapper.querySelector('.el-dialog')
+    const rect = (dialog || activeWrapper).getBoundingClientRect()
+    return {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height
+    }
+  }
+
   const main = document.querySelector('.el-main')
   if (!main) {
     return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight }

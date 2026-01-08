@@ -1,5 +1,5 @@
 <template>
-  <div class="access-config">
+  <div class="access-config" @focusin="cacheInputValue">
     <el-form label-width="150px" class="config-form">
       <div class="section-title">ACL设置</div>
       <el-form-item label="ACL选择" style="width: 520px">
@@ -34,7 +34,7 @@
               v-model="accessSettings.hotlink.value"
               style="width: 300px;"
               :placeholder="getHotlinkPlaceholder()"
-              @change="saveSettings(true)"
+              @blur="handleBlurSave"
             />
           </div>
         </el-form-item>
@@ -45,7 +45,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="额外允许域名" style="width: 520px">
-          <el-input v-model="accessSettings.hotlink.domains" placeholder="请输入除当前网站域名之外的域名 多个域名空格分隔" @change="saveSettings(true)" />
+          <el-input v-model="accessSettings.hotlink.domains" placeholder="请输入除当前网站域名之外的域名 多个域名空格分隔" @blur="handleBlurSave" />
         </el-form-item>
       </template>
 
@@ -62,16 +62,16 @@
         
         <div v-show="corsExpanded">
           <el-form-item label="allow_origin" style="width: 520px">
-            <el-input v-model="accessSettings.cors.allowOrigin" @change="saveSettings(true)" />
+            <el-input v-model="accessSettings.cors.allowOrigin" @blur="handleBlurSave" />
           </el-form-item>
           <el-form-item label="allow_methods" style="width: 520px">
-            <el-input v-model="accessSettings.cors.allowMethods" @change="saveSettings(true)" />
+            <el-input v-model="accessSettings.cors.allowMethods" @blur="handleBlurSave" />
           </el-form-item>
           <el-form-item label="allow_headers" style="width: 520px">
-            <el-input v-model="accessSettings.cors.allowHeaders" @change="saveSettings(true)" />
+            <el-input v-model="accessSettings.cors.allowHeaders" @blur="handleBlurSave" />
           </el-form-item>
           <el-form-item label="expose_headers" style="width: 520px">
-            <el-input v-model="accessSettings.cors.exposeHeaders" @change="saveSettings(true)" />
+            <el-input v-model="accessSettings.cors.exposeHeaders" @blur="handleBlurSave" />
           </el-form-item>
           <el-form-item label="allow_credentials" style="width: 520px">
             <el-radio-group v-model="accessSettings.cors.allowCredentials" @change="handleSave">
@@ -80,7 +80,7 @@
             </el-radio-group>
           </el-form-item>
           <el-form-item label="max_age" style="width: 520px">
-            <el-input v-model="accessSettings.cors.maxAge" @change="saveSettings(true)" />
+            <el-input v-model="accessSettings.cors.maxAge" @blur="handleBlurSave" />
           </el-form-item>
         </div>
       </template>
@@ -94,6 +94,7 @@
 import { ref, watch, computed } from 'vue'
 import { getHotlinkPlaceholder } from '@/utils/siteHelpers'
 import { useSiteSettings } from '@/composables/useSiteSettings'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   modelValue: { 
@@ -134,6 +135,13 @@ let isInternalUpdate = false
 
 const handleSave = () => {
     saveSettings(true)
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+    return
+  }
+  handleSave()
 }
 
 watch(localSettings, (newVal) => {

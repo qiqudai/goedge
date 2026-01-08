@@ -87,12 +87,20 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 	}
 
 	// Expiry Check
-	if trigger == "expire" {
-		agentConfig.Status = "expired"
-	} else if time.Now().After(up.EndAt) {
-		agentConfig.Status = "expired"
-		// If explicit expire trigger wasn't sent but it is expired, maybe set trigger?
-		// But for now follow input.
+	expireCloseEnabled := true
+	if cfg, err := LoadSystemConfig(); err == nil {
+		if val, ok := cfg["package_expire_close_site"]; ok {
+			expireCloseEnabled = ParseBoolFlag(val)
+		}
+	}
+	if expireCloseEnabled {
+		if trigger == "expire" {
+			agentConfig.Status = "expired"
+		} else if time.Now().After(up.EndAt) {
+			agentConfig.Status = "expired"
+			// If explicit expire trigger wasn't sent but it is expired, maybe set trigger?
+			// But for now follow input.
+		}
 	}
 
 	// 4. Identify Nodes
@@ -178,5 +186,6 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 		}
 	}
 
+	TriggerDispatchPending()
 	return nil
 }

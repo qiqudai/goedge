@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -92,7 +93,7 @@ func (ctr *AgentController) GetConfig(c *gin.Context) {
 		}
 	}
 	if nodeID == "" {
-		nodeID = c.Query("node_id")
+		nodeID = strings.TrimSpace(c.Query("node_id"))
 	}
 	if nodeID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})
@@ -101,6 +102,14 @@ func (ctr *AgentController) GetConfig(c *gin.Context) {
 
 	config, err := ctr.ConfigSvc.GenerateConfigForNode(nodeID)
 	if err != nil {
+		if errors.Is(err, services.ErrNodeIDMissing) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})
+			return
+		}
+		if errors.Is(err, services.ErrNodeNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate config"})
 		return
 	}
@@ -316,6 +325,33 @@ func (ctr *AgentController) GetTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tasks": filtered})
 }
 
+func (ctr *AgentController) GetUpgrade(c *gin.Context) {
+	nodeID := resolveAgentNodeID(c)
+	if nodeID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})
+		return
+	}
+	apiVersion := services.ReadAgentBinaryVersion()
+	nodeVersion, _ := services.GetNodeConfigValue(nodeID, "agent_version")
+
+	autoUpgrade := false
+	if cfg, err := services.LoadSystemConfig(); err == nil {
+		autoUpgrade = services.ParseBoolFlag(cfg["auto_upgrade_agent"])
+	}
+
+	needsUpgrade := services.CompareVersion(apiVersion, nodeVersion) > 0
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"api_version":   apiVersion,
+			"node_version":  nodeVersion,
+			"auto_upgrade":  autoUpgrade,
+			"need_upgrade":  needsUpgrade,
+			"should_upgrade": needsUpgrade && autoUpgrade,
+		},
+	})
+}
+
 func (ctr *AgentController) FinishTask(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	if id == 0 {
@@ -327,6 +363,9 @@ func (ctr *AgentController) FinishTask(c *gin.Context) {
 		if s, ok := v.(string); ok {
 			nodeID = s
 		}
+	}
+	if nodeID == "" {
+		nodeID = strings.TrimSpace(c.Query("node_id"))
 	}
 	var req struct {
 		State string `json:"state"`

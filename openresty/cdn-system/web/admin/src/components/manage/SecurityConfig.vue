@@ -1,5 +1,5 @@
 <template>
-  <div class="security-config">
+  <div class="security-config" @focusin="cacheInputValue">
     <!-- CC Protection -->
     <div class="section-title">CC 防护</div>
     <el-form label-width="120px" class="config-form">
@@ -57,7 +57,7 @@
               v-model="securitySettings.cc.autoSwitch.qps" 
               size="small" 
               style="width: 80px" 
-              @change="saveSettings(true)" 
+              @blur="handleBlurSave" 
             /> 
             时，自动切换到 
             <el-select v-model="securitySettings.cc.autoSwitch.rule" size="small" style="width: 100px;" @change="handleSave">
@@ -227,7 +227,7 @@
     <div class="section-title">搜索引擎爬虫</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="爬虫策略">
-        <el-radio-group v-model="securitySettings.crawlers.action" @change="saveSettings(true)">
+        <el-radio-group v-model="securitySettings.crawlers.action" @change="handleSave">
           <el-radio value="none">不设置</el-radio>
           <el-radio value="allow">放行</el-radio>
           <el-radio value="block">拦截</el-radio>
@@ -251,7 +251,7 @@
             v-model.number="securitySettings.ip.blackTime" 
             size="small" 
             style="width: 100px" 
-            @change="saveSettings(true)"
+            @blur="handleBlurSave"
           >
             <template #append>秒</template>
           </el-input>
@@ -268,7 +268,7 @@
             v-model.number="securitySettings.ip.whiteTime" 
             size="small" 
             style="width: 100px" 
-            @change="saveSettings(true)"
+            @blur="handleBlurSave"
           >
             <template #append>秒</template>
           </el-input>
@@ -286,10 +286,10 @@
     <div class="section-title">黑白名单</div>
     <el-form label-width="120px">
       <el-form-item label="IP黑名单">
-        <el-input type="textarea" v-model="securitySettings.ip.black" :rows="3" placeholder="一行一个IP" @change="saveSettings(true)" />
+        <el-input type="textarea" v-model="securitySettings.ip.black" :rows="3" placeholder="一行一个IP" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="IP白名单">
-        <el-input type="textarea" v-model="securitySettings.ip.white" :rows="3" placeholder="一行一个IP" @change="saveSettings(true)" />
+        <el-input type="textarea" v-model="securitySettings.ip.white" :rows="3" placeholder="一行一个IP" @blur="handleBlurSave" />
       </el-form-item>
     </el-form>
       
@@ -301,7 +301,7 @@
       <el-form-item label="Cookie域名">
         <div style="display: items-center; gap: 10px;">
            <el-switch v-model="securitySettings.cookie.enable" @change="handleSave" />
-           <el-input v-if="securitySettings.cookie.enable" v-model="securitySettings.cookie.domain" placeholder="例如: abc.com" style="width: 200px" @change="saveSettings(true)" />
+           <el-input v-if="securitySettings.cookie.enable" v-model="securitySettings.cookie.domain" placeholder="例如: abc.com" style="width: 200px" @blur="handleBlurSave" />
         </div>
         <div class="form-helper">
           当主站(www.abc.com)引用图片站(img.abc.com)的资源时，如果两个域名都开启了防御，可以设置Cookie域名为abc.com。这样当访问者通过主站验证后，Cookie将在所有子域名间共享，从而图片站也会自动获得验证状态，确保资源正常加载。
@@ -315,7 +315,7 @@
     <div class="section-title">屏蔽设置</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="屏蔽透明代理">
-        <el-switch v-model="securitySettings.block.transparentProxy" @change="saveSettings(true)" />
+        <el-switch v-model="securitySettings.block.transparentProxy" @change="handleSave" />
         <div class="form-helper">透明代理即网上免费公开的代理，带有x-forwarded-for请求头的</div>
       </el-form-item>
     </el-form>
@@ -337,6 +337,7 @@ import CountrySelector from '@/components/CountrySelector.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   modelValue: { 
@@ -449,6 +450,13 @@ const handleTimeTypeChange = (type, isCustom) => {
 
 const handleSave = () => {
   saveSettings(true)
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+    return
+  }
+  handleSave()
 }
 
 // --- Custom Rules Logic ---

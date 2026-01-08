@@ -165,13 +165,16 @@ func (ctr *LogController) ListBackupLogs(c *gin.Context) {
 		pageSize = 20
 	}
 
-	query := db.DB.Table("backup_log")
-	// Status/Result filters if needed, currently just global search mentioned in prompt?
-	// User request: "Global search Status Result"
+	query := db.DB.Model(&models.Task{}).Where("type = ?", "backup")
 	keyword := c.Query("keyword")
 	if keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("status LIKE ? OR result LIKE ?", like, like)
+		state := normalizeBackupState(keyword)
+		if state != "" {
+			query = query.Where("state = ?", state)
+		} else {
+			like := "%" + keyword + "%"
+			query = query.Where("state LIKE ? OR ret LIKE ?", like, like)
+		}
 	}
 
 	startTime, endTime := parseTimeRange(c)
@@ -180,25 +183,49 @@ func (ctr *LogController) ListBackupLogs(c *gin.Context) {
 	}
 
 	var total int64
-	// If table doesn't exist, this might fail, handle gracefully?
-	// For now assume table exists or we return 0
 	if err := query.Count(&total).Error; err != nil {
-		// Table might not exist, return empty
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
 		return
 	}
 
-	type BackupLogRow struct {
-		ID         int64     `json:"id"`
-		CreatedAt  time.Time `json:"created_at" gorm:"column:create_at"`
-		FinishedAt time.Time `json:"finished_at" gorm:"column:finish_at"`
-		Status     int       `json:"status"` // 1 success, 0 fail
-		Result     string    `json:"result"`
+	type backupTaskRow struct {
+		ID       int64      `gorm:"column:id"`
+		CreateAt time.Time  `gorm:"column:create_at"`
+		StartAt  *time.Time `gorm:"column:start_at"`
+		EndAt    *time.Time `gorm:"column:end_at"`
+		State    string     `gorm:"column:state"`
+		Ret      string     `gorm:"column:ret"`
 	}
-	var logs []BackupLogRow
-	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&logs).Error; err != nil {
+	var rows []backupTaskRow
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "DB Error"})
 		return
+	}
+
+	type BackupLogRow struct {
+		ID         int64      `json:"id"`
+		CreatedAt  time.Time  `json:"created_at"`
+		FinishedAt *time.Time `json:"finished_at"`
+		Status     int        `json:"status"` // 1 success, 0 fail
+		Result     string     `json:"result"`
+	}
+	logs := make([]BackupLogRow, 0, len(rows))
+	for _, row := range rows {
+		status := 0
+		if strings.EqualFold(row.State, "done") {
+			status = 1
+		}
+		finishedAt := row.EndAt
+		if finishedAt == nil {
+			finishedAt = row.StartAt
+		}
+		logs = append(logs, BackupLogRow{
+			ID:         row.ID,
+			CreatedAt:  row.CreateAt,
+			FinishedAt: finishedAt,
+			Status:     status,
+			Result:     row.Ret,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -208,6 +235,17 @@ func (ctr *LogController) ListBackupLogs(c *gin.Context) {
 			"total": total,
 		},
 	})
+}
+
+func normalizeBackupState(keyword string) string {
+	switch strings.ToLower(strings.TrimSpace(keyword)) {
+	case "1", "success", "ok", "done":
+		return "done"
+	case "0", "fail", "failed", "error":
+		return "fail"
+	default:
+		return ""
+	}
 }
 
 // ListMailLogs

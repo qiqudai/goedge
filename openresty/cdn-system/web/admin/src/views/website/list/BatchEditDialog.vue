@@ -6,12 +6,21 @@
     @closed="handleClosed"
     :close-on-click-modal="false"
   >
-    <el-form :model="form" label-width="120px" ref="formRef">
+  <el-form :model="form" label-width="120px" ref="formRef">
       
       <!-- CNAME Domain Mode -->
       <template v-if="mode === 'cname-domain'">
         <el-form-item label="CNAME域名">
-          <el-input v-model="form.cname_domain" placeholder="请输入CNAME域名后缀" />
+          <el-select
+            v-model="form.cname_domain"
+            placeholder="请选择CNAME域名"
+            style="width: 100%"
+            filterable
+            :loading="cnameDomainsLoading"
+            clearable
+          >
+            <el-option v-for="d in cnameDomains" :key="d.id || d.domain" :label="d.note ? `${d.domain}（${d.note}）` : d.domain" :value="d.domain" />
+          </el-select>
         </el-form-item>
       </template>
 
@@ -72,6 +81,8 @@ const formRef = ref(null)
 
 const regions = ref([])
 const nodeGroups = ref([])
+const cnameDomains = ref([])
+const cnameDomainsLoading = ref(false)
 
 const form = reactive({
   cname_domain: '',
@@ -101,6 +112,9 @@ watch(() => props.modelValue, (val) => {
     if (props.mode === 'node-group') {
       loadDependencies()
     }
+    if (props.mode === 'cname-domain') {
+      loadCnameDomains()
+    }
   }
 })
 
@@ -129,6 +143,19 @@ const loadDependencies = async () => {
   }
 }
 
+const loadCnameDomains = async () => {
+  if (cnameDomainsLoading.value) return
+  cnameDomainsLoading.value = true
+  try {
+    const res = await request.get('/cname_domains', { skipLoading: true })
+    cnameDomains.value = res.data?.list || res.list || []
+  } catch (e) {
+    console.error(e)
+  } finally {
+    cnameDomainsLoading.value = false
+  }
+}
+
 const handleRegionChange = () => {
   form.node_group_id = ''
 }
@@ -143,6 +170,10 @@ const handleSubmit = async () => {
     const payload = { ids: props.ids }
     
     if (props.mode === 'cname-domain') {
+      if (!form.cname_domain) {
+        ElMessage.error('请选择CNAME域名')
+        return
+      }
       payload.cname_domain = form.cname_domain
     } else if (props.mode === 'cname-mode') {
       payload.cname_mode = form.cname_mode
@@ -157,7 +188,19 @@ const handleSubmit = async () => {
 
     await request.post('/sites/batch_update', payload)
     ElMessage.success('批量修改成功')
-    emit('success')
+
+    const successPayload = { mode: props.mode, ids: props.ids }
+    if (props.mode === 'cname-domain') {
+      successPayload.cname_domain = form.cname_domain
+    } else if (props.mode === 'cname-mode') {
+      successPayload.cname_mode = form.cname_mode
+    } else if (props.mode === 'node-group') {
+      successPayload.region_id = form.region_id
+      successPayload.node_group_id = form.node_group_id
+      successPayload.backup_node_group_id = form.backup_node_group_id
+    }
+
+    emit('success', successPayload)
     visible.value = false
   } catch (e) {
     console.error(e)

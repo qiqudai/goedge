@@ -1,5 +1,5 @@
 <template>
-  <div class="https-config">
+  <div class="https-config" @focusin="cacheInputValue">
     <div class="section-title">HTTPS证书</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="开关">
@@ -27,7 +27,7 @@
         </el-form-item>
         
         <el-form-item label="监听端口" style="width: 520px">
-          <el-input v-model="httpsSettings.listenPorts" placeholder="443" @change="saveSettings(true)" />
+          <el-input v-model="httpsSettings.listenPorts" placeholder="443" @blur="handleBlurSave" />
           <div class="form-helper">
             多个端口空格分隔。如果需要https://www.example.com和https://www.example.com:8433访问，则填443 8433
           </div>
@@ -108,7 +108,7 @@
               type="textarea" 
               :rows="3" 
               placeholder="EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH"
-              @change="saveSettings(true)"
+              @blur="handleBlurSave"
             />
             <div class="form-helper">OpenSSL支持的加密算法，多个算法之间使用冒号(:)分隔</div>
           </el-form-item>
@@ -118,7 +118,7 @@
               type="textarea" 
               :rows="2" 
               placeholder="TLSv1 TLSv1.1 TLSv1.2 TLSv1.3" 
-              @change="saveSettings(true)"
+              @blur="handleBlurSave"
             />
             <div class="form-helper">空格分隔，如 TLSv1.2 TLSv1.3</div>
           </el-form-item>
@@ -134,6 +134,7 @@
 import { ref, watch, computed } from 'vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 import { getCertDays } from '@/utils/helpers'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const props = defineProps({
   modelValue: { 
@@ -191,6 +192,13 @@ let isInternalUpdate = false
 const handleSave = () => {
   // Sync happens via watcher
   saveSettings(true)
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+    return
+  }
+  handleSave()
 }
 
 // 监听本地变化并同步

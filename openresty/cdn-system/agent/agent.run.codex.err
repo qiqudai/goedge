@@ -1,0 +1,49 @@
+2026/01/07 16:46:25 [Info] Loaded config from agent.json
+2026/01/07 16:46:25 Starting Edge Agent...
+2026/01/07 16:46:25 Target Master: http://172.20.0.1:8080
+2026/01/07 16:46:25 Node ID:       WIN-CCB276277K5
+2026/01/07 16:46:25 Debug Mode:    true
+2026/01/07 16:46:29 [Init] Environment Setup: Bin=E:\cdn\goedge\openresty\cdn-system\agent\edge-node\nginx.exe, Config=E:\cdn\goedge\openresty\cdn-system\agent\edge-node\conf\cdn_config.json
+2026/01/07 16:46:29 [Info] Access log ship enabled
+2026/01/07 16:46:29 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:46:29 [Debug] Access log ship path=edge-node\usr\local\openresty\nginx\logs\access.json offset=edge-node\usr\local\openresty\nginx\logs\access.offset
+2026/01/07 16:46:29 [WS] Connected and Authenticated
+2026/01/07 16:46:29 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:46:29 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 1s...
+2026/01/07 16:46:30 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:46:30 [WS] Connected and Authenticated
+2026/01/07 16:46:30 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:46:30 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 2s...
+2026/01/07 16:46:32 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:46:32 [WS] Connected and Authenticated
+2026/01/07 16:46:32 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:46:32 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 4s...
+2026/01/07 16:46:36 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:46:36 [WS] Connected and Authenticated
+2026/01/07 16:46:36 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:46:36 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 8s...
+2026/01/07 16:46:39 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:46:44 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:46:44 [WS] Connected and Authenticated
+2026/01/07 16:46:44 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:46:44 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 16s...
+2026/01/07 16:46:49 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:46:59 [Error] L2 Monitor fetch failed: ws not connected
+2026/01/07 16:46:59 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:47:00 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:47:00 [WS] Connected and Authenticated
+2026/01/07 16:47:00 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:47:00 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 32s...
+2026/01/07 16:47:09 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:47:19 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:47:29 [Error] L2 Monitor fetch failed: ws not connected
+2026/01/07 16:47:29 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:47:32 [WS] Connecting to http://172.20.0.1:8080/ws/agent...
+2026/01/07 16:47:32 [WS] Connected and Authenticated
+2026/01/07 16:47:32 [WS] Read error: websocket: close 4003: Auth Failed
+2026/01/07 16:47:32 [WS] Connect failed: websocket: close 4003: Auth Failed. Retrying in 1m0s...
+2026/01/07 16:47:39 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:47:49 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:47:59 [Error] L2 Monitor fetch failed: ws not connected
+2026/01/07 16:47:59 [Error] Metrics ship failed: ws not connected
+2026/01/07 16:48:09 [Error] Metrics ship failed: ws not connected

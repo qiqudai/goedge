@@ -42,7 +42,7 @@
           :closable="false"
           class="limit-alert"
         >
-          ?????? {{ domainUsage.total_domains }} / {{ formatLimit(domainUsage.domain_limit) }} ????? {{ domainUsage.total_main_domains }} / {{ formatLimit(domainUsage.main_domain_limit) }}
+          域名数 {{ domainUsage.total_domains }} / {{ formatLimit(domainUsage.domain_limit) }} 主域名数 {{ domainUsage.total_main_domains }} / {{ formatLimit(domainUsage.main_domain_limit) }}
         </el-alert>
 
         <el-form-item label="源站地址" prop="origins">
@@ -160,7 +160,7 @@ domain=test.com|ip=2.2.2.2,3.3.3.3"
     <template #footer>
       <div>
         <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" :disabled="domainLimitExceeded" @click="handleSubmit">确定</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="submitting" @click="handleSubmit">确定</el-button>
       </div>
     </template>
   </el-dialog>
@@ -402,7 +402,7 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (domainLimitExceeded.value) {
-        ElMessage.error(domainUsage.value?.message || '??????')
+        ElMessage.error(domainUsage.value?.message || '域名数量超过套餐限制')
         submitting.value = false
         return
     }
@@ -492,7 +492,7 @@ const handleSubmit = async () => {
 
 function formatLimit(val) {
   const num = Number(val)
-  if (!num || num <= 0) return '??'
+  if (!num || num <= 0) return '不限'
   return num
 }
 

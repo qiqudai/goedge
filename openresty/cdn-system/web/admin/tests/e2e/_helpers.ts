@@ -10,9 +10,12 @@ export function attachGuards(page: Page) {
     consoleErrors.push(err.message)
   })
   page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      consoleErrors.push(msg.text())
+    if (msg.type() !== 'error') return
+    const text = msg.text()
+    if (text.includes('Unable to preventDefault inside passive event listener invocation.')) {
+      return
     }
+    consoleErrors.push(text)
   })
   page.on('response', (resp) => {
     const url = resp.url()

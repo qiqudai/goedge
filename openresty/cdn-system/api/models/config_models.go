@@ -35,6 +35,8 @@ type EdgeConfig struct {
 	CCFilters     map[int64]EdgeCCFilter     `json:"cc_filters,omitempty"`
 	Streams       []EdgeStream               `json:"streams,omitempty"`
 	Nginx         *EdgeNginxConfig           `json:"nginx,omitempty"`
+	FallbackCertData string                 `json:"fallback_cert_data,omitempty"`
+	FallbackKeyData  string                 `json:"fallback_key_data,omitempty"`
 }
 
 type EdgeDomain struct {

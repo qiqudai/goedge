@@ -1,5 +1,5 @@
 <template>
-  <div class="basic-config">
+  <div class="basic-config" @focusin="cacheInputValue">
     <div class="section-title">基本设置</div>
     <el-form label-width="120px" class="config-form">
       <el-form-item label="状态">
@@ -57,7 +57,7 @@
         <el-input
           v-model="localSettings.domain"
           @input="updateSettings"
-          @blur="saveSettings(true)"
+          @blur="handleBlurSave"
         />
         <div class="form-helper">
           多个域名以空格分隔，中文域名及其它IDN域名需要转成Punycode，
@@ -84,7 +84,7 @@
         <el-input
           v-model="localSettings.httpPorts"
           @input="updateSettings"
-          @blur="saveSettings(true)"
+          @blur="handleBlurSave"
         />
         <div class="form-helper">
           多个端口空格分隔。如需兼容http://www.example.com和http://www.example.com:888访问，则填80 888
@@ -108,13 +108,13 @@
             v-model="row.address"
             placeholder="IP 或域名"
             size="small"
-            @blur="saveSettings(true)"
+            @blur="handleBlurSave"
           />
         </template>
       </el-table-column>
       <el-table-column prop="weight" label="权重" width="120">
         <template #default="{ row }">
-          <el-input v-model="row.weight" size="small" @blur="saveSettings(true)" />
+          <el-input v-model="row.weight" size="small" @blur="handleBlurSave" />
         </template>
       </el-table-column>
       <el-table-column label="状态" width="120">
@@ -124,7 +124,7 @@
             active-text="启用" 
             inactive-text="停用" 
             size="small"
-            @change="saveSettings(true)"
+            @change="handleSave"
           />
         </template>
       </el-table-column>
@@ -181,21 +181,21 @@
               v-model="row.header"
               size="small"
               placeholder="请求头名称，如 user-agent"
-              @blur="saveSettings(true)"
+              @blur="handleBlurSave"
             />
             <el-input
               v-else-if="isOriginStatItem(row.item)"
               v-model="row.seconds"
               size="small"
               placeholder="统计秒数"
-              @blur="saveSettings(true)"
+              @blur="handleBlurSave"
             />
             <el-input
               v-else
               v-model="row.value"
               size="small"
               :placeholder="getOriginConditionPlaceholder(row)"
-              @blur="saveSettings(true)"
+              @blur="handleBlurSave"
             />
             <el-select
               v-if="!isOriginStatItem(row.item)"
@@ -203,7 +203,7 @@
               size="small"
               placeholder="匹配方式"
               style="width: 140px;"
-              @change="saveSettings(true)"
+              @change="handleSave"
             >
               <el-option
                 v-for="opt in originConditionOperators"
@@ -222,7 +222,7 @@
             v-model="row.origin"
             placeholder="源站地址，多个用 | 分隔"
             size="small"
-            @blur="saveSettings(true)"
+            @blur="handleBlurSave"
           />
         </template>
       </el-table-column>
@@ -251,6 +251,7 @@ import { ref, computed, watch } from 'vue'
 import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
 import { originConditionItems, originConditionOperators } from '@/constants/origin'
 import { useSiteSettings } from '@/composables/useSiteSettings'
+import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 
 const { saveSettings } = useSiteSettings()
 
@@ -325,6 +326,13 @@ const updateSettings = () => {
 const handleSave = () => {
   updateSettings()
   saveSettings(true)
+}
+
+const handleBlurSave = (event) => {
+  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+    return
+  }
+  handleSave()
 }
 
 const handlePackageChange = (value) => {

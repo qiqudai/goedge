@@ -18,6 +18,15 @@ func StartUserPackageExpirationWorker() {
 }
 
 func checkUserPackageExpiration() {
+	systemCfg, err := LoadSystemConfig()
+	if err != nil {
+		log.Println("[Error] Load system config:", err)
+		return
+	}
+	if !ParseBoolFlag(systemCfg["package_expire_close_site"]) {
+		return
+	}
+
 	var expiredPackages []models.UserPackage
 	now := time.Now()
 	// Find active packages that have expired
@@ -82,7 +91,7 @@ func checkUserPackageExpiration() {
 	//    This requires DB migration for `is_expired`.
 	//    I'll add `IsExpired` field to `models.UserPackage`.
 	
-	err := db.DB.Where("end_at < ? AND (is_expired = ? OR is_expired IS NULL)", now, false).Find(&expiredPackages).Error
+	err = db.DB.Where("end_at < ? AND (is_expired = ? OR is_expired IS NULL)", now, false).Find(&expiredPackages).Error
 	if err != nil {
 		log.Println("[Error] Check expiration:", err)
 		return
