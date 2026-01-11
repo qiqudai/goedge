@@ -1,5 +1,0 @@
-2026/01/03 09:04:28 [Info] Loaded config from config.yaml
-2026/01/03 09:04:28 Database connection established
-2026/01/03 09:04:29 Starting CDN Core API on :8080
-2026/01/03 09:04:29 [DNS Worker] Started
-[GIN-debug] [ERROR] listen tcp :8080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.

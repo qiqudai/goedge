@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="pageTitle">Security Verification</title>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f4f4f4;
+        }
+
+        .content {
+            width: 340px;
+            text-align: center;
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            position: relative;
+        }
+
+        .img-container {
+            position: relative;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        p {
+            margin: 10px 0;
+            font-size: 18px;
+            color: black;
+            text-align: left;
+        }
+
+        p.small-text {
+            font-size: 16px;
+            color: gray;
+        }
+
+        .marker {
+            position: absolute;
+            background-color: #007dfa;
+            border: 2px solid white;
+            border-radius: 50%;
+            padding: 5px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            user-select: none;
+            box-shadow: 0px 0px 3px rgba(0,0,0,0.3);
+            width: 10px;
+            height: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+        }
+
+        .clickableImg {
+            width: 340px;
+            background-size: auto;
+            background-position: top;
+            position: relative;
+        }
+
+        .word {
+            width: 120px;
+            height: 40px;
+            background-size: auto;
+            background-position: bottom;
+            position: relative;
+        }
+
+        #instruction {
+            display: flex;
+            align-items: center;
+        }
+
+    </style>
+</head>
+<body>
+<div class="content">
+    <p class="small-text" id="headerText">Security Verification</p>
+    <div id="instruction">Please click in sequence: <div class="word"></div></div>
+    <div class="img-container">
+        <div class="clickableImg">
+    </div>
+</div>
+<script>
+    // Language translations
+    const translations = {
+        "en": {
+            title: "Security Verification",
+            header: "Security Verification",
+            instruction: "Please click in sequence: "
+        },
+        "zh": {
+            title: "安全验证",
+            header: "安全验证",
+            instruction: "请依次点击："
+        }
+    };
+
+    // Default language is English
+    let currentLang = "en";
+
+    // Get browser language
+    const userLang = navigator.language || navigator.userLanguage;
+    if (userLang.toLowerCase().startsWith("zh")) {
+        currentLang = "zh";
+    }
+
+    // Apply translations
+    const texts = translations[currentLang];
+    document.getElementById("pageTitle").textContent = texts.title;
+    document.getElementById("headerText").textContent = texts.header;
+    document.getElementById("instruction").innerHTML = texts.instruction + "<div class=word></div>";
+</script>
+<script type="text/javascript" src="/_guard/click.js"></script>
+
+</body>
+</html>

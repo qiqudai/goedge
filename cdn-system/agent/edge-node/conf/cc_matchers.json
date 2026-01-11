@@ -1,0 +1,30 @@
+{
+  "10024": {
+    "id": 10024,
+    "data": "{\"rules\":[{\"item\":\"all\",\"operator\":\"eq\",\"value\":\"22\"}]}"
+  },
+  "10025": {
+    "id": 10025,
+    "data": "{\"rules\":[{\"item\":\"all\",\"operator\":\"eq\",\"value\":\"\"}]}"
+  },
+  "10026": {
+    "id": 10026,
+    "data": "{\"rules\":[{\"item\":\"all\",\"operator\":\"eq\",\"value\":\"\"}]}"
+  },
+  "10027": {
+    "id": 10027,
+    "data": "{\"rules\":[{\"key\":\"uri\",\"logic\":\"and\",\"operator\":\"equals\",\"value\":\"/\"}]}"
+  },
+  "3": {
+    "id": 3,
+    "data": "{}"
+  },
+  "4": {
+    "id": 4,
+    "data": "{\"req_uri\":{\"operator\":\"contain\",\"value\":\".js\\n.css\\n.png\\n.jpg\\n.jpeg\\n.gif\" }}"
+  },
+  "5": {
+    "id": 5,
+    "data": "{\"uri\":{\"operator\":\"contain\",\"value\":\"/_guard/click.js\\n/_guard/slide.js\\n/_guard/captcha.png\\n/_guard/verify-captcha\\n/_guard/encrypt.js\\nfavicon.ico\"}}"
+  }
+}

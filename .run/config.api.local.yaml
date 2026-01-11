@@ -1,0 +1,9 @@
+﻿port: "8080"
+db_dsn: "root:123456@tcp(127.0.0.1:3306)/cdnfy?charset=utf8mb4&parseTime=True&loc=Local"
+debug: true
+agent_token: "1e53b4aaf19c4feda09cc353f28e4c7e"
+clickhouse_enabled: false
+clickhouse_dsn: ""
+acme_email: ""
+acme_webroot: "./acme"
+acme_account_dir: "./acme/accounts"

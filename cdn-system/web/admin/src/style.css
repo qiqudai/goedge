@@ -1,0 +1,434 @@
+﻿:root {
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC",
+    system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --app-bg: #f5f7fa;
+  --content-bg: #f5f7fa;
+  --card-bg: #ffffff;
+  --border-color: #dcdfe6;
+  --text-color: #303133;
+  --muted-text: #606266;
+  --sidebar-bg: #4f5760;
+  --sidebar-text: #ffffff;
+  --sidebar-active: #ffd04b;
+  --sidebar-logo-bg: #3f464d;
+  --header-bg: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  --app-bg: #1e1f22;
+  --content-bg: #1e1f22;
+  --card-bg: #262a31;
+  --border-color: #3a3f47;
+  --text-color: #e5eaf3;
+  --muted-text: #b0b6c3;
+  --sidebar-bg: #2b2f36;
+  --sidebar-text: #e5eaf3;
+  --sidebar-active: #ffd04b;
+  --sidebar-logo-bg: #24272d;
+  --header-bg: #2b2f36;
+}
+
+body {
+  margin: 0;
+  background-color: var(--app-bg);
+  color: var(--text-color);
+}
+
+a {
+  font-weight: 500;
+  color: #409eff;
+  text-decoration: inherit;
+}
+
+a:hover {
+  color: #2a7bd9;
+}
+
+#app {
+  width: 100%;
+}
+
+.el-main {
+  background-color: var(--content-bg);
+}
+
+.el-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+.el-table {
+  color: var(--text-color);
+}
+
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.el-table__header-wrapper th.el-table__cell {
+  background-color: #f2f4f7;
+  color: var(--text-color);
+}
+
+.el-divider__text {
+  color: var(--text-color);
+}
+
+.el-pagination {
+  justify-content: flex-start;
+}
+
+.monitor-toolbar .el-date-editor {
+  width: 320px !important;
+}
+
+
+:root[data-theme="dark"] .el-table {
+  --el-table-border-color: var(--border-color);
+  --el-table-header-bg-color: #2f333b;
+  --el-table-row-hover-bg-color: #2b3038;
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-table th.el-table__cell,
+:root[data-theme="dark"] .el-table td.el-table__cell {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-table__header-wrapper th.el-table__cell {
+  background-color: #2f333b;
+}
+
+:root[data-theme="dark"] .el-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-input__wrapper,
+:root[data-theme="dark"] .el-textarea__inner,
+:root[data-theme="dark"] .el-select__wrapper,
+:root[data-theme="dark"] .el-pagination {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-input__inner,
+:root[data-theme="dark"] .el-textarea__inner {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-pagination button,
+:root[data-theme="dark"] .el-pagination .el-pager li {
+  background-color: #2a2f36;
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-dialog,
+:root[data-theme="dark"] .el-drawer {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-dialog__header,
+:root[data-theme="dark"] .el-dialog__footer {
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-form-item__label,
+:root[data-theme="dark"] .el-form-item__content,
+:root[data-theme="dark"] .el-text,
+:root[data-theme="dark"] .el-descriptions__label,
+:root[data-theme="dark"] .el-descriptions__content {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-input__wrapper,
+:root[data-theme="dark"] .el-textarea__inner,
+:root[data-theme="dark"] .el-select__wrapper,
+:root[data-theme="dark"] .el-input-number,
+:root[data-theme="dark"] .el-input-group__prepend,
+:root[data-theme="dark"] .el-input-group__append,
+:root[data-theme="dark"] .el-tabs__nav-wrap {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-input__inner::placeholder,
+:root[data-theme="dark"] .el-textarea__inner::placeholder {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-input-number__decrease,
+:root[data-theme="dark"] .el-input-number__increase {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs__item {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-tabs__item.is-active {
+  color: #409eff;
+}
+
+:root[data-theme="dark"] .el-radio__label {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-button--primary {
+  --el-button-bg-color: #409eff !important;
+  --el-button-border-color: #409eff !important;
+  --el-button-text-color: #ffffff !important;
+  --el-button-hover-bg-color: #66b1ff !important;
+  --el-button-hover-border-color: #66b1ff !important;
+  --el-button-hover-text-color: #ffffff !important;
+  --el-button-active-bg-color: #3a8ee6 !important;
+  --el-button-active-border-color: #3a8ee6 !important;
+  background-color: #409eff !important;
+  border-color: #409eff !important;
+  color: #ffffff !important;
+}
+:root[data-theme="dark"] .el-tabs__nav-wrap::after {
+  background-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-card,
+:root[data-theme="dark"] .el-collapse,
+:root[data-theme="dark"] .el-collapse-item__header,
+:root[data-theme="dark"] .el-collapse-item__wrap {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-table__header-wrapper,
+:root[data-theme="dark"] .el-table__body-wrapper,
+:root[data-theme="dark"] .el-table__empty-block {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-table__empty-text {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-pagination,
+:root[data-theme="dark"] .el-pagination__total,
+:root[data-theme="dark"] .el-pagination__jump {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-button--default {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-button--default {
+  --el-button-bg-color: #2a2f36;
+  --el-button-text-color: var(--text-color);
+  --el-button-border-color: var(--border-color);
+  --el-button-hover-bg-color: #343a43;
+  --el-button-hover-text-color: var(--text-color);
+  --el-button-hover-border-color: #4a515c;
+  --el-button-active-bg-color: #343a43;
+  --el-button-active-border-color: #4a515c;
+  --el-button-disabled-bg-color: #2a2f36;
+  --el-button-disabled-text-color: #6f7684;
+  --el-button-disabled-border-color: #3a3f47;
+}
+
+:root[data-theme="dark"] .el-button.is-plain,
+:root[data-theme="dark"] .el-button--default.is-plain {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-button.is-text {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-dialog,
+:root[data-theme="dark"] .el-dialog__body,
+:root[data-theme="dark"] .el-drawer__body {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-popover,
+:root[data-theme="dark"] .el-dropdown-menu {
+  background-color: #2a2f36;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-message-box,
+:root[data-theme="dark"] .el-message,
+:root[data-theme="dark"] .el-notification {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-message-box__title,
+:root[data-theme="dark"] .el-message-box__content,
+:root[data-theme="dark"] .el-message-box__message,
+:root[data-theme="dark"] .el-notification__title,
+:root[data-theme="dark"] .el-notification__content,
+:root[data-theme="dark"] .el-message__content {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select-dropdown,
+:root[data-theme="dark"] .el-dropdown-menu,
+:root[data-theme="dark"] .el-popper .el-select-dropdown__wrap,
+:root[data-theme="dark"] .el-picker-panel,
+:root[data-theme="dark"] .el-date-picker {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select-dropdown__item,
+:root[data-theme="dark"] .el-dropdown-menu__item,
+:root[data-theme="dark"] .el-picker-panel__icon-btn,
+:root[data-theme="dark"] .el-picker-panel__content,
+:root[data-theme="dark"] .el-date-table th,
+:root[data-theme="dark"] .el-date-table td,
+:root[data-theme="dark"] .el-month-table td,
+:root[data-theme="dark"] .el-year-table td {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select-dropdown__item.is-hovering,
+:root[data-theme="dark"] .el-dropdown-menu__item:hover,
+:root[data-theme="dark"] .el-date-table td.available:hover {
+  background-color: #343a43;
+}
+
+:root[data-theme="dark"] .el-message-box__btns .el-button--default {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card {
+  background-color: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card > .el-tabs__header {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card > .el-tabs__content {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card .el-tabs__item {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-tabs--border-card .el-tabs__item.is-active {
+  color: #409eff;
+}
+
+:root[data-theme="dark"] .el-alert {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-alert__title,
+:root[data-theme="dark"] .el-alert__description {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-date-editor .el-input__wrapper {
+  background-color: #2a2f36;
+}
+
+:root[data-theme="dark"] .advanced-filter-area {
+  background: #24282f;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .dashboard-container {
+  background: var(--content-bg);
+}
+
+:root[data-theme="dark"] .dashboard-container .user-meta,
+:root[data-theme="dark"] .dashboard-container .overview-title,
+:root[data-theme="dark"] .dashboard-container .ops-title,
+:root[data-theme="dark"] .dashboard-container .pkg-desc,
+:root[data-theme="dark"] .dashboard-container .announcement-list li,
+:root[data-theme="dark"] .dashboard-container .resource-list .status-row,
+:root[data-theme="dark"] .dashboard-container .admin-user-info,
+:root[data-theme="dark"] .dashboard-container .status-list,
+:root[data-theme="dark"] .dashboard-container .status-tip,
+:root[data-theme="dark"] .dashboard-container .license-list .status-row {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .dashboard-container .overview-value,
+:root[data-theme="dark"] .dashboard-container .admin-user-name,
+:root[data-theme="dark"] .dashboard-container .pkg-name,
+:root[data-theme="dark"] .dashboard-container .card-header span {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-button--primary.is-plain,
+:root[data-theme="dark"] .el-button--success.is-plain,
+:root[data-theme="dark"] .el-button--warning.is-plain,
+:root[data-theme="dark"] .el-button--danger.is-plain,
+:root[data-theme="dark"] .el-button--info.is-plain {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+/* Dark mode fixes for Dialog and Select visibility */
+:root[data-theme="dark"] .el-dialog__title {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select__selected-item {
+  color: var(--text-color);
+}
+
+:root[data-theme="dark"] .el-select__placeholder {
+  color: var(--muted-text);
+}
+
+:root[data-theme="dark"] .el-select .el-input__inner {
+  color: var(--text-color);
+}
+
+/* Fix for tabs layout clipping */
+.el-tabs__nav-scroll {
+  padding-left: 10px;
+}
+
+:root[data-theme="dark"] .el-divider__text {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}

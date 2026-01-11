@@ -1,0 +1,13 @@
+{
+  "website": {
+    "default_listen_80": false,
+    "log_storage_dir": "logs",
+    "log_storage_hours": 1
+  },
+  "forward": {
+    "disabled_ports": "80 443"
+  },
+  "public": {
+    "disabled_custom_ports": "22"
+  }
+}

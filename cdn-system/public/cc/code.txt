@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f5f6fa;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        h2 {
+            color: #333;
+            font-size: 1.8em;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: -15px;
+        }
+
+        .image-container {
+            position: relative;
+            width: 100%;
+        }
+
+        .captcha-image {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .refresh-icon {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            border: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .refresh-icon:hover {
+            transform: rotate(30deg);
+        }
+
+        .verification-area {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+
+        input {
+            flex: 1;
+            min-width: 0; /* 防止flex子项溢出 */
+            padding: 12px 15px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+
+        input:focus {
+            border-color: #4285f4;
+            box-shadow: 0 0 0 3px rgba(66,133,244,0.1);
+        }
+
+        .submit-btn {
+            flex-shrink: 0; /* 防止按钮被压缩 */
+            background: linear-gradient(135deg, #4285f4, #3367d6);
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .shake {
+            animation: shake 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2></h2>
+      <p id="err"></p>
+        <div class="image-container">
+            <img id="captcha" class="captcha-image" alt="">
+            <button class="refresh-icon" onclick="refreshCaptcha()">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="#666">
+                    <path d="M13.65 2.35A8 8 0 1 0 14.85 12h-2.17a6 6 0 1 1-1.03-7.76L9 7h7V0l-2.35 2.35z"/>
+                </svg>
+            </button>
+        </div>
+        <div class="verification-area">
+            <input type="text" id="answer" autocomplete="off">
+            <button class="submit-btn"></button>
+        </div>
+    </div>
+    <script type="text/javascript" src="/_guard/captcha.js"></script>
+    <script>
+        const translations = {
+            en: {
+                title: "Security Verification",
+                placeholder: "Enter result",
+                submit: "Submit",
+                newProblem: "New Problem",
+                altText: "Math Problem"
+            },
+            zh: {
+                title: "安全验证",
+                placeholder: "输入计算结果",
+                submit: "提交答案",
+                newProblem: "换一题",
+                altText: "算术题"
+            }
+        };
+
+        function detectLanguage() {
+            const userLang = navigator.language || navigator.userLanguage;
+            return userLang.startsWith("zh") ? "zh" : "en";
+        }
+
+        const currentLang = detectLanguage();
+
+        function updateUI() {
+            const texts = translations[currentLang];
+            document.title = texts.title;
+            document.querySelector("h2").textContent = texts.title;
+            document.getElementById("answer").placeholder = texts.placeholder;
+            document.querySelector(".submit-btn").textContent = texts.submit;
+            document.querySelector(".refresh-icon").title = texts.newProblem;
+            document.getElementById("captcha").alt = texts.altText;
+            document.documentElement.lang = currentLang;
+        }
+
+        function refreshCaptcha() {
+            const img = document.getElementById("captcha");
+            const timestamp = new Date().getTime();
+            img.src = `/_guard/captcha.png?t=${timestamp}&lang=${currentLang}`;
+            document.getElementById("answer").focus();
+        }
+
+        window.onload = function() {
+            updateUI();
+            refreshCaptcha();
+            document.getElementById("answer").focus();
+        };
+    </script>
+</body>
+</html>

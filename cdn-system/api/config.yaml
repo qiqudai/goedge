@@ -1,0 +1,9 @@
+port: "8080"
+db_dsn: "root:tPKWjjSDpZiL7Aws@tcp(172.18.0.1:13306)/CK?charset=utf8mb4&parseTime=True&loc=Local"
+debug: false
+agent_token: "1e53b4aaf19c4feda09cc353f28e4c7e"
+clickhouse_enabled: true
+clickhouse_dsn: "http://default:123@127.0.0.1:8123/cdn_logs?compress=true"
+acme_email: "qiqudai7788@gmail.com"
+acme_webroot: "\\\\wsl$\\Ubuntu-24.04\\usr\\local\\goedge\\nodes\\edge-node\\cert\\acme"
+acme_account_dir: "./acme/accounts"

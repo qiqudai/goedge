@@ -1,6 +1,0 @@
-{
-  "10027": {
-    "id": 10027,
-    "data": "{\"rules\":[{\"key\":\"uri\",\"logic\":\"and\",\"operator\":\"equals\",\"value\":\"/\"}]}"
-  }
-}

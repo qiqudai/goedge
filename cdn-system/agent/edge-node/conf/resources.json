@@ -1,0 +1,13 @@
+{
+  "website": {
+    "default_listen_80": true,
+    "log_storage_dir": "logs-e2e",
+    "log_storage_hours": 2
+  },
+  "forward": {
+    "disabled_ports": "80 443-e2e"
+  },
+  "public": {
+    "disabled_custom_ports": "22-e2e"
+  }
+}
