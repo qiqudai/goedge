@@ -25,10 +25,10 @@ func initProviderLineMap() {
 			"global":   "oversea",
 			"search":   "search",
 		},
-		"dnspod": buildChinaLineMap(),
-		"dnspod_intl": buildChinaLineMap(),
-		"dnsla": buildCommonLineMap(),
-		"huawei": buildCommonLineMap(),
+		"dnspod":      buildChinaLineMap(),
+		"dnspod_intl": buildDNSPodIntlLineMap(),
+		"dnsla":       buildCommonLineMap(),
+		"huawei":      buildCommonLineMap(),
 	}
 }
 
@@ -49,14 +49,14 @@ func buildCommonLineMap() map[string]string {
 
 func buildChinaLineMap() map[string]string {
 	return map[string]string{
-		"default":  i18n.T("dns.line_default"),
-		"telecom":  i18n.T("dns.line_telecom"),
-		"unicom":   i18n.T("dns.line_unicom"),
-		"mobile":   i18n.T("dns.line_mobile"),
-		"china":    i18n.T("dns.line_cn"),
-		"cn":       i18n.T("dns.line_cn"),
-		"global":   i18n.T("dns.line_global"),
-		"search":   i18n.T("dns.line_search"),
+		"default":      i18n.T("dns.line_default"),
+		"telecom":      i18n.T("dns.line_telecom"),
+		"unicom":       i18n.T("dns.line_unicom"),
+		"mobile":       i18n.T("dns.line_mobile"),
+		"china":        i18n.T("dns.line_cn"),
+		"cn":           i18n.T("dns.line_cn"),
+		"global":       i18n.T("dns.line_global"),
+		"search":       i18n.T("dns.line_search"),
 		"anhui":        i18n.T("dns.region_anhui"),
 		"beijing":      i18n.T("dns.region_beijing"),
 		"chongqing":    i18n.T("dns.region_chongqing"),
@@ -88,11 +88,29 @@ func buildChinaLineMap() map[string]string {
 		"xinjiang":     i18n.T("dns.region_xinjiang"),
 		"yunnan":       i18n.T("dns.region_yunnan"),
 		"zhejiang":     i18n.T("dns.region_zhejiang"),
-		"tie-tong":  i18n.T("dns.line_ctt"),
-		"ctt":       i18n.T("dns.line_ctt"),
-		"broadcast": i18n.T("dns.line_broadnet"),
-		"broadnet":  i18n.T("dns.line_broadnet"),
-		"edu":       i18n.T("dns.line_edu"),
+		"tie-tong":     i18n.T("dns.line_ctt"),
+		"ctt":          i18n.T("dns.line_ctt"),
+		"broadcast":    i18n.T("dns.line_broadnet"),
+		"broadnet":     i18n.T("dns.line_broadnet"),
+		"edu":          i18n.T("dns.line_edu"),
+	}
+}
+
+func buildDNSPodIntlLineMap() map[string]string {
+	return map[string]string{
+		"default":   "Default",
+		"telecom":   "Telecom",
+		"unicom":    "Unicom",
+		"mobile":    "Mobile",
+		"china":     "China",
+		"cn":        "China",
+		"global":    "Oversea",
+		"search":    "Search",
+		"tie-tong":  "TieTong",
+		"ctt":       "TieTong",
+		"broadcast": "Broadcast",
+		"broadnet":  "Broadcast",
+		"edu":       "Edu",
 	}
 }
 

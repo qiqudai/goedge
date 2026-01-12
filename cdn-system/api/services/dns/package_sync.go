@@ -50,6 +50,7 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 	} else {
 		lineHost = lineHost + "." + lineDomain
 	}
+	desiredValue := normalizeDomainName(lineHost)
 
 	var api models.DNSAPI
 	if err := db.DB.Where("id = ?", domain.DNSProviderID).First(&api).Error; err != nil {
@@ -152,7 +153,7 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 			continue
 		}
 		existing = append(existing, r)
-		if r.Value == lineHost {
+		if normalizeDomainName(r.Value) == desiredValue {
 			hasDesired = true
 		}
 	}
@@ -181,7 +182,7 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 	}
 
 	for _, r := range existing {
-		if r.Value == lineHost {
+		if normalizeDomainName(r.Value) == desiredValue {
 			continue
 		}
 		if err := provider.DeleteRecord(root, r); err != nil {

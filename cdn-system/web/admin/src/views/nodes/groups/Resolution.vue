@@ -170,6 +170,7 @@ const selectedRegionId = ref(0)
 const selectedGroupId = ref(0)
 const currentLineId = ref('default')
 const loading = ref(false)
+const fetching = ref(false)
 let refreshTimer = null
 
 const allAvailable = ref([])
@@ -366,15 +367,19 @@ const loadGroups = () => {
   })
 }
 
-const loadResolution = () => {
-  if (!selectedGroupId.value) {
+const loadResolution = ({ showLoading = true } = {}) => {
+  if (!selectedGroupId.value || fetching.value) {
     return
   }
-  loading.value = true
+  fetching.value = true
+  if (showLoading) {
+    loading.value = true
+  }
   request({
     url: `/node-groups/${selectedGroupId.value}/resolution`,
     method: 'get',
-    params: { line_id: currentLineId.value }
+    params: { line_id: currentLineId.value },
+    skipLoading: !showLoading
   }).then(res => {
     const payload = res.data || {}
     const group = payload.group || {}
@@ -382,7 +387,10 @@ const loadResolution = () => {
     allAvailable.value = payload.available || []
     allAssigned.value = payload.assigned || []
   }).finally(() => {
-    loading.value = false
+    fetching.value = false
+    if (showLoading) {
+      loading.value = false
+    }
   })
 }
 
@@ -391,10 +399,10 @@ const startAutoRefresh = () => {
     clearInterval(refreshTimer)
   }
   refreshTimer = setInterval(() => {
-    if (loading.value || !selectedGroupId.value) {
+    if (fetching.value || !selectedGroupId.value) {
       return
     }
-    loadResolution()
+    loadResolution({ showLoading: false })
   }, 3000)
 }
 
