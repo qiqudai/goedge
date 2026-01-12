@@ -49,7 +49,7 @@ func (ctr *AgentController) Heartbeat(c *gin.Context) {
 			}
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "pong", "sync_action": syncAction})
+	c.JSON(http.StatusOK, gin.H{"status": T("status.pong"), "sync_action": syncAction})
 }
 
 func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
@@ -202,14 +202,14 @@ func (ctr *AgentController) ReportL2Heartbeat(c *gin.Context) {
 		return
 	}
 	if len(req.Nodes) == 0 {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
 		return
 	}
 	now := time.Now()
 	for _, id := range req.Nodes {
 		services.MarkNodeOnline(id, now)
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
 }
 
 func (ctr *AgentController) SyncNodeStatus(c *gin.Context) {
@@ -245,7 +245,7 @@ func (ctr *AgentController) SyncNodeStatus(c *gin.Context) {
 		return
 	}
 	if !req.Success {
-		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		c.JSON(http.StatusOK, gin.H{"status": T("status.ignored")})
 		return
 	}
 
@@ -256,7 +256,7 @@ func (ctr *AgentController) SyncNodeStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("update failed")})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
 }
 
 func resolveAgentNodeID(c *gin.Context) int64 {
@@ -321,6 +321,11 @@ func (ctr *AgentController) GetTasks(c *gin.Context) {
 				"start_at": time.Now(),
 				"progress": progress,
 			})
+			if strings.EqualFold(task.Type, "issue_cert") {
+				_ = db.DB.Model(&models.Cert{}).
+					Where("issue_task_id = ? AND state = ?", task.ID, "waiting").
+					Update("state", "issuing").Error
+			}
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"tasks": filtered})
@@ -344,10 +349,10 @@ func (ctr *AgentController) GetUpgrade(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"api_version":   apiVersion,
-			"node_version":  nodeVersion,
-			"auto_upgrade":  autoUpgrade,
-			"need_upgrade":  needsUpgrade,
+			"api_version":    apiVersion,
+			"node_version":   nodeVersion,
+			"auto_upgrade":   autoUpgrade,
+			"need_upgrade":   needsUpgrade,
 			"should_upgrade": needsUpgrade && autoUpgrade,
 		},
 	})
@@ -425,7 +430,7 @@ func (ctr *AgentController) FinishTask(c *gin.Context) {
 			notifyTaskCompletion(task, nextState, req.Ret)
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
 }
 
 type taskMeta struct {

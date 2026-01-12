@@ -38,11 +38,11 @@ func (ctr *DNSAPIController) List(c *gin.Context) {
 
 func (ctr *DNSAPIController) Create(c *gin.Context) {
 	var req struct {
-		UserID    int64  `json:"user_id"`
-		Name      string `json:"name"`
-		Remark    string `json:"remark"`
-		Type      string `json:"type"`
-		Auth      string `json:"auth"`
+		UserID int64  `json:"user_id"`
+		Name   string `json:"name"`
+		Remark string `json:"remark"`
+		Type   string `json:"type"`
+		Auth   string `json:"auth"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Params")})
@@ -78,10 +78,10 @@ func (ctr *DNSAPIController) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name      string `json:"name"`
-		Remark    string `json:"remark"`
-		Type      string `json:"type"`
-		Auth      string `json:"auth"`
+		Name   string `json:"name"`
+		Remark string `json:"remark"`
+		Type   string `json:"type"`
+		Auth   string `json:"auth"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Params")})
@@ -116,19 +116,19 @@ func (ctr *DNSAPIController) Delete(c *gin.Context) {
 
 func (ctr *DNSAPIController) Types(c *gin.Context) {
 	types := []gin.H{
-		{"type": "cloudflare", "name": "Cloudflare", "fields": []string{"email", "api_key"}},
-		{"type": "aliyun", "name": "Aliyun", "fields": []string{"access_key_id", "access_key_secret"}},
-		{"type": "dnspod", "name": "DNSPod.cn", "fields": []string{"id", "token"}},
-		{"type": "dnspod_intl", "name": "DNSPod.com", "fields": []string{"id", "token"}},
-		{"type": "godaddy", "name": "GoDaddy", "fields": []string{"api_key", "api_secret"}},
-		{"type": "namecom", "name": "Name.com", "fields": []string{"username", "api_token"}},
-		{"type": "namecheap", "name": "Namecheap", "fields": []string{"user", "api_key", "ip"}},
-		{"type": "cloudns", "name": "ClouDNS", "fields": []string{"auth_id", "auth_password"}},
-		{"type": "namesilo", "name": "Namesilo", "fields": []string{"api_key"}},
-		{"type": "jdcloud", "name": "JDCloud", "fields": []string{"access_key", "secret_key"}},
-		{"type": "dnsla", "name": "DNS.LA", "fields": []string{"api_id", "api_pass"}},
-		{"type": "51dns", "name": "51DNS", "fields": []string{"app_id", "app_secret"}},
-		{"type": "huawei", "name": "Huawei Cloud", "fields": []string{"access_key_id", "secret_access_key"}},
+		{"type": T("cloudflare"), "name": T("Cloudflare"), "fields": []string{"email", "api_key"}},
+		{"type": T("aliyun"), "name": T("Aliyun"), "fields": []string{"access_key_id", "access_key_secret"}},
+		{"type": T("dnspod"), "name": T("DNSPod.cn"), "fields": []string{"id", "token"}},
+		{"type": T("dnspod_intl"), "name": T("DNSPod.com"), "fields": []string{"id", "token"}},
+		{"type": T("godaddy"), "name": T("GoDaddy"), "fields": []string{"api_key", "api_secret"}},
+		{"type": T("namecom"), "name": T("Name.com"), "fields": []string{"username", "api_token"}},
+		{"type": T("namecheap"), "name": T("Namecheap"), "fields": []string{"user", "api_key", "ip"}},
+		{"type": T("cloudns"), "name": T("ClouDNS"), "fields": []string{"auth_id", "auth_password"}},
+		{"type": T("namesilo"), "name": T("Namesilo"), "fields": []string{"api_key"}},
+		{"type": T("jdcloud"), "name": T("JDCloud"), "fields": []string{"access_key", "secret_key"}},
+		{"type": T("dnsla"), "name": T("DNS.LA"), "fields": []string{"api_id", "api_pass"}},
+		{"type": T("51dns"), "name": T("51DNS"), "fields": []string{"app_id", "app_secret"}},
+		{"type": T("huawei"), "name": T("Huawei Cloud"), "fields": []string{"access_key_id", "secret_access_key"}},
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"types": types}})
 }

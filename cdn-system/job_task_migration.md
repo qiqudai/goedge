@@ -157,6 +157,18 @@
   - Tests: `go vet ./...` ✅ (cdn-system/api)
   - Tests: `go test ./...` ✅ (cdn-system/api)
   - Tests: `python (admin login + /sites/batch_update group_ids 验证)` ✅
+- [x] Module: agent Nginx 重载修复 + ACME HTTP-01 端口补齐（80 + HTTPSForce）+ 系统 Nginx 证书挑战透传。
+  - Tests: `go vet ./...` ✅ (cdn-system/agent)
+  - Tests: `go test ./...` ✅ (cdn-system/agent)
+  - Tests: `/www/server/nginx/sbin/nginx -t` ✅
+  - Tests: `/www/server/nginx/sbin/nginx -s reload` ✅
+  - Tests: `python (config_sync + cert reissue + status ready)` ✅
+- [x] Module: ACME HTTP-01 改为使用网站 HTTP 监听端口（移除固定 80 端口补位）。
+  - Tests: `go vet ./...` ✅ (cdn-system/agent)
+  - Tests: `go test ./...` ✅ (cdn-system/agent)
+- [x] Module: 节点禁用状态前端不刷新修复（节点列表状态同步）。
+  - Tests: `npm run build` ✅ (cdn-system/web/admin)
+  - Tests: `node scripts/sync-wwwroot.cjs` ✅ (cdn-system/web/admin)
 
 ### 基本设置
 - [x] 套餐设置：批量切换网站套餐 | backend: `user_package_id` | key: `user_package_id`
@@ -232,3 +244,11 @@
 - [x] Module: 网站列表批量申请证书移除确认框。
   - Tests: `npm run build` ✅ (cdn-system/web/admin)
   - Tests: `node scripts/sync-wwwroot.cjs` ✅ (cdn-system/web/admin)
+
+## 12) ACME Issue via Edge Nodes
+
+- [x] Module: HTTP-01 签发改为节点执行（轮询节点 + 失败状态回写）。
+  - Tests: `go test ./...` ✅ (cdn-system/api)
+  - Build: `go build -o cdn-api .` ✅ (cdn-system/api)
+  - Build: `npm run build` ✅ (cdn-system/web/admin)
+  - Build: `node scripts/sync-wwwroot.cjs` ✅ (cdn-system/web/admin)

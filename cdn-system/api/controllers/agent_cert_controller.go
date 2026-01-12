@@ -71,5 +71,5 @@ func (ctr *AgentCertController) ReceiveIssued(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("update failed")})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
 }

@@ -434,6 +434,7 @@ func Setup(r *gin.Engine) {
 		{
 			agentCtr := controllers.NewAgentController()
 			agentCertCtr := &controllers.AgentCertController{}
+			agentAcmeCtr := &controllers.AgentAcmeController{}
 			agentGroup.POST("/heartbeat", agentCtr.Heartbeat)
 			agentGroup.POST("/node/sync", agentCtr.SyncNodeStatus)
 			agentGroup.GET("/config", agentCtr.GetConfig)
@@ -443,6 +444,8 @@ func Setup(r *gin.Engine) {
 			agentGroup.GET("/l2/nodes", agentCtr.GetL2Nodes)
 			agentGroup.POST("/l2/heartbeat", agentCtr.ReportL2Heartbeat)
 			agentGroup.POST("/certs/issued", agentCertCtr.ReceiveIssued)
+			agentGroup.POST("/acme/tokens", agentAcmeCtr.PutToken)
+			agentGroup.DELETE("/acme/tokens/:token", agentAcmeCtr.DeleteToken)
 
 			agentLogCtr := &controllers.AgentLogController{}
 			agentGroup.POST("/logs/access", agentLogCtr.AccessLogs)

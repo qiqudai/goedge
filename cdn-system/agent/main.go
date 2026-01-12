@@ -7,7 +7,29 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 )
+
+func resolveWorkDir(configPath string) {
+	if WorkDir == "" || filepath.IsAbs(WorkDir) {
+		return
+	}
+	baseDir := ""
+	if strings.TrimSpace(configPath) != "" {
+		if abs, err := filepath.Abs(configPath); err == nil {
+			baseDir = filepath.Dir(abs)
+		}
+	}
+	if baseDir == "" {
+		if exePath, err := os.Executable(); err == nil {
+			baseDir = filepath.Dir(exePath)
+		}
+	}
+	if baseDir != "" {
+		WorkDir = filepath.Join(baseDir, WorkDir)
+	}
+}
 
 func main() {
 	// 1. Argument Parsing
@@ -22,8 +44,14 @@ func main() {
 		log.Printf("i18n load failed: %v", err)
 	}
 
+	configPath := *configFile
+	if abs, err := filepath.Abs(configPath); err == nil {
+		configPath = abs
+	}
+	resolveWorkDir(configPath)
+
 	// 2. Load from Config File
-	if fileData, err := ioutil.ReadFile(*configFile); err == nil {
+	if fileData, err := ioutil.ReadFile(configPath); err == nil {
 		var fileConfig struct {
 			API    string `json:"api"`
 			Token  string `json:"token"`
@@ -43,7 +71,7 @@ func main() {
 			if fileConfig.Debug {
 				DebugMode = true
 			}
-			log.Printf("[Info] Loaded config from %s", *configFile)
+			log.Printf("[Info] Loaded config from %s", configPath)
 		}
 	}
 

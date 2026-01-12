@@ -13,19 +13,19 @@ type DashboardController struct{}
 // GET /api/v1/admin/dashboard
 func (c *DashboardController) Index(ctx *gin.Context) {
 	user := gin.H{
-		"username":   "fctyang666",
+		"username":   i18n.T("fctyang666"),
 		"id":         17,
-		"level":      "V0",
+		"level":      i18n.T("V0"),
 		"auth_state": i18n.T("dashboard.auth_unverified"),
-		"last_login": "2025-12-20 14:05:03",
+		"last_login": i18n.T("2025-12-20 14:05:03"),
 		"login_ip":   i18n.T("dashboard.login_ip_sample"),
-		"avatar":     "F",
+		"avatar":     i18n.T("F"),
 	}
 
 	stats := gin.H{
-		"bandwidth_peak": "127.43 Mbps",
+		"bandwidth_peak": i18n.T("127.43 Mbps"),
 		"requests":       i18n.T("dashboard.requests_sample"),
-		"traffic":        "563.98 GB",
+		"traffic":        i18n.T("563.98 GB"),
 		"blocked_ips":    i18n.T("dashboard.blocked_ips_zero"),
 	}
 
@@ -43,21 +43,21 @@ func (c *DashboardController) Index(ctx *gin.Context) {
 	}
 
 	topDomains := []gin.H{
-		{"name": "api.ilumx.cn:443", "count": 21162, "traffic": "5.57 MB"},
-		{"name": "api1.acfwcj.cn:443", "count": 17069, "traffic": "13.70 MB"},
-		{"name": "api.b1hauw.cn:443", "count": 10980, "traffic": "21.10 MB"},
-		{"name": "api2.sdzxhk.cn:443", "count": 9027, "traffic": "6.14 MB"},
-		{"name": "api4.sdzxhk.cn:443", "count": 8271, "traffic": "5.45 MB"},
-		{"name": "api3.sdzxhk.cn:443", "count": 8057, "traffic": "5.39 MB"},
-		{"name": "api.mv2yas.cn:443", "count": 7925, "traffic": "15.24 MB"},
-		{"name": "api5.sdzxhk.cn:443", "count": 7808, "traffic": "5.15 MB"},
-		{"name": "cl.odqgw.cn:443", "count": 6803, "traffic": "174.26 MB"},
-		{"name": "api.js15ak.cn:443", "count": 6583, "traffic": "12.65 MB"},
+		{"name": i18n.T("api.ilumx.cn:443"), "count": 21162, "traffic": i18n.T("5.57 MB")},
+		{"name": i18n.T("api1.acfwcj.cn:443"), "count": 17069, "traffic": i18n.T("13.70 MB")},
+		{"name": i18n.T("api.b1hauw.cn:443"), "count": 10980, "traffic": i18n.T("21.10 MB")},
+		{"name": i18n.T("api2.sdzxhk.cn:443"), "count": 9027, "traffic": i18n.T("6.14 MB")},
+		{"name": i18n.T("api4.sdzxhk.cn:443"), "count": 8271, "traffic": i18n.T("5.45 MB")},
+		{"name": i18n.T("api3.sdzxhk.cn:443"), "count": 8057, "traffic": i18n.T("5.39 MB")},
+		{"name": i18n.T("api.mv2yas.cn:443"), "count": 7925, "traffic": i18n.T("15.24 MB")},
+		{"name": i18n.T("api5.sdzxhk.cn:443"), "count": 7808, "traffic": i18n.T("5.15 MB")},
+		{"name": i18n.T("cl.odqgw.cn:443"), "count": 6803, "traffic": i18n.T("174.26 MB")},
+		{"name": i18n.T("api.js15ak.cn:443"), "count": 6583, "traffic": i18n.T("12.65 MB")},
 	}
 
 	announcements := []gin.H{
-		{"id": 1, "title": i18n.T("dashboard.notice_maintenance"), "time": "2025-12-21"},
-		{"id": 2, "title": i18n.T("dashboard.notice_new_feature"), "time": "2025-12-20"},
+		{"id": 1, "title": i18n.T("dashboard.notice_maintenance"), "time": i18n.T("2025-12-21")},
+		{"id": 2, "title": i18n.T("dashboard.notice_new_feature"), "time": i18n.T("2025-12-20")},
 	}
 
 	packageInfo := gin.H{
@@ -85,13 +85,13 @@ func (c *DashboardController) Index(ctx *gin.Context) {
 		"master":     true,
 		"elastic":    true,
 		"agent":      true,
-		"checked_at": "2025-12-22 21:24:56",
+		"checked_at": i18n.T("2025-12-22 21:24:56"),
 	}
 
 	license := gin.H{
 		"total_nodes":   30,
 		"current_nodes": 1,
-		"expire_at":     "2224-11-04 16:14:36",
+		"expire_at":     i18n.T("2224-11-04 16:14:36"),
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{

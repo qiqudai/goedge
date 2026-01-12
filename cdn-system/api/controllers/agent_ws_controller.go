@@ -409,6 +409,7 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 		"ret":      retLog,
 		"progress": progress,
 	}
+	finalFail := false
 
 	if state == "fail" {
 		nextErrTimes := task.ErrTimes + 1
@@ -419,6 +420,7 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 		if nextErrTimes >= maxRetries {
 			updates["state"] = "fail"
 			updates["end_at"] = time.Now()
+			finalFail = true
 		} else {
 			updates["state"] = "waiting"
 			updates["retry_at"] = time.Now().Add(time.Duration(nextErrTimes*30) * time.Second)
@@ -432,6 +434,9 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 
 	if err := db.DB.Model(&models.Task{}).Where("id = ?", ack.TaskID).Updates(updates).Error; err != nil {
 		log.Printf("[WS] Task ACK update failed: %v", err)
+	}
+	if finalFail && strings.EqualFold(task.Type, "issue_cert") {
+		services.MarkIssueTaskFailed(task.ID, buildAckRet(ack))
 	}
 }
 
@@ -881,6 +886,11 @@ func dispatchPendingTasksForNode(nodeID int64) {
 				"start_at": time.Now(),
 				"progress": progress,
 			})
+			if strings.EqualFold(task.Type, "issue_cert") {
+				_ = db.DB.Model(&models.Cert{}).
+					Where("issue_task_id = ? AND state = ?", task.ID, "waiting").
+					Update("state", "issuing").Error
+			}
 		}
 	}
 	for _, task := range filtered {

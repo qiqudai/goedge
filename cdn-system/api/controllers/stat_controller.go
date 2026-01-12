@@ -317,7 +317,7 @@ func (c *StatController) ListUsage(ctx *gin.Context) {
 			"total":  float64(int(total*100)) / 100,
 			"avg":    avg,
 			"peak":   float64(int(peak*100)) / 100,
-			"unit":   "MB",
+			"unit":   T("MB"),
 		},
 	})
 }
@@ -387,7 +387,7 @@ func (c *StatController) ListNodeTraffic(ctx *gin.Context) {
 	// Determine points based on window
 	count := 30
 	labelFormat := "2006-01-02"
-	
+
 	switch window {
 	case "1d":
 		count = 24
@@ -407,18 +407,18 @@ func (c *StatController) ListNodeTraffic(ctx *gin.Context) {
 	inTraffic := make([]float64, count)
 	outTraffic := make([]float64, count)
 
-    now := time.Now()
-    
+	now := time.Now()
+
 	for i := 0; i < count; i++ {
-        var t time.Time
-        if window == "1d" {
-             t = now.Add(time.Duration(i-count)*time.Hour)
-        } else {
-             t = now.AddDate(0, 0, i-count)
-        }
+		var t time.Time
+		if window == "1d" {
+			t = now.Add(time.Duration(i-count) * time.Hour)
+		} else {
+			t = now.AddDate(0, 0, i-count)
+		}
 		times[i] = t.Format(labelFormat)
-        
-		inTraffic[i] = float64(rand.Intn(1000)) / 10.0 // 0-100 MB
+
+		inTraffic[i] = float64(rand.Intn(1000)) / 10.0  // 0-100 MB
 		outTraffic[i] = float64(rand.Intn(2000)) / 10.0 // 0-200 MB
 	}
 

@@ -81,7 +81,7 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 			"is_system":   item.Internal || item.UserID == 0,
 			"is_on":       item.Enable,
 			"is_show":     item.IsShow,
-			"status":      "normal",
+			"status":      T("status.normal"),
 			"sort_order":  item.Sort,
 			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
@@ -342,7 +342,7 @@ func (c *RuleController) ListMatchers(ctx *gin.Context) {
 			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
 			"is_system":   item.Internal || item.UserID == 0,
-			"status":      "normal",
+			"status":      T("status.normal"),
 			"is_on":       item.Enable,
 			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
 		},
@@ -580,7 +580,7 @@ func (c *RuleController) ListFilters(ctx *gin.Context) {
 			"name":        item.Name,
 			"is_system":   item.Internal || item.UserID == 0,
 			"type":        item.Type,
-			"status":      "normal",
+			"status":      T("status.normal"),
 			"is_on":       item.Enable,
 			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
 		})

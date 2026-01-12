@@ -75,12 +75,14 @@ func issueCertTask(taskID int64, raw string) error {
 	}
 	webroot := filepath.Join(WorkDir, "cert", "acme")
 	accountKey := filepath.Join(webroot, "account_"+strings.ToLower(payload.CA)+".key")
+	tokenStore := newAPITokenStore()
 	issuer := acme.NewIssuer(acme.IssueOptions{
 		Email:          payload.Email,
 		CADirURL:       payload.CADirURL,
 		Webroot:        webroot,
 		AccountKeyPath: accountKey,
 		Timeout:        60 * time.Second,
+		TokenStore:     tokenStore,
 	})
 
 	for _, item := range payload.Items {

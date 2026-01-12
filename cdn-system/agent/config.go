@@ -1054,7 +1054,10 @@ func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts [
 		b.WriteString("    listen " + port + ";\n")
 		b.WriteString("    server_name " + domain.Name + ";\n")
 		writeErrorPageDirectives(b, errorPages, errorPageDir)
-		b.WriteString("    return 301 https://$host:" + redirectPort + "$request_uri;\n")
+		writeAcmeLocation(b)
+		b.WriteString("    location / {\n")
+		b.WriteString("        return 301 https://$host:" + redirectPort + "$request_uri;\n")
+		b.WriteString("    }\n")
 		b.WriteString("}\n")
 	}
 }
@@ -1315,7 +1318,11 @@ func writeGuardLocations(b *strings.Builder) {
 }
 
 func writeAcmeLocation(b *strings.Builder) {
-	acmeRoot := filepath.ToSlash(filepath.Join(WorkDir, "cert", "acme"))
+	acmeRoot := filepath.Join(WorkDir, "cert", "acme")
+	if abs, err := filepath.Abs(acmeRoot); err == nil {
+		acmeRoot = abs
+	}
+	acmeRoot = filepath.ToSlash(acmeRoot)
 	apiBase := strings.TrimRight(strings.TrimSpace(API_BaseURL), "/")
 	if apiBase == "" {
 		return
@@ -1549,10 +1556,14 @@ func writeMainConfig(cfg *edgeNginxConfig) error {
 	var pidPath string
 	if logs := strings.TrimSpace(cfg.LogsDir); logs != "" {
 		logs = strings.TrimRight(logs, "/")
-		pidPath = logs + "/nginx.pid"
 		b.WriteString("error_log " + logs + "/error.log warn;\n")
-	} else if WorkDir != "" {
-		pidPath = filepath.ToSlash(filepath.Join(WorkDir, "logs", "nginx.pid"))
+	}
+	if WorkDir != "" {
+		pidPath = filepath.Join(WorkDir, "logs", "nginx.pid")
+		if abs, err := filepath.Abs(pidPath); err == nil {
+			pidPath = abs
+		}
+		pidPath = filepath.ToSlash(pidPath)
 	}
 	if pidPath != "" {
 		b.WriteString("pid " + pidPath + ";\n")

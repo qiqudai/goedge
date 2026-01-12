@@ -39,8 +39,17 @@ func IssueCertsAsync(batchID int64, ids []int64) {
 		return
 	}
 	go func() {
-		for _, id := range ids {
-			processUniqueIssueTask(batchID, id)
+		certs, err := loadCertsForIssue(ids)
+		if err != nil {
+			log.Printf("[CertIssue] load certs failed: %v", err)
+			return
+		}
+		if len(certs) == 0 {
+			return
+		}
+		if err := dispatchCertsToNodes(batchID, certs); err != nil {
+			log.Printf("[CertIssue] dispatch to nodes failed: %v", err)
+			markCertsIssueFailed(certs, err.Error())
 		}
 	}()
 }
@@ -219,7 +228,7 @@ func ParseCertTimes(certPEM string) (time.Time, time.Time, error) {
 	return acme.ParseCertTimes(certPEM)
 }
 
-func dispatchCertsToNodes(certs []models.Cert) error {
+func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
 	nodes, err := loadAvailableNodes()
 	if err != nil {
 		return err
@@ -227,11 +236,51 @@ func dispatchCertsToNodes(certs []models.Cert) error {
 	if len(nodes) == 0 {
 		return errors.New("no available nodes for cert issue")
 	}
+	email := strings.TrimSpace(config.App.AcmeEmail)
+	if email == "" {
+		return errors.New("acme_email is required")
+	}
 
-	grouped := groupCertsByCA(certs)
-	for ca, items := range grouped {
-		if err := dispatchByCA(ca, items, nodes); err != nil {
-			return err
+	startIndex := int(batchID % int64(len(nodes)))
+	nodeIndex := startIndex
+
+	for _, cert := range certs {
+		domains := splitCertDomains(cert.Domain)
+		if len(domains) == 0 {
+			markCertIssueFailed(int64(cert.ID), "cert domain is empty")
+			continue
+		}
+		ca := strings.ToLower(strings.TrimSpace(cert.Type))
+		if ca == "" {
+			ca = "letsencrypt"
+		}
+		payload := IssueCertTaskPayload{
+			CA:       ca,
+			CADirURL: BuildCADirURL(ca),
+			Email:    email,
+			Items: []IssueCertItem{
+				{
+					CertID:  int64(cert.ID),
+					Domains: domains,
+				},
+			},
+		}
+		target := nodes[nodeIndex%len(nodes)]
+		nodeIndex++
+
+		taskName := fmt.Sprintf("Issue Cert %d", cert.ID)
+		task, err := createIssueTask(batchID, target.ID, taskName, payload)
+		if err != nil {
+			markCertIssueFailed(int64(cert.ID), err.Error())
+			continue
+		}
+		if err := db.DB.Model(&models.Cert{}).Where("id = ?", cert.ID).Updates(map[string]interface{}{
+			"issue_task_id": task.ID,
+			"task_id":       task.ID,
+			"state":         "waiting",
+			"ret":           "",
+		}).Error; err != nil {
+			log.Printf("[CertIssue] update cert task id failed cert_id=%d err=%v", cert.ID, err)
 		}
 	}
 	return nil
@@ -256,35 +305,12 @@ func groupCertsByCA(certs []models.Cert) map[string][]IssueCertItem {
 	return result
 }
 
-func dispatchByCA(ca string, items []IssueCertItem, nodes []models.Node) error {
-	batchSize := 10
-	nodeIndex := 0
-	for start := 0; start < len(items); start += batchSize {
-		end := start + batchSize
-		if end > len(items) {
-			end = len(items)
-		}
-		target := nodes[nodeIndex%len(nodes)]
-		nodeIndex++
-
-		payload := IssueCertTaskPayload{
-			CA:       ca,
-			CADirURL: BuildCADirURL(ca),
-			Email:    strings.TrimSpace(config.App.AcmeEmail),
-			Items:    items[start:end],
-		}
-		if err := createIssueTask(target.ID, payload); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func createIssueTask(nodeID int64, payload IssueCertTaskPayload) error {
+func createIssueTask(batchID int64, nodeID int64, name string, payload IssueCertTaskPayload) (models.Task, error) {
 	data, _ := json.Marshal(payload)
 	meta, _ := json.Marshal(issueTaskMeta{TargetNodeID: nodeID})
 	task := models.Task{
-		Name:     "issue_cert",
+		PID:      batchID,
+		Name:     name,
 		Type:     "issue_cert",
 		Data:     string(data),
 		Res:      string(meta),
@@ -293,28 +319,77 @@ func createIssueTask(nodeID int64, payload IssueCertTaskPayload) error {
 		CreateAt: time.Now(),
 	}
 	if err := db.DB.Create(&task).Error; err != nil {
-		return err
+		return task, err
 	}
 	for _, item := range payload.Items {
 		_ = db.DB.Model(&models.Cert{}).Where("id = ?", item.CertID).Update("issue_task_id", task.ID).Error
 	}
 	TriggerDispatchPending()
-	return nil
+	return task, nil
 }
 
 func loadAvailableNodes() ([]models.Node, error) {
 	var nodes []models.Node
-	if err := db.DB.Where("pid = 0 AND enable = ?", true).Find(&nodes).Error; err != nil {
+	if err := db.DB.Where("pid = 0 AND enable = ?", true).Order("id asc").Find(&nodes).Error; err != nil {
 		return nil, err
 	}
-	filtered := make([]models.Node, 0, len(nodes))
+	candidates := make([]models.Node, 0, len(nodes))
+	online := make([]models.Node, 0, len(nodes))
 	for _, node := range nodes {
 		if IsNodeRateLimited(node.ID) {
 			continue
 		}
-		filtered = append(filtered, node)
+		candidates = append(candidates, node)
+		if IsNodeOnline(node.ID, 90*time.Second) {
+			online = append(online, node)
+		}
 	}
-	return filtered, nil
+	if len(online) > 0 {
+		return online, nil
+	}
+	return candidates, nil
+}
+
+func loadCertsForIssue(ids []int64) ([]models.Cert, error) {
+	var certs []models.Cert
+	if err := db.DB.Where("id IN ?", ids).Order("id asc").Find(&certs).Error; err != nil {
+		return nil, err
+	}
+	return certs, nil
+}
+
+func markCertsIssueFailed(certs []models.Cert, reason string) {
+	for _, cert := range certs {
+		markCertIssueFailed(int64(cert.ID), reason)
+	}
+}
+
+func markCertIssueFailed(certID int64, reason string) {
+	if certID == 0 {
+		return
+	}
+	updates := map[string]interface{}{
+		"state": "fail",
+		"ret":   strings.TrimSpace(reason),
+	}
+	if err := db.DB.Model(&models.Cert{}).Where("id = ?", certID).Updates(updates).Error; err != nil {
+		log.Printf("[CertIssue] mark cert failed cert_id=%d err=%v", certID, err)
+	}
+}
+
+func MarkIssueTaskFailed(taskID int64, reason string) {
+	if taskID == 0 {
+		return
+	}
+	updates := map[string]interface{}{
+		"state": "fail",
+		"ret":   strings.TrimSpace(reason),
+	}
+	if err := db.DB.Model(&models.Cert{}).
+		Where("issue_task_id = ? AND state <> ?", taskID, "ready").
+		Updates(updates).Error; err != nil {
+		log.Printf("[CertIssue] mark task certs failed task_id=%d err=%v", taskID, err)
+	}
 }
 
 func nextCertRetryDelay(errTimes int) time.Duration {

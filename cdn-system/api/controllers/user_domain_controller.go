@@ -183,7 +183,7 @@ func (ctr *UserDomainController) GetConfig(c *gin.Context) {
 			"origins":  domain.Origins,
 			"https_on": true,
 			"cache_rules": []gin.H{
-				{"ext": ".jpg", "ttl": 3600},
+				{"ext": T(".jpg"), "ttl": 3600},
 			},
 		},
 	})
