@@ -279,6 +279,9 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	var newSite models.Site
 	if err := db.DB.Where("id = ?", id).First(&newSite).Error; err == nil {
 		_ = services.SyncUserDNSRecords(&oldSite, &newSite)
+		if oldSite.UserPackageID != newSite.UserPackageID {
+			resyncSiteCnameForSite(newSite)
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": T("Site updated")})
 }
@@ -734,6 +737,14 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	}
 
 	services.BumpConfigVersion("site", req.IDs)
+	if req.UserPackageID != nil {
+		var sites []models.Site
+		if err := db.DB.Where("id IN ?", req.IDs).Find(&sites).Error; err == nil {
+			for _, site := range sites {
+				resyncSiteCnameForSite(site)
+			}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Batch update completed")})
 }
@@ -1063,4 +1074,58 @@ func (ctrl *SiteController) AdminResolve(c *gin.Context) {
 		"cname":  strings.TrimSuffix(cname, "."),
 		"ips":    hosts,
 	})
+}
+
+func resyncSiteCnameForSite(site models.Site) {
+	groupID, err := resolveNodeGroupFromPackage(site.UserPackageID, site.NodeGroupID)
+	if err == nil && groupID != 0 {
+		resyncGroupLineCnames(groupID)
+	}
+
+	backupGroup := site.BackupNodeGroupID
+	enableBackup := site.EnableBackupGroup
+	if !enableBackup {
+		var pkg models.UserPackage
+		if err := db.DB.Select("backup_node_group", "enable_backup_group").
+			Where("id = ?", site.UserPackageID).
+			First(&pkg).Error; err == nil {
+			if backupGroup == 0 {
+				backupGroup = pkg.BackupNodeGroup
+			}
+			enableBackup = pkg.EnableBackup
+		}
+	}
+	if enableBackup && backupGroup != 0 {
+		resyncGroupLineCnames(backupGroup)
+	}
+}
+
+func resyncGroupLineCnames(groupID int64) {
+	if groupID == 0 {
+		return
+	}
+	var lines []models.Line
+	if err := db.DB.Select("line_id", "line_name").
+		Where("node_group_id = ?", groupID).
+		Find(&lines).Error; err != nil {
+		return
+	}
+	lineMap := map[string]string{}
+	for _, line := range lines {
+		lineID := strings.TrimSpace(line.LineID)
+		if lineID == "" {
+			lineID = "default"
+		}
+		lineName := strings.TrimSpace(line.LineName)
+		if lineName == "" {
+			lineName = lineID
+		}
+		if _, ok := lineMap[lineID]; !ok {
+			lineMap[lineID] = lineName
+		}
+	}
+	for lineID, lineName := range lineMap {
+		ids := loadLineNodeIDs(groupID, lineID)
+		_ = services.SyncPackageCnameForLineChange(groupID, lineID, lineName, ids, "resync")
+	}
 }

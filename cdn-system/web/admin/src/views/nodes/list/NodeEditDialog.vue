@@ -4,6 +4,19 @@
       <el-tab-pane :label="NODE_T.basicSettings" name="basic">
         <el-form :model="form" label-width="100px" style="margin-top: 20px;">
           <el-form-item :label="NODE_T.name"><el-input v-model="form.name" /></el-form-item>
+          <el-form-item :label="NODE_T.region">
+            <el-select
+              v-model="form.region_id"
+              :disabled="regionLocked"
+              :placeholder="NODE_T.regionPlaceholder"
+              clearable
+              style="width: 100%;"
+            >
+              <el-option v-for="region in regions" :key="region.id" :label="region.name" :value="region.id" />
+            </el-select>
+            <div v-if="regionLocked" class="form-helper">{{ NODE_T.regionLockedHint }}</div>
+            <div v-else-if="!regions.length" class="form-helper">{{ NODE_T.regionEmptyHint }}</div>
+          </el-form-item>
           <el-form-item :label="NODE_T.remark"><el-input v-model="form.remark" type="textarea" /></el-form-item>
           <el-form-item :label="NODE_T.sort"><el-input v-model.number="form.sort_order" /></el-form-item>
           <el-form-item label="IP"><el-input v-model="form.ip" /></el-form-item>
@@ -42,32 +55,56 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { NODE_T } from './constants'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
   item: { type: Object, default: () => ({ id: 0 }) },
+  regions: { type: Array, default: () => [] },
   modelValue: Boolean
 })
 const emit = defineEmits(['update:modelValue', 'success'])
 
 const visible = ref(false)
 const activeTab = ref('basic')
-const form = reactive({ id: 0, name: '', remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', sub_ips: [] })
+const form = reactive({ id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', sub_ips: [] })
 const subIpsText = ref('')
+const originalRegionId = ref(0)
+const regionLocked = computed(() => Number(props.item?.line_count || 0) > 0)
+
+const applyItem = (item) => {
+  const nextRegionId = Number(item?.region_id || 0)
+  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', sub_ips: [] }, item, {
+    region_id: nextRegionId
+  })
+  if (!item?.id && !form.region_id && props.regions.length > 0) {
+    form.region_id = props.regions[0].id
+  }
+  originalRegionId.value = Number(form.region_id || 0)
+  subIpsText.value = (item?.sub_ips || []).map(i => i.ip || i).join('\n')
+}
 
 watch(() => props.modelValue, (val) => {
   visible.value = val
   if (val) {
-    Object.assign(form, { ...props.item })
-    subIpsText.value = (props.item.sub_ips || []).map(i => i.ip || i).join('\n')
+    applyItem(props.item)
+  }
+})
+watch(() => props.regions.length, () => {
+  if (visible.value && !props.item?.id && !form.region_id && props.regions.length > 0) {
+    form.region_id = props.regions[0].id
+    originalRegionId.value = Number(form.region_id || 0)
   }
 })
 watch(visible, (val) => emit('update:modelValue', val))
 
 const handleSubmit = async () => {
+    if (regionLocked.value && Number(form.region_id || 0) !== originalRegionId.value) {
+      ElMessage.warning(NODE_T.regionLockedHint)
+      return
+    }
     form.sub_ips = subIpsText.value.split('\n').filter(i => i.trim()).map(ip => ({ ip: ip.trim() }))
     if (form.id) await request.put(`/nodes/${form.id}`, form)
     else await request.post('/nodes', form)

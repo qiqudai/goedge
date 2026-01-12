@@ -35,6 +35,7 @@ type Node struct {
 	CheckAction    string `json:"check_action"`
 	BwLimit        string `json:"bw_limit"`
 	Online         bool   `json:"online" gorm:"-"`
+	LineCount      int64  `json:"line_count" gorm:"-"`
 	// New fields for Node Settings
 	Level        int    `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2
 	Sort         int    `json:"sort_order" gorm:"column:sort;default:0"`

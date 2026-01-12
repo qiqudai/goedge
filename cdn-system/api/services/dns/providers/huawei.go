@@ -45,6 +45,101 @@ func (p *HuaweiProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
 	return []dns.DNSRecord{}, nil // Not implemented
 }
 
+func (p *HuaweiProvider) UpsertRecordSet(domain string, record dns.DNSRecord, values []string) error {
+	zoneID, err := p.getZoneID(domain)
+	if err != nil {
+		return err
+	}
+
+	name := record.Name + "." + domain + "."
+	if record.Name == "@" {
+		name = domain + "."
+	}
+
+	normalized := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+
+	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets?name=%s&type=%s",
+		p.Config.Region, zoneID, url.QueryEscape(name), record.Type)
+	resp, err := p.sendRequest("GET", listUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	var listResp struct {
+		Recordsets []struct {
+			ID      string   `json:"id"`
+			Name    string   `json:"name"`
+			Records []string `json:"records"`
+		} `json:"recordsets"`
+	}
+	if err := json.Unmarshal(resp, &listResp); err != nil {
+		return err
+	}
+
+	if len(normalized) == 0 {
+		for _, rs := range listResp.Recordsets {
+			delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
+			if _, err := p.sendRequest("DELETE", delUrl, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	ttl := record.TTL
+	if ttl == 0 {
+		ttl = 300
+	}
+
+	if len(listResp.Recordsets) > 0 {
+		rs := listResp.Recordsets[0]
+		updateUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
+		payload := map[string]interface{}{
+			"name":    rs.Name,
+			"type":    record.Type,
+			"ttl":     ttl,
+			"records": normalized,
+		}
+		body, _ := json.Marshal(payload)
+		if _, err := p.sendRequest("PUT", updateUrl, body); err != nil {
+			return err
+		}
+		for _, extra := range listResp.Recordsets[1:] {
+			delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, extra.ID)
+			if _, err := p.sendRequest("DELETE", delUrl, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	createUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets", p.Config.Region, zoneID)
+	payload := map[string]interface{}{
+		"name":        name,
+		"type":        record.Type,
+		"ttl":         ttl,
+		"description": "Created by CDN",
+		"records":     normalized,
+	}
+	body, _ := json.Marshal(payload)
+	if _, err := p.sendRequest("POST", createUrl, body); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (p *HuaweiProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// 1. Get Zone ID
 	zoneID, err := p.getZoneID(domain)
@@ -55,7 +150,7 @@ func (p *HuaweiProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// 2. Create Record Set
 	// POST /v2.1/zones/{zone_id}/recordsets
 	url := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets", p.Config.Region, zoneID)
-	
+
 	payload := map[string]interface{}{
 		"name":        record.Name + "." + domain + ".",
 		"type":        record.Type,
@@ -82,7 +177,7 @@ func (p *HuaweiProvider) AddRecord(domain string, record dns.DNSRecord) error {
 		ID      string `json:"id"`
 	}
 	_ = json.Unmarshal(resp, &parsed)
-	
+
 	// Huawei returns 2xx on success. If error, body usually contains code/message
 	// Need to check for duplicate (idempotency)
 	if parsed.Code != "" {
@@ -108,10 +203,10 @@ func (p *HuaweiProvider) DeleteRecord(domain string, record dns.DNSRecord) error
 	if record.Name == "@" {
 		name = domain + "."
 	}
-	
-	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets?name=%s&type=%s", 
+
+	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets?name=%s&type=%s",
 		p.Config.Region, zoneID, name, record.Type)
-	
+
 	resp, err := p.sendRequest("GET", listUrl, nil)
 	if err != nil {
 		return err
@@ -132,7 +227,7 @@ func (p *HuaweiProvider) DeleteRecord(domain string, record dns.DNSRecord) error
 	// Huawei groups records in a recordset. If we delete, we delete the WHOLE recordset (all values).
 	// Safest is to find the recordset, allow deletion if it contains our value.
 	// But if it contains OTHER values, we should UPDATE it to remove just ours.
-	
+
 	for _, rs := range listResp.Recordsets {
 		// Found the recordset
 		contains := false
@@ -216,13 +311,13 @@ func (p *HuaweiProvider) sendRequest(method, urlStr string, body []byte) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Headers
 	req.Header.Set("content-type", "application/json")
 	// Host is set automatically by Go but required for signing
 	u, _ := url.Parse(urlStr)
 	req.Header.Set("host", u.Host)
-	
+
 	// Sign
 	p.sign(req, body)
 
@@ -242,17 +337,17 @@ func (p *HuaweiProvider) sign(req *http.Request, body []byte) {
 		HeaderPrefix = "SDK-HMAC-SHA256"
 		Terminator   = "sdk_request"
 	)
-	
+
 	t := time.Now().UTC()
 	xSdkDate := t.Format("20060102T150405Z")
 	date := t.Format("20060102")
-	
+
 	req.Header.Set("X-Sdk-Date", xSdkDate)
-	
+
 	// 1. Canonical Request
 	// Method
 	canonicalRequest := req.Method + "\n"
-	
+
 	// URI (Path)
 	// Must be normalized. Go's req.URL.Path should be sufficient if simple.
 	uri := req.URL.Path
@@ -264,7 +359,7 @@ func (p *HuaweiProvider) sign(req *http.Request, body []byte) {
 	}
 	// Note: Huawei requires careful normalization, assuming simple paths here
 	canonicalRequest += uri + "\n"
-	
+
 	// Query
 	// Must be sorted
 	q := req.URL.Query()
@@ -291,42 +386,42 @@ func (p *HuaweiProvider) sign(req *http.Request, body []byte) {
 	// We MUST include Host and X-Sdk-Date
 	signedHeaders := []string{"content-type", "host", "x-sdk-date"}
 	sort.Strings(signedHeaders)
-	
+
 	canonicalHeaders := ""
 	for _, h := range signedHeaders {
 		canonicalHeaders += h + ":" + strings.TrimSpace(req.Header.Get(h)) + "\n"
 	}
 	canonicalRequest += canonicalHeaders + "\n"
-	
+
 	// Signed Headers
 	canonicalRequest += strings.Join(signedHeaders, ";") + "\n"
-	
+
 	// Payload Hash
 	payloadHash := huaweiSha256Hex(body)
 	canonicalRequest += payloadHash
-	
+
 	// 2. String to Sign
 	credentialScope := date + "/" + p.Config.Region + "/dns/" + Terminator
 	stringToSign := Algorithm + "\n" + xSdkDate + "\n" + credentialScope + "\n" + huaweiSha256Hex([]byte(canonicalRequest))
-	
+
 	// 3. Signature
 	// kSecret = "SDK" + SecretKey
 	// kDate = HMAC(kSecret, Date)
 	// kRegion = HMAC(kDate, Region)
 	// kService = HMAC(kRegion, Service)
 	// kSigning = HMAC(kService, Terminator)
-	
+
 	kSecret := []byte("SDK" + p.Config.SecretAccessKey)
 	kDate := huaweiHmacSHA256(kSecret, date)
 	kRegion := huaweiHmacSHA256(kDate, p.Config.Region)
 	kService := huaweiHmacSHA256(kRegion, "dns")
 	kSigning := huaweiHmacSHA256(kService, Terminator)
-	
+
 	signature := hex.EncodeToString(huaweiHmacSHA256(kSigning, stringToSign))
-	
+
 	authHeader := fmt.Sprintf("%s Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		HeaderPrefix, p.Config.AccessKeyID, credentialScope, strings.Join(signedHeaders, ";"), signature)
-		
+
 	req.Header.Set("Authorization", authHeader)
 }
 

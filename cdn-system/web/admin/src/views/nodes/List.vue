@@ -32,6 +32,7 @@
     <NodeEditDialog
       v-model="editVisible"
       :item="currentItem"
+      :regions="regions"
       @success="fetchList"
     />
 
@@ -67,20 +68,29 @@ const currentItem = ref({})
 const monitorVisible = ref(false)
 const currentNodeId = ref(0)
 
+const applyNodeStatus = (row) => {
+  if (!row.enable) {
+    return { ...row, status_text: '禁用', status_class: 'disabled' }
+  }
+  if (row.online) {
+    return { ...row, status_text: '在线', status_class: 'online' }
+  }
+  return { ...row, status_text: '离线', status_class: 'offline' }
+}
+
+const setNodeStatus = (row) => {
+  if (!row) return
+  const next = applyNodeStatus(row)
+  row.status_text = next.status_text
+  row.status_class = next.status_class
+}
+
 const fetchList = async (query = {}) => {
   listLoading.value = true
   try {
     const res = await request.get('/nodes', { params: query })
     const rows = res.data?.list || []
-    list.value = rows.map((row) => {
-      if (!row.enable) {
-        return { ...row, status_text: '禁用', status_class: 'disabled' }
-      }
-      if (row.online) {
-        return { ...row, status_text: '在线', status_class: 'online' }
-      }
-      return { ...row, status_text: '离线', status_class: 'offline' }
-    })
+    list.value = rows.map((row) => applyNodeStatus(row))
     total.value = res.data?.total || 0
   } finally {
     listLoading.value = false
@@ -113,8 +123,16 @@ const handleMonitorLogs = (row) => { currentNodeId.value = row.id; monitorVisibl
 const handleGoMonitor = (row) => router.push({ path: '/nodes/monitor', query: { node_id: row.id } })
 
 const handleStatusChange = async (row) => {
-  await request.put(`/nodes/${row.id}/status`, { enable: row.enable })
-  ElMessage.success('状态更新成功')
+  const targetEnable = row.enable
+  try {
+    await request.put(`/nodes/${row.id}/status`, { enable: row.enable })
+    setNodeStatus(row)
+    ElMessage.success('状态更新成功')
+  } catch (err) {
+    row.enable = !targetEnable
+    setNodeStatus(row)
+    ElMessage.error('状态更新失败')
+  }
 }
 
 const handleRowAction = (command, row) => {

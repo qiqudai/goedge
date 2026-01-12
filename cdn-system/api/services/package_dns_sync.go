@@ -50,13 +50,11 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 		return nil
 	}
 
-	groupSet := make(map[int64]struct{})
 	groupLineNodes := make(map[int64]map[lineKey]*lineNodes)
 	for _, line := range lines {
 		if action != "delete" && !line.Enable {
 			continue
 		}
-		groupSet[line.NodeGroupID] = struct{}{}
 		key := lineKey{ID: strings.TrimSpace(line.LineID), Name: strings.TrimSpace(line.LineName)}
 		if _, ok := groupLineNodes[line.NodeGroupID]; !ok {
 			groupLineNodes[line.NodeGroupID] = make(map[lineKey]*lineNodes)
@@ -75,180 +73,57 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 		}
 	}
 
-	groupIDs := make([]int64, 0, len(groupSet))
-	for id := range groupSet {
+	groupIDs := make([]int64, 0, len(groupLineNodes))
+	for id := range groupLineNodes {
 		groupIDs = append(groupIDs, id)
 	}
 	if len(groupIDs) == 0 {
 		log.Printf("[DNS] package cname sync skip: no groups for nodes=%v", nodeIDs)
 		return nil
 	}
-
-	siteGroupMap := loadPackageGroupsFromSites(groupIDs)
-	sitePackIDs := make([]int64, 0, len(siteGroupMap))
-	for id := range siteGroupMap {
-		sitePackIDs = append(sitePackIDs, id)
-	}
-
-	planIDsForGroups := loadPlanIDsByGroups(groupIDs)
-
-	packMap := make(map[int64]models.UserPackage)
-	var packs []models.UserPackage
-	if err := db.DB.Where("node_group_id IN ? OR backup_node_group IN ?", groupIDs, groupIDs).Find(&packs).Error; err != nil {
+	siteInfos, domainMap, err := loadSiteCnameInfos(groupIDs)
+	if err != nil {
 		return err
 	}
-	for _, pack := range packs {
-		packMap[pack.ID] = pack
-	}
-	if len(sitePackIDs) > 0 {
-		var sitePacks []models.UserPackage
-		if err := db.DB.Where("id IN ?", sitePackIDs).Find(&sitePacks).Error; err != nil {
-			return err
-		}
-		for _, pack := range sitePacks {
-			if _, ok := packMap[pack.ID]; !ok {
-				packMap[pack.ID] = pack
-			}
-		}
-	}
-	if len(planIDsForGroups) > 0 {
-		var planPacks []models.UserPackage
-		if err := db.DB.Where("package IN ?", planIDsForGroups).Find(&planPacks).Error; err != nil {
-			return err
-		}
-		for _, pack := range planPacks {
-			if _, ok := packMap[pack.ID]; !ok {
-				packMap[pack.ID] = pack
-			}
-		}
-	}
-	if len(packMap) == 0 {
-		var fallbackPacks []models.UserPackage
-		if err := db.DB.Where("(node_group_id = 0 OR node_group_id IS NULL) AND (backup_node_group = 0 OR backup_node_group IS NULL) AND cname_domain IS NOT NULL AND cname_domain <> ''").
-			Find(&fallbackPacks).Error; err != nil {
-			return err
-		}
-		for _, pack := range fallbackPacks {
-			packMap[pack.ID] = pack
-		}
-	}
-	if len(packMap) == 0 {
-		log.Printf("[DNS] package cname sync skip: no packages for groups=%v", groupIDs)
+	if len(siteInfos) == 0 {
+		log.Printf("[DNS] package cname sync skip: no sites for groups=%v", groupIDs)
 		return nil
-	}
-	packs = packs[:0]
-	for _, pack := range packMap {
-		packs = append(packs, pack)
-	}
-
-	planIDSet := map[int64]struct{}{}
-	for _, pack := range packs {
-		if pack.PackageID != 0 {
-			planIDSet[int64(pack.PackageID)] = struct{}{}
-		}
-	}
-	planIDs := make([]int64, 0, len(planIDSet))
-	for id := range planIDSet {
-		planIDs = append(planIDs, id)
-	}
-	planGroupMap := loadPlanGroupMap(planIDs)
-
-	domainSet := make(map[string]struct{})
-	for _, pack := range packs {
-		key := normalizePackageDomain(pack.CnameDomain)
-		if key != "" {
-			domainSet[key] = struct{}{}
-		}
-	}
-	if len(domainSet) == 0 {
-		log.Printf("[DNS] package cname sync skip: no cname domains for groups=%v", groupIDs)
-		return nil
-	}
-
-	domainList := make([]string, 0, len(domainSet))
-	for d := range domainSet {
-		domainList = append(domainList, d)
-	}
-	var domainRows []models.CnameDomain
-	if err := db.DB.Where("domain IN ?", domainList).Find(&domainRows).Error; err != nil {
-		return err
-	}
-	domainMap := make(map[string]models.CnameDomain, len(domainRows))
-	for _, row := range domainRows {
-		key := normalizePackageDomain(row.Domain)
-		if key != "" {
-			domainMap[key] = row
-		}
 	}
 	if len(domainMap) == 0 {
-		log.Printf("[DNS] package cname sync skip: cname domain map empty for domains=%v", domainList)
+		log.Printf("[DNS] package cname sync skip: cname domain map empty for groups=%v", groupIDs)
 		return nil
 	}
 
-	for _, pack := range packs {
-		domainKey := normalizePackageDomain(pack.CnameDomain)
-		if domainKey == "" {
-			log.Printf("[DNS] package cname sync skip: package=%d domain empty", pack.ID)
+	for _, info := range siteInfos {
+		if info.Hostname == "" || info.DomainKey == "" {
 			continue
 		}
-		domainInfo, ok := domainMap[domainKey]
+		domainInfo, ok := domainMap[info.DomainKey]
 		if !ok {
-			log.Printf("[DNS] package cname sync skip: package=%d domain=%s not found", pack.ID, domainKey)
-			continue
-		}
-		hostname := resolvePackageHostname(pack, domainKey)
-		if hostname == "" {
-			log.Printf("[DNS] package cname sync skip: package=%d hostname empty", pack.ID)
+			log.Printf("[DNS] package cname sync skip: site=%d domain=%s not found", info.SiteID, info.DomainKey)
 			continue
 		}
 		targetGroupSet := map[int64]struct{}{}
-		planGroup := planGroupMap[int64(pack.PackageID)]
-		primaryGroup := pack.NodeGroupID
-		if primaryGroup == 0 {
-			primaryGroup = planGroup.NodeGroupID
-		}
-		if primaryGroup != 0 {
-			if _, ok := groupSet[primaryGroup]; ok {
-				targetGroupSet[primaryGroup] = struct{}{}
+		if info.PrimaryGroup != 0 {
+			if _, ok := groupLineNodes[info.PrimaryGroup]; ok {
+				targetGroupSet[info.PrimaryGroup] = struct{}{}
 			}
 		}
-		backupGroup := pack.BackupNodeGroup
-		if backupGroup == 0 {
-			backupGroup = planGroup.BackupNodeGroup
-		}
-		if pack.EnableBackup && backupGroup != 0 {
-			if _, ok := groupSet[backupGroup]; ok {
-				targetGroupSet[backupGroup] = struct{}{}
+		if info.EnableBackup && info.BackupGroup != 0 {
+			if _, ok := groupLineNodes[info.BackupGroup]; ok {
+				targetGroupSet[info.BackupGroup] = struct{}{}
 			}
 		}
-		if extraGroups, ok := siteGroupMap[pack.ID]; ok {
-			for gid := range extraGroups {
-				if _, ok := groupSet[gid]; ok {
-					targetGroupSet[gid] = struct{}{}
-				}
-			}
-		}
-		if len(targetGroupSet) == 0 {
-			if primaryGroup == 0 && backupGroup == 0 {
-				if _, ok := siteGroupMap[pack.ID]; !ok {
-					for gid := range groupSet {
-						targetGroupSet[gid] = struct{}{}
-					}
-				}
+		if len(targetGroupSet) == 0 && info.PrimaryGroup == 0 && info.BackupGroup == 0 {
+			for gid := range groupLineNodes {
+				targetGroupSet[gid] = struct{}{}
 			}
 		}
 		if len(targetGroupSet) == 0 {
 			continue
 		}
-
-		for groupID := range targetGroupSet {
-			if action == "resync" {
-				if err := resyncPackageHostname(domainInfo, hostname, groupID); err != nil {
-					log.Printf("[DNS] package cname resync failed package=%d group=%d host=%s.%s err=%v", pack.ID, groupID, hostname, domainKey, err)
-				}
-				continue
-			}
-			linesForGroup := groupLineNodes[groupID]
+		for gid := range targetGroupSet {
+			linesForGroup := groupLineNodes[gid]
 			if len(linesForGroup) == 0 {
 				continue
 			}
@@ -257,8 +132,8 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 				if len(nodeList) == 0 {
 					continue
 				}
-				if err := dns.SyncPackageLineRecords(domainInfo, hostname, groupID, key.ID, key.Name, action, nodeList); err != nil {
-					log.Printf("[DNS] package cname sync failed package=%d group=%d host=%s.%s line=%s err=%v", pack.ID, groupID, hostname, domainKey, key.ID, err)
+				if err := dns.SyncPackageLineRecords(domainInfo, info.Hostname, gid, key.ID, key.Name, action, nodeList); err != nil {
+					log.Printf("[DNS] package cname sync failed site=%d group=%d host=%s.%s line=%s err=%v", info.SiteID, gid, info.Hostname, info.DomainKey, key.ID, err)
 				}
 			}
 		}
@@ -291,159 +166,40 @@ func SyncPackageCnameForLineChange(groupID int64, lineID, lineName string, nodeI
 		nodeIDs = loadLineNodeIDs(groupID, lineID)
 	} else {
 		nodeIDs = uniquePackageIDs(nodeIDs)
-		if len(nodeIDs) == 0 {
-			return nil
-		}
 	}
 
 	log.Printf("[DNS] package line sync start group=%d line=%s action=%s nodes=%v", groupID, lineID, action, nodeIDs)
-
-	siteGroupMap := loadPackageGroupsFromSites([]int64{groupID})
-	sitePackIDs := make([]int64, 0, len(siteGroupMap))
-	for id := range siteGroupMap {
-		sitePackIDs = append(sitePackIDs, id)
-	}
-
-	planIDsForGroups := loadPlanIDsByGroups([]int64{groupID})
-
-	packMap := make(map[int64]models.UserPackage)
-	var packs []models.UserPackage
-	if err := db.DB.Where("node_group_id = ? OR backup_node_group = ?", groupID, groupID).Find(&packs).Error; err != nil {
+	siteInfos, domainMap, err := loadSiteCnameInfos([]int64{groupID})
+	if err != nil {
 		return err
 	}
-	for _, pack := range packs {
-		packMap[pack.ID] = pack
-	}
-	if len(sitePackIDs) > 0 {
-		var sitePacks []models.UserPackage
-		if err := db.DB.Where("id IN ?", sitePackIDs).Find(&sitePacks).Error; err != nil {
-			return err
-		}
-		for _, pack := range sitePacks {
-			if _, ok := packMap[pack.ID]; !ok {
-				packMap[pack.ID] = pack
-			}
-		}
-	}
-	if len(planIDsForGroups) > 0 {
-		var planPacks []models.UserPackage
-		if err := db.DB.Where("package IN ?", planIDsForGroups).Find(&planPacks).Error; err != nil {
-			return err
-		}
-		for _, pack := range planPacks {
-			if _, ok := packMap[pack.ID]; !ok {
-				packMap[pack.ID] = pack
-			}
-		}
-	}
-	if len(packMap) == 0 {
-		var fallbackPacks []models.UserPackage
-		if err := db.DB.Where("(node_group_id = 0 OR node_group_id IS NULL) AND (backup_node_group = 0 OR backup_node_group IS NULL) AND cname_domain IS NOT NULL AND cname_domain <> ''").
-			Find(&fallbackPacks).Error; err != nil {
-			return err
-		}
-		for _, pack := range fallbackPacks {
-			packMap[pack.ID] = pack
-		}
-	}
-	if len(packMap) == 0 {
-		log.Printf("[DNS] package line sync skip: no packages for group=%d", groupID)
+	if len(siteInfos) == 0 {
+		log.Printf("[DNS] package line sync skip: no sites for group=%d", groupID)
 		return nil
-	}
-	packs = packs[:0]
-	for _, pack := range packMap {
-		packs = append(packs, pack)
-	}
-
-	planIDSet := map[int64]struct{}{}
-	for _, pack := range packs {
-		if pack.PackageID != 0 {
-			planIDSet[int64(pack.PackageID)] = struct{}{}
-		}
-	}
-	planIDs := make([]int64, 0, len(planIDSet))
-	for id := range planIDSet {
-		planIDs = append(planIDs, id)
-	}
-	planGroupMap := loadPlanGroupMap(planIDs)
-
-	domainSet := make(map[string]struct{})
-	for _, pack := range packs {
-		key := normalizePackageDomain(pack.CnameDomain)
-		if key != "" {
-			domainSet[key] = struct{}{}
-		}
-	}
-	if len(domainSet) == 0 {
-		log.Printf("[DNS] package line sync skip: no cname domains for group=%d", groupID)
-		return nil
-	}
-
-	domainList := make([]string, 0, len(domainSet))
-	for d := range domainSet {
-		domainList = append(domainList, d)
-	}
-	var domainRows []models.CnameDomain
-	if err := db.DB.Where("domain IN ?", domainList).Find(&domainRows).Error; err != nil {
-		return err
-	}
-	domainMap := make(map[string]models.CnameDomain, len(domainRows))
-	for _, row := range domainRows {
-		key := normalizePackageDomain(row.Domain)
-		if key != "" {
-			domainMap[key] = row
-		}
 	}
 	if len(domainMap) == 0 {
 		log.Printf("[DNS] package line sync skip: domain map empty for group=%d", groupID)
 		return nil
 	}
 
-	for _, pack := range packs {
-		planGroup := planGroupMap[int64(pack.PackageID)]
-		primaryGroup := pack.NodeGroupID
-		if primaryGroup == 0 {
-			primaryGroup = planGroup.NodeGroupID
+	for _, info := range siteInfos {
+		if info.Hostname == "" || info.DomainKey == "" {
+			continue
 		}
-		backupGroup := pack.BackupNodeGroup
-		if backupGroup == 0 {
-			backupGroup = planGroup.BackupNodeGroup
-		}
-		if primaryGroup != groupID && !(pack.EnableBackup && backupGroup == groupID) {
-			groups, ok := siteGroupMap[pack.ID]
-			if !ok {
-				if primaryGroup == 0 && backupGroup == 0 {
-					// Fallback: treat as matching when no group is configured.
-				} else {
-					continue
-				}
+		if info.PrimaryGroup != groupID && !(info.EnableBackup && info.BackupGroup == groupID) {
+			if info.PrimaryGroup == 0 && info.BackupGroup == 0 {
+				// Fallback: no group binding, allow.
 			} else {
-				if _, ok := groups[groupID]; !ok {
-					if primaryGroup == 0 && backupGroup == 0 {
-						// Fallback: treat as matching when no group is configured.
-					} else {
-						continue
-					}
-				}
+				continue
 			}
 		}
-		domainKey := normalizePackageDomain(pack.CnameDomain)
-		if domainKey == "" {
-			log.Printf("[DNS] package line sync skip: package=%d domain empty", pack.ID)
-			continue
-		}
-		domainInfo, ok := domainMap[domainKey]
+		domainInfo, ok := domainMap[info.DomainKey]
 		if !ok {
-			log.Printf("[DNS] package line sync skip: package=%d domain=%s not found", pack.ID, domainKey)
+			log.Printf("[DNS] package line sync skip: site=%d domain=%s not found", info.SiteID, info.DomainKey)
 			continue
 		}
-		hostname := resolvePackageHostname(pack, domainKey)
-		if hostname == "" {
-			log.Printf("[DNS] package line sync skip: package=%d hostname empty", pack.ID)
-			continue
-		}
-		if err := dns.SyncPackageLineRecords(domainInfo, hostname, groupID, lineID, lineName, action, nodeIDs); err != nil {
-			log.Printf("[DNS] package line sync failed package=%d group=%d host=%s.%s line=%s err=%v", pack.ID, groupID, hostname, domainKey, lineID, err)
+		if err := dns.SyncPackageLineRecords(domainInfo, info.Hostname, groupID, lineID, lineName, action, nodeIDs); err != nil {
+			log.Printf("[DNS] package line sync failed site=%d group=%d host=%s.%s line=%s err=%v", info.SiteID, groupID, info.Hostname, info.DomainKey, lineID, err)
 		}
 	}
 
@@ -638,7 +394,7 @@ func loadPackageGroupsFromSites(groupIDs []int64) map[int64]map[int64]struct{} {
 }
 
 type planGroup struct {
-	NodeGroupID   int64
+	NodeGroupID     int64
 	BackupNodeGroup int64
 }
 
@@ -661,8 +417,8 @@ func loadPlanGroupMap(packageIDs []int64) map[int64]planGroup {
 		return result
 	}
 	var rows []struct {
-		ID             int64 `gorm:"column:id"`
-		NodeGroupID    int64 `gorm:"column:node_group_id"`
+		ID              int64 `gorm:"column:id"`
+		NodeGroupID     int64 `gorm:"column:node_group_id"`
 		BackupNodeGroup int64 `gorm:"column:backup_node_group"`
 	}
 	if err := db.DB.Model(&models.Package{}).
@@ -673,9 +429,192 @@ func loadPlanGroupMap(packageIDs []int64) map[int64]planGroup {
 	}
 	for _, row := range rows {
 		result[row.ID] = planGroup{
-			NodeGroupID:    row.NodeGroupID,
+			NodeGroupID:     row.NodeGroupID,
 			BackupNodeGroup: row.BackupNodeGroup,
 		}
 	}
 	return result
+}
+
+type siteCnameInfo struct {
+	SiteID       int64
+	Hostname     string
+	DomainKey    string
+	PrimaryGroup int64
+	BackupGroup  int64
+	EnableBackup bool
+}
+
+func loadSiteCnameInfos(groupIDs []int64) ([]siteCnameInfo, map[string]models.CnameDomain, error) {
+	if db.DB == nil || len(groupIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	planIDsForGroups := loadPlanIDsByGroups(groupIDs)
+	packMap := make(map[int64]models.UserPackage)
+	var packs []models.UserPackage
+	if err := db.DB.Where("node_group_id IN ? OR backup_node_group IN ?", groupIDs, groupIDs).Find(&packs).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, pack := range packs {
+		packMap[pack.ID] = pack
+	}
+	if len(planIDsForGroups) > 0 {
+		var planPacks []models.UserPackage
+		if err := db.DB.Where("package IN ?", planIDsForGroups).Find(&planPacks).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, pack := range planPacks {
+			if _, ok := packMap[pack.ID]; !ok {
+				packMap[pack.ID] = pack
+			}
+		}
+	}
+
+	packIDs := make([]int64, 0, len(packMap))
+	for id := range packMap {
+		packIDs = append(packIDs, id)
+	}
+
+	query := db.DB.Model(&models.Site{}).Where("node_group_id IN ? OR backup_node_group IN ?", groupIDs, groupIDs)
+	if len(packIDs) > 0 {
+		query = query.Or("user_package IN ?", packIDs)
+	}
+	var sites []models.Site
+	if err := query.Find(&sites).Error; err != nil {
+		return nil, nil, err
+	}
+	if len(sites) == 0 {
+		return nil, nil, nil
+	}
+
+	missingPackIDs := make([]int64, 0)
+	for _, site := range sites {
+		if site.UserPackageID == 0 {
+			continue
+		}
+		if _, ok := packMap[site.UserPackageID]; ok {
+			continue
+		}
+		missingPackIDs = append(missingPackIDs, site.UserPackageID)
+	}
+	if len(missingPackIDs) > 0 {
+		var extraPacks []models.UserPackage
+		if err := db.DB.Where("id IN ?", uniquePackageIDs(missingPackIDs)).Find(&extraPacks).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, pack := range extraPacks {
+			packMap[pack.ID] = pack
+		}
+	}
+
+	planIDSet := map[int64]struct{}{}
+	for _, pack := range packMap {
+		if pack.PackageID != 0 {
+			planIDSet[int64(pack.PackageID)] = struct{}{}
+		}
+	}
+	planIDs := make([]int64, 0, len(planIDSet))
+	for id := range planIDSet {
+		planIDs = append(planIDs, id)
+	}
+	planGroupMap := loadPlanGroupMap(planIDs)
+
+	domainSet := make(map[string]struct{})
+	infos := make([]siteCnameInfo, 0, len(sites))
+	for _, site := range sites {
+		pkg := packMap[site.UserPackageID]
+		domainKey, host := resolveSiteCnameTarget(site, pkg)
+		if domainKey == "" || host == "" {
+			continue
+		}
+		primary, backup, enableBackup := resolveSiteGroups(site, pkg, planGroupMap[int64(pkg.PackageID)])
+		infos = append(infos, siteCnameInfo{
+			SiteID:       site.ID,
+			Hostname:     host,
+			DomainKey:    domainKey,
+			PrimaryGroup: primary,
+			BackupGroup:  backup,
+			EnableBackup: enableBackup,
+		})
+		domainSet[domainKey] = struct{}{}
+	}
+	if len(domainSet) == 0 {
+		return infos, map[string]models.CnameDomain{}, nil
+	}
+
+	domainList := make([]string, 0, len(domainSet))
+	for d := range domainSet {
+		domainList = append(domainList, d)
+	}
+	var domainRows []models.CnameDomain
+	if err := db.DB.Where("domain IN ?", domainList).Find(&domainRows).Error; err != nil {
+		return infos, nil, err
+	}
+	domainMap := make(map[string]models.CnameDomain, len(domainRows))
+	for _, row := range domainRows {
+		key := normalizePackageDomain(row.Domain)
+		if key != "" {
+			domainMap[key] = row
+		}
+	}
+	return infos, domainMap, nil
+}
+
+func resolveSiteGroups(site models.Site, pkg models.UserPackage, plan planGroup) (int64, int64, bool) {
+	primary := site.NodeGroupID
+	if primary == 0 {
+		primary = pkg.NodeGroupID
+	}
+	if primary == 0 {
+		primary = plan.NodeGroupID
+	}
+	enableBackup := site.EnableBackupGroup
+	if !enableBackup {
+		enableBackup = pkg.EnableBackup
+	}
+	backup := int64(0)
+	if enableBackup {
+		backup = site.BackupNodeGroupID
+		if backup == 0 {
+			backup = pkg.BackupNodeGroup
+		}
+		if backup == 0 {
+			backup = plan.BackupNodeGroup
+		}
+	}
+	return primary, backup, enableBackup
+}
+
+func resolveSiteCnameTarget(site models.Site, pkg models.UserPackage) (string, string) {
+	domainKey := normalizePackageDomain(site.CnameDomain)
+	if domainKey == "" {
+		domainKey = normalizePackageDomain(pkg.CnameDomain)
+	}
+	full := normalizePackageDomain(site.CnameHostname)
+	if full == "" && pkg.CnameHostname != "" {
+		full = normalizePackageDomain(pkg.CnameHostname)
+		if domainKey != "" {
+			full = full + "." + domainKey
+		}
+	}
+	if full == "" {
+		return domainKey, ""
+	}
+	if domainKey == "" {
+		root, name := splitRootDomain(full)
+		if root == "" || name == "" {
+			return "", ""
+		}
+		return normalizePackageDomain(root), name
+	}
+	host := full
+	suffix := "." + domainKey
+	if full == domainKey {
+		host = "@"
+	} else if strings.HasSuffix(full, suffix) {
+		host = strings.TrimSuffix(full, suffix)
+	}
+	host = strings.TrimSuffix(host, ".")
+	return domainKey, host
 }

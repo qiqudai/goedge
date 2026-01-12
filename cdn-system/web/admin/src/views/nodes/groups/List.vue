@@ -90,10 +90,15 @@
           </el-select>
         </el-form-item>
         <el-form-item label="解析值:" prop="resolution">
-          <el-input v-model="temp.resolution" placeholder="CNAME解析值" />
+          <el-input v-model="temp.resolution" placeholder="留空自动生成" />
+        </el-form-item>
+        <el-form-item label="CNAME域名:" prop="cname_domain">
+          <el-select v-model="temp.cname_domain" placeholder="请选择" style="width: 100%;">
+            <el-option v-for="item in cnameDomains" :key="item.id || item.domain" :label="item.domain" :value="item.domain" />
+          </el-select>
         </el-form-item>
         <el-form-item label="IPv4解析值:" prop="ipv4_resolution">
-          <el-input v-model="temp.ipv4_resolution" />
+          <el-input v-model="temp.ipv4_resolution" placeholder="留空自动生成" />
         </el-form-item>
         <el-form-item label="备注:" prop="remark">
             <el-input v-model="temp.remark" placeholder="请输入备注" />
@@ -138,6 +143,7 @@ const total = ref(0)
 const listLoading = ref(true)
 const regions = ref([])
 const regionNameMap = ref({ 0: '默认' })
+const cnameDomains = ref([])
 const selectedIds = ref([])
 const listQuery = reactive({
   page: 1,
@@ -158,6 +164,7 @@ const temp = reactive({
   name: '',
   region_id: 0,
   resolution: '',
+  cname_domain: '',
   ipv4_resolution: '',
   remark: '',
   sort_order: 100,
@@ -198,6 +205,7 @@ const resetTemp = () => {
   temp.name = ''
   temp.region_id = 0
   temp.resolution = ''
+  temp.cname_domain = cnameDomains.value.length > 0 ? cnameDomains.value[0].domain : ''
   temp.ipv4_resolution = ''
   temp.remark = ''
   temp.sort_order = 100
@@ -231,6 +239,7 @@ const handleUpdate = (row) => {
     temp.name = row.name
     temp.region_id = row.region_id || 0
     temp.resolution = row.resolution
+    temp.cname_domain = row.cname_domain || ''
     temp.ipv4_resolution = row.ipv4_resolution
     temp.remark = row.remark // Model: Description json:"remark"
     temp.sort_order = row.sort_order
@@ -317,8 +326,20 @@ const loadRegions = () => {
   })
 }
 
+const loadCnameDomains = () => {
+  request.get('/cname_domains').then(response => {
+    cnameDomains.value = response.data?.list || []
+    if (!temp.cname_domain && cnameDomains.value.length > 0) {
+      temp.cname_domain = cnameDomains.value[0].domain
+    }
+  }).catch(() => {
+    cnameDomains.value = []
+  })
+}
+
 onMounted(() => {
   loadRegions()
+  loadCnameDomains()
   getList()
 })
 </script>

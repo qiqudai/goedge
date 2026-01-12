@@ -6,13 +6,15 @@ import (
 	"cdn-api/services"
 	"net/http"
 
+	"cdn-common/i18n"
+
 	"github.com/gin-gonic/gin"
 )
 
 func Setup(r *gin.Engine) {
 	// Health Check for Load Balancer (HA)
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "node": "server-1"})
+		c.JSON(http.StatusOK, gin.H{"status": i18n.T("status.ok"), "node": i18n.T("server-1")})
 	})
 	r.Static("/uploads", "./uploads")
 
@@ -71,6 +73,9 @@ func Setup(r *gin.Engine) {
 			admin.GET("/dns/providers/types", dnsCtr.GetProviderTypes)
 			admin.POST("/dns/providers", dnsCtr.CreateProvider)
 			admin.DELETE("/dns/providers/:id", dnsCtr.DeleteProvider)
+			admin.GET("/dns/test", dnsCtr.TestDNS)
+			admin.POST("/dns/records/fix", dnsCtr.FixRecords)
+			admin.POST("/dns/records/cleanup", dnsCtr.ClearInvalid)
 
 			// CNAME Domains
 			cnameCtr := &controllers.CnameController{}
@@ -104,7 +109,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/stats/basic", statCtr.ListBasic)
 			admin.GET("/stats/quality", statCtr.ListQuality)
 			admin.GET("/stats/origin", statCtr.ListOrigin)
-            admin.GET("/stats/node_traffic", statCtr.ListNodeTraffic)
+			admin.GET("/stats/node_traffic", statCtr.ListNodeTraffic)
 			admin.GET("/stats/node_ranking", statCtr.ListNodeRanking)
 			admin.GET("/stats/node_metrics", statCtr.ListNodeMetrics)
 
@@ -151,11 +156,11 @@ func Setup(r *gin.Engine) {
 			admin.DELETE("/announcements/:id", annCtr.Delete)
 
 			admin.POST("/upload/image", (&controllers.UploadController{}).UploadImage)
-            
-            // API Key
-            apiKeyCtr := &controllers.APIKeyController{}
-            admin.GET("/api_key", apiKeyCtr.GetKey)
-            admin.PUT("/api_key", apiKeyCtr.UpdateKey)
+
+			// API Key
+			apiKeyCtr := &controllers.APIKeyController{}
+			admin.GET("/api_key", apiKeyCtr.GetKey)
+			admin.PUT("/api_key", apiKeyCtr.UpdateKey)
 			admin.POST("/api_key/reset", apiKeyCtr.ResetSecret)
 
 			admin.POST("/ws/dispatch", wsCtr.DispatchTest)

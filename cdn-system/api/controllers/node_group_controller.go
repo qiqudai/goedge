@@ -6,6 +6,7 @@ import (
 	"cdn-api/services"
 	"cdn-api/services/dns"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,6 +39,10 @@ type nodeGroupView struct {
 // ListNodeGroups
 // GET /api/v1/admin/node-groups
 func (ctr *NodeGroupController) ListNodeGroups(c *gin.Context) {
+	if err := ensureNodeGroupCnameDomainColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
 	query := db.DB.Model(&models.NodeGroup{})
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	if keyword != "" {
@@ -106,6 +111,10 @@ func (ctr *NodeGroupController) ListNodeGroups(c *gin.Context) {
 // CreateNodeGroup
 // POST /api/v1/admin/node-groups
 func (ctr *NodeGroupController) CreateNodeGroup(c *gin.Context) {
+	if err := ensureNodeGroupCnameDomainColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
 	var req models.NodeGroup
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid Params")})
@@ -117,6 +126,29 @@ func (ctr *NodeGroupController) CreateNodeGroup(c *gin.Context) {
 
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
+	}
+
+	domain, err := resolveNodeGroupCnameDomain(strings.TrimSpace(req.CnameDomain))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T(err.Error())})
+		return
+	}
+	req.CnameDomain = domain
+
+	req.CnameHostname = normalizeGroupHostname(req.CnameHostname, req.CnameDomain)
+	if strings.TrimSpace(req.CnameHostname) == "" {
+		hostname, err := generateUniqueGroupHostname()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Failed to generate resolution")})
+			return
+		}
+		req.CnameHostname = hostname
+	}
+	req.Ipv4Resolution = strings.TrimSpace(req.Ipv4Resolution)
+	if req.Ipv4Resolution == "" {
+		if token, err := randomToken(8); err == nil {
+			req.Ipv4Resolution = token
+		}
 	}
 
 	req.BackupSwitchPolicy = buildNodeGroupPolicy(&req, "")
@@ -133,6 +165,10 @@ func (ctr *NodeGroupController) CreateNodeGroup(c *gin.Context) {
 func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if err := ensureNodeGroupCnameDomainColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
 
 	var req models.NodeGroup
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -140,8 +176,35 @@ func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 		return
 	}
 
+	var existing models.NodeGroup
+	if err := db.DB.Where("id = ?", id).First(&existing).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"msg": T("group not found")})
+		return
+	}
+	applyNodeGroupPolicy(&existing)
+
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
+	}
+
+	domainInput := strings.TrimSpace(req.CnameDomain)
+	if domainInput == "" {
+		domainInput = strings.TrimSpace(existing.CnameDomain)
+	}
+	domain, err := resolveNodeGroupCnameDomain(domainInput)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T(err.Error())})
+		return
+	}
+	req.CnameDomain = domain
+
+	req.CnameHostname = normalizeGroupHostname(req.CnameHostname, req.CnameDomain)
+	if strings.TrimSpace(req.CnameHostname) == "" {
+		req.CnameHostname = normalizeGroupHostname(existing.CnameHostname, req.CnameDomain)
+	}
+	req.Ipv4Resolution = strings.TrimSpace(req.Ipv4Resolution)
+	if req.Ipv4Resolution == "" {
+		req.Ipv4Resolution = strings.TrimSpace(existing.Ipv4Resolution)
 	}
 
 	backupPolicy := buildNodeGroupPolicy(&req, req.BackupSwitchPolicy)
@@ -149,7 +212,8 @@ func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 	updates := map[string]interface{}{
 		"name":                 req.Name,
 		"region_id":            req.RegionID,
-		"cname_hostname":       req.CnameHostname,    // maps to resolution
+		"cname_hostname":       req.CnameHostname, // maps to resolution
+		"cname_domain":         req.CnameDomain,
 		"des":                  req.Description,      // maps to remark
 		"backup_switch_type":   req.BackupSwitchType, // maps to spare_ip_switch
 		"backup_switch_policy": backupPolicy,
@@ -262,6 +326,10 @@ func (ctr *NodeGroupController) GetResolution(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("invalid group id")})
 		return
 	}
+	if err := ensureNodeGroupCnameDomainColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
 
 	var group models.NodeGroup
 	if err := db.DB.Where("id = ?", groupID).First(&group).Error; err != nil {
@@ -330,6 +398,11 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("invalid group id")})
 		return
 	}
+	var group models.NodeGroup
+	if err := db.DB.Select("id", "region_id").Where("id = ?", groupID).First(&group).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"msg": T("group not found")})
+		return
+	}
 
 	var req lineAssignRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -363,9 +436,34 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("no valid items")})
 		return
 	}
+	var conflicts []models.Line
+	if err := db.DB.Select("node_group_id", "node_id", "node_ip_id").
+		Where("node_group_id <> ? AND (node_id IN ? OR node_ip_id IN ?)", groupID, nodeIDs, nodeIDs).
+		Find(&conflicts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("load nodes failed")})
+		return
+	}
+	if len(conflicts) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("node already assigned to another group")})
+		return
+	}
+	var regionIDs []int64
+	if err := db.DB.Model(&models.Region{}).Pluck("id", &regionIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
+	if len(regionIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.region_required")})
+		return
+	}
+	regionSet := make(map[int64]struct{}, len(regionIDs))
+	for _, id := range regionIDs {
+		regionSet[id] = struct{}{}
+	}
 	enabledNodes := map[int64]bool{}
+	nodeRegions := map[int64]*int64{}
 	var nodes []models.Node
-	if err := db.DB.Select("id", "enable").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+	if err := db.DB.Select("id", "enable", "region_id").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("load nodes failed")})
 		return
 	}
@@ -373,6 +471,7 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 		if node.Enable {
 			enabledNodes[node.ID] = true
 		}
+		nodeRegions[node.ID] = node.RegionID
 	}
 	for _, item := range req.Items {
 		id := item.NodeID
@@ -382,6 +481,23 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 		if id != 0 && !enabledNodes[id] {
 			c.JSON(http.StatusBadRequest, gin.H{"msg": T("node disabled")})
 			return
+		}
+		regionID, ok := nodeRegions[id]
+		if id != 0 && (!ok || regionID == nil || *regionID == 0) {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.region_required")})
+			return
+		}
+		if id != 0 {
+			if _, exists := regionSet[*regionID]; !exists {
+				c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.region_required")})
+				return
+			}
+		}
+		if id != 0 && group.RegionID != nil && *group.RegionID > 0 {
+			if regionID == nil || *regionID != *group.RegionID {
+				c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.region_mismatch")})
+				return
+			}
 		}
 	}
 
@@ -719,13 +835,36 @@ func loadLineNodeIDs(groupID int64, lineID string) []int64 {
 }
 
 func buildAvailableLineItems(group models.NodeGroup, assignedIPIDs map[int64]struct{}) ([]lineIPItem, error) {
-	query := db.DB.Model(&models.Node{}).Where("enable = ?", true)
+	var regionIDs []int64
+	if err := db.DB.Model(&models.Region{}).Pluck("id", &regionIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(regionIDs) == 0 {
+		return []lineIPItem{}, nil
+	}
+	query := db.DB.Model(&models.Node{}).
+		Where("enable = ?", true).
+		Where("region_id IN ?", regionIDs)
 	if group.RegionID != nil && *group.RegionID > 0 {
 		query = query.Where("region_id = ?", *group.RegionID)
 	}
 	var nodes []models.Node
 	if err := query.Find(&nodes).Error; err != nil {
 		return nil, err
+	}
+	otherAssigned := map[int64]struct{}{}
+	var otherLines []models.Line
+	if err := db.DB.Select("node_id", "node_ip_id").
+		Where("node_group_id <> ?", group.ID).
+		Find(&otherLines).Error; err == nil {
+		for _, line := range otherLines {
+			if line.NodeID != 0 {
+				otherAssigned[line.NodeID] = struct{}{}
+			}
+			if line.NodeIPID != 0 {
+				otherAssigned[line.NodeIPID] = struct{}{}
+			}
+		}
 	}
 	nameMap := map[int64]string{}
 	for _, node := range nodes {
@@ -742,6 +881,9 @@ func buildAvailableLineItems(group models.NodeGroup, assignedIPIDs map[int64]str
 			}
 		}
 		if _, exists := assignedIPIDs[node.ID]; exists {
+			continue
+		}
+		if _, exists := otherAssigned[node.ID]; exists {
 			continue
 		}
 		result = append(result, lineIPItem{
@@ -845,4 +987,71 @@ func buildNodeGroupPolicy(req *models.NodeGroup, fallback string) string {
 		return fallback
 	}
 	return string(b)
+}
+
+func ensureNodeGroupCnameDomainColumn() error {
+	if db.DB == nil {
+		return nil
+	}
+	if db.DB.Migrator().HasColumn(&models.NodeGroup{}, "cname_domain") {
+		return nil
+	}
+	return db.DB.Migrator().AddColumn(&models.NodeGroup{}, "CnameDomain")
+}
+
+func resolveNodeGroupCnameDomain(input string) (string, error) {
+	if err := ensureCnameTable(); err != nil {
+		return "", err
+	}
+	domain := normalizeDomainInput(input)
+	if domain == "" {
+		var row models.CnameDomain
+		if err := db.DB.Order("id asc").First(&row).Error; err != nil {
+			return "", errors.New("cname domains not configured")
+		}
+		domain = normalizeDomainInput(row.Domain)
+	}
+	if domain == "" || !isValidDomain(domain) {
+		return "", errors.New("invalid cname domain")
+	}
+	var existing models.CnameDomain
+	if err := db.DB.Where("domain = ?", domain).First(&existing).Error; err != nil {
+		return "", errors.New("cname domain not found")
+	}
+	return domain, nil
+}
+
+func normalizeGroupHostname(host, domain string) string {
+	normalized := normalizeDomainInput(host)
+	if normalized == "" {
+		return ""
+	}
+	domain = normalizeDomainInput(domain)
+	if domain != "" {
+		if normalized == domain {
+			return "@"
+		}
+		suffix := "." + domain
+		if strings.HasSuffix(normalized, suffix) {
+			normalized = strings.TrimSuffix(normalized, suffix)
+		}
+	}
+	return strings.TrimSuffix(normalized, ".")
+}
+
+func generateUniqueGroupHostname() (string, error) {
+	for i := 0; i < 5; i++ {
+		token, err := randomToken(8)
+		if err != nil {
+			return "", err
+		}
+		var count int64
+		if err := db.DB.Model(&models.NodeGroup{}).Where("cname_hostname = ?", token).Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count == 0 {
+			return token, nil
+		}
+	}
+	return "", errors.New("failed to generate unique resolution")
 }

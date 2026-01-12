@@ -5,7 +5,6 @@ import (
 	"cdn-api/models"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 )
@@ -29,6 +28,27 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 	}
 	if domain.DNSProviderID == 0 {
 		return errors.New("dns provider not configured")
+	}
+	if groupID == 0 {
+		return nil
+	}
+
+	group, err := EnsureGroupDNSConfig(groupID)
+	if err != nil {
+		return err
+	}
+	lineDomain := normalizeDomainName(group.CnameDomain)
+	if lineDomain == "" {
+		return errors.New("line cname domain is empty")
+	}
+	lineHost := normalizeRecordHostname(group.CnameHostname, lineDomain)
+	if lineHost == "" {
+		return errors.New("line cname hostname is empty")
+	}
+	if lineHost == "@" {
+		lineHost = lineDomain
+	} else {
+		lineHost = lineHost + "." + lineDomain
 	}
 
 	var api models.DNSAPI
@@ -73,66 +93,101 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 		return errors.New("hostname is empty")
 	}
 
-	if action == "resync" {
-		log.Printf("[DNS] package cname resync start domain=%s host=%s line=%s", root, recordName, lineID)
-		record := DNSRecord{Type: "A", Name: recordName, Line: lineValue}
-		if err := deleteAllByLine(provider, root, record); err != nil {
-			return err
-		}
-		if len(nodeIPIDs) == 0 {
-			log.Printf("[DNS] package cname resync done domain=%s host=%s line=%s nodes=0", root, recordName, lineID)
-			return nil
-		}
-		action = "add"
-	}
+	log.Printf("[DNS] package cname resync start domain=%s host=%s line=%s", root, recordName, lineID)
 
-	if len(nodeIPIDs) == 0 {
-		return nil
-	}
-	var nodes []models.Node
-	if err := db.DB.Select("id", "ip").Where("id IN ?", nodeIPIDs).Find(&nodes).Error; err != nil {
+	hasNodes := false
+	lineIPs, err := loadLineNodeIPs(groupID, lineID)
+	if err != nil {
 		return err
 	}
-	if len(nodes) == 0 {
-		return errors.New("node list empty")
+	if len(lineIPs) > 0 {
+		hasNodes = true
 	}
 
-	weightMap := map[int64]int{}
-	if action == "add" || action == "enable" {
-		weightMap = loadLineWeightMap(groupID, lineID, nodeIPIDs)
+	record := DNSRecord{
+		Type:  "CNAME",
+		Name:  recordName,
+		Value: lineHost,
+		TTL:   ttl,
+		Line:  lineValue,
 	}
 
-	var errs []string
-	for _, node := range nodes {
-		if strings.TrimSpace(node.IP) == "" {
+	if updater, ok := provider.(RecordSetUpdater); ok {
+		values := []string{}
+		if hasNodes {
+			values = []string{lineHost}
+		}
+		if err := updater.UpsertRecordSet(root, DNSRecord{Type: "CNAME", Name: recordName, TTL: ttl, Line: lineValue}, values); err != nil {
+			log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+			return err
+		}
+		log.Printf("[DNS] package cname sync success host=%s.%s line=%s action=%s", recordName, root, lineID, action)
+		return nil
+	}
+
+	if !hasNodes {
+		if err := deleteAllByLine(provider, root, DNSRecord{Type: "CNAME", Name: recordName, Line: lineValue}); err != nil {
+			log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+			return err
+		}
+		log.Printf("[DNS] package cname resync done domain=%s host=%s line=%s nodes=0", root, recordName, lineID)
+		return nil
+	}
+
+	records, err := provider.GetRecords(root)
+	if err != nil {
+		log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+		return err
+	}
+	existing := make([]DNSRecord, 0)
+	hasDesired := false
+	for _, r := range records {
+		if r.Type != "CNAME" {
 			continue
 		}
-		record := DNSRecord{
-			Type:   "A",
-			Name:   recordName,
-			Value:  strings.TrimSpace(node.IP),
-			TTL:    ttl,
-			Line:   lineValue,
-			Weight: weightMap[node.ID],
+		if r.Name != recordName {
+			continue
 		}
-		switch action {
-		case "add", "enable":
-			if err := provider.AddRecord(root, record); err != nil {
-				errs = append(errs, fmt.Sprintf("add domain=%s name=%s value=%s line=%s err=%v", root, record.Name, record.Value, record.Line, err))
-			}
-		case "delete", "disable":
-			if err := provider.DeleteRecord(root, record); err != nil {
-				errs = append(errs, fmt.Sprintf("delete domain=%s name=%s value=%s line=%s err=%v", root, record.Name, record.Value, record.Line, err))
-			}
-		default:
-			return errors.New("unsupported action")
+		if strings.TrimSpace(lineValue) != "" && r.Line != lineValue {
+			continue
+		}
+		existing = append(existing, r)
+		if r.Value == lineHost {
+			hasDesired = true
 		}
 	}
 
-	if len(errs) > 0 {
-		msg := strings.Join(errs, "; ")
-		log.Printf("[DNS] package cname sync failed host=%s.%s line=%s errors=%s", recordName, root, lineID, msg)
-		return errors.New(msg)
+	if !hasDesired {
+		if len(existing) > 0 {
+			if replacer, ok := provider.(RecordValueReplacer); ok {
+				if err := replacer.ReplaceRecordValue(root, DNSRecord{Type: "CNAME", Name: recordName, Line: lineValue, TTL: ttl}, lineHost); err != nil {
+					log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+					return err
+				}
+				hasDesired = true
+			} else {
+				if err := deleteAllByLine(provider, root, DNSRecord{Type: "CNAME", Name: recordName, Line: lineValue}); err != nil {
+					log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+					return err
+				}
+			}
+		}
+		if !hasDesired {
+			if err := provider.AddRecord(root, record); err != nil {
+				log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+				return err
+			}
+		}
+	}
+
+	for _, r := range existing {
+		if r.Value == lineHost {
+			continue
+		}
+		if err := provider.DeleteRecord(root, r); err != nil {
+			log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+			return err
+		}
 	}
 	log.Printf("[DNS] package cname sync success host=%s.%s line=%s action=%s", recordName, root, lineID, action)
 	return nil

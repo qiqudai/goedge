@@ -159,6 +159,56 @@ func (p *GoDaddyProvider) DeleteRecord(domain string, record dns.DNSRecord) erro
 	return nil
 }
 
+func (p *GoDaddyProvider) UpsertRecordSet(domain string, record dns.DNSRecord, values []string) error {
+	api := fmt.Sprintf("https://api.godaddy.com/v1/domains/%s/records/%s/%s", domain, record.Type, record.Name)
+	ttl := record.TTL
+	if ttl == 0 {
+		ttl = 600
+	}
+
+	unique := map[string]struct{}{}
+	payload := make([]map[string]interface{}, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := unique[value]; ok {
+			continue
+		}
+		unique[value] = struct{}{}
+		payload = append(payload, map[string]interface{}{
+			"type": record.Type,
+			"name": record.Name,
+			"data": value,
+			"ttl":  ttl,
+		})
+	}
+
+	var req *http.Request
+	if len(payload) == 0 {
+		req, _ = http.NewRequest("DELETE", api, nil)
+	} else {
+		body, _ := json.Marshal(payload)
+		req, _ = http.NewRequest("PUT", api, bytes.NewBuffer(body))
+	}
+	p.setHeaders(req)
+	respBody, err := p.doRequest(req)
+	if err != nil {
+		return err
+	}
+	if len(respBody) > 0 {
+		var resp struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(respBody, &resp); err == nil && resp.Code != "" {
+			return fmt.Errorf("godaddy error: %s - %s", resp.Code, resp.Message)
+		}
+	}
+	return nil
+}
+
 func (p *GoDaddyProvider) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", fmt.Sprintf("sso-key %s:%s", p.Config.APIKey, p.Config.APISecret))
 	req.Header.Set("Content-Type", "application/json")
@@ -192,7 +242,9 @@ func NewNameComProvider(credentials string) (dns.Provider, error) {
 
 func (p *NameComProvider) GetDomains() ([]string, error) { return []string{}, nil }
 
-func (p *NameComProvider) GetRecords(domain string) ([]dns.DNSRecord, error) { return []dns.DNSRecord{}, nil }
+func (p *NameComProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil
+}
 
 func (p *NameComProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// POST /v4/domains/{domainName}/records
@@ -315,7 +367,9 @@ func NewNamecheapProvider(credentials string) (dns.Provider, error) {
 
 func (p *NamecheapProvider) GetDomains() ([]string, error) { return []string{}, nil }
 
-func (p *NamecheapProvider) GetRecords(domain string) ([]dns.DNSRecord, error) { return []dns.DNSRecord{}, nil }
+func (p *NamecheapProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil
+}
 
 func (p *NamecheapProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// Namecheap Read-Modify-Write
@@ -438,7 +492,9 @@ func NewClouDNSProvider(credentials string) (dns.Provider, error) {
 
 func (p *ClouDNSProvider) GetDomains() ([]string, error) { return []string{}, nil }
 
-func (p *ClouDNSProvider) GetRecords(domain string) ([]dns.DNSRecord, error) { return []dns.DNSRecord{}, nil }
+func (p *ClouDNSProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil
+}
 
 func (p *ClouDNSProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// https://api.cloudns.net/dns/add-record.json
@@ -484,7 +540,9 @@ func NewNamesiloProvider(credentials string) (dns.Provider, error) {
 
 func (p *NamesiloProvider) GetDomains() ([]string, error) { return []string{}, nil }
 
-func (p *NamesiloProvider) GetRecords(domain string) ([]dns.DNSRecord, error) { return []dns.DNSRecord{}, nil }
+func (p *NamesiloProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil
+}
 
 func (p *NamesiloProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// API key in "api_key" json -> APIKey field.
@@ -563,7 +621,9 @@ func NewJDCloudProvider(credentials string) (dns.Provider, error) {
 
 func (p *JDCloudProvider) GetDomains() ([]string, error) { return []string{}, nil }
 
-func (p *JDCloudProvider) GetRecords(domain string) ([]dns.DNSRecord, error) { return []dns.DNSRecord{}, nil }
+func (p *JDCloudProvider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil
+}
 
 func (p *JDCloudProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	// TODO: Implement JDCloud API
@@ -590,7 +650,9 @@ func NewDNS51Provider(credentials string) (dns.Provider, error) {
 
 func (p *DNS51Provider) GetDomains() ([]string, error) { return []string{}, nil }
 
-func (p *DNS51Provider) GetRecords(domain string) ([]dns.DNSRecord, error) { return []dns.DNSRecord{}, nil }
+func (p *DNS51Provider) GetRecords(domain string) ([]dns.DNSRecord, error) {
+	return []dns.DNSRecord{}, nil
+}
 
 func (p *DNS51Provider) AddRecord(domain string, record dns.DNSRecord) error {
 	// TODO: Implement 51DNS API

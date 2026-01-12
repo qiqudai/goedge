@@ -160,6 +160,23 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 			}
 		}
 
+		var lineCounts []struct {
+			NodeID int64 `gorm:"column:node_id"`
+			Count  int64 `gorm:"column:cnt"`
+		}
+		_ = db.DB.Model(&models.Line{}).
+			Select("node_id, count(*) as cnt").
+			Where("node_id IN ?", parentIDs).
+			Group("node_id").
+			Scan(&lineCounts).Error
+		lineCountMap := make(map[int64]int64, len(lineCounts))
+		for _, row := range lineCounts {
+			lineCountMap[row.NodeID] = row.Count
+		}
+		for i := range nodes {
+			nodes[i].LineCount = lineCountMap[nodes[i].ID]
+		}
+
 		// Load Regions
 		regionIDs := make([]int64, 0)
 		for _, node := range nodes {
@@ -371,13 +388,30 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 	}
 
 	var existing models.Node
-	_ = db.DB.Select("enable").Where("id = ?", id).First(&existing).Error
+	_ = db.DB.Select("enable", "region_id").Where("id = ?", id).First(&existing).Error
 	syncTask := ""
 	if req.Enable != existing.Enable {
 		if req.Enable {
 			syncTask = "sync_enable"
 		} else {
 			syncTask = "sync_disable"
+		}
+	}
+	existingRegion := int64(0)
+	if existing.RegionID != nil {
+		existingRegion = *existing.RegionID
+	}
+	reqRegion := int64(0)
+	if req.RegionID != nil {
+		reqRegion = *req.RegionID
+	}
+	if existingRegion != reqRegion {
+		var lineCount int64
+		if err := db.DB.Model(&models.Line{}).
+			Where("node_id = ? OR node_ip_id = ?", id, id).
+			Count(&lineCount).Error; err == nil && lineCount > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.region_change_blocked")})
+			return
 		}
 	}
 

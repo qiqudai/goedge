@@ -128,6 +128,7 @@ const submitting = ref(false)
 
 const currentProviderId = ref(0)
 const dnsError = ref('没有错误')
+const testingDns = ref(false)
 
 const form = ref({
   name: '',
@@ -367,12 +368,55 @@ const handleCnameBlur = () => {
   cnameForm.domain = normalizeDomainInput(cnameForm.domain)
 }
 
+const testDNS = async () => {
+  dnsError.value = '正在测试dns'
+  testingDns.value = true
+  try {
+    const res = await request.get('/dns/test', { skipLoading: true })
+    if (res.code === 0) {
+      dnsError.value = '没有错误'
+    } else {
+      dnsError.value = res.msg || 'DNS测试失败'
+    }
+  } catch (e) {
+    dnsError.value = 'DNS测试失败'
+  } finally {
+    testingDns.value = false
+  }
+}
+
 const handleFixRecords = () => {
-  ElMessage.info('功能开发中')
+  ElMessageBox.confirm('确认修复DNS记录?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    return request.post('/dns/records/fix')
+  }).then(res => {
+    if (res.code === 0) {
+      ElMessage.success('修复完成')
+    } else {
+      ElMessage.error(res.msg || '修复失败')
+    }
+    testDNS()
+  })
 }
 
 const handleClearInvalid = () => {
-  ElMessage.info('功能开发中')
+  ElMessageBox.confirm('确认清除CDN无关解析?', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    return request.post('/dns/records/cleanup')
+  }).then(res => {
+    if (res.code === 0) {
+      ElMessage.success('清理完成')
+    } else {
+      ElMessage.error(res.msg || '清理失败')
+    }
+    testDNS()
+  })
 }
 
 const submitCnameForm = () => {
@@ -429,6 +473,7 @@ const handleTabChange = (name) => {
   if (name === 'dns') {
     loadProviders(true)
     loadTypes()
+    testDNS()
     return
   }
   if (name === 'cname') {
