@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -234,17 +235,17 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 
 func (ctrl *CertController) BatchCreate(c *gin.Context) {
 	var req struct {
-		UserID    int64  `json:"user_id"`
-		Type      string `json:"type"`
-		DNSAPI    int    `json:"dnsapi"`
-		AutoRenew bool   `json:"auto_renew"`
-		Domains   string `json:"domains"`
+		UserID    int64           `json:"user_id"`
+		Type      string          `json:"type"`
+		DNSAPI    int             `json:"dnsapi"`
+		AutoRenew bool            `json:"auto_renew"`
+		Domains   json.RawMessage `json:"domains"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
 		return
 	}
-	if strings.TrimSpace(req.Domains) == "" {
+	if len(req.Domains) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("domains is required")})
 		return
 	}
@@ -260,9 +261,17 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 		return
 	}
 
-	domains := splitLines(req.Domains)
+	domains, err := parseBatchDomains(req.Domains)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if len(domains) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("domains is required")})
+		return
+	}
+	if hasWildcardDomain(domains) && req.DNSAPI <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("wildcard requires dnsapi")})
 		return
 	}
 
@@ -272,7 +281,7 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 	now := time.Now()
 	var createdIDs []int64
 
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		for _, domain := range domains {
 			dnsapiPtr := normalizeDNSAPIValue(req.DNSAPI)
 			cert := models.Cert{
@@ -289,7 +298,7 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 				StartTime:  nil,
 				ExpireTime: nil,
 			}
-			if err := tx.Create(&cert).Error; err != nil {
+			if err := tx.Omit("task_id", "issue_task_id").Create(&cert).Error; err != nil {
 				return err
 			}
 			createdIDs = append(createdIDs, int64(cert.ID))
@@ -306,7 +315,144 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 	// Trigger async issuance
 	services.IssueCertsAsync(batchID, createdIDs)
 
-	c.JSON(http.StatusOK, gin.H{"batch_id": strconv.FormatInt(batchID, 10), "count": len(createdIDs)})
+	c.JSON(http.StatusOK, gin.H{"batch_id": strconv.FormatInt(batchID, 10), "count": len(createdIDs), "ids": createdIDs})
+}
+
+func (ctrl *CertController) WildcardCreate(c *gin.Context) {
+	var req struct {
+		UserID    int64  `json:"user_id"`
+		Type      string `json:"type"`
+		DNSAPI    int    `json:"dnsapi"`
+		AutoRenew bool   `json:"auto_renew"`
+		Domain    string `json:"domain"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
+		return
+	}
+
+	domain := normalizeDomainHost(req.Domain)
+	if !strings.HasPrefix(domain, "*.") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("wildcard domain is required")})
+		return
+	}
+	if isIPDomain(domain) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("domain must not be IP")})
+		return
+	}
+
+	typeName := normalizeCertType(req.Type)
+	if typeName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("type is required")})
+		return
+	}
+
+	userID := req.UserID
+	if userID == 0 {
+		userID = int64(parseUserID(mustGet(c, "userID")))
+	}
+	if userID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+		return
+	}
+
+	now := time.Now()
+	cert := models.Cert{
+		UserID:     int(userID),
+		Name:       defaultCertName(domain),
+		Type:       typeName,
+		Domain:     domain,
+		DNSAPI:     normalizeDNSAPIValue(req.DNSAPI),
+		AutoRenew:  req.AutoRenew,
+		Enable:     true,
+		CreateAt:   now,
+		UpdateAt:   now,
+		State:      "waiting",
+		StartTime:  nil,
+		ExpireTime: nil,
+	}
+	if err := db.DB.Omit("task_id", "issue_task_id").Create(&cert).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create certificates")})
+		return
+	}
+
+	services.BumpConfigVersion("cert", []int64{int64(cert.ID)})
+	services.IssueCertsAsync(time.Now().Unix(), []int64{int64(cert.ID)})
+
+	c.JSON(http.StatusOK, gin.H{"id": cert.ID})
+}
+
+func (ctrl *CertController) GetDNSChallenge(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
+		return
+	}
+	query := db.DB.Model(&models.Cert{}).Where("id = ?", id)
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+			return
+		}
+		query = query.Where("uid = ?", uid)
+	}
+
+	var cert models.Cert
+	if err := query.First(&cert).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found")})
+		return
+	}
+
+	info, err := services.ParseDNSChallengeInfo(cert.Ret)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": info})
+}
+
+func (ctrl *CertController) VerifyDNSChallenge(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
+		return
+	}
+	query := db.DB.Model(&models.Cert{}).Where("id = ?", id)
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+			return
+		}
+		query = query.Where("uid = ?", uid)
+	}
+
+	var cert models.Cert
+	if err := query.First(&cert).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found")})
+		return
+	}
+
+	info, err := services.ParseDNSChallengeInfo(cert.Ret)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ok, err := services.CheckDNSChallengeTXT(info.FQDN, info.RecordValue)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("DNS TXT record not found")})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (ctrl *CertController) Reissue(c *gin.Context) {
@@ -738,6 +884,58 @@ func uniqueStrings(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func parseBatchDomains(raw json.RawMessage) ([]string, error) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 {
+		return nil, errors.New("domains is required")
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return normalizeDomains(splitLines(asString))
+	}
+	var list []string
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return normalizeDomains(list)
+	}
+	return nil, errors.New("invalid domains")
+}
+
+func normalizeDomains(domains []string) ([]string, error) {
+	clean := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		domain = normalizeDomainHost(domain)
+		if strings.HasPrefix(domain, "*.") {
+			base := strings.TrimPrefix(domain, "*.")
+			base = normalizeDomainHost(base)
+			if base != "" {
+				domain = "*." + base
+			}
+		}
+		if domain == "" {
+			continue
+		}
+		if isIPDomain(domain) {
+			return nil, fmt.Errorf("invalid domain: %s", domain)
+		}
+		clean = append(clean, domain)
+	}
+	return uniqueStrings(clean), nil
+}
+
+func isIPDomain(domain string) bool {
+	trimmed := strings.TrimPrefix(domain, "*.")
+	return net.ParseIP(trimmed) != nil
+}
+
+func hasWildcardDomain(domains []string) bool {
+	for _, domain := range domains {
+		if strings.HasPrefix(strings.TrimSpace(domain), "*.") {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultCertName(domain string) string {

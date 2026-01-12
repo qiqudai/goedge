@@ -81,6 +81,9 @@ func GetStreamDefaultMap(userID int64) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if forwardDefaults := loadForwardDefaultMap(); len(forwardDefaults) > 0 {
+		global = MergeConfigMap(global, forwardDefaults)
+	}
 	user, err := LoadConfigMap("stream_default_config", "user", userID)
 	if err != nil {
 		return global, nil
@@ -89,6 +92,54 @@ func GetStreamDefaultMap(userID int64) (map[string]string, error) {
 		return global, nil
 	}
 	return MergeConfigMap(global, user), nil
+}
+
+type forwardDefaultItem struct {
+	Key     string      `json:"key"`
+	Value   interface{} `json:"value"`
+	Scope   string      `json:"scope"`
+	GroupID int64       `json:"group_id"`
+}
+
+const forwardDefaultKey = "forward_default_settings"
+
+func loadForwardDefaultMap() map[string]string {
+	var cfg models.SysConfig
+	if err := db.DB.Where("name = ? AND type = ?", forwardDefaultKey, "system").First(&cfg).Error; err != nil {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Value) == "" {
+		return nil
+	}
+	var items []forwardDefaultItem
+	if err := json.Unmarshal([]byte(cfg.Value), &items); err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, item := range items {
+		if item.Key == "" {
+			continue
+		}
+		if scope := strings.ToLower(strings.TrimSpace(item.Scope)); scope != "" && scope != "global" {
+			continue
+		}
+		switch v := item.Value.(type) {
+		case bool:
+			out[item.Key] = strconv.FormatBool(v)
+		case float64:
+			out[item.Key] = strconv.FormatInt(int64(v), 10)
+		case string:
+			out[item.Key] = v
+		default:
+			if b, err := json.Marshal(v); err == nil {
+				out[item.Key] = string(b)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func ApplySiteDefaults(site *models.Site, defaults map[string]string) {

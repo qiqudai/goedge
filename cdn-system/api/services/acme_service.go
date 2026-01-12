@@ -42,6 +42,19 @@ func NewHTTP01Issuer(certType string) *acme.Issuer {
 	return acme.NewIssuer(opts)
 }
 
+func NewDNS01Issuer(certType string, provider acme.ChallengeProvider) *acme.Issuer {
+	_ = os.MkdirAll(config.App.AcmeAccountDir, 0o755)
+	accountKey := filepath.Join(config.App.AcmeAccountDir, "account_"+strings.ToLower(certType)+".key")
+	opts := acme.IssueOptions{
+		Email:          config.App.AcmeEmail,
+		CADirURL:       BuildCADirURL(certType),
+		AccountKeyPath: accountKey,
+		Timeout:        60 * time.Second,
+		DNSProvider:    provider,
+	}
+	return acme.NewIssuer(opts)
+}
+
 func IsRegisterRateLimited(err error) bool {
 	return acme.IsRegisterRateLimited(err)
 }

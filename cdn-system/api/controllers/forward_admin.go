@@ -94,9 +94,14 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 			return
 		}
 		nodeGroupID, _ := resolveNodeGroupFromPackage(req.UserPackageID, 0)
+		if nodeGroupID == 0 {
+			nodeGroupID = resolveDefaultNodeGroupID()
+		}
+		regionID := resolveForwardRegionID(nodeGroupID)
 		forward := &models.Forward{
 			UserID:        req.UserID,
 			UserPackageID: req.UserPackageID,
+			RegionID:      regionID,
 			NodeGroupID:   nodeGroupID,
 			ListenPorts:   listenPorts,
 			Origins:       origins,

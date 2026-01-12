@@ -16,6 +16,7 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []i
 	var req struct {
 		UserID           int64    `json:"user_id"`
 		UserPackageID    int64    `json:"user_package_id"`
+		NodeGroupID      int64    `json:"node_group_id"`
 		GroupID          int64    `json:"group_id"` // Desc: use group_ids
 		GroupIDs         []int64  `json:"group_ids"`
 		ListenPorts      []string `json:"listen_ports"`
@@ -48,11 +49,16 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []i
 		return nil, nil, errors.New("origin is required")
 	}
 
-	nodeGroupID, _ := resolveNodeGroupFromPackage(req.UserPackageID, 0)
+	nodeGroupID, _ := resolveNodeGroupFromPackage(req.UserPackageID, req.NodeGroupID)
+	if nodeGroupID == 0 {
+		nodeGroupID = resolveDefaultNodeGroupID()
+	}
+	regionID := resolveForwardRegionID(nodeGroupID)
 
 	forward := &models.Forward{
 		UserID:        userID,
 		UserPackageID: req.UserPackageID,
+		RegionID:      regionID,
 		NodeGroupID:   nodeGroupID,
 		ListenPorts:   listenPorts,
 		Origins:       origins,
@@ -78,7 +84,17 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []i
 
 func createForwardWithGroup(forward *models.Forward, groupIDs []int64) error {
 	return db.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(forward).Error; err != nil {
+		dbTx := tx
+		if forward.RegionID == 0 {
+			dbTx = dbTx.Omit("RegionID")
+		}
+		if forward.NodeGroupID == 0 {
+			dbTx = dbTx.Omit("NodeGroupID")
+		}
+		if !forward.EnableBackupGroup || forward.BackupNodeGroup == 0 {
+			dbTx = dbTx.Omit("BackupNodeGroup")
+		}
+		if err := dbTx.Create(forward).Error; err != nil {
 			return err
 		}
 		if len(groupIDs) > 0 {
@@ -96,6 +112,36 @@ func createForwardWithGroup(forward *models.Forward, groupIDs []int64) error {
 		}
 		return nil
 	})
+}
+
+func resolveForwardRegionID(nodeGroupID int64) int64 {
+	if nodeGroupID != 0 {
+		var group models.NodeGroup
+		if err := db.DB.Select("region_id").Where("id = ?", nodeGroupID).First(&group).Error; err == nil {
+			if group.RegionID != nil && *group.RegionID > 0 {
+				return *group.RegionID
+			}
+		}
+	}
+	var region models.Region
+	if err := db.DB.Select("id").Order("id asc").First(&region).Error; err == nil {
+		return region.ID
+	}
+	return 0
+}
+
+func resolveDefaultNodeGroupID() int64 {
+	var line models.Line
+	if err := db.DB.Select("node_group_id").Order("id asc").First(&line).Error; err == nil {
+		if line.NodeGroupID > 0 {
+			return line.NodeGroupID
+		}
+	}
+	var group models.NodeGroup
+	if err := db.DB.Select("id").Order("id asc").First(&group).Error; err == nil {
+		return group.ID
+	}
+	return 0
 }
 
 func queryForwards(c *gin.Context) (*forwardQueryResult, error) {

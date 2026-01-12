@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
+	"github.com/go-acme/lego/v4/challenge"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
 )
@@ -24,6 +25,8 @@ type TokenStore interface {
 	Get(token string) (string, bool)
 	Delete(token string)
 }
+
+type ChallengeProvider = challenge.Provider
 
 type tokenEntry struct {
 	value     string
@@ -128,6 +131,7 @@ type IssueOptions struct {
 	KeyType        certcrypto.KeyType
 	Timeout        time.Duration
 	TokenStore     TokenStore
+	DNSProvider    challenge.Provider
 }
 
 type IssueResult struct {
@@ -188,9 +192,15 @@ func (i *Issuer) Issue(domains []string) (*IssueResult, error) {
 		return nil, err
 	}
 
-	provider := NewHTTP01Provider(i.options.Webroot, i.options.TokenStore)
-	if err := client.Challenge.SetHTTP01Provider(provider); err != nil {
-		return nil, err
+	if i.options.DNSProvider != nil {
+		if err := client.Challenge.SetDNS01Provider(i.options.DNSProvider); err != nil {
+			return nil, err
+		}
+	} else {
+		provider := NewHTTP01Provider(i.options.Webroot, i.options.TokenStore)
+		if err := client.Challenge.SetHTTP01Provider(provider); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := i.ensureRegistration(client, user); err != nil {

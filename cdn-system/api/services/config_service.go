@@ -686,19 +686,19 @@ func extractOriginConditions(settings map[string]interface{}) []map[string]inter
 		return nil
 	}
 	origin, ok := settings["origin"].(map[string]interface{})
-	if !ok {
-		return nil
+	if !ok || origin == nil {
+		return withSearchEngineOriginCondition(settings, nil)
 	}
 	raw := origin["conditions"]
 	if raw == nil {
-		return nil
+		return withSearchEngineOriginCondition(settings, nil)
 	}
 	switch list := raw.(type) {
 	case []map[string]interface{}:
 		if len(list) == 0 {
-			return nil
+			return withSearchEngineOriginCondition(settings, nil)
 		}
-		return list
+		return withSearchEngineOriginCondition(settings, list)
 	case []interface{}:
 		out := make([]map[string]interface{}, 0, len(list))
 		for _, item := range list {
@@ -707,18 +707,93 @@ func extractOriginConditions(settings map[string]interface{}) []map[string]inter
 			}
 		}
 		if len(out) == 0 {
-			return nil
+			return withSearchEngineOriginCondition(settings, nil)
 		}
-		return out
+		return withSearchEngineOriginCondition(settings, out)
 	default:
 		if b, err := json.Marshal(raw); err == nil {
 			var parsed []map[string]interface{}
 			if json.Unmarshal(b, &parsed) == nil && len(parsed) > 0 {
-				return parsed
+				return withSearchEngineOriginCondition(settings, parsed)
 			}
 		}
 	}
-	return nil
+	return withSearchEngineOriginCondition(settings, nil)
+}
+
+var searchEngineCrawlerTokens = []string{
+	"baiduspider",
+	"googlebot",
+	"bingbot",
+	"yandex",
+	"sogou",
+	"360spider",
+	"bytespider",
+	"duckduckbot",
+	"slurp",
+	"facebot",
+	"ia_archiver",
+	"semrushbot",
+}
+
+func withSearchEngineOriginCondition(settings map[string]interface{}, conditions []map[string]interface{}) []map[string]interface{} {
+	cond := buildSearchEngineOriginCondition(settings)
+	if cond == nil {
+		return conditions
+	}
+	if hasOriginCondition(conditions, cond) {
+		return conditions
+	}
+	if conditions == nil {
+		return []map[string]interface{}{cond}
+	}
+	return append([]map[string]interface{}{cond}, conditions...)
+}
+
+func buildSearchEngineOriginCondition(settings map[string]interface{}) map[string]interface{} {
+	if settings == nil {
+		return nil
+	}
+	if !parseBoolValue(settings["search_engine_origin"], false) {
+		return nil
+	}
+	originIP := strings.TrimSpace(parseString(settings["search_engine_origin_ip"]))
+	if originIP == "" {
+		return nil
+	}
+	return map[string]interface{}{
+		"item":     "header",
+		"header":   "user-agent",
+		"operator": "contains",
+		"value":    strings.Join(searchEngineCrawlerTokens, "|"),
+		"origin":   originIP,
+	}
+}
+
+func hasOriginCondition(conditions []map[string]interface{}, cond map[string]interface{}) bool {
+	if len(conditions) == 0 || cond == nil {
+		return false
+	}
+	condItem := strings.ToLower(parseString(cond["item"]))
+	condHeader := strings.ToLower(parseString(cond["header"]))
+	condOrigin := strings.TrimSpace(parseString(cond["origin"]))
+	condOperator := strings.ToLower(parseString(cond["operator"]))
+	for _, item := range conditions {
+		if strings.ToLower(parseString(item["item"])) != condItem {
+			continue
+		}
+		if strings.ToLower(parseString(item["header"])) != condHeader {
+			continue
+		}
+		if strings.TrimSpace(parseString(item["origin"])) != condOrigin {
+			continue
+		}
+		if condOperator != "" && strings.ToLower(parseString(item["operator"])) != condOperator {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func isRegionBlockDisabled(value interface{}) bool {
@@ -1422,19 +1497,19 @@ func parseCacheRulesFromSettings(raw interface{}) []models.EdgeCacheRule {
 	case []interface{}:
 		for _, item := range v {
 			if m, ok := item.(map[string]interface{}); ok {
-				rules = append(rules, mapToCacheRule(m))
+				rules = append(rules, mapToCacheRules(m)...)
 			}
 		}
 	case []map[string]interface{}:
 		for _, item := range v {
-			rules = append(rules, mapToCacheRule(item))
+			rules = append(rules, mapToCacheRules(item)...)
 		}
 	default:
 		if b, err := json.Marshal(raw); err == nil {
 			var list []map[string]interface{}
 			if err := json.Unmarshal(b, &list); err == nil {
 				for _, item := range list {
-					rules = append(rules, mapToCacheRule(item))
+					rules = append(rules, mapToCacheRules(item)...)
 				}
 			}
 		}
@@ -1443,6 +1518,37 @@ func parseCacheRulesFromSettings(raw interface{}) []models.EdgeCacheRule {
 		return nil
 	}
 	return rules
+}
+
+func mapToCacheRules(raw map[string]interface{}) []models.EdgeCacheRule {
+	base := mapToCacheRule(raw)
+	if base.Rule != "" || base.Ext != "" || base.URI != "" || base.Prefix != "" {
+		return []models.EdgeCacheRule{base}
+	}
+
+	ruleType := strings.ToLower(parseString(raw["type"]))
+	rawValue := parseString(raw["value"])
+	values := splitCacheRuleValues(rawValue)
+	if len(values) == 0 {
+		values = []string{""}
+	}
+
+	switch ruleType {
+	case "suffix":
+		return buildCacheRulesWithExt(base, values)
+	case "dir":
+		return buildCacheRulesWithPrefix(base, values)
+	case "path":
+		return buildCacheRulesWithURI(base, values)
+	case "all":
+		base.Prefix = "/"
+		return []models.EdgeCacheRule{base}
+	case "index":
+		base.URI = "/"
+		return []models.EdgeCacheRule{base}
+	default:
+		return []models.EdgeCacheRule{base}
+	}
 }
 
 func mapToCacheRule(raw map[string]interface{}) models.EdgeCacheRule {
@@ -1463,6 +1569,95 @@ func mapToCacheRule(raw map[string]interface{}) models.EdgeCacheRule {
 		IgnoreArgs: ignoreArgs,
 		CacheKey:   parseString(raw["cache_key"]),
 	}
+}
+
+func splitCacheRuleValues(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	var parts []string
+	if strings.Contains(value, "|") {
+		parts = strings.Split(value, "|")
+	} else {
+		parts = strings.Fields(value)
+	}
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func buildCacheRulesWithExt(base models.EdgeCacheRule, values []string) []models.EdgeCacheRule {
+	rules := make([]models.EdgeCacheRule, 0, len(values))
+	for _, val := range values {
+		item := strings.TrimSpace(val)
+		if item == "" {
+			continue
+		}
+		item = strings.TrimPrefix(item, "*")
+		item = strings.TrimPrefix(item, ".")
+		if item == "" {
+			continue
+		}
+		rule := base
+		rule.Ext = item
+		rules = append(rules, rule)
+	}
+	if len(rules) == 0 {
+		return []models.EdgeCacheRule{base}
+	}
+	return rules
+}
+
+func buildCacheRulesWithPrefix(base models.EdgeCacheRule, values []string) []models.EdgeCacheRule {
+	rules := make([]models.EdgeCacheRule, 0, len(values))
+	for _, val := range values {
+		item := normalizeCachePath(val)
+		if item == "" {
+			continue
+		}
+		rule := base
+		rule.Prefix = item
+		rules = append(rules, rule)
+	}
+	if len(rules) == 0 {
+		return []models.EdgeCacheRule{base}
+	}
+	return rules
+}
+
+func buildCacheRulesWithURI(base models.EdgeCacheRule, values []string) []models.EdgeCacheRule {
+	rules := make([]models.EdgeCacheRule, 0, len(values))
+	for _, val := range values {
+		item := normalizeCachePath(val)
+		if item == "" {
+			continue
+		}
+		rule := base
+		rule.URI = item
+		rules = append(rules, rule)
+	}
+	if len(rules) == 0 {
+		return []models.EdgeCacheRule{base}
+	}
+	return rules
+}
+
+func normalizeCachePath(value string) string {
+	item := strings.TrimSpace(value)
+	if item == "" {
+		return ""
+	}
+	if strings.HasPrefix(item, "/") {
+		return item
+	}
+	return "/" + item
 }
 
 func extractOriginConfig(site models.Site) (string, string, string) {

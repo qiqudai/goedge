@@ -127,6 +127,95 @@
           </el-form-item>
         </el-form>
       </el-tab-pane>
+
+      <el-tab-pane label="泛证书申请" name="wildcard" v-if="!certId">
+        <el-form :model="wildcardForm" label-width="100px">
+          <el-form-item label="用户" v-if="isAdmin">
+            <el-select
+              v-model="wildcardForm.user_id"
+              filterable
+              remote
+              clearable
+              placeholder="搜索用户ID或账号"
+              :remote-method="searchUsers"
+              :loading="userLoading"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="u in userOptions"
+                :key="u.id"
+                :label="formatUserLabel(u)"
+                :value="u.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="类型">
+            <el-radio-group v-model="wildcardForm.type">
+              <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio value="letsencrypt">Let's Encrypt</el-radio>
+              <el-radio value="buypass">BuyPass</el-radio>
+              <el-radio value="google">GoogleCA</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="验证域名">
+            <el-input v-model="wildcardForm.domain" placeholder="*.example.com" />
+          </el-form-item>
+          <el-form-item label="DNS API">
+            <el-select v-model="wildcardForm.dnsapi" clearable placeholder="不选择 (手动TXT)" style="width: 100%;">
+              <el-option label="不选择 (手动TXT)" :value="0" />
+              <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+            <div class="form-helper" v-if="!wildcardForm.dnsapi">
+              不选择DNS API时，需要手动添加TXT记录完成验证。
+            </div>
+            <div class="form-helper" v-else>
+              选择DNS API时会自动设置TXT记录，无需手动解析。
+            </div>
+          </el-form-item>
+        </el-form>
+
+        <div v-if="!wildcardForm.dnsapi" class="dns-manual">
+          <div class="dns-title">请按以下列表做TXT解析:</div>
+          <div class="dns-line">验证域名：{{ wildcardForm.domain || '-' }}</div>
+          <el-table
+            v-if="wildcardChallenge"
+            :data="[wildcardChallenge]"
+            border
+            size="small"
+            style="width: 100%"
+          >
+            <el-table-column label="解析域名">
+              <template #default="{ row }">
+                <span>{{ row.fqdn }}</span>
+                <el-icon class="copy-icon" @click="copyText(row.record_name)" v-if="row.record_name">
+                  <CopyDocument />
+                </el-icon>
+              </template>
+            </el-table-column>
+            <el-table-column label="记录值">
+              <template #default="{ row }">
+                <span>{{ row.record_value }}</span>
+                <el-icon class="copy-icon" @click="copyText(row.record_value)" v-if="row.record_value">
+                  <CopyDocument />
+                </el-icon>
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <span>{{ row.record_type || 'TXT' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="form-helper" v-else>提交申请后会生成TXT记录信息。</div>
+          <div class="dns-remark">
+            备注：<br />
+            解析域名需要一定时间来生效,完成所以上所有解析操作后,请等待1分钟后再点击验证按钮<br />
+            可通过CMD命令来手动验证域名解析是否生效: nslookup -q=txt _acme-challenge.域名<br />
+            若您使用的是宝塔云解析插件,阿里云DNS,DnsPod作为DNS,可使用DNS接口自动解析
+          </div>
+          <el-button type="primary" size="small" @click="verifyDNSChallenge" :disabled="!wildcardCertId">验证</el-button>
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <template #footer>
@@ -139,8 +228,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, computed, onMounted } from 'vue'
-import { InfoFilled } from '@element-plus/icons-vue'
+import { ref, reactive, watch, computed } from 'vue'
+import { InfoFilled, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 
@@ -164,8 +253,9 @@ const emits = defineEmits(['update:visible', 'saved', 'close'])
 
 const activeTab = ref('single')
 const title = computed(() => props.certId ? '编辑证书' : '添加证书')
+const originalType = ref('upload')
 const hasStoredCert = ref(false)
-const showCertFields = computed(() => form.type === 'upload' || (props.certId && hasStoredCert.value))
+const showCertFields = computed(() => form.type === 'upload' || (props.certId && hasStoredCert.value && form.type === originalType.value))
 
 // Data Sources
 const userOptions = ref([])
@@ -194,6 +284,17 @@ const batchForm = reactive({
   auto_renew: true
 })
 
+const wildcardForm = reactive({
+  user_id: null,
+  type: 'zerossl',
+  domain: '',
+  dnsapi: 0,
+  auto_renew: true
+})
+
+const wildcardCertId = ref(0)
+const wildcardChallenge = ref(null)
+
 // Watchers
 watch(() => props.visible, (val) => {
   if (val) {
@@ -205,6 +306,17 @@ watch(() => props.visible, (val) => {
       activeTab.value = 'single' // or default to batch? default single.
       resetForm()
     }
+  }
+})
+
+watch(() => wildcardForm.domain, () => {
+  wildcardCertId.value = 0
+  wildcardChallenge.value = null
+})
+
+watch(() => wildcardForm.dnsapi, (val) => {
+  if (val) {
+    wildcardChallenge.value = null
   }
 })
 
@@ -246,6 +358,7 @@ const initForm = (data) => {
    form.name = data.name 
    form.des = data.des || data.description || '' // Handle key mismatch
    form.type = data.type || 'upload'
+   originalType.value = form.type
    form.domain = data.domain 
    form.dnsapi = data.dnsapi || 0
    form.cert = data.cert 
@@ -273,6 +386,7 @@ const resetForm = () => {
   form.name = ''
   form.des = ''
   form.type = 'upload'
+  originalType.value = form.type
   form.domain = ''
   form.dnsapi = 0
   form.cert = ''
@@ -284,11 +398,24 @@ const resetForm = () => {
   batchForm.type = 'zerossl'
   batchForm.domains = ''
   batchForm.dnsapi = 0
+  batchForm.auto_renew = true
+
+  wildcardForm.user_id = null
+  wildcardForm.type = 'zerossl'
+  wildcardForm.domain = ''
+  wildcardForm.dnsapi = 0
+  wildcardForm.auto_renew = true
+  wildcardCertId.value = 0
+  wildcardChallenge.value = null
 }
 
 const submit = () => {
   if (activeTab.value === 'batch') {
      submitBatch()
+     return
+  }
+  if (activeTab.value === 'wildcard') {
+     submitWildcard()
      return
   }
 
@@ -317,6 +444,11 @@ const submit = () => {
     // Handle split domains if not upload
     if (form.type !== 'upload') {
         const domains = form.domain.split(/[\s,;]+/).filter(Boolean)
+        const hasWildcard = domains.some(d => d.trim().startsWith('*.'))
+        if (hasWildcard && !form.dnsapi) {
+            ElMessage.warning('泛证书请在泛证书申请页或选择DNS API')
+            return
+        }
         const batchPayload = {
             user_id: Number(form.user_id) || 0,
             type: form.type,
@@ -345,6 +477,11 @@ const submitBatch = () => {
         ElMessage.warning('请输入域名')
         return
     }
+    const hasWildcard = domains.some(d => d.startsWith('*.'))
+    if (hasWildcard && !batchForm.dnsapi) {
+        ElMessage.warning('泛证书必须选择DNS API')
+        return
+    }
     const payload = {
         user_id: Number(batchForm.user_id) || 0,
         type: batchForm.type,
@@ -359,6 +496,79 @@ const submitBatch = () => {
     })
 }
 
+const submitWildcard = async () => {
+  const domain = (wildcardForm.domain || '').trim()
+  if (!domain) {
+    ElMessage.warning('请输入泛域名')
+    return
+  }
+  if (!domain.startsWith('*.')) {
+    ElMessage.warning('泛证书域名需以 *.' + ' 开头')
+    return
+  }
+
+  const payload = {
+    user_id: Number(wildcardForm.user_id) || 0,
+    type: wildcardForm.type,
+    domain: domain,
+    dnsapi: Number(wildcardForm.dnsapi) || 0,
+    auto_renew: true
+  }
+
+  try {
+    const res = await request.post('/certs/wildcard', payload)
+    wildcardCertId.value = res.id || res.data?.id || 0
+    ElMessage.success('已提交申请')
+    if (!wildcardForm.dnsapi && wildcardCertId.value) {
+      await loadWildcardChallenge(wildcardCertId.value)
+    }
+    emits('saved')
+  } catch (e) {
+    // errors are handled by request interceptor
+  }
+}
+
+const loadWildcardChallenge = async (certId) => {
+  wildcardChallenge.value = null
+  if (!certId) return
+  for (let i = 0; i < 5; i++) {
+    try {
+      const res = await request.get(`/certs/${certId}/dns_challenge`)
+      const data = res.data || res
+      if (data) {
+        wildcardChallenge.value = data
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    } catch (e) {
+      return
+    }
+  }
+}
+
+const verifyDNSChallenge = async () => {
+  if (!wildcardCertId.value) {
+    ElMessage.warning('请先提交申请')
+    return
+  }
+  try {
+    await request.post(`/certs/${wildcardCertId.value}/verify_dns`)
+    ElMessage.success('验证成功，请等待签发完成')
+  } catch (e) {
+    // handled globally
+  }
+}
+
+const copyText = async (text) => {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制')
+  } catch (e) {
+    ElMessage.error('复制失败')
+  }
+}
+
 </script>
 
 <style scoped>
@@ -367,5 +577,31 @@ const submitBatch = () => {
   color: #909399;
   line-height: 1.4;
   margin-top: 5px;
+}
+
+.dns-manual {
+  margin-top: 10px;
+}
+
+.dns-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.dns-line {
+  margin-bottom: 8px;
+}
+
+.dns-remark {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
+}
+
+.copy-icon {
+  margin-left: 6px;
+  cursor: pointer;
+  color: #409eff;
 }
 </style>

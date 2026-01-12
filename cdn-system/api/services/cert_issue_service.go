@@ -47,9 +47,27 @@ func IssueCertsAsync(batchID int64, ids []int64) {
 		if len(certs) == 0 {
 			return
 		}
-		if err := dispatchCertsToNodes(batchID, certs); err != nil {
-			log.Printf("[CertIssue] dispatch to nodes failed: %v", err)
-			markCertsIssueFailed(certs, err.Error())
+
+		localCerts := make([]models.Cert, 0, len(certs))
+		nodeCerts := make([]models.Cert, 0, len(certs))
+		for _, cert := range certs {
+			if requiresDNSChallenge(cert) {
+				localCerts = append(localCerts, cert)
+			} else {
+				nodeCerts = append(nodeCerts, cert)
+			}
+		}
+
+		if len(nodeCerts) > 0 {
+			if err := dispatchCertsToNodes(batchID, nodeCerts); err != nil {
+				log.Printf("[CertIssue] dispatch to nodes failed: %v", err)
+				markCertsIssueFailed(nodeCerts, err.Error())
+			}
+		}
+
+		for _, cert := range localCerts {
+			certID := int64(cert.ID)
+			go processUniqueIssueTask(batchID, certID)
 		}
 	}()
 }
@@ -182,7 +200,16 @@ func issueCertLocal(cert models.Cert) error {
 	if len(domains) == 0 {
 		return errors.New("cert domain is empty")
 	}
-	issuer := NewHTTP01Issuer(cert.Type)
+	var issuer *acme.Issuer
+	if requiresDNSChallenge(cert) {
+		provider, err := BuildDNSChallengeProvider(cert)
+		if err != nil {
+			return err
+		}
+		issuer = NewDNS01Issuer(cert.Type, provider)
+	} else {
+		issuer = NewHTTP01Issuer(cert.Type)
+	}
 	result, err := issuer.Issue(domains)
 	if err != nil {
 		return err
@@ -200,6 +227,22 @@ func splitCertDomains(raw string) []string {
 		}
 	}
 	return out
+}
+
+func requiresDNSChallenge(cert models.Cert) bool {
+	if cert.DNSAPI != nil && *cert.DNSAPI > 0 {
+		return true
+	}
+	return hasWildcardDomain(splitCertDomains(cert.Domain))
+}
+
+func hasWildcardDomain(domains []string) bool {
+	for _, domain := range domains {
+		if strings.HasPrefix(strings.TrimSpace(domain), "*.") {
+			return true
+		}
+	}
+	return false
 }
 
 func UpdateIssuedCert(certID int64, certPEM string, keyPEM string, notBefore time.Time, notAfter time.Time, issueTaskID int64) error {

@@ -469,6 +469,7 @@ func saveUserPurgeUsage(userID int64, usage purgeUsage) error {
 	raw, _ := json.Marshal(usage)
 	var cfg models.SysConfig
 	query := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "purge_usage", "user", "user", userID)
+	now := time.Now()
 	if err := query.First(&cfg).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -480,14 +481,15 @@ func saveUserPurgeUsage(userID int64, usage purgeUsage) error {
 			ScopeID:   int(userID),
 			ScopeName: "user",
 			Enable:    true,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			CreatedAt: now,
+			UpdatedAt: now,
 		}
 		return db.DB.Create(&cfg).Error
 	}
-	cfg.Value = string(raw)
-	cfg.UpdatedAt = time.Now()
-	return db.DB.Omit("CreatedAt").Save(&cfg).Error
+	return query.Model(&models.SysConfig{}).Updates(map[string]interface{}{
+		"value":     string(raw),
+		"update_at": now,
+	}).Error
 }
 
 func consumePurgeQuota(userID int64, taskType string, count int) error {

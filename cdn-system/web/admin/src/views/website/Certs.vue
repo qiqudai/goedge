@@ -101,6 +101,7 @@
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
           <el-tag v-if="!row.enable" type="danger" size="small">禁用</el-tag>
+          <el-tag v-else-if="row.state === 'dns_pending'" type="warning" size="small">DNS验证中</el-tag>
           <el-tag v-else-if="row.state === 'waiting'" type="info" size="small">待签发</el-tag>
           <el-tag v-else-if="row.state === 'issuing'" type="warning" size="small">签发中</el-tag>
           <el-tag v-else-if="row.state === 'ready' || row.state === 'success' || !row.state" type="success" size="small">已签发</el-tag>

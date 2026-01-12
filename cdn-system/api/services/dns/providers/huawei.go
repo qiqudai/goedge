@@ -14,16 +14,21 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 type HuaweiConfig struct {
 	AccessKeyID     string `json:"access_key_id"`
 	SecretAccessKey string `json:"secret_access_key"`
+	ID              string `json:"id"`
+	Secret          string `json:"secret"`
 	Region          string `json:"region"` // Optional, default cn-north-1
 }
 
 type HuaweiProvider struct {
-	Config HuaweiConfig
+	Config         HuaweiConfig
+	RegionProvided bool
 }
 
 func NewHuaweiProvider(credentials string) (dns.Provider, error) {
@@ -31,10 +36,17 @@ func NewHuaweiProvider(credentials string) (dns.Provider, error) {
 	if err := json.Unmarshal([]byte(credentials), &config); err != nil {
 		return nil, err
 	}
+	regionProvided := config.Region != ""
+	if config.AccessKeyID == "" && config.ID != "" {
+		config.AccessKeyID = config.ID
+	}
+	if config.SecretAccessKey == "" && config.Secret != "" {
+		config.SecretAccessKey = config.Secret
+	}
 	if config.Region == "" {
 		config.Region = "cn-north-1"
 	}
-	return &HuaweiProvider{Config: config}, nil
+	return &HuaweiProvider{Config: config, RegionProvided: regionProvided}, nil
 }
 
 func (p *HuaweiProvider) GetDomains() ([]string, error) {
@@ -70,7 +82,7 @@ func (p *HuaweiProvider) UpsertRecordSet(domain string, record dns.DNSRecord, va
 		normalized = append(normalized, value)
 	}
 
-	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets?name=%s&type=%s",
+	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets?name=%s&type=%s",
 		p.Config.Region, zoneID, url.QueryEscape(name), record.Type)
 	resp, err := p.sendRequest("GET", listUrl, nil)
 	if err != nil {
@@ -90,7 +102,7 @@ func (p *HuaweiProvider) UpsertRecordSet(domain string, record dns.DNSRecord, va
 
 	if len(normalized) == 0 {
 		for _, rs := range listResp.Recordsets {
-			delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
+			delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
 			if _, err := p.sendRequest("DELETE", delUrl, nil); err != nil {
 				return err
 			}
@@ -105,7 +117,7 @@ func (p *HuaweiProvider) UpsertRecordSet(domain string, record dns.DNSRecord, va
 
 	if len(listResp.Recordsets) > 0 {
 		rs := listResp.Recordsets[0]
-		updateUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
+		updateUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
 		payload := map[string]interface{}{
 			"name":    rs.Name,
 			"type":    record.Type,
@@ -117,7 +129,7 @@ func (p *HuaweiProvider) UpsertRecordSet(domain string, record dns.DNSRecord, va
 			return err
 		}
 		for _, extra := range listResp.Recordsets[1:] {
-			delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, extra.ID)
+			delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets/%s", p.Config.Region, zoneID, extra.ID)
 			if _, err := p.sendRequest("DELETE", delUrl, nil); err != nil {
 				return err
 			}
@@ -125,7 +137,7 @@ func (p *HuaweiProvider) UpsertRecordSet(domain string, record dns.DNSRecord, va
 		return nil
 	}
 
-	createUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets", p.Config.Region, zoneID)
+	createUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets", p.Config.Region, zoneID)
 	payload := map[string]interface{}{
 		"name":        name,
 		"type":        record.Type,
@@ -148,8 +160,8 @@ func (p *HuaweiProvider) AddRecord(domain string, record dns.DNSRecord) error {
 	}
 
 	// 2. Create Record Set
-	// POST /v2.1/zones/{zone_id}/recordsets
-	url := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets", p.Config.Region, zoneID)
+	// POST /v2/zones/{zone_id}/recordsets
+	url := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets", p.Config.Region, zoneID)
 
 	payload := map[string]interface{}{
 		"name":        record.Name + "." + domain + ".",
@@ -198,13 +210,13 @@ func (p *HuaweiProvider) DeleteRecord(domain string, record dns.DNSRecord) error
 	}
 
 	// 2. List Record Sets to find ID
-	// GET /v2.1/zones/{zone_id}/recordsets?name=...&type=...
+	// GET /v2/zones/{zone_id}/recordsets?name=...&type=...
 	name := record.Name + "." + domain + "."
 	if record.Name == "@" {
 		name = domain + "."
 	}
 
-	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets?name=%s&type=%s",
+	listUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets?name=%s&type=%s",
 		p.Config.Region, zoneID, name, record.Type)
 
 	resp, err := p.sendRequest("GET", listUrl, nil)
@@ -243,7 +255,7 @@ func (p *HuaweiProvider) DeleteRecord(domain string, record dns.DNSRecord) error
 		if contains {
 			if len(newRecords) == 0 {
 				// Delete entire recordset
-				delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
+				delUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
 				delResp, err := p.sendRequest("DELETE", delUrl, nil)
 				if err != nil {
 					return err
@@ -259,8 +271,8 @@ func (p *HuaweiProvider) DeleteRecord(domain string, record dns.DNSRecord) error
 				}
 			} else {
 				// Update recordset (remove one value)
-				// PUT /v2.1/zones/{zone_id}/recordsets/{recordset_id}
-				updateUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
+				// PUT /v2/zones/{zone_id}/recordsets/{recordset_id}
+				updateUrl := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones/%s/recordsets/%s", p.Config.Region, zoneID, rs.ID)
 				payload := map[string]interface{}{
 					"name":    rs.Name,
 					"type":    record.Type,
@@ -279,31 +291,145 @@ func (p *HuaweiProvider) DeleteRecord(domain string, record dns.DNSRecord) error
 }
 
 func (p *HuaweiProvider) getZoneID(domain string) (string, error) {
-	// GET /v2.1/zones?name={domain}
-	// Note: trailing dot often needed in DB, but query might not?
-	url := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2.1/zones?name=%s", p.Config.Region, domain)
-	resp, err := p.sendRequest("GET", url, nil)
+	trimmed := strings.TrimSpace(strings.TrimSuffix(domain, "."))
+	if trimmed == "" {
+		return "", fmt.Errorf("invalid domain: %s", domain)
+	}
+
+	candidates := []string{
+		trimmed,
+		trimmed + ".",
+	}
+
+	if base, err := publicsuffix.EffectiveTLDPlusOne(trimmed); err == nil && base != "" && base != trimmed {
+		candidates = append(candidates, base, base+".")
+	} else {
+		parts := strings.Split(trimmed, ".")
+		if len(parts) > 2 {
+			base := strings.Join(parts[len(parts)-2:], ".")
+			if base != trimmed {
+				candidates = append(candidates, base, base+".")
+			}
+		}
+	}
+
+	region := p.Config.Region
+	regions := []string{region}
+	if !p.RegionProvided {
+		for _, r := range []string{"cn-north-4", "cn-east-2", "cn-east-3", "cn-south-1", "cn-south-4"} {
+			if r != region {
+				regions = append(regions, r)
+			}
+		}
+	}
+
+	for _, r := range regions {
+		p.Config.Region = r
+		id, err := p.lookupZoneIDCandidates(trimmed, candidates)
+		if err != nil {
+			return "", err
+		}
+		if id != "" {
+			return id, nil
+		}
+	}
+
+	p.Config.Region = region
+	return "", fmt.Errorf("zone not found for domain: %s", domain)
+}
+
+func (p *HuaweiProvider) lookupZoneIDCandidates(domain string, candidates []string) (string, error) {
+	seen := map[string]struct{}{}
+	for _, name := range candidates {
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		zones, err := p.listZones(name)
+		if err != nil {
+			return "", err
+		}
+		if id := matchZoneID(zones, domain); id != "" {
+			return id, nil
+		}
+	}
+
+	zones, err := p.listZones("")
 	if err != nil {
 		return "", err
 	}
-
-	var parsed struct {
-		Zones []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"zones"`
-	}
-	if err := json.Unmarshal(resp, &parsed); err != nil {
-		return "", err
+	if id := matchZoneID(zones, domain); id != "" {
+		return id, nil
 	}
 
-	for _, z := range parsed.Zones {
-		// Huawei returns name with dot, e.g. "example.com."
-		if strings.TrimSuffix(z.Name, ".") == strings.TrimSuffix(domain, ".") {
-			return z.ID, nil
+	return "", nil
+}
+
+type huaweiZone struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type huaweiZonesResp struct {
+	Zones     []huaweiZone      `json:"zones"`
+	Links     map[string]string `json:"links"`
+	Code      string            `json:"code"`
+	Message   string            `json:"message"`
+	ErrorCode string            `json:"error_code"`
+	ErrorMsg  string            `json:"error_msg"`
+}
+
+func (p *HuaweiProvider) listZones(name string) ([]huaweiZone, error) {
+	baseURL := fmt.Sprintf("https://dns.%s.myhuaweicloud.com/v2/zones", p.Config.Region)
+	if name != "" {
+		baseURL = baseURL + "?name=" + url.QueryEscape(name)
+	}
+
+	zones := []huaweiZone{}
+	nextURL := baseURL
+	for nextURL != "" {
+		resp, err := p.sendRequest("GET", nextURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		var parsed huaweiZonesResp
+		if err := json.Unmarshal(resp, &parsed); err != nil {
+			return nil, err
+		}
+		if msg := huaweiErrorMessage(parsed.Code, parsed.Message, parsed.ErrorCode, parsed.ErrorMsg); msg != "" {
+			return nil, fmt.Errorf("huawei api error: %s", msg)
+		}
+		zones = append(zones, parsed.Zones...)
+		nextURL = ""
+		if parsed.Links != nil {
+			if parsed.Links["next"] != "" {
+				nextURL = parsed.Links["next"]
+			}
 		}
 	}
-	return "", fmt.Errorf("zone not found for domain: %s", domain)
+	return zones, nil
+}
+
+func matchZoneID(zones []huaweiZone, domain string) string {
+	domain = strings.TrimSuffix(domain, ".")
+	best := ""
+	bestLen := -1
+	for _, z := range zones {
+		zoneName := strings.TrimSuffix(z.Name, ".")
+		if zoneName == "" {
+			continue
+		}
+		if domain == zoneName || strings.HasSuffix(domain, "."+zoneName) {
+			if len(zoneName) > bestLen {
+				best = z.ID
+				bestLen = len(zoneName)
+			}
+		}
+	}
+	return best
 }
 
 func (p *HuaweiProvider) sendRequest(method, urlStr string, body []byte) ([]byte, error) {
@@ -327,7 +453,52 @@ func (p *HuaweiProvider) sendRequest(method, urlStr string, body []byte) ([]byte
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if msg := huaweiErrorMessageFromBody(respBody); msg != "" {
+			return nil, fmt.Errorf("huawei api error: %s", msg)
+		}
+		return nil, fmt.Errorf("huawei api error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	return respBody, nil
+}
+
+func huaweiErrorMessage(code, message, errorCode, errorMsg string) string {
+	if code != "" || message != "" {
+		if message == "" {
+			return code
+		}
+		if code == "" {
+			return message
+		}
+		return code + " - " + message
+	}
+	if errorCode != "" || errorMsg != "" {
+		if errorMsg == "" {
+			return errorCode
+		}
+		if errorCode == "" {
+			return errorMsg
+		}
+		return errorCode + " - " + errorMsg
+	}
+	return ""
+}
+
+func huaweiErrorMessageFromBody(body []byte) string {
+	var parsed struct {
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		ErrorCode string `json:"error_code"`
+		ErrorMsg  string `json:"error_msg"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return ""
+	}
+	return huaweiErrorMessage(parsed.Code, parsed.Message, parsed.ErrorCode, parsed.ErrorMsg)
 }
 
 func (p *HuaweiProvider) sign(req *http.Request, body []byte) {
@@ -354,7 +525,7 @@ func (p *HuaweiProvider) sign(req *http.Request, body []byte) {
 	if uri == "" {
 		uri = "/"
 	}
-	if !strings.HasSuffix(uri, "/") && strings.Count(uri, "/") == 0 {
+	if !strings.HasSuffix(uri, "/") {
 		uri += "/"
 	}
 	// Note: Huawei requires careful normalization, assuming simple paths here

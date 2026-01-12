@@ -295,7 +295,8 @@ const calcCertDays = (cert, certs) => {
 }
 
 .cert-row .el-select {
-  flex: 1;
+  width: 220px;
+  flex: 0 0 220px;
 }
 
 .status-dot {

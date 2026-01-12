@@ -49,7 +49,7 @@ const handleLogin = () => {
     localStorage.setItem('admin_token', res.token)
     localStorage.setItem('role', res.role || 'user')
     localStorage.setItem('username', form.username)
-    ElMessage.success('Login success')
+    ElMessage.success('登录成功')
     router.push('/dashboard')
   }).catch(() => {
     loading.value = false
