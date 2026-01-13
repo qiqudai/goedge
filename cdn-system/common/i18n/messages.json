@@ -198,6 +198,7 @@
   "created": "创建成功",
   "custom cc rule not enabled": "自定义CC规则未启用",
   "dashboard.auth_unverified": "未认证",
+  "dashboard.auth_verified": "已认证",
   "dashboard.blocked_ips_zero": "0个",
   "dashboard.login_ip_sample": "172.71.214.62 (中国香港-中环)",
   "dashboard.no_data": "无数据",

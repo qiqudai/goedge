@@ -2,104 +2,293 @@ package controllers
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+
+	"cdn-api/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 type BlockLogController struct{}
 
+const (
+	blockDefaultRange = "7d"
+	blockTimeLayout   = "2006-01-02 15:04:05"
+)
+
 // ListCurrent Retrieves current blocked IPs
 // GET /api/v1/admin/logs/block/current
 func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
-	type BlockedItem struct {
-		ID          int    `json:"id"`
-		SiteID      int    `json:"site_id"`
-		Domain      string `json:"domain"`
-		IP          string `json:"ip"`
-		Location    string `json:"location"`
-		Filter      string `json:"filter"`
-		BlockTime   string `json:"block_time"`
-		ReleaseTime string `json:"release_time"`
+	page, pageSize := parseBlockPage(ctx, 10)
+	offset := (page - 1) * pageSize
+	filterType := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("type", "ip")))
+	keyword := strings.TrimSpace(ctx.Query("keyword"))
+
+	index, hostFilter, ok := resolveBlockHostFilter(ctx)
+	if !ok {
+		writeBlockList(ctx, []gin.H{}, 0)
+		return
 	}
 
-	// Mock Data
-	list := []BlockedItem{
-		{1, 30073, "example.com", "211.90.251.15", "CN-ZJ", "REGION_BLOCK", time.Now().Add(-1 * time.Hour).Format("2006-01-02 15:04:05"), time.Now().Add(23 * time.Hour).Format("2006-01-02 15:04:05")},
-		{2, 30073, "test.com", "36.49.228.76", "CN-JL", "WAF_RULE", time.Now().Add(-2 * time.Hour).Format("2006-01-02 15:04:05"), "PERMANENT"},
+	ipFilter := ""
+	if filterType == "ip" {
+		ipFilter = keyword
+	}
+	if filterType == "site_id" {
+		siteID := parseBlockSiteID(keyword)
+		siteFilter, ok := resolveSiteHostFilter(index, siteID)
+		if !ok {
+			writeBlockList(ctx, []gin.H{}, 0)
+			return
+		}
+		hostFilter = siteFilter
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": gin.H{
-			"list":  list,
-			"total": 2,
-		},
-	})
+	statsRange := resolveBlockRange(ctx, blockDefaultRange)
+	rows, total, err := services.QueryBlockedCurrent(statsRange.Start, statsRange.End, hostFilter, ipFilter, pageSize, offset)
+	if err != nil {
+		writeBlockList(ctx, []gin.H{}, 0)
+		return
+	}
+
+	list := make([]gin.H, 0, len(rows))
+	for i, row := range rows {
+		siteID, domain := resolveBlockSite(index, row.Host)
+		list = append(list, gin.H{
+			"id":           offset + i + 1,
+			"site_id":      siteID,
+			"domain":       domain,
+			"ip":           row.IP,
+			"location":     formatBlockLocation(row.IP),
+			"filter":       blockFilterLabel(row.Status),
+			"block_time":   formatBlockTime(row.BlockTime),
+			"release_time": "PERMANENT",
+		})
+	}
+
+	writeBlockList(ctx, list, total)
 }
 
 // ListStats Retrieves block statistics
 // GET /api/v1/admin/logs/block/stats
 func (c *BlockLogController) ListStats(ctx *gin.Context) {
-	type StatItem struct {
-		SiteID int `json:"site_id"`
-		Count  int `json:"count"`
+	page, pageSize := parseBlockPage(ctx, 10)
+	offset := (page - 1) * pageSize
+
+	index, hostFilter, ok := resolveBlockHostFilter(ctx)
+	if !ok {
+		writeBlockList(ctx, []gin.H{}, 0)
+		return
 	}
 
-	// Mock Data
-	list := []StatItem{
-		{30073, 150},
-		{30074, 89},
-		{30075, 12},
+	statsRange := resolveBlockRange(ctx, blockDefaultRange)
+	rows, total, err := services.QueryBlockedStats(statsRange.Start, statsRange.End, hostFilter, pageSize, offset)
+	if err != nil {
+		writeBlockList(ctx, []gin.H{}, 0)
+		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": gin.H{
-			"list":  list,
-			"total": 3,
-		},
-	})
+	list := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		siteID, domain := resolveBlockSite(index, row.Host)
+		list = append(list, gin.H{
+			"site_id": siteID,
+			"domain":  domain,
+			"count":   row.Count,
+		})
+	}
+
+	writeBlockList(ctx, list, total)
 }
 
 // ListHistory Retrieves history of blocked IPs
 // GET /api/v1/admin/logs/block/history
 func (c *BlockLogController) ListHistory(ctx *gin.Context) {
-	type HistoryItem struct {
-		ID        int    `json:"id"`
-		SiteID    int    `json:"site_id"`
-		Domain    string `json:"domain"`
-		IP        string `json:"ip"`
-		Location  string `json:"location"`
-		Filter    string `json:"filter"`
-		BlockTime string `json:"block_time"`
-		IsManual  bool   `json:"is_manual"`
+	page, pageSize := parseBlockPage(ctx, 10)
+	offset := (page - 1) * pageSize
+	filterType := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("type", "ip")))
+	keyword := strings.TrimSpace(ctx.Query("keyword"))
+
+	index, hostFilter, ok := resolveBlockHostFilter(ctx)
+	if !ok {
+		writeBlockList(ctx, []gin.H{}, 0)
+		return
 	}
 
-	// Mock Data
-	list := []HistoryItem{
-		{1, 30073, "example.com", "211.90.251.15", "CN-ZJ", "REGION_BLOCK", "2025-12-22 08:15:33", false},
-		{2, 30073, "example.com", "36.49.228.76", "CN-JL", "REGION_BLOCK", "2025-12-22 08:15:33", false},
-		{3, 30073, "example.com", "112.229.182.52", "CN-SD", "CC_DEFENSE", "2025-12-22 08:15:33", true},
-	}
-
-	// Filter
-	keyword := ctx.Query("keyword")
-	if keyword != "" {
-		filtered := make([]HistoryItem, 0)
-		for _, item := range list {
-			if item.IP == keyword || item.Domain == keyword {
-				filtered = append(filtered, item)
-			}
+	ipFilter := ""
+	switch filterType {
+	case "ip":
+		ipFilter = keyword
+	case "site_id":
+		siteID := parseBlockSiteID(keyword)
+		siteFilter, ok := resolveSiteHostFilter(index, siteID)
+		if !ok {
+			writeBlockList(ctx, []gin.H{}, 0)
+			return
 		}
-		list = filtered
+		hostFilter = siteFilter
+	case "time_range":
+		// Handled by range parsing below.
+	default:
+		ipFilter = keyword
 	}
 
+	start, end := resolveBlockHistoryRange(ctx)
+	rows, total, err := services.QueryBlockedHistory(start, end, hostFilter, ipFilter, pageSize, offset)
+	if err != nil {
+		writeBlockList(ctx, []gin.H{}, 0)
+		return
+	}
+
+	list := make([]gin.H, 0, len(rows))
+	for i, row := range rows {
+		siteID, domain := resolveBlockSite(index, row.Host)
+		list = append(list, gin.H{
+			"id":         offset + i + 1,
+			"site_id":    siteID,
+			"domain":     domain,
+			"ip":         row.IP,
+			"location":   formatBlockLocation(row.IP),
+			"filter":     blockFilterLabel(row.Status),
+			"block_time": formatBlockTime(row.BlockTime),
+			"is_manual":  false,
+		})
+	}
+
+	writeBlockList(ctx, list, total)
+}
+
+func parseBlockPage(ctx *gin.Context, defaultSize int) (int, int) {
+	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("pageSize", strconv.Itoa(defaultSize)))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = defaultSize
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	return page, pageSize
+}
+
+func resolveBlockRange(ctx *gin.Context, fallback string) services.StatsRange {
+	rangeKey := strings.TrimSpace(ctx.Query("time_range"))
+	if rangeKey == "" {
+		rangeKey = strings.TrimSpace(ctx.Query("range"))
+	}
+	if rangeKey == "" {
+		rangeKey = fallback
+	}
+	return services.ResolveStatsRange(rangeKey, "", "", time.Now())
+}
+
+func resolveBlockHistoryRange(ctx *gin.Context) (time.Time, time.Time) {
+	startRaw := strings.TrimSpace(ctx.Query("start_time"))
+	endRaw := strings.TrimSpace(ctx.Query("end_time"))
+	if startRaw != "" && endRaw != "" {
+		custom := services.ResolveStatsRange("custom", startRaw, endRaw, time.Now())
+		if !custom.Start.IsZero() && !custom.End.IsZero() {
+			return custom.Start, custom.End
+		}
+	}
+	rng := services.ResolveStatsRange(blockDefaultRange, "", "", time.Now())
+	return rng.Start, rng.End
+}
+
+func resolveBlockHostFilter(ctx *gin.Context) (*services.SiteHostIndex, services.HostFilter, bool) {
+	isUser := isUserRequest(ctx)
+	userID := parseUserID(mustGet(ctx, "userID"))
+	if isUser && userID == 0 {
+		return nil, services.HostFilter{}, false
+	}
+	var idx *services.SiteHostIndex
+	if isUser {
+		loaded, err := services.LoadSiteHostIndex(userID)
+		if err == nil {
+			idx = loaded
+		}
+	} else {
+		loaded, err := services.LoadSiteHostIndex(0)
+		if err == nil {
+			idx = loaded
+		}
+	}
+
+	if isUser {
+		if idx == nil || idx.Filter.Empty() {
+			return idx, services.HostFilter{}, false
+		}
+		return idx, idx.Filter, true
+	}
+
+	return idx, services.HostFilter{}, true
+}
+
+func resolveSiteHostFilter(index *services.SiteHostIndex, siteID int64) (services.HostFilter, bool) {
+	if siteID == 0 || index == nil {
+		return services.HostFilter{}, false
+	}
+	filter, ok := index.SiteFilters[siteID]
+	if !ok || filter.Empty() {
+		return services.HostFilter{}, false
+	}
+	return filter, true
+}
+
+func resolveBlockSite(index *services.SiteHostIndex, host string) (int64, string) {
+	host = strings.TrimSpace(host)
+	if index == nil {
+		return 0, host
+	}
+	if match, ok := index.Matcher.Match(host); ok {
+		return match.SiteID, host
+	}
+	return 0, host
+}
+
+func parseBlockSiteID(keyword string) int64 {
+	siteID, _ := strconv.ParseInt(strings.TrimSpace(keyword), 10, 64)
+	return siteID
+}
+
+func formatBlockLocation(ip string) string {
+	country, province := services.LookupIPRegion(ip)
+	if country == "" && province == "" {
+		return "-"
+	}
+	if province == "" {
+		return country
+	}
+	if country == "" {
+		return province
+	}
+	return country + "-" + province
+}
+
+func blockFilterLabel(status int) string {
+	if status <= 0 {
+		return "-"
+	}
+	return "HTTP_" + strconv.Itoa(status)
+}
+
+func formatBlockTime(ts time.Time) string {
+	if ts.IsZero() {
+		return "-"
+	}
+	return ts.Format(blockTimeLayout)
+}
+
+func writeBlockList(ctx *gin.Context, list []gin.H, total interface{}) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
 			"list":  list,
-			"total": len(list),
+			"total": total,
 		},
 	})
 }

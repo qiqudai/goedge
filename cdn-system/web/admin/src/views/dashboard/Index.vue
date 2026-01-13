@@ -6,7 +6,7 @@
           <template #header>
             <div class="card-header">
               <span>运营数据</span>
-              <el-radio-group v-model="opsRange" size="small" class="range-tabs">
+              <el-radio-group v-model="opsRange" size="small" class="range-tabs" @change="fetchData">
                 <el-radio-button value="7d">近7日</el-radio-button>
                 <el-radio-button value="30d">近30日</el-radio-button>
                 <el-radio-button value="last_month">上个月</el-radio-button>
@@ -61,7 +61,7 @@
           <template #header>
             <div class="card-header">
               <span>网络概览</span>
-              <el-radio-group v-model="overviewRange" size="small" class="range-tabs">
+              <el-radio-group v-model="overviewRange" size="small" class="range-tabs" @change="fetchData">
                 <el-radio-button value="today">今日</el-radio-button>
                 <el-radio-button value="yesterday">昨日</el-radio-button>
                 <el-radio-button value="7d">近7日</el-radio-button>
@@ -95,7 +95,7 @@
               <template #header>
                 <div class="card-header">
                   <span>监控趋势</span>
-                  <el-radio-group v-model="chartRange" size="small" class="range-tabs" @change="updateChart">
+                  <el-radio-group v-model="chartRange" size="small" class="range-tabs" @change="handleChartRangeChange">
                     <el-radio-button value="today">今日</el-radio-button>
                     <el-radio-button value="yesterday">昨日</el-radio-button>
                     <el-radio-button value="7d">近7日</el-radio-button>
@@ -104,7 +104,7 @@
                 </div>
               </template>
               <div class="chart-tabs">
-                <el-radio-group v-model="chartType" size="small" @change="updateChart">
+                <el-radio-group v-model="chartType" size="small" @change="updateChartOption">
                   <el-radio-button value="bandwidth">带宽</el-radio-button>
                   <el-radio-button value="requests">请求数</el-radio-button>
                   <el-radio-button value="traffic">流量</el-radio-button>
@@ -376,13 +376,19 @@ const updateChartOption = () => {
   myChart.setOption(option, true)
 }
 
-const updateChart = () => {
-  updateChartOption()
+const handleChartRangeChange = () => {
+  fetchData()
 }
 
 const fetchData = async () => {
   try {
-    const res = await request.get('/dashboard')
+    const res = await request.get('/dashboard', {
+      params: {
+        overview_range: overviewRange.value,
+        chart_range: chartRange.value,
+        ops_range: opsRange.value
+      }
+    })
     const data = res.data || {}
 
     userInfo.value = data.user || {}
@@ -423,7 +429,6 @@ const fetchData = async () => {
 }
 
 watch(chartType, () => updateChartOption())
-watch(chartRange, () => updateChartOption())
 
 onMounted(() => {
   fetchData()
