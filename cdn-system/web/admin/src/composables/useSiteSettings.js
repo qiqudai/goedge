@@ -239,7 +239,11 @@ export function useSiteSettings() {
         const loadAux = async (url, refVar) => {
           try {
             const r = await request.get(url)
-            refVar.value = r.data?.list || r.list || []
+            if (Array.isArray(r.data)) {
+              refVar.value = r.data
+            } else {
+              refVar.value = r.data?.list || r.list || []
+            }
           } catch (e) {
             console.warn(`[SiteSettings] Load ${url} failed`, e)
           }
@@ -301,8 +305,9 @@ export function useSiteSettings() {
     // 回源详情设置
     const s = data.settings || {}
     const sOrigin = s.origin || {}
+    const sBacksource = s.backsource || {}
 
-    siteSettings.origin.protocol = data.backend_protocol || s.backend_protocol || sOrigin.protocol || 'follow'
+    siteSettings.origin.protocol = data.backend_protocol || s.backend_protocol || sBacksource.protocol || sOrigin.protocol || 'follow'
 
     // 映射 host
     const rawHost = s.origin_host || sOrigin.host || 'follow'
@@ -314,10 +319,10 @@ export function useSiteSettings() {
       siteSettings.origin.hostValue = rawHost
     }
 
-    siteSettings.origin.httpPort = s.origin_http_port || data.origin_http_port || sOrigin.httpPort || '80'
-    siteSettings.origin.httpsPort = s.origin_https_port || data.origin_https_port || sOrigin.httpsPort || '443'
-    siteSettings.origin.timeout = parseInt(s.origin_timeout || data.origin_timeout || sOrigin.timeout || 60)
-    siteSettings.origin.connTimeout = parseInt(sOrigin.connTimeout || 10)
+    siteSettings.origin.httpPort = s.origin_http_port || data.origin_http_port || sBacksource.http_port || sOrigin.httpPort || '80'
+    siteSettings.origin.httpsPort = s.origin_https_port || data.origin_https_port || sBacksource.https_port || sOrigin.httpsPort || '443'
+    siteSettings.origin.timeout = parseInt(s.origin_timeout || data.origin_timeout || sBacksource.timeout || sOrigin.timeout || 60)
+    siteSettings.origin.connTimeout = parseInt(sBacksource.connect_timeout || sOrigin.connTimeout || 10)
 
     // 健康检查
     siteSettings.origin.healthCheckEnabled = sOrigin.health_check !== false
@@ -365,24 +370,27 @@ export function useSiteSettings() {
       siteSettings.https.sslCiphers = s.https?.ssl_ciphers || s.ssl_ciphers || ''
       siteSettings.https.sslProtocols = s.https?.ssl_protocols || s.ssl_protocols || ''
 
+      const sAdv = s.advanced || {}
+
       // 高级设置
-      siteSettings.advanced.gzip = !!s.gzip
-      siteSettings.advanced.websocket = !!s.websocket
-      siteSettings.advanced.searchEngineOrigin = !!s.search_engine_origin
-      siteSettings.advanced.searchEngineOriginIp = s.search_engine_origin_ip || ''
-      siteSettings.advanced.uploadLimitMode = (s.upload_limit && s.upload_limit > 0) ? 'custom' : 'none'
-      siteSettings.advanced.uploadLimitValue = s.upload_limit || 100
-      siteSettings.advanced.logRequestHeader = !!s.log_request_header
-      siteSettings.advanced.logResponseHeader = !!s.log_response_header
-      siteSettings.advanced.logRequestBody = !!s.log_request_body
-      siteSettings.advanced.logRequestBodySizeLimit = s.log_request_body_size_limit || 16
+      siteSettings.advanced.gzip = !!(s.gzip ?? sAdv.gzip)
+      siteSettings.advanced.websocket = !!(s.websocket ?? sAdv.websocket)
+      siteSettings.advanced.searchEngineOrigin = !!(s.search_engine_origin ?? sAdv.search_engine_origin)
+      siteSettings.advanced.searchEngineOriginIp = s.search_engine_origin_ip || sAdv.search_engine_origin_ip || ''
+      const uploadLimit = parseInt(s.upload_limit || sAdv.body_limit || 0)
+      siteSettings.advanced.uploadLimitMode = uploadLimit > 0 ? 'custom' : 'none'
+      siteSettings.advanced.uploadLimitValue = uploadLimit || 100
+      siteSettings.advanced.logRequestHeader = !!(s.log_request_header ?? sAdv.log_request_header)
+      siteSettings.advanced.logResponseHeader = !!(s.log_response_header ?? sAdv.log_response_header)
+      siteSettings.advanced.logRequestBody = !!(s.log_request_body ?? sAdv.log_request_body)
+      siteSettings.advanced.logRequestBodySizeLimit = s.log_request_body_size_limit || sAdv.log_request_body_size_limit || 16
 
-      siteSettings.advanced.originCert = !!s.origin_cert
-      siteSettings.advanced.realtimeIdentify = !!s.realtime_identify
-      siteSettings.advanced.realtimeSend = !!s.realtime_send
+      siteSettings.advanced.originCert = !!(s.origin_cert ?? sAdv.origin_cert)
+      siteSettings.advanced.realtimeIdentify = !!(s.realtime_identify ?? sAdv.realtime_identify ?? sAdv.realtime_return)
+      siteSettings.advanced.realtimeSend = !!(s.realtime_send ?? sAdv.realtime_send)
 
-      siteSettings.advanced.defaultSite = !!s.default_site
-      siteSettings.advanced.l2Config = s.l2_config || 'current'
+      siteSettings.advanced.defaultSite = !!(s.default_site ?? sAdv.default_site)
+      siteSettings.advanced.l2Config = s.l2_config || sAdv.l2_config || 'current'
 
       // 缓存设置
       if (s.cache?.rules) {
@@ -405,13 +413,13 @@ export function useSiteSettings() {
         siteSettings.security.cc.customRules = sec.custom_rules || []
 
         // Crawlers
-        siteSettings.security.crawlers.action = sec.crawlers_action || 'none'
+        siteSettings.security.crawlers.action = sec.crawlers_action || sec.bot || 'none'
 
         // IP List Timeouts
         siteSettings.security.ip.black = (sec.blacklist || []).join('\n')
         siteSettings.security.ip.white = (sec.whitelist || []).join('\n')
 
-        const blackTime = parseInt(sec.ip_black_timeout)
+        const blackTime = parseInt(sec.ip_black_timeout ?? sec.black_time_custom)
         if (blackTime > 0 && blackTime !== 3600) {
           siteSettings.security.ip.blackTime = blackTime
           siteSettings.security.ip.blackTimeCustom = true
@@ -420,7 +428,7 @@ export function useSiteSettings() {
           siteSettings.security.ip.blackTimeCustom = false
         }
 
-        const whiteTime = parseInt(sec.ip_white_timeout)
+        const whiteTime = parseInt(sec.ip_white_timeout ?? sec.white_time_custom)
         if (whiteTime > 0 && whiteTime !== 21600) {
           siteSettings.security.ip.whiteTime = whiteTime
           siteSettings.security.ip.whiteTimeCustom = true
@@ -429,10 +437,10 @@ export function useSiteSettings() {
           siteSettings.security.ip.whiteTimeCustom = false
         }
 
-        siteSettings.security.regions = sec.region_block || []
+        siteSettings.security.regions = sec.region_block || sec.region_custom || []
 
         // Block Settings
-        siteSettings.security.block.transparentProxy = !!sec.block_transparent_proxy
+        siteSettings.security.block.transparentProxy = !!(sec.block_transparent_proxy ?? sec.shield_proxy)
 
         if (sec.cookie) {
           siteSettings.security.cookie = {
@@ -458,10 +466,10 @@ export function useSiteSettings() {
       }
 
       // 列表类数据
-      siteSettings.advanced.urlRedirects = s.url_redirects || []
-      siteSettings.advanced.reqHeaders = s.req_headers || []
-      siteSettings.advanced.resHeaders = s.res_headers || []
-      siteSettings.advanced.urlRewrites = s.url_rewrites || []
+      siteSettings.advanced.urlRedirects = s.url_redirects || sAdv.url_redirects || []
+      siteSettings.advanced.reqHeaders = s.req_headers || sAdv.origin_headers || []
+      siteSettings.advanced.resHeaders = s.res_headers || sAdv.cdn_headers || []
+      siteSettings.advanced.urlRewrites = s.url_rewrites || sAdv.url_rewrites || []
     }
   }
 
