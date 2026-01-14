@@ -51,6 +51,7 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 		GroupID       int64    `json:"group_id"`
 		GroupIDs      []int64  `json:"group_ids"`
 		NodeGroupID   int64    `json:"node_group_id"`
+		SiteType      string   `json:"site_type"`
 		Domains       []string `json:"domains"`
 		DomainsInput  string   `json:"domains_input"`
 		Backends      []string `json:"backends"`
@@ -121,6 +122,13 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
+	siteType := strings.ToLower(strings.TrimSpace(req.SiteType))
+	if siteType == "" {
+		siteType = "website"
+	}
+	site.Settings = map[string]interface{}{
+		"site_type": siteType,
+	}
 	var userPkg models.UserPackage
 	if err := db.DB.First(&userPkg, req.UserPackageID).Error; err == nil {
 		fmt.Printf("[DEBUG] CreateSite PkgID=%d Mode='%s' Host='%s' Dom='%s'\n", req.UserPackageID, userPkg.CnameMode, userPkg.CnameHostname, userPkg.CnameDomain)
@@ -152,7 +160,7 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 	}
 	services.ApplySiteDefaults(site, defaults)
 	if globalDefaults := services.GetGlobalDefaultConfig(); globalDefaults != nil {
-		services.ApplySiteTemplateDefaults(site, globalDefaults.Website)
+		services.ApplySiteTemplateDefaultsByType(site, globalDefaults)
 	}
 
 	// Force HTTPS OFF by default - REMOVED to allow ApplySiteDefaults to work
@@ -206,6 +214,42 @@ func createSiteWithGroup(site *models.Site, groupIDs []int64) error {
 		}
 		return nil
 	})
+}
+
+func filterSiteIDsForUser(ids []int64, userID int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return []int64{}, nil
+	}
+	var allowed []int64
+	if err := db.DB.Model(&models.Site{}).Where("uid = ? AND id IN ?", userID, ids).Pluck("id", &allowed).Error; err != nil {
+		return nil, err
+	}
+	return allowed, nil
+}
+
+func filterSiteGroupIDsForUser(groupIDs []int64, userID int64) ([]int64, error) {
+	if len(groupIDs) == 0 {
+		return []int64{}, nil
+	}
+	var allowed []int64
+	if err := db.DB.Model(&models.SiteGroup{}).Where("uid = ? AND id IN ?", userID, groupIDs).Pluck("id", &allowed).Error; err != nil {
+		return nil, err
+	}
+	return allowed, nil
+}
+
+func ensureUserPackageOwnership(userID, packageID int64) error {
+	if userID == 0 || packageID == 0 {
+		return errors.New("invalid user/package")
+	}
+	var count int64
+	if err := db.DB.Model(&models.UserPackage{}).Where("uid = ? AND id = ?", userID, packageID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("user_package not found")
+	}
+	return nil
 }
 
 func siteMissingColumns(tx *gorm.DB) []string {

@@ -146,6 +146,8 @@ const initData = async () => {
     if (props.isAdmin) {
       const uRes = await request.get('/users')
       users.value = uRes.data?.list || []
+    } else {
+      await loadSelfPackages()
     }
     
     if (form.user_id) {
@@ -163,6 +165,14 @@ const handleUserChange = async (userId) => {
     }
     const res = await request.get('/user_packages', { params: { user_id: userId } })
     userPackages.value = res.data?.list || []
+}
+
+const loadSelfPackages = async () => {
+    const res = await request.get('/user_packages', { params: { pageSize: 1000 } })
+    userPackages.value = res.data?.list || []
+    if (userPackages.value.length > 0 && !form.user_package_id) {
+        form.user_package_id = userPackages.value[0].id
+    }
 }
 
 // handleAddGroup removed

@@ -81,7 +81,7 @@
                   ref="singleGroupRef"
                 />
             </el-form-item>
-            <el-form-item label="DNS API">
+            <el-form-item label="DNS 接口">
                 <el-select v-model="form.dns_provider_id" placeholder="自动添加解析记录 (可选)" style="width: 100%" clearable>
                 <el-option v-for="d in dnsProviders" :key="d.id" :label="d.name" :value="d.id" />
                 </el-select>
@@ -158,7 +158,7 @@ domain=test.com|ip=2.2.2.2,3.3.3.3"
                     />
                 </el-form-item>
                 
-                <el-form-item label="DNS API">
+                <el-form-item label="DNS 接口">
                     <el-select v-model="batchForm.dns_provider_id" placeholder="自动添加解析记录 (可选)" style="width: 100%" clearable>
                         <el-option v-for="d in dnsProviders" :key="d.id" :label="d.name" :value="d.id" />
                     </el-select>
@@ -313,6 +313,8 @@ const loadCommonData = async () => {
     // Load things that don't depend on user
     if (props.isAdmin) {
         searchUsers('') 
+    } else {
+        await loadSelfData()
     }
 }
 
@@ -386,6 +388,31 @@ const handleUserChange = async (uid) => {
 
 const handleBatchUserChange = (uid) => {
     handleUserChange(uid)
+}
+
+const loadSelfData = async () => {
+    try {
+        const [pkgRes, dnsRes] = await Promise.all([
+            request.get('/user_packages', { params: { pageSize: 1000 } }),
+            request.get('/dnsapi', { params: { pageSize: 1000 } })
+        ])
+        userPackages.value = pkgRes.data?.list || pkgRes.list || []
+        dnsProviders.value = dnsRes.data?.list || dnsRes.list || []
+
+        if (userPackages.value.length > 0) {
+            const firstPkgId = userPackages.value[0].id
+            if (activeTab.value === 'single' && !form.user_package_id) {
+                form.user_package_id = firstPkgId
+            } else if (activeTab.value === 'batch' && !batchForm.user_package_id) {
+                batchForm.user_package_id = firstPkgId
+            }
+        }
+    } catch (e) {
+        userPackages.value = []
+        dnsProviders.value = []
+    } finally {
+        await reloadGroupSelect()
+    }
 }
 
 const resetForm = () => {

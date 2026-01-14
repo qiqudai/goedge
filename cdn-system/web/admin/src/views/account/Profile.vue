@@ -144,13 +144,13 @@
 
     <el-dialog v-model="dialogVisible" title="修改密码" width="420px">
       <el-form :model="passwordForm" label-width="90px">
-        <el-form-item label="身份证号">
+        <el-form-item label="旧密码">
           <el-input v-model="passwordForm.current" type="password" />
         </el-form-item>
         <el-form-item label="新密码">
           <el-input v-model="passwordForm.next" type="password" />
         </el-form-item>
-        <el-form-item label="身份证号">
+        <el-form-item label="确认新密码">
           <el-input v-model="passwordForm.confirm" type="password" />
         </el-form-item>
       </el-form>
@@ -166,6 +166,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import { sha256Hex } from '@/utils/crypto'
 
 const profile = reactive({
   name: '',
@@ -294,7 +295,7 @@ const saveSecurity = () => {
   saveProfile()
 }
 
-const savePassword = () => {
+const savePassword = async () => {
   if (!passwordForm.current || !passwordForm.next) {
     ElMessage.warning('\u8bf7\u8f93\u5165\u5b8c\u6574\u4fe1\u606f')
     return
@@ -303,9 +304,19 @@ const savePassword = () => {
     ElMessage.warning('\u4e24\u6b21\u5bc6\u7801\u4e0d\u4e00\u81f4')
     return
   }
+  let currentHash = ''
+  let nextHash = ''
+  try {
+    currentHash = await sha256Hex(passwordForm.current)
+    nextHash = await sha256Hex(passwordForm.next)
+  } catch (err) {
+    ElMessage.error('\u8bf7\u4f7f\u7528 HTTPS \u8bbf\u95ee\u4ee5\u542f\u7528\u5bc6\u7801\u52a0\u5bc6')
+    return
+  }
   request.put('/password', {
-    current: passwordForm.current,
-    next: passwordForm.next
+    current: currentHash,
+    next: nextHash,
+    password_hash: 'sha256'
   }).then(() => {
     dialogVisible.value = false
     passwordForm.current = ''

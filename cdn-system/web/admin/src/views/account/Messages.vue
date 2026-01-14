@@ -46,6 +46,7 @@
     </AppTable>
 
     <el-dialog v-model="detailVisible" title="消息详情" width="560px">
+      <span v-if="detailUnread" class="detail-unread-dot"></span>
       <el-form label-width="80px">
         <el-form-item label="标题">
           <div>{{ detail.title }}</div>
@@ -79,6 +80,7 @@ const filters = reactive({
 })
 
 const detailVisible = ref(false)
+const detailUnread = ref(false)
 const detail = reactive({
   title: '',
   email: '',
@@ -97,8 +99,10 @@ const openDetail = row => {
   detail.email = row.content
   detail.sms = row.phone
   detailVisible.value = true
+  detailUnread.value = !row.is_read
   request.post(`/messages/${row.id}/read`).then(() => {
     row.is_read = true
+    detailUnread.value = false
   })
 }
 
@@ -122,6 +126,18 @@ onMounted(() => applyFilter())
   background: #f5f7fa;
   border-radius: 4px;
   line-height: 1.6;
+}
+:deep(.el-dialog) {
+  position: relative;
+}
+.detail-unread-dot {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  width: 8px;
+  height: 8px;
+  background: #f56c6c;
+  border-radius: 50%;
 }
 </style>
 

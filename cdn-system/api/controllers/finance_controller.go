@@ -275,14 +275,13 @@ func (ctr *FinanceController) UserRecharge(c *gin.Context) {
 		Description:   req.Remark,
 		Data:          "",
 		CreatedAt:     now,
-		PaidAt:        time.Time{},
 		Amount:        amountCents,
 		PayType:       "online",
 		MerchantOrder: "recharge-" + now.Format("20060102150405"),
 		TransactionID: "",
 		State:         "pending",
 	}
-	if err := db.DB.Create(&order).Error; err != nil {
+	if err := db.DB.Omit("pay_at").Create(&order).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Create Failed")})
 		return
 	}

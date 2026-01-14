@@ -40,14 +40,167 @@ func (ctrl *ForwardController) AdminCreate(c *gin.Context) {
 		return
 	}
 
+	if defaults, err := services.GetStreamDefaultMap(forward.UserID); err == nil {
+		services.ApplyForwardDefaults(forward, defaults)
+	}
+
 	if err := createForwardWithGroup(forward, groupIDs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create forward")})
 		return
 	}
 
 	services.BumpConfigVersion("forward", []int64{forward.ID})
+	_ = services.SyncForwardCnameRecords(forward)
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Forward created"), "data": forward})
+}
+
+func (ctrl *ForwardController) AdminUpdate(c *gin.Context) {
+	id := parseInt64(c.Param("id"))
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
+		return
+	}
+	var req struct {
+		UserID           int64   `json:"user_id"`
+		UserPackageID    int64   `json:"user_package_id"`
+		ListenPorts      string  `json:"listen_ports"`
+		ListenPortsInput string  `json:"listen_ports_input"`
+		Origin           string  `json:"origin"`
+		OriginInput      string  `json:"origin_input"`
+		GroupID          int64   `json:"group_id"` // Desc: use group_ids
+		GroupIDs         []int64 `json:"group_ids"`
+		Remark           string  `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
+		return
+	}
+
+	userID := req.UserID
+	if isUserRequest(c) {
+		userID = parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+			return
+		}
+	}
+
+	var forward models.Forward
+	query := db.DB.Where("id = ?", id)
+	if isUserRequest(c) {
+		query = query.Where("uid = ?", userID)
+	}
+	if err := query.First(&forward).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Forward not found")})
+		return
+	}
+
+	oldPackageID := forward.UserPackageID
+
+	if !isUserRequest(c) && req.UserID != 0 {
+		forward.UserID = req.UserID
+	}
+	if req.UserPackageID != 0 {
+		forward.UserPackageID = req.UserPackageID
+	}
+
+	listenInput := strings.TrimSpace(req.ListenPortsInput)
+	if listenInput == "" {
+		listenInput = strings.TrimSpace(req.ListenPorts)
+	}
+	listenPorts := splitFields(listenInput)
+	if len(listenPorts) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("listen_ports is required")})
+		return
+	}
+
+	originInput := strings.TrimSpace(req.OriginInput)
+	if originInput == "" {
+		originInput = strings.TrimSpace(req.Origin)
+	}
+	origins := parseOrigins(originInput)
+	if len(origins) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("origin is required")})
+		return
+	}
+
+	forward.ListenPorts = listenPorts
+	forward.Origins = origins
+	forward.BackendPort = extractBackendPort(origins)
+	forward.Remark = req.Remark
+
+	nodeGroupID := forward.NodeGroupID
+	if forward.UserPackageID != 0 && (nodeGroupID == 0 || (req.UserPackageID != 0 && req.UserPackageID != oldPackageID)) {
+		if resolved, _ := resolveNodeGroupFromPackage(forward.UserPackageID, 0); resolved != 0 {
+			nodeGroupID = resolved
+		}
+	}
+	if nodeGroupID != 0 {
+		forward.NodeGroupID = nodeGroupID
+		forward.RegionID = resolveForwardRegionID(nodeGroupID)
+	}
+
+	var pkg *models.UserPackage
+	if forward.UserPackageID != 0 {
+		var userPkg models.UserPackage
+		if err := db.DB.First(&userPkg, forward.UserPackageID).Error; err == nil {
+			pkg = &userPkg
+		}
+	}
+	if _, err := applyForwardCname(&forward, pkg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to generate cname")})
+		return
+	}
+
+	forward.UpdatedAt = time.Now()
+
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		dbTx := tx
+		if forward.RegionID == 0 {
+			dbTx = dbTx.Omit("RegionID")
+		}
+		if forward.NodeGroupID == 0 {
+			dbTx = dbTx.Omit("NodeGroupID")
+		}
+		if !forward.EnableBackupGroup || forward.BackupNodeGroup == 0 {
+			dbTx = dbTx.Omit("BackupNodeGroup")
+		}
+		if err := dbTx.Save(&forward).Error; err != nil {
+			return err
+		}
+
+		groupIDs := req.GroupIDs
+		if len(groupIDs) == 0 && req.GroupID != 0 {
+			groupIDs = []int64{req.GroupID}
+		}
+		if err := tx.Where("stream_id = ?", forward.ID).Delete(&models.ForwardGroupRelation{}).Error; err != nil {
+			return err
+		}
+		if len(groupIDs) > 0 {
+			relations := make([]models.ForwardGroupRelation, 0, len(groupIDs))
+			for _, gid := range groupIDs {
+				if gid != 0 {
+					relations = append(relations, models.ForwardGroupRelation{ForwardID: forward.ID, GroupID: gid})
+				}
+			}
+			if len(relations) > 0 {
+				if err := tx.Create(&relations).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Update failed")})
+		return
+	}
+
+	services.BumpConfigVersion("forward", []int64{forward.ID})
+	_ = services.SyncForwardCnameRecords(&forward)
+
+	c.JSON(http.StatusOK, gin.H{"message": T("Forward updated"), "data": forward})
 }
 
 func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
@@ -79,6 +232,14 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load defaults")})
 		return
+	}
+
+	var pkg *models.UserPackage
+	if req.UserPackageID != 0 {
+		var userPkg models.UserPackage
+		if err := db.DB.First(&userPkg, req.UserPackageID).Error; err == nil {
+			pkg = &userPkg
+		}
 	}
 
 	lines := splitLines(req.Data)
@@ -113,6 +274,13 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 			UpdatedAt:     time.Now(),
 		}
 		services.ApplyForwardDefaults(forward, defaults)
+		if _, err := applyForwardCname(forward, pkg); err != nil {
+			if req.IgnoreError {
+				continue
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to generate cname")})
+			return
+		}
 		groupIDs := req.GroupIDs
 		if len(groupIDs) == 0 && req.GroupID != 0 {
 			groupIDs = []int64{req.GroupID}
@@ -127,6 +295,7 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 		}
 		created++
 		createdIDs = append(createdIDs, forward.ID)
+		_ = services.SyncForwardCnameRecords(forward)
 	}
 
 	if created > 0 {

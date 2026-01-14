@@ -64,6 +64,19 @@ func typeLabel(t string) string {
 	}
 }
 
+func normalizeMessageTitle(title, msgType string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return typeLabel(msgType)
+	}
+	for _, r := range trimmed {
+		if r > 127 {
+			return trimmed
+		}
+	}
+	return typeLabel(msgType)
+}
+
 // AdminList
 // GET /api/v1/admin/messages
 func (ctr *MessageController) AdminList(c *gin.Context) {
@@ -109,7 +122,7 @@ func (ctr *MessageController) AdminList(c *gin.Context) {
 			ID:        m.ID,
 			Type:      m.Type,
 			TypeLabel: typeLabel(m.Type),
-			Title:     m.Title,
+			Title:     normalizeMessageTitle(m.Title, m.Type),
 			Content:   m.Content,
 			Phone:     m.PhoneContent,
 			SiteID:    m.SiteID,
@@ -182,7 +195,7 @@ func (ctr *MessageController) UserList(c *gin.Context) {
 			ID:        m.ID,
 			Type:      m.Type,
 			TypeLabel: typeLabel(m.Type),
-			Title:     m.Title,
+			Title:     normalizeMessageTitle(m.Title, m.Type),
 			Content:   m.Content,
 			Phone:     m.PhoneContent,
 			SiteID:    m.SiteID,
@@ -239,7 +252,7 @@ func (ctr *MessageController) UserUnread(c *gin.Context) {
 				ID:        msg.ID,
 				Type:      msg.Type,
 				TypeLabel: typeLabel(msg.Type),
-				Title:     msg.Title,
+				Title:     normalizeMessageTitle(msg.Title, msg.Type),
 				Content:   msg.Content,
 				Phone:     msg.Phone,
 				SiteID:    msg.SiteID,
@@ -350,4 +363,3 @@ func (ctr *MessageController) UpdateSubscriptions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
-

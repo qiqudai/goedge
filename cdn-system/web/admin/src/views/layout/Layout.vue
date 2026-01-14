@@ -2,7 +2,10 @@
   <div class="common-layout">
     <el-container>
       <el-aside width="200px" class="aside">
-        <div class="logo">CDN Admin</div>
+        <div class="logo">
+          <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="logo" />
+          <span v-else>{{ sidebarTitle }}</span>
+        </div>
         <el-menu
           :default-active="activeMenu"
           class="el-menu-vertical-demo"
@@ -45,15 +48,18 @@
       <el-container>
         <el-header class="header">
           <div class="header-content">
-            <div class="header-title">管理后台</div>
+            <div class="header-title">{{ consoleTitle }}</div>
             <div class="header-actions">
-              <el-badge v-if="!isAdmin" :is-dot="unreadCount > 0" class="message-badge">
-                <el-icon class="message-icon" @click="goMessages"><Bell /></el-icon>
-              </el-badge>
+              <div v-if="!isAdmin" class="message-badge" @click="goMessages">
+                <el-icon class="message-icon"><Bell /></el-icon>
+                <span v-if="unreadCount > 0" class="message-count">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+              </div>
               <div class="theme-toggle">
-                <el-icon class="theme-icon" :class="{ active: !isDark }"><Sunny /></el-icon>
-                <el-switch v-model="isDark" @change="toggleTheme" />
-                <el-icon class="theme-icon" :class="{ active: isDark }"><Moon /></el-icon>
+                <button class="theme-switch" :class="{ dark: isDark }" type="button" @click="toggleTheme">
+                  <span class="theme-thumb">
+                    <el-icon><component :is="isDark ? Moon : Sunny" /></el-icon>
+                  </span>
+                </button>
               </div>
               <el-dropdown>
                 <span class="user-trigger">
@@ -73,13 +79,25 @@
         <el-main>
           <router-view />
         </el-main>
+        <el-footer v-if="showFooter" class="footer">
+          <div v-if="footerLinks.length" class="footer-links">
+            <a
+              v-for="item in footerLinks"
+              :key="item.label"
+              :href="item.url"
+              target="_blank"
+              rel="noopener"
+            >{{ item.label }}</a>
+          </div>
+          <div v-if="footerCopy" class="footer-copy">{{ footerCopy }}</div>
+        </el-footer>
       </el-container>
     </el-container>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   User,
@@ -98,12 +116,14 @@ import {
 } from '@element-plus/icons-vue'
 import { ElNotification } from 'element-plus'
 import request from '@/utils/request'
+import { useSystemInfo } from '@/composables/useSystemInfo'
 
 const router = useRouter()
 const route = useRoute()
 
 const role = localStorage.getItem('role') || 'user'
 const isAdmin = computed(() => role === 'admin')
+const { systemInfo, loadSystemInfo } = useSystemInfo()
 
 const isDark = ref(false)
 const unreadCount = ref(0)
@@ -114,6 +134,30 @@ const menuBackground = 'var(--sidebar-bg)'
 const menuTextColor = 'var(--sidebar-text)'
 const menuActiveColor = 'var(--sidebar-active)'
 
+const logoUrl = computed(() => systemInfo.logo_file || '')
+const sidebarTitle = computed(() => systemInfo.sys_name || 'CDN Admin')
+const consoleTitle = computed(() => {
+  if (isAdmin.value) {
+    return systemInfo.admin_console_title || systemInfo.sys_name || '管理后台'
+  }
+  return systemInfo.user_console_title || systemInfo.sys_name || '控制台'
+})
+const footerCopy = computed(() => systemInfo.footer_copyright || '')
+const footerLinks = computed(() => {
+  const raw = systemInfo.footer_link || ''
+  if (!raw) return []
+  return raw
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [label, url] = line.split('|').map(part => part.trim())
+      return { label: label || url, url }
+    })
+    .filter(item => item.url)
+})
+const showFooter = computed(() => footerLinks.value.length > 0 || !!footerCopy.value)
+
 const applyTheme = () => {
   const theme = isDark.value ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
@@ -121,6 +165,7 @@ const applyTheme = () => {
 }
 
 const toggleTheme = () => {
+  isDark.value = !isDark.value
   applyTheme()
 }
 
@@ -245,6 +290,7 @@ onMounted(() => {
   const savedTheme = localStorage.getItem('theme') || 'light'
   isDark.value = savedTheme === 'dark'
   applyTheme()
+  loadSystemInfo()
   if (!isAdmin.value) {
     pollUnread()
     startPolling()
@@ -254,6 +300,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPolling()
 })
+
+watch(consoleTitle, (val) => {
+  if (val) {
+    document.title = val
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -276,6 +328,12 @@ onBeforeUnmount(() => {
   font-weight: bold;
   font-size: 20px;
   background-color: var(--sidebar-logo-bg);
+}
+.logo-img {
+  max-width: 140px;
+  max-height: 40px;
+  margin-top: 10px;
+  object-fit: contain;
 }
 .header {
   background-color: var(--header-bg);
@@ -300,6 +358,10 @@ onBeforeUnmount(() => {
 }
 .message-badge {
   cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .message-icon {
   display: inline-flex;
@@ -311,16 +373,57 @@ onBeforeUnmount(() => {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
 }
+.message-count {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
 .theme-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
-.theme-icon {
-  color: var(--muted-text);
+.theme-switch {
+  position: relative;
+  width: 56px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: linear-gradient(135deg, #fef3c7, #dbeafe);
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.3s ease;
 }
-.theme-icon.active {
-  color: var(--text-color);
+.theme-switch.dark {
+  background: linear-gradient(135deg, #0f172a, #1f2937);
+}
+.theme-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f59e0b;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: transform 0.28s ease, color 0.28s ease;
+}
+.theme-switch.dark .theme-thumb {
+  transform: translateX(28px);
+  color: #111827;
 }
 .user-trigger {
   display: inline-flex;
@@ -332,5 +435,31 @@ onBeforeUnmount(() => {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   cursor: pointer;
+}
+.footer {
+  background: var(--header-bg);
+  border-top: 1px solid var(--border-color);
+  color: var(--muted-text);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+}
+.footer-links {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.footer-links a {
+  color: inherit;
+  text-decoration: none;
+}
+.footer-links a:hover {
+  color: var(--text-color);
+}
+.footer-copy {
+  white-space: nowrap;
 }
 </style>

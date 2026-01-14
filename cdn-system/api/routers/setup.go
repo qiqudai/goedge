@@ -31,6 +31,13 @@ func Setup(r *gin.Engine) {
 	r.POST("/api/v1/login", authCtr.Login)
 	r.POST("/api/v1/admin/login", authCtr.Login)
 	r.POST("/api/v1/user/login", authCtr.Login)
+	r.POST("/api/v1/register", authCtr.Register)
+	r.POST("/api/v1/user/register", authCtr.Register)
+	r.POST("/api/v1/login/captcha", authCtr.SendLoginCaptcha)
+	r.POST("/api/v1/admin/login/captcha", authCtr.SendLoginCaptcha)
+	r.POST("/api/v1/user/login/captcha", authCtr.SendLoginCaptcha)
+	sysInfoCtr := &controllers.SystemInfoController{}
+	r.GET("/api/v1/system_info", sysInfoCtr.Get)
 
 	// V1 API Group
 	v1 := r.Group("/api/v1")
@@ -120,6 +127,7 @@ func Setup(r *gin.Engine) {
 			// Global Config
 			admin.GET("/global_config", (&controllers.GlobalConfigController{}).GetConfig)
 			admin.POST("/global_config", (&controllers.GlobalConfigController{}).UpdateConfig)
+			admin.GET("/system_info", sysInfoCtr.Get)
 			// Config Items (defaults)
 			configItemCtr := &controllers.ConfigItemController{}
 			admin.GET("/config_items", configItemCtr.List)
@@ -238,6 +246,7 @@ func Setup(r *gin.Engine) {
 			forwardCtr := &controllers.ForwardController{}
 			admin.GET("/forwards", forwardCtr.AdminList)
 			admin.POST("/forwards", forwardCtr.AdminCreate)
+			admin.PUT("/forwards/:id", forwardCtr.AdminUpdate)
 			admin.POST("/forwards/batch", forwardCtr.AdminBatchCreate)
 			admin.POST("/forwards/batch_update", forwardCtr.AdminBatchUpdate)
 			admin.POST("/forwards/batch_action", forwardCtr.AdminBatchAction)
@@ -252,6 +261,10 @@ func Setup(r *gin.Engine) {
 			admin.GET("/forward_defaults", forwardDefaultCtr.List)
 			admin.POST("/forward_defaults", forwardDefaultCtr.Create)
 			admin.DELETE("/forward_defaults", forwardDefaultCtr.Delete)
+
+			forwardMonitorCtr := &controllers.ForwardMonitorController{}
+			admin.GET("/forward/traffic", forwardMonitorCtr.Traffic)
+			admin.GET("/forward/ranking", forwardMonitorCtr.Ranking)
 
 			// Task (Purge/Preheat)
 			taskCtr := &controllers.TaskController{}
@@ -325,6 +338,15 @@ func Setup(r *gin.Engine) {
 			siteController := new(controllers.SiteController)
 			user.GET("/sites", siteController.List)
 			user.POST("/sites", siteController.Create)
+			user.POST("/sites/batch", siteController.AdminBatchCreate)
+			user.GET("/sites/batch/:id/progress", siteController.AdminBatchProgress)
+			user.POST("/sites/batch_update", siteController.AdminBatchUpdate)
+			user.POST("/sites/batch_action", siteController.AdminBatchAction)
+			user.POST("/sites/apply_cert", siteController.AdminApplyCert)
+			user.GET("/sites/export", siteController.AdminExport)
+			user.GET("/sites/resolve", siteController.AdminResolve)
+			user.GET("/sites/:id", siteController.AdminGet)
+			user.PUT("/sites/:id", siteController.AdminUpdate)
 			user.GET("/domain_usage", siteController.DomainUsage)
 
 			// Cert management
@@ -420,6 +442,7 @@ func Setup(r *gin.Engine) {
 			userForwardCtr := &controllers.ForwardController{}
 			user.GET("/forwards", userForwardCtr.AdminList)
 			user.POST("/forwards", userForwardCtr.AdminCreate)
+			user.PUT("/forwards/:id", userForwardCtr.AdminUpdate)
 			user.POST("/forwards/batch", userForwardCtr.AdminBatchCreate)
 			user.POST("/forwards/batch_update", userForwardCtr.AdminBatchUpdate)
 			user.POST("/forwards/batch_action", userForwardCtr.AdminBatchAction)
@@ -434,6 +457,10 @@ func Setup(r *gin.Engine) {
 			user.GET("/forward_defaults", userForwardDefaultCtr.List)
 			user.POST("/forward_defaults", userForwardDefaultCtr.Create)
 			user.DELETE("/forward_defaults", userForwardDefaultCtr.Delete)
+
+			userForwardMonitorCtr := &controllers.ForwardMonitorController{}
+			user.GET("/forward/traffic", userForwardMonitorCtr.Traffic)
+			user.GET("/forward/ranking", userForwardMonitorCtr.Ranking)
 		}
 
 		// 3. Node Agent Routes (Require Node Token Middleware)

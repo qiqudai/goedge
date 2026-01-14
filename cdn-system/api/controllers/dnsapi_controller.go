@@ -15,11 +15,9 @@ type DNSAPIController struct{}
 func (ctr *DNSAPIController) List(c *gin.Context) {
 	var items []models.DNSAPI
 	query := db.DB.Model(&models.DNSAPI{})
+	var uid int64
 	if isUserRequest(c) {
-		uid := parseUserID(mustGet(c, "userID"))
-		if uid != 0 {
-			query = query.Where("uid = ?", uid)
-		}
+		uid = parseUserID(mustGet(c, "userID"))
 	} else if uidStr := c.Query("user_id"); uidStr != "" {
 		if uid, err := strconv.Atoi(uidStr); err == nil {
 			query = query.Where("uid = ?", uid)
@@ -32,6 +30,13 @@ func (ctr *DNSAPIController) List(c *gin.Context) {
 	if err := query.Order("id desc").Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
 		return
+	}
+	if isUserRequest(c) && uid != 0 {
+		for i := range items {
+			if items[i].UserID != uid {
+				items[i].Auth = ""
+			}
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": items}})
 }
@@ -55,6 +60,9 @@ func (ctr *DNSAPIController) Create(c *gin.Context) {
 	if req.UserID == 0 {
 		req.UserID = parseUserID(mustGet(c, "userID"))
 	}
+	if isUserRequest(c) {
+		req.UserID = parseUserID(mustGet(c, "userID"))
+	}
 	var item models.DNSAPI
 	item = models.DNSAPI{
 		UserID: req.UserID,
@@ -76,6 +84,22 @@ func (ctr *DNSAPIController) Update(c *gin.Context) {
 	if id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid ID")})
 		return
+	}
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
+		var count int64
+		if err := db.DB.Model(&models.DNSAPI{}).Where("id = ? AND uid = ?", id, uid).Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
+			return
+		}
+		if count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
 	}
 	var req struct {
 		Name   string `json:"name"`
@@ -106,6 +130,22 @@ func (ctr *DNSAPIController) Delete(c *gin.Context) {
 	if id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid ID")})
 		return
+	}
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
+		var count int64
+		if err := db.DB.Model(&models.DNSAPI{}).Where("id = ? AND uid = ?", id, uid).Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete Failed")})
+			return
+		}
+		if count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
 	}
 	if err := db.DB.Delete(&models.DNSAPI{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete Failed")})

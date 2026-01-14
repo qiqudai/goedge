@@ -66,7 +66,16 @@ func (ctrl *SiteController) AdminGet(c *gin.Context) {
 	}
 
 	var site models.Site
-	if err := db.DB.Where("id = ?", id).First(&site).Error; err != nil {
+	query := db.DB.Where("id = ?", id)
+	if isUserRequest(c) {
+		uid := parseInt64(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		query = query.Where("uid = ?", uid)
+	}
+	if err := query.First(&site).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": T("site not found")})
 			return
@@ -104,9 +113,23 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		return
 	}
 
+	isUserReq := isUserRequest(c)
+	userID := int64(0)
+	if isUserReq {
+		userID = parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+	}
+
 	var oldSite models.Site
 	if err := db.DB.Where("id = ?", id).First(&oldSite).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load site")})
+		return
+	}
+	if isUserReq && oldSite.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
 		return
 	}
 
@@ -131,6 +154,43 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
 		return
+	}
+
+	if isUserReq && req.UserPackageID != nil && *req.UserPackageID > 0 {
+		if err := ensureUserPackageOwnership(userID, *req.UserPackageID); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+	}
+
+	if isUserReq && (req.GroupIDs != nil || req.GroupID != nil) {
+		groupIDs := []int64{}
+		if req.GroupIDs != nil {
+			groupIDs = *req.GroupIDs
+		} else if req.GroupID != nil && *req.GroupID != 0 {
+			groupIDs = []int64{*req.GroupID}
+		}
+		if len(groupIDs) > 0 {
+			allowed, err := filterSiteGroupIDsForUser(groupIDs, userID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load groups")})
+				return
+			}
+			if len(allowed) != len(groupIDs) {
+				c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+				return
+			}
+			if req.GroupIDs != nil {
+				req.GroupIDs = &allowed
+			} else if req.GroupID != nil {
+				if len(allowed) == 0 {
+					zero := int64(0)
+					req.GroupID = &zero
+				} else {
+					req.GroupID = &allowed[0]
+				}
+			}
+		}
 	}
 
 	if req.Domains != nil || req.UserPackageID != nil {
@@ -339,7 +399,9 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
 		return
 	}
-	if req.UserID == 0 {
+	if isUserRequest(c) {
+		req.UserID = parseInt64(mustGet(c, "userID"))
+	} else if req.UserID == 0 {
 		req.UserID = parseInt64(mustGet(c, "userID"))
 	}
 	if req.UserID == 0 {
@@ -353,6 +415,12 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 			return
 		}
 		req.UserPackageID = defaultID
+	}
+	if isUserRequest(c) && req.UserPackageID > 0 {
+		if err := ensureUserPackageOwnership(req.UserID, req.UserPackageID); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
 	}
 	if strings.TrimSpace(req.Data) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("data is required")})
@@ -519,6 +587,53 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	if len(req.IDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("ids is required")})
 		return
+	}
+	if isUserRequest(c) {
+		userID := parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		allowed, err := filterSiteIDsForUser(req.IDs, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
+		if len(allowed) == 0 || len(allowed) != len(req.IDs) {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		req.IDs = allowed
+		if req.UserPackageID != nil && *req.UserPackageID > 0 {
+			if err := ensureUserPackageOwnership(userID, *req.UserPackageID); err != nil {
+				c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+				return
+			}
+		}
+		if req.GroupIDs != nil || req.GroupID != nil {
+			groupIDs := []int64{}
+			if req.GroupIDs != nil {
+				groupIDs = *req.GroupIDs
+			} else if req.GroupID != nil && *req.GroupID != 0 {
+				groupIDs = []int64{*req.GroupID}
+			}
+			if len(groupIDs) > 0 {
+				allowedGroups, err := filterSiteGroupIDsForUser(groupIDs, userID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load groups")})
+					return
+				}
+				if len(allowedGroups) != len(groupIDs) {
+					c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+					return
+				}
+				if req.GroupIDs != nil {
+					req.GroupIDs = &allowedGroups
+				} else if req.GroupID != nil {
+					req.GroupID = &allowedGroups[0]
+				}
+			}
+		}
 	}
 
 	if req.CnameDomain != nil {
@@ -763,6 +878,23 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("ids is required")})
 		return
 	}
+	if isUserRequest(c) {
+		userID := parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		allowed, err := filterSiteIDsForUser(req.IDs, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
+		if len(allowed) == 0 || len(allowed) != len(req.IDs) {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		req.IDs = allowed
+	}
 
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	switch action {
@@ -848,6 +980,23 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 	if len(req.IDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("ids is required")})
 		return
+	}
+	if isUserRequest(c) {
+		userID := parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		allowed, err := filterSiteIDsForUser(req.IDs, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
+		if len(allowed) == 0 || len(allowed) != len(req.IDs) {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		req.IDs = allowed
 	}
 
 	var sites []models.Site
@@ -1016,6 +1165,55 @@ func setCCDefaultRuleInSettings(settings map[string]interface{}, ruleID int64) {
 
 // AdminExport exports list as CSV
 func (ctrl *SiteController) AdminExport(c *gin.Context) {
+	if isUserRequest(c) {
+		userID := parseInt64(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		result, err := querySites(c, &userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to export")})
+			return
+		}
+		items, err := buildSiteListItems(result.Sites)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to export")})
+			return
+		}
+
+		c.Header("Content-Type", "text/csv")
+		c.Header("Content-Disposition", "attachment; filename=sites.csv")
+		writer := csv.NewWriter(c.Writer)
+		_ = writer.Write([]string{"ID", "User", "Domain", "Listen", "Origin", "CNAME", "HTTPS", "Package", "Group", "Region", "Status", "CreatedAt"})
+		for _, item := range items {
+			httpsVal := "no"
+			if item.HTTPS {
+				httpsVal = "yes"
+			}
+			statusVal := "disabled"
+			if item.Status {
+				statusVal = "enabled"
+			}
+			_ = writer.Write([]string{
+				strconv.FormatInt(item.ID, 10),
+				item.UserName,
+				item.DomainDisplay,
+				item.ListenPorts,
+				item.OriginDisplay,
+				item.CNAME,
+				httpsVal,
+				item.UserPackageName,
+				item.GroupName,
+				item.NodeGroupName,
+				statusVal,
+				item.CreatedAt.Format(time.RFC3339),
+			})
+		}
+		writer.Flush()
+		return
+	}
+
 	result, err := querySites(c, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to export")})

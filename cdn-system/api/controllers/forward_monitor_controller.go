@@ -1,8 +1,11 @@
 package controllers
 
 import (
+	"cdn-api/db"
+	"cdn-api/models"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,8 +28,38 @@ func (c *ForwardMonitorController) Traffic(ctx *gin.Context) {
 	keyword := strings.TrimSpace(ctx.Query("keyword"))
 	start, end, step, bucketMinutes, labelFormat := resolveForwardRange(rangeKey)
 	port, protocol := parseForwardKeyword(keyword)
+	allowedPorts := []int{}
 
-	buckets, err := services.QueryForwardTrafficBuckets(start, end, bucketMinutes, port, protocol)
+	if isUserRequest(ctx) {
+		userID := parseInt64(mustGet(ctx, "userID"))
+		if userID == 0 {
+			ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "bandwidth": []float64{}, "traffic": []float64{}}})
+			return
+		}
+		portMap, ports, err := loadUserForwardPortMap(userID)
+		if err != nil || len(ports) == 0 {
+			ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "bandwidth": []float64{}, "traffic": []float64{}}})
+			return
+		}
+		if port > 0 {
+			if !portAllowed(portMap, port, protocol) {
+				ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "bandwidth": []float64{}, "traffic": []float64{}}})
+				return
+			}
+			allowedPorts = []int{port}
+		} else if protocol != "" {
+			filtered := filterPortsByProtocol(portMap, protocol)
+			if len(filtered) == 0 {
+				ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "bandwidth": []float64{}, "traffic": []float64{}}})
+				return
+			}
+			allowedPorts = filtered
+		} else {
+			allowedPorts = ports
+		}
+	}
+
+	buckets, err := services.QueryForwardTrafficBucketsWithPorts(start, end, bucketMinutes, port, protocol, allowedPorts)
 	if err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "bandwidth": []float64{}, "traffic": []float64{}}})
 		return
@@ -73,7 +106,21 @@ func (c *ForwardMonitorController) Traffic(ctx *gin.Context) {
 func (c *ForwardMonitorController) Ranking(ctx *gin.Context) {
 	rangeKey := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("range", "1h")))
 	start, end, _, _, _ := resolveForwardRange(rangeKey)
-	list, err := services.QueryForwardPortRanking(start, end, 50)
+	allowedPorts := []int{}
+	if isUserRequest(ctx) {
+		userID := parseInt64(mustGet(ctx, "userID"))
+		if userID == 0 {
+			ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []forwardRankingItem{}}})
+			return
+		}
+		_, ports, err := loadUserForwardPortMap(userID)
+		if err != nil || len(ports) == 0 {
+			ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []forwardRankingItem{}}})
+			return
+		}
+		allowedPorts = ports
+	}
+	list, err := services.QueryForwardPortRankingWithPorts(start, end, 50, allowedPorts)
 	if err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []forwardRankingItem{}}})
 		return
@@ -177,4 +224,87 @@ func resolveForwardTrafficFactor() float64 {
 		return 1.0
 	}
 	return factor
+}
+
+func loadUserForwardPortMap(userID int64) (map[int]map[string]bool, []int, error) {
+	var forwards []models.Forward
+	if err := db.DB.Select("listen").Where("uid = ?", userID).Find(&forwards).Error; err != nil {
+		return nil, nil, err
+	}
+	portMap := map[int]map[string]bool{}
+	for _, forward := range forwards {
+		for _, entry := range forward.ListenPorts {
+			port, protocol := parseForwardListenPort(entry)
+			if port <= 0 {
+				continue
+			}
+			if portMap[port] == nil {
+				portMap[port] = map[string]bool{}
+			}
+			if protocol == "" {
+				portMap[port]["TCP"] = true
+			} else {
+				portMap[port][protocol] = true
+			}
+		}
+	}
+	ports := make([]int, 0, len(portMap))
+	for port := range portMap {
+		ports = append(ports, port)
+	}
+	sort.Ints(ports)
+	return portMap, ports, nil
+}
+
+func parseForwardListenPort(raw string) (int, string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, ""
+	}
+	protocol := ""
+	if strings.Contains(raw, "/") {
+		parts := strings.SplitN(raw, "/", 2)
+		raw = strings.TrimSpace(parts[0])
+		protocol = strings.ToUpper(strings.TrimSpace(parts[1]))
+	}
+	if protocol != "TCP" && protocol != "UDP" {
+		protocol = ""
+	}
+	portStr := ""
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			portStr += string(r)
+		}
+	}
+	if portStr == "" {
+		return 0, protocol
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
+		return 0, protocol
+	}
+	return port, protocol
+}
+
+func portAllowed(portMap map[int]map[string]bool, port int, protocol string) bool {
+	entry, ok := portMap[port]
+	if !ok {
+		return false
+	}
+	if protocol == "" {
+		return true
+	}
+	return entry[protocol]
+}
+
+func filterPortsByProtocol(portMap map[int]map[string]bool, protocol string) []int {
+	protocol = strings.ToUpper(strings.TrimSpace(protocol))
+	out := []int{}
+	for port, protocols := range portMap {
+		if protocols[protocol] {
+			out = append(out, port)
+		}
+	}
+	sort.Ints(out)
+	return out
 }
