@@ -19,6 +19,7 @@
 - [x] 网站管理-访问控制（普通用户）
 - [x] 网站管理-高级设置（普通用户）
 - [x] 搜索引擎回源（L回源）设计文档
+- [x] L2回源节点与备用线路设计文档
 
 ## 测试记录
 - `npx playwright test tests/e2e/user-site-actions.spec.ts` ✅
@@ -37,4 +38,5 @@
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-website-manage.spec.ts -g "security config: auto switch"` ✅
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-website-manage.spec.ts -g "cache config: quick preset add/remove"` ✅
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-website-manage.spec.ts -g "access config: hotlink toggle"` ✅
+- `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-website-manage.spec.ts -g "advanced config: gzip toggle"` ✅（L2/备用线路文档）
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-website-manage.spec.ts -g "advanced config: gzip toggle"` ✅
