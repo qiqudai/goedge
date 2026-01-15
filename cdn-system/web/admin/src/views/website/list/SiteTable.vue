@@ -1,5 +1,5 @@
 <template>
-  <div class="filter-container">
+  <div class="filter-container site-table-toolbar">
     <div class="filter-left">
       <el-button type="primary" @click="handleAction('create')">添加网站</el-button>
       <el-button :disabled="!selectedRows.length" @click="handleAction('batch-edit')">批量修改</el-button>
@@ -200,4 +200,16 @@ const copyUserAccount = async (row) => {
 .copy-icon:hover { color: #409eff; }
 .copyable-text { cursor: pointer; }
 .copyable-text:hover { color: #409eff; }
+
+:global(:root[data-theme="dark"] .site-table-toolbar .el-button--default) {
+  background-color: #2a2f36;
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+:global(:root[data-theme="dark"] .site-table-toolbar .el-button--default:hover) {
+  background-color: #343a43;
+  border-color: #4a515c;
+  color: var(--text-color);
+}
 </style>

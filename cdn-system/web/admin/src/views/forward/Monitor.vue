@@ -1,5 +1,5 @@
 ﻿<template>
-  <div class="app-container">
+  <div class="app-container forward-monitor">
     <el-card shadow="never" class="layout-card">
       <el-tabs v-model="activeTopTab" class="custom-tabs" @tab-change="handleTopTab">
         <el-tab-pane label="转发列表" name="list" />
@@ -58,6 +58,7 @@
 import { ref, reactive, onMounted, nextTick, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
+import request from '@/utils/request'
 
 const router = useRouter()
 const activeTopTab = ref('monitor')
@@ -65,6 +66,8 @@ const activeTab = ref('traffic')
 const range = ref('1h')
 const query = reactive({ keyword: '' })
 const ranking = ref([])
+const trafficLoading = ref(false)
+const rankingLoading = ref(false)
 
 let bandwidthChart = null
 let trafficChart = null
@@ -77,19 +80,40 @@ const handleTopTab = (name) => {
   }
   const path = map[name]
   if (name === 'monitor') {
-    reload()
-    reloadRanking()
+    reloadAll()
     return
   }
   if (path) router.push(path)
 }
 
-const buildChartOption = (title, color, data) => ({
+const getChartColors = () => {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+  return {
+    axisLabel: isDark ? '#b0b6c3' : '#606266',
+    axisLine: isDark ? '#3a3f47' : '#e4e7ed',
+    splitLine: isDark ? '#343a43' : '#eef1f6'
+  }
+}
+
+const buildChartOption = (title, color, data) => {
+  const colors = getChartColors()
+  return {
   title: { show: false },
   tooltip: { trigger: 'axis' },
   grid: { left: '3%', right: '4%', top: '5%', bottom: '3%', containLabel: true },
-  xAxis: { type: 'category', boundaryGap: false, data: data.times },
-  yAxis: { type: 'value' },
+  xAxis: {
+    type: 'category',
+    boundaryGap: false,
+    data: data.times,
+    axisLine: { lineStyle: { color: colors.axisLine } },
+    axisLabel: { color: colors.axisLabel }
+  },
+  yAxis: {
+    type: 'value',
+    axisLine: { lineStyle: { color: colors.axisLine } },
+    axisLabel: { color: colors.axisLabel },
+    splitLine: { lineStyle: { color: colors.splitLine } }
+  },
   series: [{
     name: title,
     type: 'line',
@@ -104,30 +128,54 @@ const buildChartOption = (title, color, data) => ({
     },
     data: data.values
   }]
-})
-
-const initCharts = () => {
-  if (!bandwidthChart) bandwidthChart = echarts.init(document.getElementById('bandwidthChart'))
-  if (!trafficChart) trafficChart = echarts.init(document.getElementById('trafficChart'))
-
-  const data = {
-    times: Array.from({ length: 24 }, (_, i) => `${i}:00`),
-    bwValues: Array.from({ length: 24 }, () => (Math.random() * 100).toFixed(2)),
-    trValues: Array.from({ length: 24 }, () => (Math.random() * 10).toFixed(2))
   }
-
-  bandwidthChart.setOption(buildChartOption('带宽', '#409eff', { times: data.times, values: data.bwValues }))
-  trafficChart.setOption(buildChartOption('流量', '#67c23a', { times: data.times, values: data.trValues }))
 }
 
-const reload = () => { nextTick(initCharts) }
+const ensureCharts = () => {
+  const bwDom = document.getElementById('bandwidthChart')
+  const trDom = document.getElementById('trafficChart')
+  if (!bwDom || !trDom) return false
+  if (!bandwidthChart) bandwidthChart = echarts.init(bwDom)
+  if (!trafficChart) trafficChart = echarts.init(trDom)
+  return true
+}
 
-const loadRanking = () => {
-    ranking.value = Array.from({ length: 10 }, (_, i) => ({
-        port: `${8000 + i}/TCP`,
-        connections: Math.floor(Math.random() * 1000),
-        traffic: (Math.random() * 50).toFixed(2) + ' GB'
-    }))
+const updateCharts = (payload) => {
+  if (!ensureCharts()) return
+  const times = payload?.x_axis || []
+  const bwValues = payload?.bandwidth || []
+  const trValues = payload?.traffic || []
+  bandwidthChart.setOption(buildChartOption('带宽', '#409eff', { times, values: bwValues }), true)
+  trafficChart.setOption(buildChartOption('流量', '#67c23a', { times, values: trValues }), true)
+}
+
+const loadTraffic = async () => {
+  trafficLoading.value = true
+  try {
+    const res = await request.get('/forward/traffic', {
+      params: { range: range.value, keyword: query.keyword }
+    })
+    if (res.code === 0) {
+      await nextTick()
+      updateCharts(res.data || {})
+    }
+  } finally {
+    trafficLoading.value = false
+  }
+}
+
+const reload = () => loadTraffic()
+
+const loadRanking = async () => {
+  rankingLoading.value = true
+  try {
+    const res = await request.get('/forward/ranking', {
+      params: { range: range.value }
+    })
+    ranking.value = res.data?.list || []
+  } finally {
+    rankingLoading.value = false
+  }
 }
 
 const reloadRanking = () => loadRanking()
@@ -144,14 +192,18 @@ const handleInnerTab = (name) => {
 
 const setRange = (val) => { range.value = val; reload() }
 
+const reloadAll = () => {
+  reload()
+  reloadRanking()
+}
+
 const handleResize = () => {
     bandwidthChart?.resize()
     trafficChart?.resize()
 }
 
 onMounted(() => {
-    initCharts()
-    loadRanking()
+    reloadAll()
     window.addEventListener('resize', handleResize)
 })
 
@@ -168,7 +220,11 @@ onUnmounted(() => {
 .custom-tabs :deep(.el-tabs__item) { font-weight: 600; }
 .monitor-inner-tabs { margin-top: 10px; }
 .filter-container { margin-bottom: 20px; display: flex; align-items: center; }
-.chart-box { background: #fcfcfc; border: 1px solid #f0f0f0; border-radius: 4px; padding: 15px; margin-bottom: 20px; }
-.chart-header { font-size: 14px; font-weight: 600; color: #606266; margin-bottom: 15px; }
+.chart-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 15px; margin-bottom: 20px; }
+.chart-header { font-size: 14px; font-weight: 600; color: var(--muted-text); margin-bottom: 15px; }
 .chart-body { height: 300px; }
+
+:root[data-theme="dark"] .forward-monitor :deep(.el-icon) {
+  color: var(--muted-text);
+}
 </style>

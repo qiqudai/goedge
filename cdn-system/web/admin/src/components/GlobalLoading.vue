@@ -176,4 +176,16 @@ onUnmounted(() => {
 .fade-leave-to {
   opacity: 0;
 }
+
+:global(:root[data-theme="dark"] .global-loading-overlay) {
+  background: rgba(23, 26, 32, 0.8);
+}
+
+:global(:root[data-theme="dark"] .global-loading-overlay .loading-text) {
+  color: #8ab5ff;
+}
+
+:global(:root[data-theme="dark"] .global-loading-overlay .dot::before) {
+  background-color: #8ab5ff;
+}
 </style>

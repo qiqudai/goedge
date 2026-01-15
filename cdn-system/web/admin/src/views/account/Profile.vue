@@ -46,7 +46,6 @@
     <el-card class="section-card" shadow="never">
       <div class="section-header">
         <div class="section-title">实名认证</div>
-        <el-button type="primary" size="small" @click="saveCert">保存认证</el-button>
       </div>
       <el-tabs v-model="verifyTab">
         <el-tab-pane label="个人认证" name="personal">
@@ -81,7 +80,6 @@
     <el-card class="section-card" shadow="never">
       <div class="section-header">
         <div class="section-title">手机绑定</div>
-        <el-button type="primary" size="small" @click="savePhone">保存绑定</el-button>
       </div>
       <el-form :model="phoneForm" label-width="80px" class="section-form">
         <el-form-item label="手机号">
@@ -102,7 +100,6 @@
     <el-card class="section-card" shadow="never">
       <div class="section-header">
         <div class="section-title">邮箱绑定</div>
-        <el-button type="primary" size="small" @click="saveEmail">保存绑定</el-button>
       </div>
       <el-form :model="emailForm" label-width="80px" class="section-form">
         <el-form-item label="姓名">
@@ -123,7 +120,6 @@
     <el-card class="section-card" shadow="never">
       <div class="section-header">
         <div class="section-title">安全设置</div>
-        <el-button type="primary" size="small" @click="saveSecurity">保存设置</el-button>
       </div>
       <el-form :model="securityForm" label-width="90px" class="section-form">
         <el-form-item label="IP白名单">

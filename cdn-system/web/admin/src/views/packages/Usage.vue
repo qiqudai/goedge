@@ -3,13 +3,13 @@
     <div class="usage-header">
       <div class="usage-title">用量查询</div>
       <div class="usage-actions">
-        <el-radio-group v-model="range" size="small" @change="loadUsage">
-          <el-radio-button value="today">今天</el-radio-button>
-          <el-radio-button value="yesterday">昨天</el-radio-button>
-          <el-radio-button value="7days">近7天</el-radio-button>
-          <el-radio-button value="30days">30天</el-radio-button>
-        </el-radio-group>
-        <el-button link type="primary" size="" @click="loadUsage">刷新</el-button>
+        <el-button-group class="range-button-group">
+          <el-button size="small" :type="range === 'today' ? 'primary' : 'default'" @click="setRange('today')">今天</el-button>
+          <el-button size="small" :type="range === 'yesterday' ? 'primary' : 'default'" @click="setRange('yesterday')">昨天</el-button>
+          <el-button size="small" :type="range === '7days' ? 'primary' : 'default'" @click="setRange('7days')">近7天</el-button>
+          <el-button size="small" :type="range === '30days' ? 'primary' : 'default'" @click="setRange('30days')">30天</el-button>
+        </el-button-group>
+        <el-button link type="primary" @click="loadUsage">刷新</el-button>
       </div>
     </div>
 
@@ -89,6 +89,11 @@ const buildChart = (xAxis, series, unit) => {
   })
 }
 
+const setRange = (val) => {
+  range.value = val
+  loadUsage()
+}
+
 const loadUsage = async () => {
   loading.value = true
   try {
@@ -145,14 +150,14 @@ onMounted(() => {
 }
 
 .summary-card {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 12px 16px;
-  background: #fff;
+  background: var(--card-bg);
 }
 
 .summary-label {
-  color: #909399;
+  color: var(--muted-text);
   font-size: 12px;
   margin-bottom: 6px;
 }
@@ -160,7 +165,7 @@ onMounted(() => {
 .summary-value {
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-color);
 }
 
 .chart-wrapper {

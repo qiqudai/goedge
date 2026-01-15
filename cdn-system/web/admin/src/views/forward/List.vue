@@ -42,6 +42,7 @@
     <ForwardEditDialog
       v-model="editVisible"
       :data="editData"
+      :is-admin="isAdmin"
       @success="fetchList"
     />
   </div>
@@ -58,6 +59,7 @@ import ForwardEditDialog from './list/ForwardEditDialog.vue'
 
 const router = useRouter()
 const activeTopTab = ref('list')
+const isAdmin = ref(localStorage.getItem('role') === 'admin')
 
 const list = ref([])
 const total = ref(0)

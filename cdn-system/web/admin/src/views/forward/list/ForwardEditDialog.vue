@@ -79,7 +79,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
@@ -101,6 +101,7 @@ const isExpanded = ref(false)
 
 const users = ref([])
 const userPackages = ref([])
+const lastUserId = ref(0)
 
 const form = reactive({
   id: 0,
@@ -114,26 +115,36 @@ const form = reactive({
   remark: ''
 })
 
-const rules = {
-  user_id: [{ required: true, message: '请选择用户', trigger: 'change' }],
-  user_package_id: [{ required: true, message: '请选择套餐', trigger: 'change' }],
-  listen_ports: [{ required: true, message: '请输入监听端口', trigger: 'blur' }],
-  origin: [{ required: true, message: '请输入源地址:端口', trigger: 'blur' }],
-  batch_data: [{ required: true, message: '请输入批量转发数据', trigger: 'blur' }]
-}
+const rules = computed(() => {
+  const baseRules = {
+    user_id: [{ required: true, message: '请选择用户', trigger: 'change' }],
+    user_package_id: [{ required: true, message: '请选择套餐', trigger: 'change' }],
+    listen_ports: [{ required: true, message: '请输入监听端口', trigger: 'blur' }],
+    origin: [{ required: true, message: '请输入源地址:端口', trigger: 'blur' }],
+    batch_data: [{ required: true, message: '请输入批量转发数据', trigger: 'blur' }]
+  }
+  if (!props.isAdmin) {
+    delete baseRules.user_id
+  }
+  return baseRules
+})
 
 watch(() => props.modelValue, (val) => {
   visible.value = val
   if (val) {
-    initData()
     if (props.data) {
       const data = { ...props.data }
       data.group_ids = data.group_ids || (data.group_id ? [data.group_id] : [])
-      Object.assign(form, data)
+      Object.assign(form, {
+        ...data,
+        user_id: Number(data.user_id) || 0,
+        user_package_id: Number(data.user_package_id) || 0
+      })
       activeTab.value = 'single'
     } else {
       resetForm()
     }
+    initData()
   }
 })
 
@@ -146,33 +157,44 @@ const initData = async () => {
     if (props.isAdmin) {
       const uRes = await request.get('/users')
       users.value = uRes.data?.list || []
-    } else {
-      await loadSelfPackages()
+      if (form.user_id) {
+        await handleUserChange(form.user_id)
+      }
+      return
     }
-    
-    if (form.user_id) {
-        handleUserChange(form.user_id)
-    }
+    await loadSelfPackages()
   } catch (e) {
     console.error('Failed to init dialog data', e)
   }
 }
 
+const ensureDefaultPackage = () => {
+  if (!form.user_package_id && userPackages.value.length > 0) {
+    form.user_package_id = userPackages.value[0].id
+  }
+}
+
 const handleUserChange = async (userId) => {
-    if (!userId) {
-        userPackages.value = []
-        return
-    }
-    const res = await request.get('/user_packages', { params: { user_id: userId } })
-    userPackages.value = res.data?.list || []
+  if (!userId) {
+    userPackages.value = []
+    lastUserId.value = 0
+    return
+  }
+  const resolvedId = Number(userId) || 0
+  if (resolvedId !== lastUserId.value) {
+    form.user_package_id = 0
+    form.group_ids = []
+    lastUserId.value = resolvedId
+  }
+  const res = await request.get('/user_packages', { params: { user_id: resolvedId, pageSize: 1000 } })
+  userPackages.value = res.data?.list || res.list || []
+  ensureDefaultPackage()
 }
 
 const loadSelfPackages = async () => {
-    const res = await request.get('/user_packages', { params: { pageSize: 1000 } })
-    userPackages.value = res.data?.list || []
-    if (userPackages.value.length > 0 && !form.user_package_id) {
-        form.user_package_id = userPackages.value[0].id
-    }
+  const res = await request.get('/user_packages', { params: { pageSize: 1000 } })
+  userPackages.value = res.data?.list || res.list || []
+  ensureDefaultPackage()
 }
 
 // handleAddGroup removed
@@ -180,8 +202,8 @@ const loadSelfPackages = async () => {
 const resetForm = () => {
   Object.assign(form, {
     id: 0,
-    user_id: '',
-    user_package_id: '',
+    user_id: 0,
+    user_package_id: 0,
     listen_ports: '',
     origin: '',
     batch_data: '',
@@ -191,6 +213,7 @@ const resetForm = () => {
   })
   activeTab.value = 'single'
   isExpanded.value = false
+  lastUserId.value = 0
 }
 
 const handleClosed = () => {
@@ -201,35 +224,36 @@ const handleSubmit = async () => {
   await formRef.value?.validate()
   submitting.value = true
   try {
-    const payload = { ...form }
-    if (activeTab.value === 'batch') {
-        // Handle batch mapping logic if necessary on backend
+    const basePayload = {
+      user_package_id: Number(form.user_package_id) || 0,
+      group_ids: Array.isArray(form.group_ids) ? form.group_ids : [],
+      remark: form.remark
     }
-    
+    if (props.isAdmin) {
+      basePayload.user_id = Number(form.user_id) || 0
+    }
+
     if (form.id) {
-      await request.put(`/forwards/${form.id}`, payload)
-    } else {
-      if (activeTab.value === 'batch') {
-        const batchPayload = {
-          user_id: form.user_id,
-          user_package_id: form.user_package_id,
-          group_ids: form.group_ids,
-          data: form.batch_data,
-          ignore_error: form.ignore_errors,
-          remark: form.remark
-        }
-        await request.post('/forwards/batch', batchPayload)
-      } else {
-        const singlePayload = {
-          user_id: form.user_id,
-          user_package_id: form.user_package_id,
-          group_ids: form.group_ids,
-          listen_ports_input: form.listen_ports,
-          origin_input: form.origin,
-          remark: form.remark
-        }
-        await request.post('/forwards', singlePayload)
+      const updatePayload = {
+        ...basePayload,
+        listen_ports_input: form.listen_ports,
+        origin_input: form.origin
       }
+      await request.put(`/forwards/${form.id}`, updatePayload)
+    } else if (activeTab.value === 'batch') {
+      const batchPayload = {
+        ...basePayload,
+        data: form.batch_data,
+        ignore_error: form.ignore_errors
+      }
+      await request.post('/forwards/batch', batchPayload)
+    } else {
+      const singlePayload = {
+        ...basePayload,
+        listen_ports_input: form.listen_ports,
+        origin_input: form.origin
+      }
+      await request.post('/forwards', singlePayload)
     }
     ElMessage.success('操作成功')
     emit('success')

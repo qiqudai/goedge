@@ -6,11 +6,11 @@
           <template #header>
             <div class="card-header">
               <span>运营数据</span>
-              <el-radio-group v-model="opsRange" size="small" class="range-tabs" @change="fetchData">
-                <el-radio-button value="7d">近7日</el-radio-button>
-                <el-radio-button value="30d">近30日</el-radio-button>
-                <el-radio-button value="last_month">上个月</el-radio-button>
-              </el-radio-group>
+              <el-button-group class="range-tabs">
+                <el-button size="small" :type="opsRange === '7d' ? 'primary' : 'default'" @click="setOpsRange('7d')">近7日</el-button>
+                <el-button size="small" :type="opsRange === '30d' ? 'primary' : 'default'" @click="setOpsRange('30d')">近30日</el-button>
+                <el-button size="small" :type="opsRange === 'last_month' ? 'primary' : 'default'" @click="setOpsRange('last_month')">上个月</el-button>
+              </el-button-group>
             </div>
           </template>
           <el-row :gutter="12">
@@ -61,12 +61,12 @@
           <template #header>
             <div class="card-header">
               <span>网络概览</span>
-              <el-radio-group v-model="overviewRange" size="small" class="range-tabs" @change="fetchData">
-                <el-radio-button value="today">今日</el-radio-button>
-                <el-radio-button value="yesterday">昨日</el-radio-button>
-                <el-radio-button value="7d">近7日</el-radio-button>
-                <el-radio-button value="30d">近30日</el-radio-button>
-              </el-radio-group>
+              <el-button-group class="range-tabs">
+                <el-button size="small" :type="overviewRange === 'today' ? 'primary' : 'default'" @click="setOverviewRange('today')">今日</el-button>
+                <el-button size="small" :type="overviewRange === 'yesterday' ? 'primary' : 'default'" @click="setOverviewRange('yesterday')">昨日</el-button>
+                <el-button size="small" :type="overviewRange === '7d' ? 'primary' : 'default'" @click="setOverviewRange('7d')">近7日</el-button>
+                <el-button size="small" :type="overviewRange === '30d' ? 'primary' : 'default'" @click="setOverviewRange('30d')">近30日</el-button>
+              </el-button-group>
             </div>
           </template>
           <div class="overview-grid">
@@ -95,21 +95,21 @@
               <template #header>
                 <div class="card-header">
                   <span>监控趋势</span>
-                  <el-radio-group v-model="chartRange" size="small" class="range-tabs" @change="handleChartRangeChange">
-                    <el-radio-button value="today">今日</el-radio-button>
-                    <el-radio-button value="yesterday">昨日</el-radio-button>
-                    <el-radio-button value="7d">近7日</el-radio-button>
-                    <el-radio-button value="30d">近30日</el-radio-button>
-                  </el-radio-group>
+                  <el-button-group class="range-tabs">
+                    <el-button size="small" :type="chartRange === 'today' ? 'primary' : 'default'" @click="setChartRange('today')">今日</el-button>
+                    <el-button size="small" :type="chartRange === 'yesterday' ? 'primary' : 'default'" @click="setChartRange('yesterday')">昨日</el-button>
+                    <el-button size="small" :type="chartRange === '7d' ? 'primary' : 'default'" @click="setChartRange('7d')">近7日</el-button>
+                    <el-button size="small" :type="chartRange === '30d' ? 'primary' : 'default'" @click="setChartRange('30d')">近30日</el-button>
+                  </el-button-group>
                 </div>
               </template>
               <div class="chart-tabs">
-                <el-radio-group v-model="chartType" size="small" @change="updateChartOption">
-                  <el-radio-button value="bandwidth">带宽</el-radio-button>
-                  <el-radio-button value="requests">请求数</el-radio-button>
-                  <el-radio-button value="traffic">流量</el-radio-button>
-                  <el-radio-button value="blocked">拉黑IP数</el-radio-button>
-                </el-radio-group>
+                <el-button-group>
+                  <el-button size="small" :type="chartType === 'bandwidth' ? 'primary' : 'default'" @click="setChartType('bandwidth')">带宽</el-button>
+                  <el-button size="small" :type="chartType === 'requests' ? 'primary' : 'default'" @click="setChartType('requests')">请求数</el-button>
+                  <el-button size="small" :type="chartType === 'traffic' ? 'primary' : 'default'" @click="setChartType('traffic')">流量</el-button>
+                  <el-button size="small" :type="chartType === 'blocked' ? 'primary' : 'default'" @click="setChartType('blocked')">拉黑IP数</el-button>
+                </el-button-group>
               </div>
               <div id="trendChart" class="trend-chart"></div>
             </el-card>
@@ -122,12 +122,12 @@
                 </div>
               </template>
               <div class="top-tabs">
-                <el-radio-group v-model="topTab" size="small">
-                  <el-radio-button value="domain">域名</el-radio-button>
-                  <el-radio-button value="url">URL</el-radio-button>
-                  <el-radio-button value="ip">IP</el-radio-button>
-                  <el-radio-button value="country">国家</el-radio-button>
-                </el-radio-group>
+                <el-button-group>
+                  <el-button size="small" :type="topTab === 'domain' ? 'primary' : 'default'" @click="setTopTab('domain')">域名</el-button>
+                  <el-button size="small" :type="topTab === 'url' ? 'primary' : 'default'" @click="setTopTab('url')">URL</el-button>
+                  <el-button size="small" :type="topTab === 'ip' ? 'primary' : 'default'" @click="setTopTab('ip')">IP</el-button>
+                  <el-button size="small" :type="topTab === 'country' ? 'primary' : 'default'" @click="setTopTab('country')">国家</el-button>
+                </el-button-group>
               </div>
               <el-table :data="topRows" size="small" :max-height="320" class="top-table">
                 <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
@@ -376,8 +376,32 @@ const updateChartOption = () => {
   myChart.setOption(option, true)
 }
 
-const handleChartRangeChange = () => {
+const setOpsRange = (val) => {
+  if (opsRange.value === val) return
+  opsRange.value = val
   fetchData()
+}
+
+const setOverviewRange = (val) => {
+  if (overviewRange.value === val) return
+  overviewRange.value = val
+  fetchData()
+}
+
+const setChartRange = (val) => {
+  if (chartRange.value === val) return
+  chartRange.value = val
+  fetchData()
+}
+
+const setChartType = (val) => {
+  if (chartType.value === val) return
+  chartType.value = val
+}
+
+const setTopTab = (val) => {
+  if (topTab.value === val) return
+  topTab.value = val
 }
 
 const fetchData = async () => {
@@ -450,7 +474,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
 }
-.range-tabs :deep(.el-radio-button__inner) {
+.range-tabs :deep(.el-button) {
   padding: 4px 10px;
 }
 
