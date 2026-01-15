@@ -17,6 +17,8 @@
 - [x] 仪表盘按钮组样式统一
 - [x] 个人资料改密弹窗标签修正
 - [x] 个人资料板块顶部保存按钮移除
+- [x] 个人资料黑夜模式字体可读性修复
+- [x] 黑夜模式全局黑灰文字可读性修复（含网站管理顶部背景）
 - [x] 网站管理-基本配置（普通用户）
 - [x] 网站管理-回源设置（普通用户）
 - [x] 网站管理-HTTPS配置（普通用户）
@@ -68,4 +70,8 @@
 - `cd cdn-system/api && go test ./...` ✅（套餐 L2 开关）
 - `cd cdn-system/agent && go test ./...` ✅（套餐 L2 开关）
 - `cd cdn-system/web/admin && npm run build` ✅（套餐 L2 开关）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- `cd cdn-system/web/admin && npm run build` ✅（个人资料黑夜模式字体）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- `cd cdn-system/web/admin && npm run build` ✅（黑夜模式全局文字）
 - `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）

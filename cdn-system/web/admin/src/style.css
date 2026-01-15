@@ -34,6 +34,11 @@
   --sidebar-active: #ffd04b;
   --sidebar-logo-bg: #24272d;
   --header-bg: #2b2f36;
+  --el-text-color-primary: var(--text-color);
+  --el-text-color-regular: var(--text-color);
+  --el-text-color-secondary: var(--muted-text);
+  --el-text-color-placeholder: var(--muted-text);
+  --el-text-color-disabled: #7a8291;
 }
 
 body {
@@ -98,6 +103,52 @@ a:hover {
   --el-table-row-hover-bg-color: #2b3038;
   background-color: var(--card-bg);
   color: var(--text-color);
+}
+
+:root[data-theme="dark"] .page-card {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+:root[data-theme="dark"] .page-header {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-color) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+}
+
+:root[data-theme="dark"] .page-header .el-page-header__content,
+:root[data-theme="dark"] .page-header .el-page-header__title,
+:root[data-theme="dark"] .page-header .el-page-header__left,
+:root[data-theme="dark"] .page-header .el-page-header__back,
+:root[data-theme="dark"] .page-header .el-page-header__icon {
+  color: var(--text-color) !important;
+}
+
+:root[data-theme="dark"] .label,
+:root[data-theme="dark"] .form-helper,
+:root[data-theme="dark"] .form-tip,
+:root[data-theme="dark"] .form-tip-small,
+:root[data-theme="dark"] .text-gray,
+:root[data-theme="dark"] .text-gray-500 {
+  color: var(--muted-text) !important;
+}
+
+:root[data-theme="dark"] .value,
+:root[data-theme="dark"] .section-title {
+  color: var(--text-color) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #303133"],
+:root[data-theme="dark"] [style*="color:#303133"] {
+  color: var(--text-color) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #606266"],
+:root[data-theme="dark"] [style*="color:#606266"],
+:root[data-theme="dark"] [style*="color: #909399"],
+:root[data-theme="dark"] [style*="color:#909399"] {
+  color: var(--muted-text) !important;
 }
 
 :root[data-theme="dark"] .el-table th.el-table__cell,
