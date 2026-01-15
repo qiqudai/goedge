@@ -150,8 +150,15 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="Websocket">
+            <el-form-item label="WebSocket">
               <el-switch v-model="temp.websocket" active-text="允许" inactive-text="禁止" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row>
+          <el-col :span="8">
+            <el-form-item label="L2层代理">
+              <el-switch v-model="temp.l2_origin" active-text="开启" inactive-text="关闭" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -384,6 +391,7 @@ const handleCreate = () => {
         status: true,
         websocket: true,        // Default enabled
         custom_cc_rules: true, // Default enabled
+        l2_origin: false,
         domain_limit: 100      // Default 100
     }
     dialogVisible.value = true

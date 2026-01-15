@@ -1,11 +1,15 @@
 package main
 
 import (
+	fsutil "cdn-common/io"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -66,7 +70,23 @@ type l2NodeInfo struct {
 	CheckTimeout  int    `json:"check_timeout"`
 }
 
+type l2HealthState struct {
+	Online  bool
+	Success int
+	Fail    int
+}
+
+var l2HealthStore = struct {
+	mu          sync.Mutex
+	states      map[int64]*l2HealthState
+	lastSnapshot map[string]bool
+}{
+	states:      map[int64]*l2HealthState{},
+	lastSnapshot: map[string]bool{},
+}
+
 func startL2Monitor() {
+	checkL2Nodes()
 	ticker := time.NewTicker(L2_CHECK_INT)
 	for range ticker.C {
 		checkL2Nodes()
@@ -80,23 +100,80 @@ func checkL2Nodes() {
 		return
 	}
 	if len(nodes) == 0 {
+		empty := map[string]bool{}
+		l2HealthStore.mu.Lock()
+		changed := !l2SnapshotEqual(empty, l2HealthStore.lastSnapshot)
+		if changed {
+			l2HealthStore.lastSnapshot = empty
+		}
+		l2HealthStore.mu.Unlock()
+		if changed {
+			writeL2StatusSnapshot(empty)
+		}
 		return
 	}
-	online := make([]int64, 0, len(nodes))
+
+	onlineNow := make([]int64, 0, len(nodes))
+	nodeSet := map[int64]struct{}{}
+	snapshot := map[string]bool{}
+
+	l2HealthStore.mu.Lock()
 	for _, node := range nodes {
-		if isL2Alive(node) {
-			online = append(online, node.ID)
+		nodeSet[node.ID] = struct{}{}
+		alive := isL2Alive(node)
+		if alive {
+			onlineNow = append(onlineNow, node.ID)
+		}
+		state := l2HealthStore.states[node.ID]
+		if state == nil {
+			state = &l2HealthState{Online: true}
+			l2HealthStore.states[node.ID] = state
+		}
+		if alive {
+			state.Fail = 0
+			state.Success++
+			if state.Success > 3 {
+				state.Success = 3
+			}
+			if !state.Online && state.Success >= 3 {
+				state.Online = true
+			}
+		} else {
+			state.Success = 0
+			state.Fail++
+			if state.Fail > 3 {
+				state.Fail = 3
+			}
+			if state.Online && state.Fail >= 3 {
+				state.Online = false
+			}
+		}
+		snapshot[strconv.FormatInt(node.ID, 10)] = state.Online
+	}
+	for id := range l2HealthStore.states {
+		if _, ok := nodeSet[id]; !ok {
+			delete(l2HealthStore.states, id)
 		}
 	}
-	if len(online) == 0 {
+
+	changed := !l2SnapshotEqual(snapshot, l2HealthStore.lastSnapshot)
+	if changed {
+		l2HealthStore.lastSnapshot = snapshot
+	}
+	l2HealthStore.mu.Unlock()
+
+	if changed {
+		writeL2StatusSnapshot(snapshot)
+	}
+	if len(onlineNow) == 0 {
 		return
 	}
-	if err := reportL2Heartbeat(online); err != nil {
+	if err := reportL2Heartbeat(onlineNow); err != nil {
 		log.Printf("[Error] L2 Monitor report failed: %v", err)
 		return
 	}
 	if DebugMode {
-		log.Printf("[Debug] L2 Monitor OK: %d/%d online", len(online), len(nodes))
+		log.Printf("[Debug] L2 Monitor OK: %d/%d online", len(onlineNow), len(nodes))
 	}
 }
 
@@ -156,4 +233,32 @@ func isL2Alive(node l2NodeInfo) bool {
 		_ = conn.Close()
 		return true
 	}
+}
+
+func l2SnapshotEqual(next map[string]bool, current map[string]bool) bool {
+	if len(next) != len(current) {
+		return false
+	}
+	for key, val := range next {
+		if cur, ok := current[key]; !ok || cur != val {
+			return false
+		}
+	}
+	return true
+}
+
+func writeL2StatusSnapshot(snapshot map[string]bool) {
+	if WorkDir == "" {
+		return
+	}
+	path := filepath.Join(WorkDir, "conf", "l2_status.json")
+	payload := map[string]interface{}{
+		"updated_at": time.Now().Unix(),
+		"nodes":      snapshot,
+	}
+	if err := fsutil.WriteJSONAtomic(path, payload, true); err != nil {
+		log.Printf("[Error] L2 status write failed: %v", err)
+		return
+	}
+	refreshStreamConfigForL2Status(snapshot)
 }

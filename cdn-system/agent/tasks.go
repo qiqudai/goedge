@@ -250,6 +250,7 @@ type AgentPackageConfig struct {
 	Features struct {
 		Websocket    bool `json:"websocket"`
 		CustomCCRule bool `json:"custom_cc_rule"`
+		L2Origin     bool `json:"l2_origin"`
 	} `json:"features"`
 }
 

@@ -26,7 +26,11 @@
 - [x] 网站管理-高级设置（普通用户）
 - [x] 网站列表按钮暗色模式适配
 - [x] 搜索引擎回源（L回源）设计文档
-- [x] L2回源节点与备用线路设计文档
+- [x] L2回源节点与备用线路设计文档（补全 L2 代理链路、健康检测、TCP/UDP 中转、备用线路自动切换）
+- [x] L2 代理链路实现（L1→L2→源站、L2 健康探测、Via/X-Cache-Status 头、TCP/UDP 转发 L2 中转）
+- [x] L2 TCP/UDP 健康下线与回退（stream 按 L2 探测过滤、全失效直连源站）
+- [x] 套餐 L2 开关贯通（套餐/用户套餐/站点 current 下发，前后端配置）
+- [x] 备用线路组自动切换实现（主线路全下线切换、连续 10 次正常恢复）
 
 ## 测试记录
 - `npx playwright test tests/e2e/user-site-actions.spec.ts` ✅
@@ -53,3 +57,15 @@
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-forward-monitor.spec.ts` ✅
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-usage-recharge.spec.ts -g "usage endpoint"` ✅
 - `E2E_USER_TOKEN=*** E2E_USER_ID=2 npx playwright test tests/e2e/user-ui-message-theme-profile.spec.ts` ✅
+- `cd cdn-system/api && go test ./...` ✅
+- `cd cdn-system/agent && go test ./...` ✅
+- `cd cdn-system/web/admin && npm run build` ✅（有 chunk size 警告）
+- `cd cdn-system/api && go test ./...` ✅（L2 链路实现）
+- `cd cdn-system/agent && go test ./...` ✅（L2 链路实现）
+- `cd cdn-system/api && go test ./...` ✅（备用线路组切换）
+- `cd cdn-system/api && go test ./...` ✅（L2 TCP/UDP 健康过滤）
+- `cd cdn-system/agent && go test ./...` ✅（L2 TCP/UDP 健康过滤）
+- `cd cdn-system/api && go test ./...` ✅（套餐 L2 开关）
+- `cd cdn-system/agent && go test ./...` ✅（套餐 L2 开关）
+- `cd cdn-system/web/admin && npm run build` ✅（套餐 L2 开关）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）

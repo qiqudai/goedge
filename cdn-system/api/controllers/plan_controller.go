@@ -32,6 +32,7 @@ type planItem struct {
 	DomainLimit     int64  `json:"domain_limit"`
 	CustomCCRules   bool   `json:"custom_cc_rules"`
 	Websocket       bool   `json:"websocket"`
+	L2Origin        bool   `json:"l2_origin"`
 	PriceMonthly    int64  `json:"price_monthly"`
 	PriceQuarterly  int64  `json:"price_quarterly"`
 	PriceYearly     int64  `json:"price_yearly"`
@@ -87,6 +88,10 @@ type userPlanItem struct {
 
 // ListPlans - GET /api/v1/plans
 func (ctr *PlanController) ListPlans(c *gin.Context) {
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	var packages []models.Package
 	if err := db.DB.Order("sort asc, id desc").Find(&packages).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
@@ -108,6 +113,7 @@ func (ctr *PlanController) ListPlans(c *gin.Context) {
 			DomainLimit:     p.DomainLimit,
 			CustomCCRules:   p.CustomCCRule,
 			Websocket:       p.Websocket,
+			L2Origin:        p.L2Origin,
 			PriceMonthly:    p.MonthPrice,
 			PriceQuarterly:  p.QuarterPrice,
 			PriceYearly:     p.YearPrice,
@@ -120,6 +126,10 @@ func (ctr *PlanController) ListPlans(c *gin.Context) {
 
 // GetPlan - GET /api/v1/plans/:id
 func (ctr *PlanController) GetPlan(c *gin.Context) {
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	idStr := c.Param("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	if id == 0 {
@@ -148,6 +158,7 @@ func (ctr *PlanController) GetPlan(c *gin.Context) {
 			DomainLimit:     pkg.DomainLimit,
 			CustomCCRules:   pkg.CustomCCRule,
 			Websocket:       pkg.Websocket,
+			L2Origin:        pkg.L2Origin,
 			PriceMonthly:    pkg.MonthPrice,
 			PriceQuarterly:  pkg.QuarterPrice,
 			PriceYearly:     pkg.YearPrice,
@@ -172,6 +183,10 @@ func (ctr *PlanController) GetPlan(c *gin.Context) {
 
 // CreatePlan - POST /api/v1/plans
 func (ctr *PlanController) CreatePlan(c *gin.Context) {
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid JSON")})
@@ -209,6 +224,7 @@ func (ctr *PlanController) CreatePlan(c *gin.Context) {
 		BeforeExpDaysRenew: getInt64(payload, "before_exp_days_renew"),
 		Websocket:          getBool(payload, "websocket"),
 		CustomCCRule:       getBool(payload, "custom_cc_rules"),
+		L2Origin:           getBool(payload, "l2_origin"),
 		Sort:               int(getInt64(payload, "sort_order")),
 		Owner:              getString(payload, "owner"),
 		Enable:             getBool(payload, "status"),
@@ -226,6 +242,10 @@ func (ctr *PlanController) CreatePlan(c *gin.Context) {
 
 // UpdatePlan - PUT /api/v1/plans/:id
 func (ctr *PlanController) UpdatePlan(c *gin.Context) {
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	idStr := c.Param("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 	if id == 0 {
@@ -312,6 +332,9 @@ func (ctr *PlanController) UpdatePlan(c *gin.Context) {
 	if hasKey(payload, "custom_cc_rules") {
 		updates["custom_cc_rule"] = getBool(payload, "custom_cc_rules")
 	}
+	if hasKey(payload, "l2_origin") {
+		updates["l2_origin"] = getBool(payload, "l2_origin")
+	}
 	if hasKey(payload, "sort_order") {
 		updates["sort"] = int(getInt64(payload, "sort_order"))
 	}
@@ -342,6 +365,14 @@ func (ctr *PlanController) DeletePlan(c *gin.Context) {
 
 // ListUserPlans - GET /api/v1/user_plans
 func (ctr *PlanController) ListUserPlans(c *gin.Context) {
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
+	if err := ensureUserPackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	var userPlans []models.UserPackage
 	if err := db.DB.Order("id desc").Find(&userPlans).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("DB Error")})
@@ -457,6 +488,14 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 
 // AssignUserPlan - POST /api/v1/user_plans/assign
 func (ctr *PlanController) AssignUserPlan(c *gin.Context) {
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
+	if err := ensureUserPackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	var req struct {
 		PlanID         int64  `json:"plan_id"`
 		UserID         int64  `json:"user_id"`
@@ -524,6 +563,7 @@ func (ctr *PlanController) AssignUserPlan(c *gin.Context) {
 		StreamPortLimit: int32(pkg.StreamPort),
 		CustomCCRule:    pkg.CustomCCRule,
 		Websocket:       pkg.Websocket,
+		L2Origin:        pkg.L2Origin,
 		MonthPrice:      pkg.MonthPrice,
 		QuarterPrice:    pkg.QuarterPrice,
 		YearPrice:       pkg.YearPrice,
@@ -584,6 +624,10 @@ func randomToken(length int) (string, error) {
 
 // UpdateUserPlan - PUT /api/v1/admin/user_plans/:id
 func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
+	if err := ensureUserPackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id == 0 {

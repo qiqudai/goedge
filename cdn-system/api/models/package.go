@@ -35,6 +35,7 @@ type Package struct {
 	// Features
 	Websocket    bool `json:"websocket"`
 	CustomCCRule bool `json:"custom_cc_rule"`
+	L2Origin     bool `json:"l2_origin" gorm:"column:l2_origin"`
 
 	Sort   int    `json:"sort"`
 	Owner  string `json:"owner"`

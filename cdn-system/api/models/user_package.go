@@ -30,6 +30,7 @@ type UserPackage struct {
 	StreamPortLimit int32  `json:"stream_port" gorm:"column:stream_port"`
 	CustomCCRule    bool   `json:"custom_cc_rule" gorm:"column:custom_cc_rule"`
 	Websocket       bool   `json:"websocket" gorm:"column:websocket"`
+	L2Origin        bool   `json:"l2_origin" gorm:"column:l2_origin"`
 	MonthPrice      int64  `json:"month_price" gorm:"column:month_price"`
 	QuarterPrice    int64  `json:"quarter_price" gorm:"column:quarter_price"`
 	YearPrice       int64  `json:"year_price" gorm:"column:year_price"`

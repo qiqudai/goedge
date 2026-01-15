@@ -24,6 +24,7 @@ type Origin struct {
 type EdgeConfig struct {
 	Version          int64                      `json:"version"`
 	NodeID           string                     `json:"node_id,omitempty"`
+	NodeLevel        int                        `json:"node_level,omitempty"`
 	Domains          []EdgeDomain               `json:"domains"`
 	Upstreams        []EdgeUpstream             `json:"upstreams"`
 	WAF              *WAFConfig                 `json:"waf,omitempty"`
@@ -42,6 +43,10 @@ type EdgeConfig struct {
 type EdgeDomain struct {
 	Name                        string                   `json:"name"`
 	UpstreamKey                 string                   `json:"upstream_key"`
+	L2UpstreamKey               string                   `json:"l2_upstream_key,omitempty"`
+	UseL2                       bool                     `json:"use_l2,omitempty"`
+	L2HTTPPort                  string                   `json:"l2_http_port,omitempty"`
+	L2HTTPSPort                 string                   `json:"l2_https_port,omitempty"`
 	LoadBalancePolicy           string                   `json:"load_balance_policy,omitempty"` // round_robin, random, ip_hash
 	Headers                     map[string]string        `json:"headers,omitempty"`
 	ResponseHeaders             map[string]string        `json:"response_headers,omitempty"`
@@ -128,6 +133,7 @@ type EdgeUpstream struct {
 type EdgeUpstreamTarget struct {
 	Addr   string `json:"addr"`
 	Weight int    `json:"weight"`
+	NodeID int64  `json:"node_id,omitempty"`
 }
 
 type EdgeACLRule struct {
@@ -180,6 +186,7 @@ type EdgeStream struct {
 	ID                  int64              `json:"id"`
 	ListenPorts         []string           `json:"listen_ports"`
 	Targets             []EdgeStreamTarget `json:"targets"`
+	UseListenPort       bool               `json:"use_listen_port,omitempty"`
 	BalanceWay          string             `json:"balance_way,omitempty"`
 	ProxyProtocol       bool               `json:"proxy_protocol,omitempty"`
 	ProxyConnectTimeout string             `json:"proxy_connect_timeout,omitempty"`
@@ -191,6 +198,8 @@ type EdgeStreamTarget struct {
 	Addr   string `json:"addr"`
 	Weight int    `json:"weight"`
 	Enable bool   `json:"enable"`
+	NodeID int64  `json:"node_id,omitempty"`
+	Backup bool   `json:"backup,omitempty"`
 }
 
 type EdgeNginxConfig struct {

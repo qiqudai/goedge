@@ -77,6 +77,7 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 			StreamPort:   int(up.StreamPortLimit),
 			Websocket:    up.Websocket,
 			CustomCCRule: up.CustomCCRule,
+			L2Origin:     up.L2Origin,
 		},
 		Time: models.AgentTime{
 			StartAt: up.StartAt.Format("2006-01-02 15:04:05"),

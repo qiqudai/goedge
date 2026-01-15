@@ -309,6 +309,14 @@ func (ctr *UserPackageController) SwitchUserPackage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid ID")})
 		return
 	}
+	if err := ensurePackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
+	if err := ensureUserPackageL2OriginColumn(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
 
 	var req struct {
 		PackageID int64 `json:"package_id"`
@@ -382,6 +390,7 @@ func (ctr *UserPackageController) SwitchUserPackage(c *gin.Context) {
 		"domain":            pkg.DomainLimit,
 		"custom_cc_rule":    pkg.CustomCCRule,
 		"websocket":         pkg.Websocket,
+		"l2_origin":         pkg.L2Origin,
 		"month_price":       pkg.MonthPrice,
 		"quarter_price":     pkg.QuarterPrice,
 		"year_price":        pkg.YearPrice,

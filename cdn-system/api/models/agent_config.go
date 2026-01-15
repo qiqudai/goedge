@@ -49,6 +49,7 @@ type AgentFeatures struct {
 	StreamPort   int   `json:"stream_port"`   // e.g. 443 (if generic stream is counted here, or separate?)
 	Websocket    bool  `json:"websocket"`
 	CustomCCRule bool  `json:"custom_cc_rule"`
+	L2Origin     bool  `json:"l2_origin"`
 }
 
 type AgentTime struct {

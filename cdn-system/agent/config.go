@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // startConfigPull checks for config updates
@@ -147,12 +148,15 @@ type edgeStreamTarget struct {
 	Addr   string `json:"addr"`
 	Weight int    `json:"weight"`
 	Enable bool   `json:"enable"`
+	Backup bool   `json:"backup"`
+	NodeID int64  `json:"node_id,omitempty"`
 }
 
 type edgeStream struct {
 	ID                  int64              `json:"id"`
 	ListenPorts         []string           `json:"listen_ports"`
 	Targets             []edgeStreamTarget `json:"targets"`
+	UseListenPort       bool               `json:"use_listen_port"`
 	BalanceWay          string             `json:"balance_way"`
 	ProxyProtocol       bool               `json:"proxy_protocol"`
 	ProxyConnectTimeout string             `json:"proxy_connect_timeout"`
@@ -163,6 +167,7 @@ type edgeStream struct {
 type edgeUpstreamTarget struct {
 	Addr   string `json:"addr"`
 	Weight int    `json:"weight"`
+	NodeID int64  `json:"node_id"`
 }
 
 type edgeUpstream struct {
@@ -216,6 +221,10 @@ type edgeCookieConfig struct {
 type edgeDomain struct {
 	Name                  string                   `json:"name"`
 	UpstreamKey           string                   `json:"upstream_key"`
+	L2UpstreamKey         string                   `json:"l2_upstream_key"`
+	UseL2                 bool                     `json:"use_l2"`
+	L2HTTPPort            string                   `json:"l2_http_port"`
+	L2HTTPSPort           string                   `json:"l2_https_port"`
 	LoadBalancePolicy     string                   `json:"load_balance_policy"`
 	Headers               map[string]string        `json:"headers"`
 	ResponseHeaders       map[string]string        `json:"response_headers"`
@@ -287,6 +296,7 @@ type edgeConfig struct {
 	Domains          []edgeDomain                `json:"domains"`
 	Upstreams        []edgeUpstream              `json:"upstreams"`
 	Streams          []edgeStream                `json:"streams"`
+	NodeLevel        int                         `json:"node_level"`
 	Nginx            *edgeNginxConfig            `json:"nginx"`
 	FallbackCertData string                      `json:"fallback_cert_data"`
 	FallbackKeyData  string                      `json:"fallback_key_data"`
@@ -735,42 +745,107 @@ func readCCFilters(path string) (map[int64]edgeCCFilter, error) {
 	return out, nil
 }
 
-func writeStreamConfig(streams []edgeStream) error {
-	confPath := filepath.Join(WorkDir, "conf", "dynamic", "stream.conf")
-	if len(streams) == 0 {
-		return ioutil.WriteFile(confPath, []byte(""), 0644)
+func loadL2StatusSnapshot() map[int64]bool {
+	if WorkDir == "" {
+		return nil
 	}
+	path := filepath.Join(WorkDir, "conf", "l2_status.json")
+	var raw struct {
+		Nodes map[string]bool `json:"nodes"`
+	}
+	if err := fsutil.ReadJSONFile(path, &raw); err != nil {
+		return nil
+	}
+	if len(raw.Nodes) == 0 {
+		return map[int64]bool{}
+	}
+	out := make(map[int64]bool, len(raw.Nodes))
+	for key, val := range raw.Nodes {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			out[id] = val
+		}
+	}
+	return out
+}
 
+func selectStreamTargets(stream edgeStream, l2Status map[int64]bool) []edgeStreamTarget {
+	if !stream.UseListenPort || len(stream.Targets) == 0 {
+		return stream.Targets
+	}
+	if l2Status == nil {
+		return stream.Targets
+	}
+	l2Targets := make([]edgeStreamTarget, 0, len(stream.Targets))
+	originTargets := make([]edgeStreamTarget, 0, len(stream.Targets))
+	for _, target := range stream.Targets {
+		if target.NodeID > 0 {
+			l2Targets = append(l2Targets, target)
+		} else {
+			originTargets = append(originTargets, target)
+		}
+	}
+	if len(l2Targets) == 0 {
+		return stream.Targets
+	}
+	healthyL2 := make([]edgeStreamTarget, 0, len(l2Targets))
+	for _, target := range l2Targets {
+		if online, ok := l2Status[target.NodeID]; ok && online {
+			healthyL2 = append(healthyL2, target)
+		}
+	}
+	if len(healthyL2) > 0 {
+		return append(healthyL2, originTargets...)
+	}
+	if len(originTargets) == 0 {
+		return nil
+	}
+	for i := range originTargets {
+		originTargets[i].Backup = false
+	}
+	return originTargets
+}
+
+func renderStreamConfig(streams []edgeStream, l2Status map[int64]bool) string {
+	if len(streams) == 0 {
+		return ""
+	}
 	var b strings.Builder
 	for _, stream := range streams {
-		if len(stream.ListenPorts) == 0 || len(stream.Targets) == 0 {
+		targets := selectStreamTargets(stream, l2Status)
+		if len(stream.ListenPorts) == 0 || len(targets) == 0 {
 			continue
 		}
-		upstreamName := fmt.Sprintf("stream_up_%d", stream.ID)
-		b.WriteString("upstream " + upstreamName + " {\n")
-		switch strings.ToLower(stream.BalanceWay) {
-		case "ip_hash":
-			b.WriteString("    hash $remote_addr consistent;\n")
-		case "least_conn":
-			b.WriteString("    least_conn;\n")
+		writeUpstream := func(name string, listenPort string) {
+			b.WriteString("upstream " + name + " {\n")
+			switch strings.ToLower(stream.BalanceWay) {
+			case "ip_hash":
+				b.WriteString("    hash $remote_addr consistent;\n")
+			case "least_conn":
+				b.WriteString("    least_conn;\n")
+			}
+			for _, target := range targets {
+				if !target.Enable || target.Addr == "" {
+					continue
+				}
+				addr := strings.TrimSpace(target.Addr)
+				if stream.UseListenPort && listenPort != "" && !strings.Contains(addr, ":") {
+					addr = addr + ":" + listenPort
+				}
+				if addr == "" {
+					continue
+				}
+				params := ""
+				if target.Weight > 0 {
+					params = fmt.Sprintf(" weight=%d", target.Weight)
+				}
+				if target.Backup {
+					params = params + " backup"
+				}
+				b.WriteString(fmt.Sprintf("    server %s%s;\n", addr, params))
+			}
+			b.WriteString("}\n")
 		}
-		for _, target := range stream.Targets {
-			if !target.Enable || target.Addr == "" {
-				continue
-			}
-			if target.Weight > 0 {
-				b.WriteString(fmt.Sprintf("    server %s weight=%d;\n", target.Addr, target.Weight))
-			} else {
-				b.WriteString(fmt.Sprintf("    server %s;\n", target.Addr))
-			}
-		}
-		b.WriteString("}\n")
-
-		for _, port := range stream.ListenPorts {
-			port = strings.TrimSpace(port)
-			if port == "" {
-				continue
-			}
+		writeServer := func(port, upstreamName string) {
 			b.WriteString("server {\n")
 			if stream.ProxyProtocol {
 				b.WriteString("    listen " + port + " proxy_protocol;\n")
@@ -793,9 +868,87 @@ func writeStreamConfig(streams []edgeStream) error {
 			}
 			b.WriteString("}\n")
 		}
-	}
 
-	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
+		if stream.UseListenPort {
+			for _, port := range stream.ListenPorts {
+				port = strings.TrimSpace(port)
+				if port == "" {
+					continue
+				}
+				upstreamName := fmt.Sprintf("stream_up_%d_%s", stream.ID, sanitizeStreamUpstreamSuffix(port))
+				writeUpstream(upstreamName, port)
+				writeServer(port, upstreamName)
+			}
+			continue
+		}
+
+		upstreamName := fmt.Sprintf("stream_up_%d", stream.ID)
+		writeUpstream(upstreamName, "")
+		for _, port := range stream.ListenPorts {
+			port = strings.TrimSpace(port)
+			if port == "" {
+				continue
+			}
+			writeServer(port, upstreamName)
+		}
+	}
+	return b.String()
+}
+
+func writeStreamConfig(streams []edgeStream) error {
+	confPath := filepath.Join(WorkDir, "conf", "dynamic", "stream.conf")
+	if len(streams) == 0 {
+		return ioutil.WriteFile(confPath, []byte(""), 0644)
+	}
+	content := renderStreamConfig(streams, loadL2StatusSnapshot())
+	return ioutil.WriteFile(confPath, []byte(content), 0644)
+}
+
+func refreshStreamConfigForL2Status(snapshot map[string]bool) {
+	if WorkDir == "" || CONFIG_PATH == "" {
+		return
+	}
+	l2Status := map[int64]bool{}
+	for key, val := range snapshot {
+		if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+			l2Status[id] = val
+		}
+	}
+	data, err := ioutil.ReadFile(CONFIG_PATH)
+	if err != nil {
+		return
+	}
+	var cfg edgeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		log.Printf("[Warn] L2 stream refresh skipped: %v", err)
+		return
+	}
+	if len(cfg.Streams) == 0 {
+		return
+	}
+	hasL2Streams := false
+	for _, stream := range cfg.Streams {
+		if stream.UseListenPort {
+			hasL2Streams = true
+			break
+		}
+	}
+	if !hasL2Streams {
+		return
+	}
+	content := renderStreamConfig(cfg.Streams, l2Status)
+	confPath := filepath.Join(WorkDir, "conf", "dynamic", "stream.conf")
+	existing, err := ioutil.ReadFile(confPath)
+	if err == nil && string(existing) == content {
+		return
+	}
+	if err := ioutil.WriteFile(confPath, []byte(content), 0644); err != nil {
+		log.Printf("[Warn] L2 stream refresh failed: %v", err)
+		return
+	}
+	if err := executeReload(); err != nil {
+		log.Printf("[Warn] L2 stream reload failed: %v", err)
+	}
 }
 
 func writeHTTPConfig(cfg edgeConfig) error {
@@ -1084,14 +1237,14 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		b.WriteString("        local ssl_mgr = require \"lua.ssl_manager\"\n")
 		b.WriteString("        ssl_mgr.set_certificate()\n")
 		b.WriteString("    }\n")
-		if domain.HTTPSSSLProtocols != "" {
-			b.WriteString("    ssl_protocols " + domain.HTTPSSSLProtocols + ";\n")
+		if protocols := sanitizeNginxValue(domain.HTTPSSSLProtocols); protocols != "" {
+			b.WriteString("    ssl_protocols " + protocols + ";\n")
 		}
-		if domain.HTTPSSSLCiphers != "" {
-			b.WriteString("    ssl_ciphers " + domain.HTTPSSSLCiphers + ";\n")
+		if ciphers := sanitizeNginxValue(domain.HTTPSSSLCiphers); ciphers != "" {
+			b.WriteString("    ssl_ciphers " + ciphers + ";\n")
 		}
-		if domain.HTTPSSSLPreferServerCiphers != "" {
-			b.WriteString("    ssl_prefer_server_ciphers " + domain.HTTPSSSLPreferServerCiphers + ";\n")
+		if prefer := sanitizeNginxToken(domain.HTTPSSSLPreferServerCiphers); prefer != "" {
+			b.WriteString("    ssl_prefer_server_ciphers " + prefer + ";\n")
 		}
 		if domain.HTTPSOCSP {
 			b.WriteString("    ssl_stapling on;\n")
@@ -1117,8 +1270,8 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 	}
 	if domain.EnableGzip {
 		b.WriteString("    gzip on;\n")
-		if domain.GzipTypes != "" {
-			b.WriteString("    gzip_types " + domain.GzipTypes + ";\n")
+		if types := sanitizeNginxValue(domain.GzipTypes); types != "" {
+			b.WriteString("    gzip_types " + types + ";\n")
 		}
 	}
 	if domain.LimitRate > 0 {
@@ -1385,6 +1538,7 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	b.WriteString("        limit_conn addr_conn 50;\n")
 	b.WriteString("        set $backend_target \"\";\n")
 	b.WriteString("        access_by_lua_file lua/access_guard.lua;\n")
+	b.WriteString("        header_filter_by_lua_file lua/response_headers.lua;\n")
 	b.WriteString("        proxy_set_header Host $host;\n")
 	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
 	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
@@ -1393,39 +1547,43 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 		b.WriteString("        proxy_http_version 1.1;\n")
 		b.WriteString("        proxy_set_header Upgrade $http_upgrade;\n")
 		b.WriteString("        proxy_set_header Connection $connection_upgrade;\n")
-	} else if domain.ProxyHTTPVersion != "" {
-		b.WriteString("        proxy_http_version " + domain.ProxyHTTPVersion + ";\n")
+	} else if version := sanitizeProxyHTTPVersion(domain.ProxyHTTPVersion); version != "" {
+		b.WriteString("        proxy_http_version " + version + ";\n")
 	}
-	if domain.ProxyConnectTimeout != "" {
-		b.WriteString("        proxy_connect_timeout " + domain.ProxyConnectTimeout + ";\n")
+	if timeout := sanitizeNginxToken(domain.ProxyConnectTimeout); timeout != "" {
+		b.WriteString("        proxy_connect_timeout " + timeout + ";\n")
 	}
-	if domain.ProxyReadTimeout != "" {
-		b.WriteString("        proxy_read_timeout " + domain.ProxyReadTimeout + ";\n")
+	if timeout := sanitizeNginxToken(domain.ProxyReadTimeout); timeout != "" {
+		b.WriteString("        proxy_read_timeout " + timeout + ";\n")
 	}
-	if domain.ProxySendTimeout != "" {
-		b.WriteString("        proxy_send_timeout " + domain.ProxySendTimeout + ";\n")
+	if timeout := sanitizeNginxToken(domain.ProxySendTimeout); timeout != "" {
+		b.WriteString("        proxy_send_timeout " + timeout + ";\n")
 	}
 	if domain.EnableRange {
 		b.WriteString("        proxy_force_ranges on;\n")
 	}
 	for k, v := range domain.Headers {
-		if k == "" || v == "" {
+		name := sanitizeHeaderName(k)
+		value := sanitizeHeaderValue(v)
+		if name == "" || value == "" {
 			continue
 		}
-		b.WriteString("        proxy_set_header " + k + " " + v + ";\n")
+		b.WriteString("        proxy_set_header " + name + " " + quoteNginxValue(value) + ";\n")
 	}
 	for k, v := range domain.ResponseHeaders {
-		if k == "" || v == "" {
+		name := sanitizeHeaderName(k)
+		value := sanitizeHeaderValue(v)
+		if name == "" || value == "" {
 			continue
 		}
-		b.WriteString("        add_header " + k + " " + v + " always;\n")
+		b.WriteString("        add_header " + name + " " + quoteNginxValue(value) + " always;\n")
 	}
 
 	b.WriteString("        proxy_pass $backend_target;\n")
 	if strings.ToLower(domain.OriginProtocol) != "http" {
 		b.WriteString("        proxy_ssl_server_name on;\n")
-		if domain.ProxySSLProtocols != "" {
-			b.WriteString("        proxy_ssl_protocols " + domain.ProxySSLProtocols + ";\n")
+		if protocols := sanitizeNginxValue(domain.ProxySSLProtocols); protocols != "" {
+			b.WriteString("        proxy_ssl_protocols " + protocols + ";\n")
 		}
 	}
 
@@ -1474,6 +1632,97 @@ func applyCacheDirectives(b *strings.Builder, cacheCfg *edgeCacheConfig, rule *e
 		cacheKey = "$host$uri$is_args$args"
 	}
 	b.WriteString("        proxy_cache_key " + cacheKey + ";\n")
+}
+
+func sanitizeHeaderName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= 'A' && r <= 'Z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		if r == '-' || r == '_' {
+			continue
+		}
+		return ""
+	}
+	return name
+}
+
+func sanitizeHeaderValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n;") {
+		return ""
+	}
+	return value
+}
+
+func quoteNginxValue(value string) string {
+	escaped := strings.ReplaceAll(value, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	return "\"" + escaped + "\""
+}
+
+func sanitizeNginxToken(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n;") {
+		return ""
+	}
+	if strings.IndexFunc(value, unicode.IsSpace) != -1 {
+		return ""
+	}
+	return value
+}
+
+func sanitizeNginxValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n;") {
+		return ""
+	}
+	return value
+}
+
+func sanitizeProxyHTTPVersion(value string) string {
+	value = sanitizeNginxToken(value)
+	switch value {
+	case "1.0", "1.1":
+		return value
+	default:
+		return ""
+	}
+}
+
+func sanitizeStreamUpstreamSuffix(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "default"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "default"
+	}
+	return out
 }
 
 func writeHTTPGlobalConfig(cfg *edgeNginxConfig) error {
@@ -1533,6 +1782,27 @@ func writeStreamGlobalConfig(cfg *edgeNginxConfig) error {
 		}
 		if v := toString(cfg.Stream["proxy_timeout"]); v != "" {
 			b.WriteString("proxy_timeout " + v + ";\n")
+		}
+	}
+	if cfg != nil {
+		if logs := strings.TrimSpace(cfg.LogsDir); logs != "" {
+			logs = strings.TrimRight(logs, "/")
+			b.WriteString("log_format stream_json escape=json '{")
+			b.WriteString("\"time_iso8601\":\"$time_iso8601\",")
+			b.WriteString("\"remote_addr\":\"$remote_addr\",")
+			b.WriteString("\"protocol\":\"$protocol\",")
+			b.WriteString("\"status\":$status,")
+			b.WriteString("\"bytes_sent\":$bytes_sent,")
+			b.WriteString("\"bytes_received\":$bytes_received,")
+			b.WriteString("\"session_time\":\"$session_time\",")
+			b.WriteString("\"upstream_addr\":\"$upstream_addr\",")
+			b.WriteString("\"upstream_bytes_sent\":\"$upstream_bytes_sent\",")
+			b.WriteString("\"upstream_bytes_received\":\"$upstream_bytes_received\",")
+			b.WriteString("\"upstream_connect_time\":\"$upstream_connect_time\",")
+			b.WriteString("\"upstream_session_time\":\"$upstream_session_time\",")
+			b.WriteString("\"server_port\":$server_port")
+			b.WriteString("}';\n")
+			b.WriteString("access_log " + logs + "/stream_access.json stream_json;\n")
 		}
 	}
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)

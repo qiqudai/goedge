@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type ConfigService struct{}
@@ -35,6 +37,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	payload := &models.EdgeConfig{
 		Version:   0,
 		NodeID:    strconv.FormatInt(node.ID, 10),
+		NodeLevel: node.Level,
 		Domains:   make([]models.EdgeDomain, 0),
 		Upstreams: make([]models.EdgeUpstream, 0),
 	}
@@ -64,14 +67,49 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		return nil, err
 	}
 
-	if len(lines) == 0 {
+	var groupIDs []int64
+	for _, l := range lines {
+		groupIDs = append(groupIDs, l.NodeGroupID)
+	}
+	pendingGroups := LoadPendingGroupIDs(node.ID)
+	if len(pendingGroups) > 0 {
+		groupIDs = append(groupIDs, pendingGroups...)
+	}
+	groupIDs = uniqueInt64(groupIDs)
+	if len(groupIDs) == 0 {
 		payload.Version = hashConfigVersion(payload)
 		return payload, nil
 	}
 
-	var groupIDs []int64
-	for _, l := range lines {
-		groupIDs = append(groupIDs, l.NodeGroupID)
+	groupL2Config := loadNodeGroupL2Config(groupIDs)
+	l2TargetsByGroup := map[int64][]l2Target{}
+	l2UpstreamKeyByGroup := map[int64]string{}
+	if node.Level == 1 {
+		l2TargetsByGroup = loadL2TargetsByGroup(groupIDs)
+		for groupID, targets := range l2TargetsByGroup {
+			if len(targets) == 0 {
+				continue
+			}
+			upstreamKey := fmt.Sprintf("l2_upstream_%d", groupID)
+			l2UpstreamKeyByGroup[groupID] = upstreamKey
+			upstreamTargets := make([]models.EdgeUpstreamTarget, 0, len(targets))
+			for _, target := range targets {
+				if target.IP == "" {
+					continue
+				}
+				upstreamTargets = append(upstreamTargets, models.EdgeUpstreamTarget{
+					Addr:   target.IP,
+					Weight: 1,
+					NodeID: target.NodeID,
+				})
+			}
+			if len(upstreamTargets) > 0 {
+				payload.Upstreams = append(payload.Upstreams, models.EdgeUpstream{
+					ID:      upstreamKey,
+					Targets: upstreamTargets,
+				})
+			}
+		}
 	}
 
 	// 2. Find Sites assigned to these Node Groups
@@ -119,6 +157,25 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		httpsCfg := extractHTTPSConfig(effectiveSite.Settings)
 		advCfg := extractAdvancedConfig(effectiveSite.Settings)
 		proxyTimeouts := extractProxyTimeouts(effectiveSite.Settings)
+		l2Mode := resolveL2Mode(effectiveSite.Settings)
+		packageL2Enabled := false
+		if pkg, ok := userPackageMap[effectiveSite.UserPackageID]; ok {
+			packageL2Enabled = pkg.L2Origin
+		}
+		l2Enabled := node.Level == 1 && resolveL2Enabled(l2Mode, groupL2Config[effectiveSite.NodeGroupID], packageL2Enabled)
+		l2UpstreamKey := ""
+		if l2Enabled {
+			l2UpstreamKey = l2UpstreamKeyByGroup[effectiveSite.NodeGroupID]
+			if l2UpstreamKey == "" {
+				l2Enabled = false
+			}
+		}
+		l2HTTPPort := ""
+		l2HTTPSPort := ""
+		if l2Enabled {
+			l2HTTPPort = resolveListenPort(effectiveSite.HttpListen, "80")
+			l2HTTPSPort = resolveListenPort(effectiveSite.HttpsListen, "")
+		}
 
 		upstreamKey := fmt.Sprintf("upstream_%d", effectiveSite.ID)
 		targets := buildUpstreamTargets(*effectiveSite, originProtocol, originHTTPPort, originHTTPSPort)
@@ -170,6 +227,10 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			domainConf := models.EdgeDomain{
 				Name:                        domain,
 				UpstreamKey:                 upstreamKey,
+				L2UpstreamKey:               l2UpstreamKey,
+				UseL2:                       l2Enabled,
+				L2HTTPPort:                  l2HTTPPort,
+				L2HTTPSPort:                 l2HTTPSPort,
 				LoadBalancePolicy:           policy,
 				Headers:                     headers,
 				ResponseHeaders:             responseHeaders,
@@ -241,7 +302,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		}
 	}
 
-	payload.Streams = buildStreamsForNode(groupIDs)
+	payload.Streams = buildStreamsForNode(node, groupIDs, l2TargetsByGroup, groupL2Config)
 
 	ccRules, ccMatchers, ccFilters, err := loadAllCCData()
 	if err == nil {
@@ -761,6 +822,14 @@ func buildSearchEngineOriginCondition(settings map[string]interface{}) map[strin
 	if originIP == "" {
 		return nil
 	}
+	if allowlistValue := buildSpiderIPRangeValue(); allowlistValue != "" {
+		return map[string]interface{}{
+			"item":     "client_ip",
+			"operator": "ip_range",
+			"value":    allowlistValue,
+			"origin":   originIP,
+		}
+	}
 	return map[string]interface{}{
 		"item":     "header",
 		"header":   "user-agent",
@@ -768,6 +837,43 @@ func buildSearchEngineOriginCondition(settings map[string]interface{}) map[strin
 		"value":    strings.Join(searchEngineCrawlerTokens, "|"),
 		"origin":   originIP,
 	}
+}
+
+func buildSpiderIPRangeValue() string {
+	allowlist := loadSpiderAllowlist()
+	if allowlist == nil {
+		return ""
+	}
+	entries := make(map[string]struct{})
+	for ip := range allowlist.exact {
+		entries[ip] = struct{}{}
+	}
+	for _, cidr := range allowlist.cidrs {
+		if cidr == nil {
+			continue
+		}
+		entries[cidr.String()] = struct{}{}
+	}
+	for _, prefix := range allowlist.prefixes {
+		normalized := strings.TrimSpace(prefix)
+		if normalized == "" {
+			continue
+		}
+		normalized = strings.TrimSuffix(normalized, ".")
+		if strings.Count(normalized, ".") != 2 {
+			continue
+		}
+		entries[normalized+".0/24"] = struct{}{}
+	}
+	if len(entries) == 0 {
+		return ""
+	}
+	values := make([]string, 0, len(entries))
+	for entry := range entries {
+		values = append(values, entry)
+	}
+	sort.Strings(values)
+	return strings.Join(values, "|")
 }
 
 func hasOriginCondition(conditions []map[string]interface{}, cond map[string]interface{}) bool {
@@ -1085,6 +1191,33 @@ func loadUserPackageMap(sites []models.Site) (map[int64]models.UserPackage, erro
 	return result, nil
 }
 
+func loadUserPackageMapForForwards(forwards []models.Forward) (map[int64]models.UserPackage, error) {
+	ids := make([]int64, 0, len(forwards))
+	seen := map[int64]struct{}{}
+	for _, forward := range forwards {
+		if forward.UserPackageID == 0 {
+			continue
+		}
+		if _, ok := seen[forward.UserPackageID]; ok {
+			continue
+		}
+		seen[forward.UserPackageID] = struct{}{}
+		ids = append(ids, forward.UserPackageID)
+	}
+	result := map[int64]models.UserPackage{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var packages []models.UserPackage
+	if err := db.DB.Where("id IN ?", ids).Find(&packages).Error; err != nil {
+		return nil, err
+	}
+	for _, pkg := range packages {
+		result[pkg.ID] = pkg
+	}
+	return result, nil
+}
+
 func buildDomainCountByUserGroup(sites []models.Site) map[int64]map[int64]int {
 	result := map[int64]map[int64]int{}
 	for _, site := range sites {
@@ -1194,7 +1327,11 @@ func buildHeaderMap(site models.Site) map[string]string {
 	if ok {
 		for k, v := range headers {
 			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				result[k] = s
+				name := sanitizeHeaderName(k)
+				value := sanitizeHeaderValue(s)
+				if name != "" && value != "" {
+					result[name] = value
+				}
 			}
 		}
 	}
@@ -1205,6 +1342,8 @@ func buildHeaderMap(site models.Site) map[string]string {
 				if m, ok := item.(map[string]interface{}); ok {
 					name := parseString(m["name"])
 					value := parseString(m["value"])
+					name = sanitizeHeaderName(name)
+					value = sanitizeHeaderValue(value)
 					if name != "" && value != "" {
 						result[name] = value
 					}
@@ -1214,7 +1353,9 @@ func buildHeaderMap(site models.Site) map[string]string {
 	}
 	if _, ok := result["Host"]; !ok {
 		if originHost := resolveOriginHost(site); originHost != "" {
-			result["Host"] = originHost
+			if value := sanitizeHeaderValue(originHost); value != "" {
+				result["Host"] = value
+			}
 		}
 	}
 	if len(result) == 0 {
@@ -1287,12 +1428,77 @@ func buildResponseHeaderMap(settings map[string]interface{}) map[string]string {
 		if m, ok := item.(map[string]interface{}); ok {
 			name := parseString(m["name"])
 			value := parseString(m["value"])
+			name = sanitizeHeaderName(name)
+			value = sanitizeHeaderValue(value)
 			if name != "" && value != "" {
 				result[name] = value
 			}
 		}
 	}
 	return result
+}
+
+func sanitizeHeaderName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= 'A' && r <= 'Z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		if r == '-' || r == '_' {
+			continue
+		}
+		return ""
+	}
+	return name
+}
+
+func sanitizeHeaderValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.ContainsAny(value, "\r\n;") {
+		return ""
+	}
+	return value
+}
+
+func sanitizeNginxToken(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n;") {
+		return ""
+	}
+	if strings.IndexFunc(value, unicode.IsSpace) != -1 {
+		return ""
+	}
+	return value
+}
+
+func sanitizeNginxValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n;") {
+		return ""
+	}
+	return value
+}
+
+func sanitizeProxyHTTPVersion(value string) string {
+	value = sanitizeNginxToken(value)
+	switch value {
+	case "1.0", "1.1":
+		return value
+	default:
+		return ""
+	}
 }
 
 func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
@@ -1401,8 +1607,8 @@ func extractHTTPSConfig(settings map[string]interface{}) httpsConfig {
 	cfg.http2 = parseBoolValue(httpsCfg["http2"], false)
 	cfg.http3 = parseBoolValue(httpsCfg["http3"], false)
 	cfg.ocsp = parseBoolValue(httpsCfg["ocsp_stapling"], false)
-	cfg.sslProtocols = parseString(httpsCfg["ssl_protocols"])
-	cfg.sslCiphers = parseString(httpsCfg["ssl_ciphers"])
+	cfg.sslProtocols = sanitizeNginxValue(parseString(httpsCfg["ssl_protocols"]))
+	cfg.sslCiphers = sanitizeNginxValue(parseString(httpsCfg["ssl_ciphers"]))
 	profile := strings.ToLower(parseString(httpsCfg["ssl_profile"]))
 	if profile == "modern" {
 		if cfg.sslProtocols == "" {
@@ -1427,11 +1633,11 @@ func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
 		return cfg
 	}
 	cfg.gzip = parseBoolValue(adv["gzip"], false)
-	cfg.gzipTypes = parseString(adv["gzip_types"])
+	cfg.gzipTypes = sanitizeNginxValue(parseString(adv["gzip_types"]))
 	cfg.websocket = parseBoolValue(adv["websocket"], false)
 	cfg.rangeEnabled = parseBoolValue(adv["range"], false)
-	cfg.proxyHTTPVersion = parseString(adv["proxy_http_version"])
-	cfg.proxySSLProtocols = parseString(adv["proxy_ssl_protocols"])
+	cfg.proxyHTTPVersion = sanitizeProxyHTTPVersion(parseString(adv["proxy_http_version"]))
+	cfg.proxySSLProtocols = sanitizeNginxValue(parseString(adv["proxy_ssl_protocols"]))
 	cfg.bodyLimit = int64(parseIntValue(adv["body_limit"], 0))
 	cfg.keepalive = parseBoolValue(adv["ups_keepalive"], false)
 	cfg.keepaliveConn = parseIntValue(adv["ups_keepalive_conn"], 0)
@@ -1449,8 +1655,9 @@ func extractProxyTimeouts(settings map[string]interface{}) proxyTimeoutConfig {
 	if cfg.connectTimeout == "" {
 		cfg.connectTimeout = parseString(backsource["timeout"])
 	}
-	cfg.readTimeout = parseString(backsource["timeout"])
-	cfg.sendTimeout = parseString(backsource["timeout"])
+	cfg.connectTimeout = sanitizeNginxToken(cfg.connectTimeout)
+	cfg.readTimeout = sanitizeNginxToken(parseString(backsource["timeout"]))
+	cfg.sendTimeout = sanitizeNginxToken(parseString(backsource["timeout"]))
 	return cfg
 }
 
@@ -1677,7 +1884,7 @@ func extractOriginConfig(site models.Site) (string, string, string) {
 	return protocol, httpPort, httpsPort
 }
 
-func buildStreamsForNode(groupIDs []int64) []models.EdgeStream {
+func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup map[int64][]l2Target, groupL2Config map[int64]string) []models.EdgeStream {
 	if len(groupIDs) == 0 {
 		return nil
 	}
@@ -1686,6 +1893,10 @@ func buildStreamsForNode(groupIDs []int64) []models.EdgeStream {
 		return nil
 	}
 	if len(forwards) == 0 {
+		return nil
+	}
+	userPackageMap, err := loadUserPackageMapForForwards(forwards)
+	if err != nil {
 		return nil
 	}
 	streams := make([]models.EdgeStream, 0, len(forwards))
@@ -1712,21 +1923,57 @@ func buildStreamsForNode(groupIDs []int64) []models.EdgeStream {
 			proxyTimeout = "60s"
 		}
 
-		targets := make([]models.EdgeStreamTarget, 0, len(forward.Origins))
-		for _, origin := range effectiveForward.Origins {
-			if !origin.Enable {
-				continue
+		useL2 := false
+		if node != nil && node.Level == 1 {
+			packageL2Enabled := false
+			if pkg, ok := userPackageMap[forward.UserPackageID]; ok {
+				packageL2Enabled = pkg.L2Origin
 			}
-			targets = append(targets, models.EdgeStreamTarget{
-				Addr:   origin.Address,
-				Weight: origin.Weight,
-				Enable: origin.Enable,
-			})
+			if resolveL2Enabled("current", groupL2Config[forward.NodeGroupID], packageL2Enabled) && len(l2TargetsByGroup[forward.NodeGroupID]) > 0 {
+				useL2 = true
+			}
+		}
+		targets := make([]models.EdgeStreamTarget, 0, len(forward.Origins))
+		if useL2 {
+			for _, l2Node := range l2TargetsByGroup[forward.NodeGroupID] {
+				if l2Node.IP == "" {
+					continue
+				}
+				targets = append(targets, models.EdgeStreamTarget{
+					Addr:   l2Node.IP,
+					Weight: 1,
+					Enable: true,
+					NodeID: l2Node.NodeID,
+				})
+			}
+			for _, origin := range effectiveForward.Origins {
+				if !origin.Enable {
+					continue
+				}
+				targets = append(targets, models.EdgeStreamTarget{
+					Addr:   origin.Address,
+					Weight: origin.Weight,
+					Enable: origin.Enable,
+					Backup: true,
+				})
+			}
+		} else {
+			for _, origin := range effectiveForward.Origins {
+				if !origin.Enable {
+					continue
+				}
+				targets = append(targets, models.EdgeStreamTarget{
+					Addr:   origin.Address,
+					Weight: origin.Weight,
+					Enable: origin.Enable,
+				})
+			}
 		}
 		streams = append(streams, models.EdgeStream{
 			ID:                  effectiveForward.ID,
 			ListenPorts:         effectiveForward.ListenPorts,
 			Targets:             targets,
+			UseListenPort:       useL2,
 			BalanceWay:          strings.TrimSpace(effectiveForward.BalanceWay),
 			ProxyProtocol:       effectiveForward.ProxyProtocol,
 			ProxyConnectTimeout: connectTimeout,
@@ -1808,6 +2055,136 @@ func parseBoolPtr(value interface{}) *bool {
 		return &parsed
 	}
 	return nil
+}
+
+type l2Target struct {
+	NodeID int64
+	IP     string
+}
+
+func resolveL2Mode(settings map[string]interface{}) string {
+	if settings == nil {
+		return ""
+	}
+	if val := parseString(settings["l2_config"]); val != "" {
+		return strings.ToLower(strings.TrimSpace(val))
+	}
+	if adv := getMap(settings, "advanced"); adv != nil {
+		if val := parseString(adv["l2_config"]); val != "" {
+			return strings.ToLower(strings.TrimSpace(val))
+		}
+	}
+	return ""
+}
+
+func resolveL2Enabled(mode string, groupConfig string, packageEnabled bool) bool {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = "current"
+	}
+	if mode == "none" {
+		return false
+	}
+	groupConfig = strings.ToLower(strings.TrimSpace(groupConfig))
+	if groupConfig == "none" {
+		return false
+	}
+	if mode == "current" {
+		return packageEnabled
+	}
+	return true
+}
+
+func resolveListenPort(ports []string, fallback string) string {
+	for _, port := range ports {
+		port = strings.TrimSpace(port)
+		if port != "" {
+			return port
+		}
+	}
+	return fallback
+}
+
+func loadNodeGroupL2Config(groupIDs []int64) map[int64]string {
+	result := map[int64]string{}
+	if db.DB == nil || len(groupIDs) == 0 {
+		return result
+	}
+	var groups []models.NodeGroup
+	if err := db.DB.Select("id", "backup_switch_policy").
+		Where("id IN ?", groupIDs).
+		Find(&groups).Error; err != nil {
+		return result
+	}
+	type policy struct {
+		L2Config string `json:"l2_config"`
+	}
+	for _, group := range groups {
+		cfg := ""
+		if strings.TrimSpace(group.BackupSwitchPolicy) != "" {
+			var parsed policy
+			if json.Unmarshal([]byte(group.BackupSwitchPolicy), &parsed) == nil {
+				cfg = strings.TrimSpace(parsed.L2Config)
+			}
+		}
+		result[group.ID] = cfg
+	}
+	return result
+}
+
+func loadL2TargetsByGroup(groupIDs []int64) map[int64][]l2Target {
+	result := map[int64][]l2Target{}
+	if db.DB == nil || len(groupIDs) == 0 {
+		return result
+	}
+	var lines []models.Line
+	if err := db.DB.Select("node_group_id", "node_id", "enable").
+		Where("node_group_id IN ? AND enable = ?", groupIDs, true).
+		Find(&lines).Error; err != nil {
+		return result
+	}
+	nodeSet := map[int64]struct{}{}
+	for _, line := range lines {
+		if line.NodeID != 0 {
+			nodeSet[line.NodeID] = struct{}{}
+		}
+	}
+	if len(nodeSet) == 0 {
+		return result
+	}
+	nodeIDs := make([]int64, 0, len(nodeSet))
+	for id := range nodeSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	var nodes []models.Node
+	if err := db.DB.Select("id", "ip", "level", "enable").
+		Where("id IN ? AND level = ? AND enable = ?", nodeIDs, 2, true).
+		Find(&nodes).Error; err != nil {
+		return result
+	}
+	nodeMap := map[int64]models.Node{}
+	for _, node := range nodes {
+		nodeMap[node.ID] = node
+	}
+	added := map[int64]map[int64]struct{}{}
+	for _, line := range lines {
+		node, ok := nodeMap[line.NodeID]
+		if !ok || node.IP == "" {
+			continue
+		}
+		if _, ok := added[line.NodeGroupID]; !ok {
+			added[line.NodeGroupID] = map[int64]struct{}{}
+		}
+		if _, exists := added[line.NodeGroupID][node.ID]; exists {
+			continue
+		}
+		added[line.NodeGroupID][node.ID] = struct{}{}
+		result[line.NodeGroupID] = append(result[line.NodeGroupID], l2Target{
+			NodeID: node.ID,
+			IP:     node.IP,
+		})
+	}
+	return result
 }
 
 func loadCCData(ruleIDs []int64) (map[int64][]models.EdgeCCRuleItem, map[int64]models.EdgeCCMatcher, map[int64]models.EdgeCCFilter, error) {
