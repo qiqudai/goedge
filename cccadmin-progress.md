@@ -6,6 +6,7 @@
 - [x] 转发添加弹窗（普通用户隐藏用户选择/默认套餐）
 - [x] 证书管理与 DNS 接口（含 DNS API 列表/新增/删除/默认设置）
 - [x] 证书管理证书内容显示修复（非上传仅签发后回显、忽略非上传提交 cert/key）
+- [x] Git 忽略二进制构建产物（可执行文件/共享库/压缩包）
 - [x] 转发默认设置
 - [x] 转发实时监控
 - [x] 转发监控黑夜模式图标适配
@@ -103,3 +104,4 @@
 - `cd cdn-system/api && go test ./...` ✅（DNSLA OpenAPI 认证接入）
 - `ACME_DNS_E2E=1 npx playwright test tests/e2e/user-acme-dns-wildcard.spec.ts` ✅（DNSLA 泛域名签发）
 - `cd cdn-system/api && go test ./...` ✅（证书管理内容回显修复）
+- `cd cdn-system/api && go test ./...` ✅（二进制忽略与索引清理）
