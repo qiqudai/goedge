@@ -39,6 +39,7 @@
 - [x] 站点 CNAME DNS 修复（清理任务保留站点 CNAME host、创建/更新/批量更新触发 CNAME 重算与重同步）
 - [x] Playwright DNS CNAME 回归测试（网站/套餐 CNAME 解析 + 删除验证）
 - [x] DNS 接口类型列表对齐（网站 DNS 接口弹窗与节点 DNS 列表共用类型）
+- [x] 网站列表 DNS 接口 Tab 复用证书 DNS 接口（统一列表与编辑弹窗）
 - [x] 套餐切换 CNAME 纠正与证书泛域名拦截（修复 CNAME 域名空值回退、套餐切换重同步、泛证书要求 DNSAPI）
 - [x] DNS 接口类型统一（网站/证书入口共用 node/dns 类型列表，字段仍用 DNSAPI key）
 - [x] 节点离线保留 CNAME + 离线阈值翻倍（避免离线删除 CNAME，降低误判）
@@ -105,3 +106,5 @@
 - `ACME_DNS_E2E=1 npx playwright test tests/e2e/user-acme-dns-wildcard.spec.ts` ✅（DNSLA 泛域名签发）
 - `cd cdn-system/api && go test ./...` ✅（证书管理内容回显修复）
 - `cd cdn-system/api && go test ./...` ✅（二进制忽略与索引清理）
+- `cd cdn-system/web/admin && npm run build` ✅（网站列表 DNS 接口复用）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）

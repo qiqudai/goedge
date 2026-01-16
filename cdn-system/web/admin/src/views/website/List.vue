@@ -24,7 +24,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="DNS 接口" name="dns">
-          <DnsApiList v-if="activeTab === 'dns'" />
+          <DnsApiTab v-if="activeTab === 'dns'" />
         </el-tab-pane>
 
         <el-tab-pane label="解析检测" name="resolve">
@@ -108,7 +108,7 @@ import SiteEditDialog from './list/SiteEditDialog.vue'
 import BatchEditDialog from './list/BatchEditDialog.vue'
 import BatchSettingsDialog from './list/BatchSettingsDialog.vue'
 import DefaultSettings from './list/DefaultSettings.vue'
-import DnsApiList from './list/DnsApiList.vue'
+import DnsApiTab from './components/DnsApiTab.vue'
 import ResolvePage from './Resolve.vue'
 import TaskMonitorDialog from '@/components/TaskMonitorDialog.vue'
 
