@@ -66,7 +66,7 @@
                   @click="removeCondition(condition.key)"
                   style="margin-left: 10px;"
                 >
-                  CloseBtn
+                  删除
                 </el-button>
               </div>
             </div>
@@ -117,11 +117,11 @@ const rules = {
 }
 
 const conditionOptions = [
-  { value: 'accept_language', label: 'Accept-Language', placeholder: 'zh-CN|en-US' },
+  { value: 'accept_language', label: '语言（Accept-Language）', placeholder: 'zh-CN|en-US' },
   { value: 'province', label: '省份', placeholder: '广西|广东' },
   { value: 'domain_port', label: '域名:端口', placeholder: 'www.aaa.com|www.bbb.com' },
-  { value: 'user_agent', label: 'User-Agent', placeholder: 'Safari|Chrome' },
-  { value: 'referer', label: 'Referer', placeholder: 'www.qq.com|www.baidu.com' },
+  { value: 'user_agent', label: '浏览器标识（User-Agent）', placeholder: 'Safari|Chrome' },
+  { value: 'referer', label: '来源（Referer）', placeholder: 'www.qq.com|www.baidu.com' },
   { value: 'country_code', label: '国家代码', placeholder: 'cn|us' },
   { value: 'city', label: '城市', placeholder: '宁波|十堰' },
   { value: 'isp', label: '运营商', placeholder: '电信|阿里云|腾讯' },

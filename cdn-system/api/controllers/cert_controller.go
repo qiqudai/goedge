@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -8,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,7 +102,7 @@ func (ctrl *CertController) Update(c *gin.Context) {
 	}
 
 	certProvided := strings.TrimSpace(certModel.Cert) != "" || strings.TrimSpace(certModel.Key) != ""
-	if certModel.Type == "upload" || certProvided {
+	if certModel.Type == "upload" && certProvided {
 		updates["cert"] = certModel.Cert
 		updates["key"] = certModel.Key
 		if certModel.StartTime != nil || certModel.ExpireTime != nil {
@@ -189,6 +192,16 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 	case "enable":
 		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("enable", true).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": i18n.T("cert.enable_failed")})
+			return
+		}
+	case "auto_renew_enable":
+		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("auto_renew", true).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": i18n.T("cert.action_failed")})
+			return
+		}
+	case "auto_renew_disable":
+		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("auto_renew", false).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": i18n.T("cert.action_failed")})
 			return
 		}
 	case "disable", "force_disable":
@@ -482,15 +495,50 @@ func (ctrl *CertController) Download(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
 		return
 	}
+	query := db.DB.Model(&models.Cert{}).Where("id = ?", id)
+	userID := int64(0)
+	if isUserRequest(c) {
+		userID = parseUserID(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+		query = query.Where("uid = ?", userID)
+	}
 	var cert models.Cert
-	if err := db.DB.Where("id = ?", id).First(&cert).Error; err != nil {
+	if err := query.First(&cert).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found")})
 		return
 	}
-	content := cert.Cert + "\n" + cert.Key + "\n"
-	c.Header("Content-Type", "application/octet-stream")
-	c.Header("Content-Disposition", "attachment; filename=cert_"+strconv.Itoa(cert.ID)+".pem")
-	c.Writer.Write([]byte(content))
+
+	rawDomain := strings.TrimSpace(c.Query("domain"))
+	domainKey := normalizeCertDomainKey(rawDomain)
+	if domainKey == "" {
+		domainKey = primaryCertDomain(cert.Domain)
+	}
+	if domainKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("domain is required")})
+		return
+	}
+
+	certs, err := loadCertsByDomain(domainKey, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load certificates")})
+		return
+	}
+	if len(certs) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found")})
+		return
+	}
+
+	data, filename, err := buildCertZip(domainKey, certs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to build download")})
+		return
+	}
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Writer.Write(data)
 }
 
 type certDefaultSettings struct {
@@ -636,9 +684,18 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 
 	var details []CertDetail
 	for _, cert := range certs {
-		plainKey := cert.Key
-		if dec, err := services.Crypto.Decrypt(cert.Key); err == nil {
-			plainKey = dec
+		exposeCert := shouldExposeCertData(cert)
+		certValue := ""
+		keyValue := ""
+		if exposeCert {
+			certValue = cert.Cert
+			if strings.TrimSpace(cert.Key) != "" {
+				if dec, err := services.Crypto.Decrypt(cert.Key); err == nil {
+					keyValue = dec
+				} else {
+					keyValue = cert.Key
+				}
+			}
 		}
 		detail := CertDetail{
 			ID:          cert.ID,
@@ -648,8 +705,8 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 			Type:        cert.Type,
 			Domain:      cert.Domain,
 			DNSAPI:      toDNSAPIValue(cert.DNSAPI),
-			Cert:        cert.Cert,
-			Key:         plainKey,
+			Cert:        certValue,
+			Key:         keyValue,
 			StartTime:   cert.StartTime,
 			ExpireTime:  cert.ExpireTime,
 			AutoRenew:   cert.AutoRenew,
@@ -676,6 +733,14 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 	}
 
 	return &certListResult{Certs: details, Total: total}, nil
+}
+
+func shouldExposeCertData(cert models.Cert) bool {
+	if strings.EqualFold(strings.TrimSpace(cert.Type), "upload") {
+		return true
+	}
+	state := strings.ToLower(strings.TrimSpace(cert.State))
+	return state == "ready" || state == "success"
 }
 
 func (ctrl *CertController) GetDefaultSettings(c *gin.Context) {
@@ -809,6 +874,13 @@ func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error
 		return nil, errors.New("user_id is required")
 	}
 
+	certValue := input.Cert
+	keyValue := input.Key
+	if typeName != "upload" {
+		certValue = ""
+		keyValue = ""
+	}
+
 	certModel := &models.Cert{
 		UserID:      int(userID),
 		Name:        strings.TrimSpace(input.Name),
@@ -816,8 +888,8 @@ func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error
 		Type:        typeName,
 		Domain:      strings.TrimSpace(input.Domain),
 		DNSAPI:      normalizeDNSAPIValue(input.DNSAPI),
-		Cert:        input.Cert,
-		Key:         input.Key,
+		Cert:        certValue,
+		Key:         keyValue,
 		AutoRenew:   input.AutoRenew,
 		Enable:      true,
 		CreateAt:    time.Now(),
@@ -974,4 +1046,147 @@ func toDNSAPIValue(val *int) int {
 		return 0
 	}
 	return *val
+}
+
+func loadCertsByDomain(domainKey string, userID int64) ([]models.Cert, error) {
+	if domainKey == "" || db.DB == nil {
+		return []models.Cert{}, nil
+	}
+	like := "%" + domainKey + "%"
+	query := db.DB.Model(&models.Cert{}).Where("domain LIKE ?", like)
+	if userID != 0 {
+		query = query.Where("uid = ?", userID)
+	}
+	var rows []models.Cert
+	if err := query.Order("id asc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]models.Cert, 0, len(rows))
+	for _, row := range rows {
+		if certDomainMatches(domainKey, row.Domain) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func buildCertZip(domainKey string, certs []models.Cert) ([]byte, string, error) {
+	buf := &bytes.Buffer{}
+	writer := zip.NewWriter(buf)
+
+	safeDomain := sanitizeCertFilename(domainKey)
+	if safeDomain == "" {
+		safeDomain = "certs"
+	}
+	for _, cert := range certs {
+		base := fmt.Sprintf("%s_%d_%s", safeDomain, cert.ID, normalizeCertType(cert.Type))
+		base = sanitizeCertFilename(base)
+		if base == "" {
+			base = fmt.Sprintf("cert_%d", cert.ID)
+		}
+
+		certPem := strings.TrimSpace(cert.Cert)
+		keyPem := strings.TrimSpace(cert.Key)
+		if keyPem != "" {
+			if dec, err := services.Crypto.Decrypt(keyPem); err == nil {
+				keyPem = dec
+			}
+		}
+
+		if err := writeZipFile(writer, base+".pem", certPem+"\n"); err != nil {
+			return nil, "", err
+		}
+		if err := writeZipFile(writer, base+".key", keyPem+"\n"); err != nil {
+			return nil, "", err
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	filename := filepath.Base(safeDomain + ".zip")
+	return buf.Bytes(), filename, nil
+}
+
+func writeZipFile(writer *zip.Writer, name string, content string) error {
+	entry, err := writer.Create(name)
+	if err != nil {
+		return err
+	}
+	_, err = entry.Write([]byte(content))
+	return err
+}
+
+func normalizeCertDomainKey(raw string) string {
+	domains := splitCertDomains(raw)
+	if len(domains) == 0 {
+		return ""
+	}
+	return domains[0]
+}
+
+func primaryCertDomain(raw string) string {
+	domains := splitCertDomains(raw)
+	if len(domains) == 0 {
+		return ""
+	}
+	return domains[0]
+}
+
+func splitCertDomains(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+	fields := splitFields(raw)
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		host := normalizeDomainHost(field)
+		if strings.HasPrefix(host, "*.") {
+			base := strings.TrimPrefix(host, "*.")
+			base = normalizeDomainHost(base)
+			if base != "" {
+				host = "*." + base
+			}
+		}
+		if host == "" {
+			continue
+		}
+		out = append(out, host)
+	}
+	return uniqueStrings(out)
+}
+
+func certDomainMatches(domainKey string, raw string) bool {
+	if domainKey == "" || raw == "" {
+		return false
+	}
+	domainKey = normalizeDomainHost(domainKey)
+	for _, domain := range splitCertDomains(raw) {
+		if normalizeDomainHost(domain) == domainKey {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeCertFilename(input string) string {
+	if input == "" {
+		return ""
+	}
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		case r == '.' || r == '-' || r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, input)
+	return strings.Trim(safe, "._-")
 }

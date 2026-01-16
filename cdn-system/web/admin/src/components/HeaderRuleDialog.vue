@@ -7,10 +7,10 @@
   >
     <el-form label-width="100px">
       <el-form-item label="名称">
-        <el-input v-model="form.name" placeholder="Header-Name" />
+        <el-input v-model="form.name" placeholder="如：X-Real-IP" />
       </el-form-item>
       <el-form-item label="值">
-        <el-input v-model="form.value" placeholder="Value" />
+        <el-input v-model="form.value" placeholder="请输入值" />
       </el-form-item>
     </el-form>
     <template #footer>

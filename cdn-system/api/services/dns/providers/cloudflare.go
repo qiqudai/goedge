@@ -220,7 +220,7 @@ func (p *CloudFlareProvider) setHeaders(req *http.Request) {
 }
 
 func (p *CloudFlareProvider) doRequest(req *http.Request) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := dns.NewHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

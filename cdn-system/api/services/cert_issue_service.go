@@ -255,6 +255,12 @@ func UpdateIssuedCert(certID int64, certPEM string, keyPEM string, notBefore tim
 		"state":       "ready",
 		"ret":         "",
 	}
+	var current models.Cert
+	if err := db.DB.Select("id", "type", "auto_renew").Where("id = ?", certID).First(&current).Error; err == nil {
+		if strings.ToLower(strings.TrimSpace(current.Type)) != "upload" && !current.AutoRenew {
+			updates["auto_renew"] = true
+		}
+	}
 	if issueTaskID != 0 {
 		updates["issue_task_id"] = issueTaskID
 	} else {

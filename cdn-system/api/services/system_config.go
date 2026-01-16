@@ -132,3 +132,99 @@ func ResolveLoginSessionTTL() time.Duration {
 	}
 	return time.Duration(seconds) * time.Second
 }
+
+func ResolveMasterClientIPHeader() string {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg["master_client_ip_header"])
+}
+
+func ResolveNodeHealthConfig() (bool, int) {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return true, 10
+	}
+	enabled := true
+	rawEnabled := strings.TrimSpace(cfg["node_health_check"])
+	if rawEnabled != "" {
+		enabled = ParseBoolFlag(rawEnabled)
+	}
+	maxFails := parseIntConfigOrDefault(cfg["node_max_failed"], 5)
+	if maxFails <= 0 {
+		maxFails = 5
+	}
+	maxFails *= 2
+	return enabled, maxFails
+}
+
+func ResolveResRankSize() int {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return 100
+	}
+	size := parseIntConfigOrDefault(cfg["res_rank_size"], 100)
+	if size <= 0 {
+		return 100
+	}
+	return size
+}
+
+func ResolveSyncSiteConfigScope() string {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return "group"
+	}
+	scope := strings.TrimSpace(strings.ToLower(cfg["sync-site-config-scope"]))
+	if scope == "region" {
+		return "region"
+	}
+	return "group"
+}
+
+func ResolveMaxSiteStreamSyncOneTime() int {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return 1000
+	}
+	limit := parseIntConfigOrDefault(cfg["max_site_stream_sync_one_time"], 1000)
+	if limit <= 0 {
+		return 1000
+	}
+	return limit
+}
+
+func ResolveDeleteConfigDelay() time.Duration {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return 0
+	}
+	seconds := parseIntConfigOrDefault(cfg["delete_config_delayed"], 0)
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func ResolveLoginCaptchaConfig() (bool, bool) {
+	cfg, err := LoadSystemConfig()
+	if err != nil {
+		return false, false
+	}
+	email := ParseBoolFlag(cfg["allow-enable-email-captcha-login"])
+	sms := ParseBoolFlag(cfg["allow-enable-sms-captcha-login"])
+	return email, sms
+}
+
+func parseIntConfigOrDefault(raw string, fallback int) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return val
+}

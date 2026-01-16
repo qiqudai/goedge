@@ -122,6 +122,7 @@
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import { sha256Hex } from '@/utils/crypto'
 
 const props = defineProps({
   visible: Boolean,
@@ -195,10 +196,20 @@ const handleClose = () => {
   emits('update:visible', false)
 }
 
-const submit = () => {
+const submit = async () => {
   saving.value = true
   const payload = { ...form }
-  
+  if (payload.password) {
+    try {
+      payload.password = await sha256Hex(payload.password)
+      payload.password_hash = 'sha256'
+    } catch (err) {
+      saving.value = false
+      ElMessage.error('请使用 HTTPS 访问以启用密码加密')
+      return
+    }
+  }
+
   request.put(`/users/${form.id}`, payload).then(() => {
     ElMessage.success('保存成功')
     handleClose()

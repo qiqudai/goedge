@@ -63,7 +63,7 @@
           @size-change="fetchList"
         >
           <el-table-column type="selection" width="55" />
-          <el-table-column prop="id" label="JobId / TaskId" width="130" />
+          <el-table-column prop="id" label="任务ID" width="130" />
           <el-table-column prop="type" label="类型" width="120">
             <template #default="{ row }">
               {{ typeMap[row.type] || row.type }}

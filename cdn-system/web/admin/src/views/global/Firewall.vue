@@ -128,7 +128,7 @@
               </el-radio-group>
             </el-form-item>
             <el-form-item label="图片 URL" v-if="config.waf.anti_cc_image_source === 'custom'">
-              <el-input v-model="config.waf.anti_cc_image_custom_url" placeholder="http://..." @blur="saveConfig" />
+              <el-input v-model="config.waf.anti_cc_image_custom_url" placeholder="如：http://..." @blur="saveConfig" />
             </el-form-item>
             <el-form-item label="开启调试日志">
               <el-switch v-model="config.waf.anti_cc_debug" @change="saveConfig" />

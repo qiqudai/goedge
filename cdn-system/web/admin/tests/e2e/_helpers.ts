@@ -36,6 +36,59 @@ export function attachGuards(page: Page) {
   }
 }
 
+export async function enableFastSmokeStubs(page: Page) {
+  const respond = (route: any, payload: Record<string, any>) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(payload)
+    })
+  }
+  const getOnly = (route: any, payload: Record<string, any>) => {
+    if (route.request().method() !== 'GET') {
+      return route.fallback()
+    }
+    return respond(route, payload)
+  }
+
+  await page.route('**/api/v1/**/logs/access**', (route) =>
+    getOnly(route, { code: 0, data: { list: [], total: 0 } })
+  )
+  await page.route('**/api/v1/**/logs/block/**', (route) =>
+    getOnly(route, { code: 0, data: { list: [], total: 0 } })
+  )
+  await page.route('**/api/v1/**/stats/ranking**', (route) =>
+    getOnly(route, { code: 0, data: { list: [] } })
+  )
+  await page.route('**/api/v1/**/stats/basic**', (route) =>
+    getOnly(route, { code: 0, data: { x_axis: [], bandwidth: [], traffic: [], qps: [] } })
+  )
+  await page.route('**/api/v1/**/stats/quality**', (route) =>
+    getOnly(route, { code: 0, data: { x_axis: [], hit_rate: [], status_4xx: [], status_5xx: [] } })
+  )
+  await page.route('**/api/v1/**/stats/origin**', (route) =>
+    getOnly(route, { code: 0, data: { x_axis: [], origin_bandwidth: [], origin_traffic: [] } })
+  )
+  await page.route('**/api/v1/**/stats/node_ranking**', (route) =>
+    getOnly(route, { code: 0, data: { list: [] } })
+  )
+  await page.route('**/api/v1/**/stats/node_metrics**', (route) =>
+    getOnly(route, { code: 0, data: { list: [] } })
+  )
+  await page.route('**/api/v1/**/stats/node_traffic**', (route) =>
+    getOnly(route, { code: 0, data: { x_axis: [], out_traffic: [], in_traffic: [] } })
+  )
+  await page.route('**/api/v1/**/forward/traffic**', (route) =>
+    getOnly(route, { code: 0, data: { x_axis: [], bandwidth: [], traffic: [] } })
+  )
+  await page.route('**/api/v1/**/forward/ranking**', (route) =>
+    getOnly(route, { code: 0, data: { list: [] } })
+  )
+  await page.route('**/api/v1/**/sites/resolve**', (route) =>
+    getOnly(route, { code: 0, cname: '', ips: [] })
+  )
+}
+
 export async function login(page: Page, username: string, password: string) {
   await page.goto('/login')
   await page.getByPlaceholder('Username').fill(username)
@@ -58,7 +111,7 @@ export async function clickTab(page: Page, label: string) {
   await page.waitForTimeout(250)
 }
 
-export function createLoadingTracker(page: Page) {
+export function createLoadingTracker(page: Page, options: { allowMissing?: boolean } = {}) {
   const missing: string[] = []
 
   const expectLoadingOnRequest = async (label: string, action: () => Promise<void>) => {
@@ -71,15 +124,18 @@ export function createLoadingTracker(page: Page) {
     const req = await requestPromise
     if (!req) return
 
-    try {
-      await page.locator('.global-loading-overlay').waitFor({ state: 'visible', timeout: 30_000 })
-    } catch {
-      missing.push(label)
+    if (!options.allowMissing) {
+      try {
+        await page.locator('.global-loading-overlay').waitFor({ state: 'visible', timeout: 30_000 })
+      } catch {
+        missing.push(label)
+      }
     }
     await page.locator('.global-loading-overlay').waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => null)
   }
 
   const assertNoMissing = () => {
+    if (options.allowMissing) return
     expect(missing, `Missing global loading for: ${missing.join(', ')}`).toEqual([])
   }
 

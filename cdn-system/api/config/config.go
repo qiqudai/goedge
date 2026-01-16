@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -66,4 +67,15 @@ func Load() {
 	if *debugFlag {
 		App.Debug = true
 	}
+}
+
+func ConfigPath() string {
+	if configFile == nil || *configFile == "" {
+		return "config.yaml"
+	}
+	return *configFile
+}
+
+func ConfigDir() string {
+	return filepath.Dir(ConfigPath())
 }

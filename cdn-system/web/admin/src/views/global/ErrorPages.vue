@@ -68,7 +68,7 @@ const loadConfig = () => {
       }
       errorCodes.forEach(c => {
         if (!errorPages[c.key]) {
-          errorPages[c.key] = `<h1>${c.label}</h1><p>System Default Page</p>`
+          errorPages[c.key] = `<h1>${c.label}</h1><p>系统默认页面</p>`
         }
       })
     }

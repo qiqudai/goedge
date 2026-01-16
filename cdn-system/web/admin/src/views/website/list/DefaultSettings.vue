@@ -120,11 +120,11 @@
             <!-- Headers -->
             <div v-else-if="currentType === 'headers'" style="width: 100%;">
                 <div v-for="(h, idx) in form.headers" :key="idx" style="display: flex; gap: 8px; margin-bottom: 8px;">
-                    <el-input v-model="h.name" placeholder="Name" style="flex: 1" />
-                    <el-input v-model="h.value" placeholder="Value" style="flex: 1" />
+                    <el-input v-model="h.name" placeholder="请求头名称" style="flex: 1" />
+                    <el-input v-model="h.value" placeholder="值" style="flex: 1" />
                     <el-button type="danger" :icon="Minus" circle size="small" @click="removeHeader(idx)" />
                 </div>
-                <el-button type="primary" size="small" plain @click="addHeader">+ 添加Header</el-button>
+                <el-button type="primary" size="small" plain @click="addHeader">+ 添加请求头</el-button>
             </div>
             
              <!-- Default Logic (Text) -->
@@ -191,20 +191,20 @@ const defaultOptions = [
   { label: '搜索引擎爬虫', value: 'security_bot', type: 'select', choices: [
     { label: '不设置', value: 'none' },
     { label: '放行', value: 'allow' },
-    { label: '拦截', value: 'deny' }
+    { label: '拦截', value: 'block' }
   ] },
   { label: '黑名单IP', value: 'black_ip', type: 'lines' },
   { label: '白名单IP', value: 'white_ip', type: 'lines' },
   { label: '屏蔽透明代理', value: 'security_shield_proxy', type: 'bool' },
   { label: '区域屏蔽', value: 'block_region', type: 'region' },
-  { label: 'DNS API(解析)', value: 'dns_provider_id', type: 'select', choicesKey: 'dns_providers' },
+  { label: 'DNS 接口（解析）', value: 'dns_provider_id', type: 'select', choicesKey: 'dns_providers' },
   { label: 'HTTP监听端口', value: 'http_listen-port', type: 'number' },
   { label: 'HTTPS监听端口', value: 'https_listen-port', type: 'number' },
   { label: '强制HTTPS', value: 'https_listen-force_ssl_enable', type: 'bool' },
   { label: '开启HSTS', value: 'https_listen-hsts', type: 'bool' },
   { label: '开启HTTP2', value: 'https_listen-http2', type: 'bool' },
   { label: '开启HTTP3', value: 'https_listen-http3', type: 'bool' },
-  { label: 'ssl_protocols', value: 'https_listen-ssl_protocols', type: 'multi', choices: [
+  { label: 'SSL 协议', value: 'https_listen-ssl_protocols', type: 'multi', choices: [
     { label: 'SSLv2', value: 'SSLv2' },
     { label: 'SSLv3', value: 'SSLv3' },
     { label: 'TLSv1', value: 'TLSv1' },
@@ -212,30 +212,31 @@ const defaultOptions = [
     { label: 'TLSv1.2', value: 'TLSv1.2' },
     { label: 'TLSv1.3', value: 'TLSv1.3' }
   ] },
-  { label: 'ssl_ciphers', value: 'https_listen-ssl_ciphers', type: 'text' },
-  { label: 'ssl_prefer_server_ciphers', value: 'https_listen-ssl_prefer_server_ciphers', type: 'select', choices: [
-    { label: 'On', value: 'on' },
-    { label: 'Off', value: 'off' }
+  { label: 'SSL 加密套件', value: 'https_listen-ssl_ciphers', type: 'text' },
+  { label: '优先服务端加密套件', value: 'https_listen-ssl_prefer_server_ciphers', type: 'select', choices: [
+    { label: '开启', value: 'on' },
+    { label: '关闭', value: 'off' }
   ] },
-  { label: 'ocsp_stapling', value: 'https_listen-ocsp_stapling', type: 'bool' },
+  { label: 'OCSP 装订', value: 'https_listen-ocsp_stapling', type: 'bool' },
   { label: '回源协议', value: 'backend_protocol', type: 'select', choices: [
     { label: 'HTTP', value: 'http' },
     { label: 'HTTPS', value: 'https' },
-    { label: '跟随协议', value: 'follow' }
+    { label: '跟随协议', value: 'follow' },
+    { label: '跟随端口和协议', value: 'follow_port' }
   ] },
   { label: '回源HTTP端口', value: 'backend_http_port', type: 'number' },
   { label: '回源HTTPS端口', value: 'backend_https_port', type: 'number' },
   { label: '回源超时', value: 'proxy_timeout', type: 'number' },
   { label: '开启IPv6', value: 'ipv6_enable', type: 'bool' },
   { label: '开启Gzip', value: 'gzip_enable', type: 'bool' },
-  { label: '开启Websocket', value: 'websocket_enable', type: 'bool' },
+  { label: '开启 WebSocket', value: 'websocket_enable', type: 'bool' },
   { label: '上传文件大小限制', value: 'post_size_limit', type: 'number' },
   { label: '数据实时发送', value: 'realtime_send', type: 'bool' },
   { label: '数据实时返回', value: 'realtime_return', type: 'bool' },
   { label: '源站请求头', value: 'origin_headers', type: 'headers' },
   { label: '回源负载方式', value: 'balance_way', type: 'select', choices: [
     { label: '轮询', value: 'rr' },
-    { label: '定源', value: 'hash' }
+    { label: '定源', value: 'ip_hash' }
   ] }
 ]
 

@@ -33,6 +33,22 @@ type rawAccessLog struct {
 	SSLCipher            string  `json:"ssl_cipher"`
 }
 
+type rawStreamLog struct {
+	TimeISO8601           string `json:"time_iso8601"`
+	RemoteAddr            string `json:"remote_addr"`
+	Protocol              string `json:"protocol"`
+	Status                int    `json:"status"`
+	BytesSent             int64  `json:"bytes_sent"`
+	BytesReceived         int64  `json:"bytes_received"`
+	SessionTime           string `json:"session_time"`
+	UpstreamAddr          string `json:"upstream_addr"`
+	UpstreamBytesSent     string `json:"upstream_bytes_sent"`
+	UpstreamBytesReceived string `json:"upstream_bytes_received"`
+	UpstreamConnectTime   string `json:"upstream_connect_time"`
+	UpstreamSessionTime   string `json:"upstream_session_time"`
+	ServerPort            int    `json:"server_port"`
+}
+
 func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 	if !db.ClickHouseEnabled() || len(lines) == 0 {
 		if !db.ClickHouseEnabled() {
@@ -123,6 +139,103 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			line,
 		); err != nil {
 			log.Printf("[CK] Insert access log failed: %v", err)
+			continue
+		}
+		inserted++
+	}
+	return inserted
+}
+
+func InsertStreamLogs(nodeID, nodeIP string, lines []string) int {
+	if !db.ClickHouseEnabled() || len(lines) == 0 {
+		if !db.ClickHouseEnabled() {
+			log.Printf("[CK] Stream logs skipped: ClickHouse disabled")
+		}
+		return 0
+	}
+
+	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+		rows := make([]map[string]interface{}, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var raw rawStreamLog
+			if err := json.Unmarshal([]byte(line), &raw); err != nil {
+				continue
+			}
+			sessionTime := parseFloatFirst(raw.SessionTime)
+			upstreamBytesSent := parseInt64First(raw.UpstreamBytesSent)
+			upstreamBytesReceived := parseInt64First(raw.UpstreamBytesReceived)
+			upstreamConnectTime := parseFloatFirst(raw.UpstreamConnectTime)
+			upstreamSessionTime := parseFloatFirst(raw.UpstreamSessionTime)
+			rows = append(rows, map[string]interface{}{
+				"ts":                      formatTime(parseISOTime(raw.TimeISO8601)),
+				"node_id":                 nodeID,
+				"node_ip":                 nodeIP,
+				"remote_addr":             raw.RemoteAddr,
+				"server_port":             raw.ServerPort,
+				"protocol":                raw.Protocol,
+				"status":                  raw.Status,
+				"bytes_sent":              raw.BytesSent,
+				"bytes_received":          raw.BytesReceived,
+				"session_time":            sessionTime,
+				"upstream_addr":           raw.UpstreamAddr,
+				"upstream_bytes_sent":     upstreamBytesSent,
+				"upstream_bytes_received": upstreamBytesReceived,
+				"upstream_connect_time":   upstreamConnectTime,
+				"upstream_session_time":   upstreamSessionTime,
+				"raw":                     line,
+			})
+		}
+		return insertHTTPRows(httpCfg, "node_stream_logs", rows)
+	}
+
+	stmt, err := db.CK.Prepare(`INSERT INTO node_stream_logs
+		(ts, node_id, node_ip, remote_addr, server_port, protocol, status, bytes_sent, bytes_received, session_time, upstream_addr, upstream_bytes_sent, upstream_bytes_received, upstream_connect_time, upstream_session_time, raw)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		log.Printf("[CK] Prepare stream logs failed: %v", err)
+		return 0
+	}
+	defer stmt.Close()
+
+	inserted := 0
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var raw rawStreamLog
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
+		}
+		sessionTime := parseFloatFirst(raw.SessionTime)
+		upstreamBytesSent := parseInt64First(raw.UpstreamBytesSent)
+		upstreamBytesReceived := parseInt64First(raw.UpstreamBytesReceived)
+		upstreamConnectTime := parseFloatFirst(raw.UpstreamConnectTime)
+		upstreamSessionTime := parseFloatFirst(raw.UpstreamSessionTime)
+		ts := parseISOTime(raw.TimeISO8601)
+		if _, err := stmt.Exec(
+			ts,
+			nodeID,
+			nodeIP,
+			raw.RemoteAddr,
+			raw.ServerPort,
+			raw.Protocol,
+			raw.Status,
+			raw.BytesSent,
+			raw.BytesReceived,
+			sessionTime,
+			raw.UpstreamAddr,
+			upstreamBytesSent,
+			upstreamBytesReceived,
+			upstreamConnectTime,
+			upstreamSessionTime,
+			line,
+		); err != nil {
+			log.Printf("[CK] Insert stream log failed: %v", err)
 			continue
 		}
 		inserted++
@@ -282,6 +395,23 @@ func parseFloatFirst(value string) float64 {
 	}
 	if f, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
 		return f
+	}
+	return 0
+}
+
+func parseInt64First(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "-" {
+		return 0
+	}
+	if strings.Contains(value, ",") {
+		value = strings.Split(value, ",")[0]
+	}
+	if num, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+		return num
+	}
+	if num, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64); err == nil {
+		return int64(num)
 	}
 	return 0
 }

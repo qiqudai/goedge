@@ -620,6 +620,18 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 	if action == "enable" || action == "disable" || action == "delete" || action == "set_weight" || action == "set_sort" {
 		_ = db.DB.Where("id IN ?", req.IDs).Find(&targetLines).Error
 	}
+	if action == "delete" {
+		delay := services.ResolveDeleteConfigDelay()
+		if delay > 0 {
+			for _, line := range targetLines {
+				nodeID := line.NodeID
+				if nodeID == 0 {
+					nodeID = line.NodeIPID
+				}
+				services.QueueLineConfigDeletion(nodeID, line.NodeGroupID, line.LineID, line.LineName, delay)
+			}
+		}
+	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		switch action {

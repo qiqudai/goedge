@@ -28,15 +28,15 @@
     >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="pry" label="优先级" width="80" />
-      <el-table-column prop="name" label="名称" width="120" show-overflow-tooltip />
-      <el-table-column prop="type" label="类型" width="120">
+      <el-table-column prop="name" label="名称" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="type" label="类型" min-width="160">
         <template #default="scope">
           <el-tag>{{ formatType(scope.row.type) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="pid" label="资源ID" width="100" />
       <el-table-column prop="depend" label="依赖" width="120" show-overflow-tooltip />
-      <el-table-column prop="start_at" label="开始时间" width="160">
+      <el-table-column prop="start_at" label="开始时间" min-width="200">
         <template #default="scope">
           {{ formatDate(scope.row.start_at) }}
         </template>

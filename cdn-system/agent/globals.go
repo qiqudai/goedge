@@ -16,7 +16,7 @@ var (
 	HEARTBEAT_INT = 3 * time.Second
 	LOG_SHIP_INT  = 5 * time.Second
 	METRICS_INT   = 10 * time.Second
-	L2_CHECK_INT  = 30 * time.Second
+	L2_CHECK_INT  = 10 * time.Second
 
 	// Dynamic Paths (will be set in initEnvironment)
 	WorkDir      = "./edge-node"

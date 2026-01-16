@@ -59,6 +59,7 @@ const (
 	MsgNodeSync     = "node_sync"
 	MsgNodeSyncAck  = "node_sync_ack"
 	MsgLogsAccess   = "agent_logs_access"
+	MsgLogsStream   = "agent_logs_stream"
 	MsgLogsMetrics  = "agent_logs_metrics"
 	MsgLogsEvents   = "agent_logs_events"
 	MsgL2NodesReq   = "l2_nodes_request"
@@ -286,6 +287,8 @@ func (c *AgentWSController) HandleWS(ctx *gin.Context) {
 			c.handleNodeSync(nodeID, msg)
 		case MsgLogsAccess:
 			c.handleAccessLogs(nodeID, msg)
+		case MsgLogsStream:
+			c.handleStreamLogs(nodeID, msg)
 		case MsgLogsMetrics:
 			c.handleMetrics(nodeID, msg)
 		case MsgLogsEvents:
@@ -596,6 +599,18 @@ func (c *AgentWSController) handleAccessLogs(nodeID int64, raw []byte) {
 	}
 	inserted := services.InsertAccessLogs(req.NodeID, req.NodeIP, req.Lines)
 	log.Printf("[CK] Access logs inserted: %d", inserted)
+}
+
+func (c *AgentWSController) handleStreamLogs(nodeID int64, raw []byte) {
+	var req AccessLogsMsg
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return
+	}
+	if strings.TrimSpace(req.NodeID) == "" {
+		req.NodeID = strconv.FormatInt(nodeID, 10)
+	}
+	inserted := services.InsertStreamLogs(req.NodeID, req.NodeIP, req.Lines)
+	log.Printf("[CK] Stream logs inserted: %d", inserted)
 }
 
 func (c *AgentWSController) handleMetrics(nodeID int64, raw []byte) {
@@ -972,18 +987,27 @@ func fetchL2NodesForNode(nodeID int64) ([]l2NodeInfo, error) {
 
 	var nodes []models.Node
 	if err := db.DB.Where("id IN ? AND level = ? AND enable = ?", l2NodeIDs, 2, true).
-		Select("id", "ip", "port", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
+		Select("id", "ip", "port", "region_id", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
 		Find(&nodes).Error; err != nil {
 		return nil, err
 	}
+	metaMap := services.LoadRegionMetaMap()
 	result := make([]l2NodeInfo, 0, len(nodes))
 	for _, n := range nodes {
+		checkPort := n.CheckPort
+		if checkPort == 0 {
+			checkPort = services.ResolveRegionL2CheckPort(metaMap, n.RegionID)
+		}
+		checkProtocol := strings.TrimSpace(n.CheckProtocol)
+		if checkProtocol == "" {
+			checkProtocol = "tcp"
+		}
 		result = append(result, l2NodeInfo{
 			ID:            n.ID,
 			IP:            n.IP,
 			Port:          n.Port,
-			CheckProtocol: n.CheckProtocol,
-			CheckPort:     n.CheckPort,
+			CheckProtocol: checkProtocol,
+			CheckPort:     checkPort,
 			CheckHost:     n.CheckHost,
 			CheckPath:     n.CheckPath,
 			CheckTimeout:  n.CheckTimeout,

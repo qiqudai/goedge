@@ -21,16 +21,16 @@
         </el-checkbox-group>
       </el-form-item>
       <el-form-item label="邮箱">
-        <el-input v-model="form.email" placeholder="admin@example.com" />
+        <el-input v-model="form.email" placeholder="如：admin@example.com" />
       </el-form-item>
       <el-form-item label="手机号">
-        <el-input v-model="form.phone" placeholder="+86138..." />
+        <el-input v-model="form.phone" placeholder="如：+86138..." />
       </el-form-item>
       <el-form-item label="带宽超限次数">
         <el-input-number v-model="form.bw_exceed_times" :min="1" />
       </el-form-item>
       <el-form-item label="监控API">
-        <el-input v-model="form.monitor_api" placeholder="http://..." />
+        <el-input v-model="form.monitor_api" placeholder="如：http://..." />
       </el-form-item>
       <el-form-item label="检测间隔(秒)">
         <el-input-number v-model="form.interval" :min="10" />

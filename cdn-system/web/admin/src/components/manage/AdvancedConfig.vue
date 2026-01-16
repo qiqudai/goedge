@@ -27,8 +27,8 @@
 
       <div class="divider"></div>
 
-      <div class="section-title">Websocket设置</div>
-      <el-form-item label="Websocket">
+      <div class="section-title">WebSocket 设置</div>
+      <el-form-item label="WebSocket">
         <el-switch v-model="advancedSettings.websocket" @change="handleSave" />
       </el-form-item>
 

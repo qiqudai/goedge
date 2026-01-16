@@ -190,8 +190,7 @@ func sumTrafficBytesByHostsHTTP(cfg *httpCKConfig, hosts []string, start, end ti
 		chunk := hosts[i:endIdx]
 		quoted := make([]string, 0, len(chunk))
 		for _, host := range chunk {
-			host = strings.ReplaceAll(host, "'", "\\'")
-			quoted = append(quoted, "'"+host+"'")
+			quoted = append(quoted, quoteClickHouseString(host))
 		}
 		query := fmt.Sprintf("SELECT sum(bytes) FROM node_access_logs WHERE ts >= toDateTime('%s') AND ts <= toDateTime('%s') AND host IN (%s)", startStr, endStr, strings.Join(quoted, ","))
 		params := url.Values{}

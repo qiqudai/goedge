@@ -3,8 +3,10 @@ package middleware
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,11 +67,30 @@ func OperationLog() gin.HandlerFunc {
 			Action:    method + " " + path,
 			Content:   string(payload),
 			Diff:      "",
-			IP:        c.ClientIP(),
+			IP:        resolveClientIP(c),
 			Process:   "status=" + http.StatusText(c.Writer.Status()),
 			CreatedAt: time.Now(),
 		}
 
 		_ = db.DB.Create(&log).Error
 	}
+}
+
+func resolveClientIP(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	header := services.ResolveMasterClientIPHeader()
+	if header != "" {
+		raw := strings.TrimSpace(c.GetHeader(header))
+		if raw != "" {
+			if idx := strings.Index(raw, ","); idx != -1 {
+				raw = strings.TrimSpace(raw[:idx])
+			}
+			if raw != "" {
+				return raw
+			}
+		}
+	}
+	return c.ClientIP()
 }

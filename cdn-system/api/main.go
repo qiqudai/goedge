@@ -68,7 +68,11 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
 		for range ticker.C {
-			offlineIDs := services.EvaluateNodeHealth(3*time.Second, 5)
+			enabled, maxFails := services.ResolveNodeHealthConfig()
+			if !enabled {
+				continue
+			}
+			offlineIDs := services.EvaluateNodeHealth(3*time.Second, maxFails)
 			for _, nodeID := range offlineIDs {
 				services.HandleNodeOffline(nodeID)
 			}
@@ -77,6 +81,12 @@ func main() {
 
 	// Start DNS Worker
 	go services.StartDNSWorker()
+	// Start DNS record repair worker
+	go services.StartDNSRecordRepairWorker()
+	// Start Backup Line Group switch worker
+	go services.StartBackupGroupSwitchWorker()
+	// Start Cert Auto Renew Worker
+	go services.StartCertAutoRenewWorker()
 	// Start Cert Issue Worker
 	// go services.StartCertIssueWorker()
 	// Start Site Create Worker

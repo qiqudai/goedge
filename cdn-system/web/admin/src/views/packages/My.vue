@@ -74,7 +74,7 @@
               <span class="detail-value">{{ current.custom_cc_rule ? '允许' : '禁止' }}</span>
             </div>
             <div class="detail-item">
-              <span class="detail-label">Websocket:</span>
+              <span class="detail-label">WebSocket:</span>
               <span class="detail-value">{{ current.websocket ? '允许' : '禁止' }}</span>
             </div>
             <div class="detail-item">

@@ -20,6 +20,8 @@ const (
 	defaultDNSTTL                = 300
 	manualDNSPropagationTimeout  = 10 * time.Minute
 	manualDNSPropagationInterval = 10 * time.Second
+	dnsAPIPropagationTimeout     = 30 * time.Minute
+	dnsAPIPropagationInterval    = 15 * time.Second
 )
 
 type DNSChallengeInfo struct {
@@ -166,8 +168,48 @@ func (p *dnsAPIChallengeProvider) Present(domain, token, keyAuth string) error {
 		Value: info.RecordValue,
 		TTL:   defaultDNSTTL,
 	}
+	existing, err := p.provider.GetRecords(info.Zone)
+	if err != nil {
+		existing = nil
+	}
+	matches, values, hasDesired := collectChallengeValues(existing, record)
+	if hasDesired {
+		return nil
+	}
 	if updater, ok := p.provider.(dns.RecordSetUpdater); ok {
-		return updater.UpsertRecordSet(info.Zone, record, []string{info.RecordValue})
+		return updater.UpsertRecordSet(info.Zone, record, values)
+	}
+	if replacer, ok := p.provider.(dns.RecordValueReplacer); ok {
+		if len(matches) > 0 {
+			return replacer.ReplaceRecordValue(info.Zone, dns.DNSRecord{
+				Type: record.Type,
+				Name: record.Name,
+				Line: record.Line,
+				TTL:  record.TTL,
+			}, record.Value)
+		}
+		return p.provider.AddRecord(info.Zone, record)
+	}
+	if len(matches) == 0 {
+		return p.provider.AddRecord(info.Zone, record)
+	}
+	if err := p.provider.AddRecord(info.Zone, record); err == nil {
+		refreshed, refreshErr := p.provider.GetRecords(info.Zone)
+		if refreshErr == nil {
+			_, _, hasDesired = collectChallengeValues(refreshed, record)
+			if hasDesired {
+				return nil
+			}
+			matches = filterChallengeMatches(refreshed, record)
+		}
+	}
+	for _, item := range matches {
+		if strings.TrimSpace(item.Value) == strings.TrimSpace(record.Value) {
+			continue
+		}
+		if err := p.provider.DeleteRecord(info.Zone, item); err != nil {
+			return err
+		}
 	}
 	return p.provider.AddRecord(info.Zone, record)
 }
@@ -184,6 +226,10 @@ func (p *dnsAPIChallengeProvider) CleanUp(domain, token, keyAuth string) error {
 		TTL:   defaultDNSTTL,
 	}
 	return p.provider.DeleteRecord(info.Zone, record)
+}
+
+func (p *dnsAPIChallengeProvider) Timeout() (timeout, interval time.Duration) {
+	return dnsAPIPropagationTimeout, dnsAPIPropagationInterval
 }
 
 type manualDNSChallengeProvider struct {
@@ -204,4 +250,59 @@ func (p *manualDNSChallengeProvider) CleanUp(domain, token, keyAuth string) erro
 
 func (p *manualDNSChallengeProvider) Timeout() (timeout, interval time.Duration) {
 	return manualDNSPropagationTimeout, manualDNSPropagationInterval
+}
+
+func collectChallengeValues(records []dns.DNSRecord, desired dns.DNSRecord) ([]dns.DNSRecord, []string, bool) {
+	matches := filterChallengeMatches(records, desired)
+	valueSet := map[string]struct{}{}
+	values := make([]string, 0, len(matches)+1)
+	desiredValue := strings.TrimSpace(desired.Value)
+	hasDesired := false
+	for _, record := range matches {
+		value := strings.TrimSpace(record.Value)
+		if value == "" {
+			continue
+		}
+		if _, ok := valueSet[value]; ok {
+			continue
+		}
+		valueSet[value] = struct{}{}
+		values = append(values, value)
+		if value == desiredValue {
+			hasDesired = true
+		}
+	}
+	if desiredValue != "" {
+		if _, ok := valueSet[desiredValue]; !ok {
+			values = append(values, desiredValue)
+		}
+	}
+	return matches, values, hasDesired
+}
+
+func filterChallengeMatches(records []dns.DNSRecord, desired dns.DNSRecord) []dns.DNSRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	matches := make([]dns.DNSRecord, 0, len(records))
+	for _, record := range records {
+		if !matchChallengeRecord(record, desired) {
+			continue
+		}
+		matches = append(matches, record)
+	}
+	return matches
+}
+
+func matchChallengeRecord(record dns.DNSRecord, desired dns.DNSRecord) bool {
+	if !strings.EqualFold(strings.TrimSpace(record.Type), strings.TrimSpace(desired.Type)) {
+		return false
+	}
+	if strings.TrimSpace(record.Name) != strings.TrimSpace(desired.Name) {
+		return false
+	}
+	if strings.TrimSpace(desired.Line) != "" && strings.TrimSpace(record.Line) != strings.TrimSpace(desired.Line) {
+		return false
+	}
+	return true
 }

@@ -3,8 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
-	"encoding/json"
-	"errors"
+	"cdn-api/services"
 	"log"
 	"net/http"
 	"strconv"
@@ -12,15 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type RegionController struct{}
-
-type regionMeta struct {
-	L2CheckPort int `json:"l2_check_port"`
-	SortOrder   int `json:"sort_order"`
-}
 
 type regionView struct {
 	ID          int64     `json:"id"`
@@ -42,7 +35,7 @@ func (ctr *RegionController) ListRegions(c *gin.Context) {
 	}
 	log.Printf("[Debug] ListRegions: found %d regions", len(regions))
 
-	metaMap := loadRegionMeta()
+	metaMap := services.LoadRegionMetaMap()
 	views := make([]regionView, 0, len(regions))
 	for _, region := range regions {
 		meta := metaMap[strconv.FormatInt(region.ID, 10)]
@@ -110,12 +103,12 @@ func (ctr *RegionController) CreateRegion(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Create Failed")})
 		return
 	}
-	metaMap := loadRegionMeta()
-	metaMap[strconv.FormatInt(region.ID, 10)] = regionMeta{
+	metaMap := services.LoadRegionMetaMap()
+	metaMap[strconv.FormatInt(region.ID, 10)] = services.RegionMeta{
 		L2CheckPort: req.L2CheckPort,
 		SortOrder:   req.SortOrder,
 	}
-	if err := saveRegionMeta(metaMap); err != nil {
+	if err := services.SaveRegionMetaMap(metaMap); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Save Failed")})
 		return
 	}
@@ -162,12 +155,12 @@ func (ctr *RegionController) UpdateRegion(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Update Failed")})
 		return
 	}
-	metaMap := loadRegionMeta()
-	metaMap[strconv.FormatInt(id, 10)] = regionMeta{
+	metaMap := services.LoadRegionMetaMap()
+	metaMap[strconv.FormatInt(id, 10)] = services.RegionMeta{
 		L2CheckPort: req.L2CheckPort,
 		SortOrder:   req.SortOrder,
 	}
-	if err := saveRegionMeta(metaMap); err != nil {
+	if err := services.SaveRegionMetaMap(metaMap); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Save Failed")})
 		return
 	}
@@ -194,60 +187,11 @@ func (ctr *RegionController) DeleteRegion(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Delete Failed")})
 		return
 	}
-	metaMap := loadRegionMeta()
+	metaMap := services.LoadRegionMetaMap()
 	delete(metaMap, strconv.FormatInt(id, 10))
-	if err := saveRegionMeta(metaMap); err != nil {
+	if err := services.SaveRegionMetaMap(metaMap); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Save Failed")})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0})
-}
-
-func loadRegionMeta() map[string]regionMeta {
-	var item models.ConfigItem
-	err := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "region_meta", "system", "global", 0).
-		First(&item).Error
-	if err != nil {
-		return map[string]regionMeta{}
-	}
-	if item.Value == "" {
-		return map[string]regionMeta{}
-	}
-	metaMap := map[string]regionMeta{}
-	if jsonErr := json.Unmarshal([]byte(item.Value), &metaMap); jsonErr != nil {
-		return map[string]regionMeta{}
-	}
-	return metaMap
-}
-
-func saveRegionMeta(metaMap map[string]regionMeta) error {
-	b, err := json.Marshal(metaMap)
-	if err != nil {
-		return err
-	}
-	var item models.ConfigItem
-	err = db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "region_meta", "system", "global", 0).
-		First(&item).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			newItem := models.ConfigItem{
-				Name:      "region_meta",
-				Value:     string(b),
-				Type:      "system",
-				ScopeID:   0,
-				ScopeName: "global",
-				Enable:    true,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-			return db.DB.Create(&newItem).Error
-		}
-		return err
-	}
-	return db.DB.Model(&models.ConfigItem{}).
-		Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "region_meta", "system", "global", 0).
-		Updates(map[string]interface{}{
-			"value":     string(b),
-			"update_at": time.Now(),
-		}).Error
 }

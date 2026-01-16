@@ -78,11 +78,11 @@
 
         <div class="divider"></div>
 
-        <div class="section-title">OCSP Stapling</div>
+        <div class="section-title">OCSP 装订</div>
         <el-form-item label="开关">
           <el-switch v-model="httpsSettings.ocsp" @change="handleSave" />
           <div class="form-helper">
-            OCSP Stapling功能可实现由CDN预先缓存在线证书验证结果并下发给客户端，无需浏览器直接向CA站点查询证书状态，从而减少用户验证时间。
+            OCSP 装订功能可实现由CDN预先缓存在线证书验证结果并下发给客户端，无需浏览器直接向CA站点查询证书状态，从而减少用户验证时间。
           </div>
         </el-form-item>
 

@@ -3,10 +3,11 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/utils"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type UserProfileController struct{}
@@ -39,9 +40,8 @@ type updateProfileRequest struct {
 type updatePasswordRequest struct {
 	Current string `json:"current"`
 	Next    string `json:"next"`
+	Hash    string `json:"password_hash"`
 }
-
-
 
 // GetProfile
 // GET /api/v1/user/profile
@@ -119,6 +119,15 @@ func (ctr *UserProfileController) UpdatePassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid password")})
 		return
 	}
+	providedHashed := strings.EqualFold(req.Hash, "sha256")
+	if providedHashed {
+		if !passwordLooksHashed(req.Current) || !passwordLooksHashed(req.Next) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid password")})
+			return
+		}
+	} else if passwordLooksHashed(req.Current) && passwordLooksHashed(req.Next) {
+		providedHashed = true
+	}
 
 	var user models.User
 	if err := db.DB.Where("id = ?", userID).First(&user).Error; err != nil {
@@ -126,13 +135,17 @@ func (ctr *UserProfileController) UpdatePassword(c *gin.Context) {
 		return
 	}
 
-	if !verifyPassword(user.Password, req.Current) {
+	if ok, _ := verifyPassword(user.Password, req.Current, providedHashed); !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Current password invalid")})
 		return
 	}
 
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(req.Next), bcrypt.DefaultCost)
-	if err := db.DB.Model(&models.User{}).Where("id = ?", userID).Update("password", string(hashed)).Error; err != nil {
+	hashed, err := utils.HashPasswordForStorage(req.Next)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Failed to update password")})
+		return
+	}
+	if err := db.DB.Model(&models.User{}).Where("id = ?", userID).Update("password", hashed).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("DB Error")})
 		return
 	}

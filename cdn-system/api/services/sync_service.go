@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"cdn-api/db"
@@ -77,6 +78,42 @@ func GetConfigVersion() int64 {
 
 // NotifyConfigChanged is a no-op (sync is handled by agent pull over API).
 func NotifyConfigChanged(change ConfigChange) {
+	if strings.EqualFold(change.Resource, "site") || strings.EqualFold(change.Resource, "forward") {
+		if handled := createScopedConfigSyncTasks(change); handled {
+			return
+		}
+	}
+	createConfigSyncTask(change, nil)
+}
+
+func createScopedConfigSyncTasks(change ConfigChange) bool {
+	if len(change.IDs) == 0 {
+		return false
+	}
+	limit := ResolveMaxSiteStreamSyncOneTime()
+	if limit <= 0 {
+		limit = 1000
+	}
+	created := false
+	for i := 0; i < len(change.IDs); i += limit {
+		end := i + limit
+		if end > len(change.IDs) {
+			end = len(change.IDs)
+		}
+		chunk := change.IDs[i:end]
+		chg := change
+		chg.IDs = chunk
+		nodes := resolveScopedConfigSyncTargets(strings.ToLower(strings.TrimSpace(change.Resource)), chunk)
+		if len(nodes) == 0 {
+			continue
+		}
+		createConfigSyncTask(chg, nodes)
+		created = true
+	}
+	return created
+}
+
+func createConfigSyncTask(change ConfigChange, nodeIDs []int64) {
 	data, _ := json.Marshal(change)
 	now := time.Now()
 	task := models.Task{
@@ -85,9 +122,13 @@ func NotifyConfigChanged(change ConfigChange) {
 		Enable:   true,
 		Data:     string(data),
 		CreateAt: now,
-		StartAt:  &now, // Use created time to avoid strict-mode date errors.
-		EndAt:    &now, // Use created time.
-		RetryAt:  &now, // Ensure it's picked up immediately
+		StartAt:  &now,
+		EndAt:    &now,
+		RetryAt:  &now,
+	}
+	if len(nodeIDs) > 0 {
+		targets := NewTaskTargets(nodeIDs)
+		task.TargetsJSON = targets.Marshal()
 	}
 	if err := db.DB.Create(&task).Error; err == nil {
 		TriggerDispatchPending()

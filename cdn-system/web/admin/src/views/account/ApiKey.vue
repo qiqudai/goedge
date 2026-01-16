@@ -7,7 +7,7 @@
       </div>
 
       <div class="key-row">
-        <div class="label">api_key</div>
+        <div class="label">API 密钥（api_key）</div>
         <div class="value">
           {{ apiKey }}
           <el-button link type="primary" @click="copyText(apiKey)">
@@ -17,7 +17,7 @@
       </div>
 
       <div class="key-row">
-        <div class="label">api_secret</div>
+        <div class="label">API 密钥密码（api_secret）</div>
         <div class="value">
           {{ apiSecret }}
           <el-button link type="primary" @click="copyText(apiSecret)">

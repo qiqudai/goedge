@@ -13,6 +13,7 @@ type forwardListItem struct {
 	UserName        string    `json:"user_name"`
 	ListenPorts     string    `json:"listen_ports"`
 	OriginDisplay   string    `json:"origin_display"`
+	Origin          string    `json:"origin"`
 	UserPackageID   int64     `json:"user_package_id"`
 	UserPackageName string    `json:"user_package_name"`
 	GroupID         int64     `json:"group_id"` // Deprecated: use group_ids

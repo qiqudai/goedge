@@ -405,8 +405,34 @@ func (ctr *UserPackageController) SwitchUserPackage(c *gin.Context) {
 	if err := services.NewUserPackageService().SyncUserPackage(pack.ID, "upgrade"); err != nil {
 		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
+	resyncSitesForUserPackage(pack.ID)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
+}
+
+func resyncSitesForUserPackage(userPackageID int64) {
+	if userPackageID == 0 {
+		return
+	}
+	var sites []models.Site
+	if err := db.DB.Where("user_package = ?", userPackageID).Find(&sites).Error; err != nil {
+		log.Printf("[WARN] resyncSitesForUserPackage load failed package=%d err=%v", userPackageID, err)
+		return
+	}
+	updated := make([]int64, 0)
+	for _, site := range sites {
+		changed, err := refreshSiteCnameHostname(&site, nil, nil)
+		if err != nil {
+			log.Printf("[WARN] resyncSitesForUserPackage refresh failed site=%d err=%v", site.ID, err)
+		}
+		if changed {
+			updated = append(updated, site.ID)
+		}
+		resyncSiteCnameForSite(site)
+	}
+	if len(updated) > 0 {
+		services.BumpConfigVersion("site", updated)
+	}
 }
 
 func loadUserPackageBoolConfig(packs []models.UserPackage, name string) (map[int64]bool, error) {

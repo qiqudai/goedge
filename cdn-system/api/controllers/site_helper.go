@@ -519,8 +519,15 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		} else {
 			// Custom or Default mode
 			// Reconstruct CNAME to ensure it reflects current CnameDomain (important for batch updates)
-			if len(domains) > 0 && site.CnameDomain != "" {
-				cname = buildSiteCname(domains[0], site.CnameDomain)
+			cnameDomain := strings.TrimSpace(site.CnameDomain)
+			if cnameDomain == "" {
+				cnameDomain = strings.TrimSpace(pkg.CnameDomain)
+			}
+			if cnameDomain == "" {
+				cnameDomain = "cdn.node.com"
+			}
+			if len(domains) > 0 && cnameDomain != "" {
+				cname = buildSiteCname(domains[0], cnameDomain)
 			}
 		}
 		if cname == "" {

@@ -338,8 +338,9 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	services.BumpConfigVersion("site", []int64{id})
 	var newSite models.Site
 	if err := db.DB.Where("id = ?", id).First(&newSite).Error; err == nil {
+		_, _ = refreshSiteCnameHostname(&newSite, nil, nil)
 		_ = services.SyncUserDNSRecords(&oldSite, &newSite)
-		if oldSite.UserPackageID != newSite.UserPackageID {
+		if shouldResyncSiteCname(oldSite, newSite) {
 			resyncSiteCnameForSite(newSite)
 		}
 	}
@@ -361,6 +362,7 @@ func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 
 	services.BumpConfigVersion("site", []int64{site.ID})
 	_ = ensureDNSRecords(site)
+	resyncSiteCnameForSite(*site)
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Site created successfully"), "data": site})
 }
@@ -380,6 +382,7 @@ func (ctrl *SiteController) Create(c *gin.Context) {
 
 	services.BumpConfigVersion("site", []int64{site.ID})
 	_ = ensureDNSRecords(site)
+	resyncSiteCnameForSite(*site)
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Site created successfully"), "data": site})
 }
@@ -732,7 +735,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		}
 
 		// Recalculate CnameHostname when CNAME fields change.
-		if req.CnameDomain != nil || req.CnameMode != nil {
+		if req.CnameDomain != nil || req.CnameMode != nil || req.UserPackageID != nil {
 			// Load sites to recalculate CNAME.
 			var sites []models.Site
 			if err := tx.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
@@ -740,44 +743,17 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 			}
 
 			for _, site := range sites {
+				pkgID := site.UserPackageID
+				if req.UserPackageID != nil && *req.UserPackageID > 0 {
+					pkgID = *req.UserPackageID
+				}
+
 				var pkg models.UserPackage
-				if err := tx.First(&pkg, site.UserPackageID).Error; err != nil {
+				if err := tx.First(&pkg, pkgID).Error; err != nil {
 					continue
 				}
 
-				// Recalculate CnameHostname.
-				newCnameHostname := site.CnameHostname
-				siteMode := ""
-				if req.CnameMode != nil {
-					siteMode = *req.CnameMode
-				} else {
-					siteMode = site.CnameMode
-				}
-
-				cnameDomain := site.CnameDomain
-				if req.CnameDomain != nil {
-					cnameDomain = *req.CnameDomain
-				}
-
-				// Recalculate based on mode.
-				if siteMode == "package" || (siteMode == "" && pkg.CnameMode == "package") {
-					// Package mode.
-					if pkg.CnameHostname != "" {
-						newCnameHostname = pkg.CnameHostname
-						if pkg.CnameDomain != "" {
-							newCnameHostname += "." + pkg.CnameDomain
-						} else if cnameDomain != "" {
-							newCnameHostname += "." + cnameDomain
-						} else {
-							newCnameHostname += ".cdn.node.com"
-						}
-					}
-				} else {
-					// Custom or default mode.
-					if len(site.Domains) > 0 && cnameDomain != "" {
-						newCnameHostname = buildSiteCname(site.Domains[0], cnameDomain)
-					}
-				}
+				newCnameHostname := computeSiteCnameHostname(site, pkg, req.CnameMode, req.CnameDomain)
 
 				if newCnameHostname != site.CnameHostname {
 					if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("cname_hostname", newCnameHostname).Error; err != nil {
@@ -852,7 +828,8 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	}
 
 	services.BumpConfigVersion("site", req.IDs)
-	if req.UserPackageID != nil {
+	needResync := req.UserPackageID != nil || req.CnameDomain != nil || req.CnameMode != nil || req.NodeGroupID != nil || req.BackupNodeGroupID != nil || req.EnableBackupGroup != nil
+	if needResync {
 		var sites []models.Site
 		if err := db.DB.Where("id IN ?", req.IDs).Find(&sites).Error; err == nil {
 			for _, site := range sites {
@@ -878,8 +855,9 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("ids is required")})
 		return
 	}
+	userID := int64(0)
 	if isUserRequest(c) {
-		userID := parseInt64(mustGet(c, "userID"))
+		userID = parseInt64(mustGet(c, "userID"))
 		if userID == 0 {
 			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
 			return
@@ -940,10 +918,16 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 			"site_ids": req.IDs,
 		}
 		raw, _ := json.Marshal(payload)
+		metaRaw := ""
+		if userID != 0 {
+			meta, _ := json.Marshal(map[string]int64{"user_id": userID})
+			metaRaw = string(meta)
+		}
 		task := models.Task{
 			Type:     "clear_cache",
 			Name:     i18n.T("cache.clear_task_name"),
 			Data:     string(raw),
+			Res:      metaRaw,
 			State:    "waiting",
 			Enable:   true,
 			CreateAt: now,
@@ -1021,6 +1005,10 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 		}
 
 		certType, dnsapi := resolveCertDefaults(site.UserID)
+		if hasWildcardDomain(site.Domains) && dnsapi <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("wildcard requires dnsapi")})
+			return
+		}
 		cert := models.Cert{
 			UserID:      int(site.UserID),
 			Name:        defaultCertName(site.Domains[0]),
@@ -1272,6 +1260,109 @@ func (ctrl *SiteController) AdminResolve(c *gin.Context) {
 		"cname":  strings.TrimSuffix(cname, "."),
 		"ips":    hosts,
 	})
+}
+
+func computeSiteCnameHostname(site models.Site, pkg models.UserPackage, overrideMode, overrideDomain *string) string {
+	newCnameHostname := strings.TrimSpace(site.CnameHostname)
+
+	siteMode := strings.TrimSpace(site.CnameMode)
+	if overrideMode != nil {
+		siteMode = strings.TrimSpace(*overrideMode)
+	}
+
+	cnameDomain := strings.TrimSpace(site.CnameDomain)
+	if overrideDomain != nil {
+		cnameDomain = strings.TrimSpace(*overrideDomain)
+	}
+	pkgDomain := strings.TrimSpace(pkg.CnameDomain)
+
+	pkgMode := strings.TrimSpace(pkg.CnameMode)
+	if siteMode == "package" || (siteMode == "" && pkgMode == "package") {
+		pkgHost := strings.TrimSpace(pkg.CnameHostname)
+		if pkgHost != "" {
+			newCnameHostname = pkgHost
+			if pkgDomain != "" {
+				newCnameHostname += "." + pkgDomain
+			} else if cnameDomain != "" {
+				newCnameHostname += "." + cnameDomain
+			} else {
+				newCnameHostname += ".cdn.node.com"
+			}
+		}
+		return newCnameHostname
+	}
+
+	effectiveDomain := cnameDomain
+	if effectiveDomain == "" {
+		effectiveDomain = pkgDomain
+	}
+	if effectiveDomain == "" {
+		effectiveDomain = "cdn.node.com"
+	}
+	if len(site.Domains) > 0 && effectiveDomain != "" {
+		return buildSiteCname(site.Domains[0], effectiveDomain)
+	}
+	return newCnameHostname
+}
+
+func refreshSiteCnameHostname(site *models.Site, overrideMode, overrideDomain *string) (bool, error) {
+	if site == nil || site.UserPackageID == 0 {
+		return false, nil
+	}
+	var pkg models.UserPackage
+	if err := db.DB.Select("cname_mode", "cname_hostname", "cname_domain").
+		Where("id = ?", site.UserPackageID).
+		First(&pkg).Error; err != nil {
+		return false, err
+	}
+
+	updateDomain := false
+	if overrideDomain == nil && strings.TrimSpace(site.CnameDomain) == "" && strings.TrimSpace(pkg.CnameDomain) != "" {
+		site.CnameDomain = strings.TrimSpace(pkg.CnameDomain)
+		updateDomain = true
+	}
+	newCnameHostname := computeSiteCnameHostname(*site, pkg, overrideMode, overrideDomain)
+	if newCnameHostname == "" || (newCnameHostname == site.CnameHostname && !updateDomain) {
+		return false, nil
+	}
+	updates := map[string]interface{}{
+		"cname_hostname": newCnameHostname,
+	}
+	if updateDomain {
+		updates["cname_domain"] = site.CnameDomain
+	}
+	if err := db.DB.Model(&models.Site{}).
+		Where("id = ?", site.ID).
+		Updates(updates).Error; err != nil {
+		return false, err
+	}
+	site.CnameHostname = newCnameHostname
+	return true, nil
+}
+
+func shouldResyncSiteCname(oldSite, newSite models.Site) bool {
+	if oldSite.UserPackageID != newSite.UserPackageID {
+		return true
+	}
+	if strings.TrimSpace(oldSite.CnameDomain) != strings.TrimSpace(newSite.CnameDomain) {
+		return true
+	}
+	if strings.TrimSpace(oldSite.CnameMode) != strings.TrimSpace(newSite.CnameMode) {
+		return true
+	}
+	if strings.TrimSpace(oldSite.CnameHostname) != strings.TrimSpace(newSite.CnameHostname) {
+		return true
+	}
+	if oldSite.NodeGroupID != newSite.NodeGroupID {
+		return true
+	}
+	if oldSite.BackupNodeGroupID != newSite.BackupNodeGroupID {
+		return true
+	}
+	if oldSite.EnableBackupGroup != newSite.EnableBackupGroup {
+		return true
+	}
+	return false
 }
 
 func resyncSiteCnameForSite(site models.Site) {

@@ -31,6 +31,15 @@ func expectedNginxPidPath() string {
 	return pidPath
 }
 
+func isPidMissingOrInvalid(outputText string) bool {
+	if outputText == "" {
+		return false
+	}
+	lowerText := strings.ToLower(outputText)
+	return strings.Contains(lowerText, "invalid pid number") ||
+		strings.Contains(lowerText, "no such file or directory")
+}
+
 func findNginxMasterPID(confPath string) (int, error) {
 	if runtime.GOOS == "windows" {
 		return 0, nil
@@ -161,11 +170,15 @@ func stopNginx() error {
 	if err != nil {
 		outputText := strings.TrimSpace(string(stopOutput))
 		if runtime.GOOS != "windows" {
-			if pid, pidErr := findNginxMasterPID(confPath); pidErr == nil && pid > 0 {
+			pid, pidErr := findNginxMasterPID(confPath)
+			if pidErr == nil && pid > 0 {
 				if signalErr := syscall.Kill(pid, syscall.SIGTERM); signalErr == nil {
 					log.Printf("[Warn] Nginx stopped via master pid=%d", pid)
 					return nil
 				}
+			} else if pidErr == nil && pid == 0 && isPidMissingOrInvalid(outputText) {
+				log.Printf("[Warn] Nginx stop skipped: pid missing or invalid and no master process found")
+				return nil
 			}
 		}
 		if outputText != "" {
@@ -227,6 +240,10 @@ func executeReload() error {
 					}
 				}
 			} else if pidErr == nil {
+				if isPidMissingOrInvalid(outputText) {
+					log.Printf("[Warn] Reload skipped: pid missing or invalid and no master process found")
+					return nil
+				}
 				if startErr := startNginx(); startErr == nil {
 					log.Printf("[Warn] Reload fallback: nginx was not running; started a new master")
 					return nil

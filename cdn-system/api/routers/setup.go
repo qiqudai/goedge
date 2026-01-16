@@ -363,6 +363,7 @@ func Setup(r *gin.Engine) {
 			user.POST("/certs/reissue", certController.Reissue)
 			user.GET("/certs/:id/dns_challenge", certController.GetDNSChallenge)
 			user.POST("/certs/:id/verify_dns", certController.VerifyDNSChallenge)
+			user.GET("/certs/:id/download", certController.Download)
 			user.GET("/certs/default_settings", certController.GetDefaultSettings)
 			user.POST("/certs/default_settings", certController.UpdateDefaultSettings)
 

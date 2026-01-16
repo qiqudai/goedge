@@ -23,7 +23,7 @@
           <DefaultSettings v-if="activeTab === 'default'" :is-admin="isAdmin" />
         </el-tab-pane>
 
-        <el-tab-pane label="DNS API" name="dns">
+        <el-tab-pane label="DNS 接口" name="dns">
           <DnsApiList v-if="activeTab === 'dns'" />
         </el-tab-pane>
 

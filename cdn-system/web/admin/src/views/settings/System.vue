@@ -33,6 +33,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import request from '@/utils/request'
+import { useSystemInfo } from '@/composables/useSystemInfo'
 import BasicConfig from './components/BasicConfig.vue'
 import PackageConfig from './components/PackageConfig.vue'
 import MaintenanceConfig from './components/MaintenanceConfig.vue'
@@ -44,6 +45,7 @@ import OtherConfig from './components/OtherConfig.vue'
 const activeTab = ref('system')
 const configItems = ref([])
 const loading = ref(false)
+const { loadSystemInfo } = useSystemInfo()
 
 const loadData = () => {
   loading.value = true
@@ -51,6 +53,11 @@ const loadData = () => {
     .get('/config_items', { params: { type: 'system' } })
     .then(res => {
       configItems.value = res.list || []
+    })
+    .then(() => {
+      if (activeTab.value === 'system') {
+        loadSystemInfo(true)
+      }
     })
     .finally(() => {
       loading.value = false

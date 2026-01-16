@@ -76,12 +76,12 @@
           {{ formatDateTime(row.end_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="Debug:域名" min-width="120">
+      <el-table-column label="调试:域名" min-width="120">
           <template #default="{ row }">
              {{ row.cname_domain }}
           </template>
       </el-table-column>
-      <el-table-column label="Debug:Mode" min-width="100">
+      <el-table-column label="调试:模式" min-width="100">
           <template #default="{ row }">
              {{ row.cname_mode }}
           </template>
@@ -140,7 +140,7 @@
               <span class="detail-value">{{ current.custom_cc_rule ? '允许' : '拒绝' }}</span>
             </div>
             <div class="detail-item">
-              <span class="detail-label">Websocket:</span>
+              <span class="detail-label">WebSocket:</span>
               <span class="detail-value">{{ current.websocket ? '允许' : '拒绝' }}</span>
             </div>
             <div class="detail-item">
@@ -285,7 +285,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="Websocket">
+            <el-form-item label="WebSocket">
               <el-switch v-model="editForm.websocket" active-text="允许" inactive-text="禁止" />
             </el-form-item>
           </el-col>

@@ -158,7 +158,7 @@
             <el-switch v-model="form.https.http3" :disabled="!selected.https.http3" />
           </div>
           <div class="batch-row">
-            <el-checkbox v-model="selected.https.ocsp">OCSP Stapling</el-checkbox>
+            <el-checkbox v-model="selected.https.ocsp">OCSP 装订</el-checkbox>
             <el-switch v-model="form.https.ocsp" :disabled="!selected.https.ocsp" />
           </div>
           <div class="batch-row">
@@ -173,7 +173,7 @@
             <span class="batch-label">协议</span>
             <el-input
               v-model="form.https.sslProtocols"
-              placeholder="TLSv1.2 TLSv1.3"
+              placeholder="如：TLSv1.2 TLSv1.3"
               type="textarea"
               :rows="2"
               :disabled="!selected.https.ssl"
@@ -184,7 +184,7 @@
             <span class="batch-label">加密套件</span>
             <el-input
               v-model="form.https.sslCiphers"
-              placeholder="ECDHE..."
+              placeholder="如：ECDHE..."
               type="textarea"
               :rows="2"
               :disabled="!selected.https.ssl"
@@ -234,7 +234,7 @@
             />
           </div>
           <div class="batch-row">
-            <el-checkbox v-model="selected.origin.host">回源 HOST</el-checkbox>
+            <el-checkbox v-model="selected.origin.host">回源主机</el-checkbox>
             <div class="inline-field">
               <el-radio-group v-model="form.origin.host" :disabled="!selected.origin.host">
                 <el-radio value="follow">自动跟随</el-radio>
@@ -244,7 +244,7 @@
               <el-input
                 v-if="form.origin.host === 'custom'"
                 v-model="form.origin.hostValue"
-                placeholder="origin.example.com"
+                placeholder="如：origin.example.com"
                 :disabled="!selected.origin.host"
                 style="width: 220px"
               />
@@ -280,9 +280,9 @@
               :disabled="!selected.origin.balanceWay"
               style="width: 200px"
             >
-              <el-option label="ip hash" value="ip_hash" />
+              <el-option label="IP 哈希" value="ip_hash" />
               <el-option label="轮循" value="rr" />
-              <el-option label="url hash" value="url_hash" />
+              <el-option label="URL 哈希" value="url_hash" />
               <el-option label="最少连接" value="least_conn" />
               <el-option label="随机" value="random" />
             </el-select>
@@ -449,7 +449,7 @@
             <el-option label="全站缓存" value="all" />
             <el-option label="静态资源缓存" value="static" />
             <el-option label="视频资源" value="video" />
-            <el-option label="Wordpress 缓存" value="wordpress" />
+            <el-option label="WordPress 缓存" value="wordpress" />
           </el-select>
         </div>
         <el-table :data="form.cache.rules" border size="small" @selection-change="handleCacheSelection">
@@ -675,7 +675,7 @@
               <el-input
                 v-if="form.security.cookie.enable"
                 v-model="form.security.cookie.domain"
-                placeholder="abc.com"
+                placeholder="如：abc.com"
                 :disabled="!selected.security.cookie"
                 style="width: 200px"
               />
@@ -773,34 +773,34 @@
           <div class="divider"></div>
           <div class="section-title">跨域访问设置</div>
           <div class="batch-row">
-            <el-checkbox v-model="selected.access.cors">CORS</el-checkbox>
+            <el-checkbox v-model="selected.access.cors">跨域（CORS）</el-checkbox>
             <el-switch v-model="form.access.cors.enable" :disabled="!selected.access.cors" />
           </div>
           <div class="batch-row" v-if="form.access.cors.enable">
-            <span class="batch-label">allow_origin</span>
+            <span class="batch-label">允许来源</span>
             <el-input v-model="form.access.cors.allowOrigin" :disabled="!selected.access.cors" style="width: 360px" />
           </div>
           <div class="batch-row" v-if="form.access.cors.enable">
-            <span class="batch-label">allow_methods</span>
+            <span class="batch-label">允许方法</span>
             <el-input v-model="form.access.cors.allowMethods" :disabled="!selected.access.cors" style="width: 360px" />
           </div>
           <div class="batch-row" v-if="form.access.cors.enable">
-            <span class="batch-label">allow_headers</span>
+            <span class="batch-label">允许请求头</span>
             <el-input v-model="form.access.cors.allowHeaders" :disabled="!selected.access.cors" style="width: 360px" />
           </div>
           <div class="batch-row" v-if="form.access.cors.enable">
-            <span class="batch-label">expose_headers</span>
+            <span class="batch-label">暴露响应头</span>
             <el-input v-model="form.access.cors.exposeHeaders" :disabled="!selected.access.cors" style="width: 360px" />
           </div>
           <div class="batch-row" v-if="form.access.cors.enable">
-            <span class="batch-label">allow_credentials</span>
+            <span class="batch-label">允许携带凭证</span>
             <el-radio-group v-model="form.access.cors.allowCredentials" :disabled="!selected.access.cors">
               <el-radio :value="true">允许</el-radio>
               <el-radio :value="false">不允许</el-radio>
             </el-radio-group>
           </div>
           <div class="batch-row" v-if="form.access.cors.enable">
-            <span class="batch-label">max_age</span>
+            <span class="batch-label">最大缓存时间</span>
             <el-input v-model="form.access.cors.maxAge" :disabled="!selected.access.cors" style="width: 200px" />
           </div>
         </el-form>
@@ -846,9 +846,9 @@
           </div>
 
           <div class="divider"></div>
-          <div class="section-title">Websocket 设置</div>
+          <div class="section-title">WebSocket 设置</div>
           <div class="batch-row">
-            <el-checkbox v-model="selected.advanced.websocket">Websocket</el-checkbox>
+            <el-checkbox v-model="selected.advanced.websocket">WebSocket</el-checkbox>
             <el-switch v-model="form.advanced.websocket" :disabled="!selected.advanced.websocket" />
           </div>
 

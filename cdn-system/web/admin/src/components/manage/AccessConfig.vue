@@ -61,25 +61,25 @@
         </div>
         
         <div v-show="corsExpanded">
-          <el-form-item label="allow_origin" style="width: 520px">
+          <el-form-item label="允许来源" style="width: 520px">
             <el-input v-model="accessSettings.cors.allowOrigin" @blur="handleBlurSave" />
           </el-form-item>
-          <el-form-item label="allow_methods" style="width: 520px">
+          <el-form-item label="允许方法" style="width: 520px">
             <el-input v-model="accessSettings.cors.allowMethods" @blur="handleBlurSave" />
           </el-form-item>
-          <el-form-item label="allow_headers" style="width: 520px">
+          <el-form-item label="允许请求头" style="width: 520px">
             <el-input v-model="accessSettings.cors.allowHeaders" @blur="handleBlurSave" />
           </el-form-item>
-          <el-form-item label="expose_headers" style="width: 520px">
+          <el-form-item label="暴露响应头" style="width: 520px">
             <el-input v-model="accessSettings.cors.exposeHeaders" @blur="handleBlurSave" />
           </el-form-item>
-          <el-form-item label="allow_credentials" style="width: 520px">
+          <el-form-item label="允许携带凭证" style="width: 520px">
             <el-radio-group v-model="accessSettings.cors.allowCredentials" @change="handleSave">
               <el-radio :value="true">允许</el-radio>
               <el-radio :value="false">不允许</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="max_age" style="width: 520px">
+          <el-form-item label="最大缓存时间" style="width: 520px">
             <el-input v-model="accessSettings.cors.maxAge" @blur="handleBlurSave" />
           </el-form-item>
         </div>

@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -351,8 +352,31 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		pageSize = 20
 	}
 
+	isUser := isUserRequest(c)
+	var hostFilter services.HostFilter
+	if isUser {
+		userID := parseUserID(mustGet(c, "userID"))
+		if userID == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+			return
+		}
+		filter, err := services.LoadHostFilter(userID)
+		if err != nil || filter.Empty() {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+			return
+		}
+		hostFilter = filter
+	}
+
 	conditions := []string{"1=1"}
 	args := make([]interface{}, 0)
+
+	if isUser {
+		if cond, condArgs := hostFilter.SQLCondition(); cond != "" {
+			conditions = append(conditions, cond)
+			args = append(args, condArgs...)
+		}
+	}
 
 	if domain := strings.TrimSpace(c.Query("domain")); domain != "" {
 		if strings.TrimSpace(c.Query("domain_mode")) == "fuzzy" {
@@ -426,10 +450,6 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		conditions = append(conditions, "http_user_agent LIKE ?")
 		args = append(args, "%"+userAgent+"%")
 	}
-	if upstreamAddr := strings.TrimSpace(c.Query("upstream_addr")); upstreamAddr != "" {
-		conditions = append(conditions, "upstream_addr LIKE ?")
-		args = append(args, "%"+upstreamAddr+"%")
-	}
 	if sslProtocol := strings.TrimSpace(c.Query("ssl_protocol")); sslProtocol != "" {
 		conditions = append(conditions, "ssl_protocol = ?")
 		args = append(args, sslProtocol)
@@ -493,6 +513,13 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 			&row.SSLProtocol,
 			&row.SSLCipher,
 		); err == nil {
+			if !isUser && !services.IsSpiderIP(row.RemoteAddr) {
+				row.UpstreamAddr = ""
+			}
+			if isUser {
+				row.UpstreamAddr = ""
+				row.NodeIP = ""
+			}
 			list = append(list, row)
 		}
 	}

@@ -70,8 +70,15 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []i
 		UpdatedAt:     time.Now(),
 	}
 
-	if forward.Cname == "" && len(listenPorts) > 0 {
-		forward.Cname = listenPorts[0] + ".cdn.node.com"
+	var pkg *models.UserPackage
+	if forward.UserPackageID != 0 {
+		var userPkg models.UserPackage
+		if err := db.DB.First(&userPkg, forward.UserPackageID).Error; err == nil {
+			pkg = &userPkg
+		}
+	}
+	if _, err := applyForwardCname(forward, pkg); err != nil {
+		return nil, nil, err
 	}
 
 	groupIDs := req.GroupIDs
@@ -284,14 +291,38 @@ func buildForwardListItems(forwards []models.Forward) ([]forwardListItem, error)
 	items := make([]forwardListItem, 0, len(forwards))
 	for _, forward := range forwards {
 		originDisplay := ""
+		originInput := ""
 		if len(forward.Origins) > 0 {
 			parts := make([]string, 0, len(forward.Origins))
 			for _, o := range forward.Origins {
 				parts = append(parts, o.Address)
 			}
 			originDisplay = strings.Join(parts, ",")
+			originInput = strings.Join(parts, " ")
 		} else if forward.OriginsRaw != "" {
 			originDisplay = forward.OriginsRaw
+			originInput = forward.OriginsRaw
+		}
+
+		var pkg *models.UserPackage
+		pkgName := ""
+		if stored, ok := pkgMap[forward.UserPackageID]; ok {
+			pkg = &stored
+			pkgName = stored.Name
+		}
+
+		beforeCname := strings.TrimSpace(forward.Cname)
+		if _, err := applyForwardCname(&forward, pkg); err != nil {
+			return nil, err
+		}
+		if beforeCname == "" && strings.TrimSpace(forward.Cname) != "" && forward.ID != 0 {
+			updates := map[string]interface{}{"cname_hostname": forward.Cname}
+			if forward.CnameDomain != "" {
+				updates["cname_domain"] = forward.CnameDomain
+			}
+			if len(updates) > 0 {
+				_ = db.DB.Model(&models.Forward{}).Where("id = ?", forward.ID).Updates(updates).Error
+			}
 		}
 
 		cname := strings.TrimSpace(forward.Cname)
@@ -317,8 +348,9 @@ func buildForwardListItems(forwards []models.Forward) ([]forwardListItem, error)
 			UserName:        userMap[forward.UserID],
 			ListenPorts:     strings.Join(forward.ListenPorts, " "),
 			OriginDisplay:   originDisplay,
+			Origin:          originInput,
 			UserPackageID:   forward.UserPackageID,
-			UserPackageName: pkgMap[forward.UserPackageID],
+			UserPackageName: pkgName,
 			GroupID:         primaryGroupID,
 			GroupIDs:        groupIDs,
 			GroupName:       strings.Join(groupNames, ","),

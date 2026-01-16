@@ -270,7 +270,7 @@ func interpolateQuery(query string, args ...interface{}) string {
 		case time.Time:
 			replacement = fmt.Sprintf("toDateTime('%s')", formatTime(v))
 		case string:
-			replacement = "'" + strings.ReplaceAll(v, "'", "\\'") + "'"
+			replacement = quoteClickHouseString(v)
 		case int:
 			replacement = fmt.Sprintf("%d", v)
 		case int64:

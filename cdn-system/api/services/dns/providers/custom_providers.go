@@ -216,7 +216,7 @@ func (p *GoDaddyProvider) setHeaders(req *http.Request) {
 }
 
 func (p *GoDaddyProvider) doRequest(req *http.Request) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := dns.NewHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -341,7 +341,7 @@ func (p *NameComProvider) DeleteRecord(domain string, record dns.DNSRecord) erro
 }
 
 func (p *NameComProvider) doRequest(req *http.Request) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := dns.NewHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -559,7 +559,8 @@ func (p *NamesiloProvider) AddRecord(domain string, record dns.DNSRecord) error 
 		params.Set("rrttl", "3600")
 	}
 
-	resp, err := http.Get("https://www.namesilo.com/api/dnsAddRecord?" + params.Encode())
+	client := dns.NewHTTPClient(30 * time.Second)
+	resp, err := client.Get("https://www.namesilo.com/api/dnsAddRecord?" + params.Encode())
 	if err != nil {
 		return err
 	}
@@ -577,7 +578,8 @@ func (p *NamesiloProvider) DeleteRecord(domain string, record dns.DNSRecord) err
 	params.Set("key", p.Config.APIKey)
 	params.Set("domain", domain)
 
-	resp, err := http.Get("https://www.namesilo.com/api/dnsListRecords?" + params.Encode())
+	client := dns.NewHTTPClient(30 * time.Second)
+	resp, err := client.Get("https://www.namesilo.com/api/dnsListRecords?" + params.Encode())
 	if err != nil {
 		return err
 	}

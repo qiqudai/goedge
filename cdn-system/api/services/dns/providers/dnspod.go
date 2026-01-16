@@ -761,7 +761,8 @@ func (p *DNSPodProvider) sendRequestTC3(action string, payload interface{}) ([]b
 	}
 	req.Header.Set("Authorization", authHeader)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := dns.NewHTTPClient(30 * time.Second)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -186,7 +186,8 @@ const submitForm = async () => {
 
 const removeSetting = row => {
   ElMessageBox.confirm('确认删除该设置?', '提示').then(async () => {
-    await request.delete('/forward_defaults', { data: { id: row.id } })
+    const payload = row.id_str ? { id_str: row.id_str } : { id: row.id }
+    await request.delete('/forward_defaults', { data: payload })
     ElMessage.success('删除成功')
     fetchSettings()
   })

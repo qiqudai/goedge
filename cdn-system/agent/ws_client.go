@@ -332,6 +332,19 @@ func sendAccessLogs(lines []string) error {
 	return sendWSJSON(msg)
 }
 
+func sendStreamLogs(lines []string) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	msg := map[string]interface{}{
+		"kind":    "agent_logs_stream",
+		"node_id": NodeID,
+		"node_ip": "",
+		"lines":   lines,
+	}
+	return sendWSJSON(msg)
+}
+
 func sendMetrics(content string) error {
 	if strings.TrimSpace(content) == "" {
 		return nil

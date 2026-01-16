@@ -3,7 +3,7 @@
     <el-tabs v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
       <el-tab-pane label="证书列表" name="list" />
       <el-tab-pane label="默认设置" name="default" />
-      <el-tab-pane label="DNS API" name="dns" />
+      <el-tab-pane label="DNS 接口" name="dns" />
     </el-tabs>
 
     <div v-if="activeTopTab === 'list'" class="filter-container">
@@ -15,14 +15,16 @@
             更多操作<el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="handleBatchAction('enable')">启用</el-dropdown-item>
-              <el-dropdown-item @click="handleBatchAction('disable')">禁用</el-dropdown-item>
-              <el-dropdown-item @click="handleBatchAction('delete')">删除</el-dropdown-item>
-              <el-dropdown-item @click="handleBatchAction('force_disable')">强制禁用</el-dropdown-item>
-              <el-dropdown-item @click="handleDownloadBatch">下载</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="handleBatchAction('enable')">启用</el-dropdown-item>
+                <el-dropdown-item @click="handleBatchAction('disable')">禁用</el-dropdown-item>
+                <el-dropdown-item @click="handleBatchAction('auto_renew_enable')">开启续签</el-dropdown-item>
+                <el-dropdown-item @click="handleBatchAction('auto_renew_disable')">关闭续签</el-dropdown-item>
+                <el-dropdown-item @click="handleBatchAction('delete')">删除</el-dropdown-item>
+                <el-dropdown-item @click="handleBatchAction('force_disable')">强制禁用</el-dropdown-item>
+                <el-dropdown-item @click="handleDownloadBatch">下载</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
         </el-dropdown>
       </div>
 
@@ -31,7 +33,7 @@
           <el-option label="名称" value="name" />
           <el-option label="域名" value="domain" />
           <el-option label="类型" value="type" />
-          <el-option label="All" value="all" />
+          <el-option label="全部" value="all" />
         </el-select>
         <el-input
           v-model="listQuery.keyword"
@@ -132,6 +134,8 @@
               <el-dropdown-menu>
                 <el-dropdown-item @click="handleRowAction('enable', row)">启用</el-dropdown-item>
                 <el-dropdown-item @click="handleRowAction('disable', row)">禁用</el-dropdown-item>
+                <el-dropdown-item @click="handleRowAction('auto_renew_enable', row)">开启续签</el-dropdown-item>
+                <el-dropdown-item @click="handleRowAction('auto_renew_disable', row)">关闭续签</el-dropdown-item>
                 <el-dropdown-item @click="handleRowAction('delete', row)">删除</el-dropdown-item>
                 <el-dropdown-item @click="handleRowAction('force_disable', row)">强制禁用</el-dropdown-item>
                 <el-dropdown-item @click="handleDownload(row)">下载</el-dropdown-item>
@@ -170,18 +174,18 @@
           <el-form-item label="证书类型">
             <el-radio-group v-model="defaultForm.type">
               <el-radio value="system">系统默认设置</el-radio>
-              <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio value="zerossl">ZeroSSL（推荐）</el-radio>
               <el-radio value="letsencrypt">Let's Encrypt</el-radio>
               <el-radio value="buypass">BuyPass</el-radio>
               <el-radio value="google">Google CA</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="DNS API">
+          <el-form-item label="DNS 接口">
             <el-select v-model="defaultForm.dnsapi" clearable placeholder="请选择" style="width: 320px;">
               <el-option v-for="d in defaultDnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
             </el-select>
             <div class="help-text">
-              这里的 DNS API 仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
+              这里的 DNS 接口仅用于证书申请（DNS 验证），与站点 CNAME 解析无关。
             </div>
           </el-form-item>
           <el-form-item>
@@ -195,7 +199,7 @@
 
     <div v-if="activeTopTab === 'dns'" class="dnsapi-section">
       <div class="filter-container">
-        <el-button type="primary" @click="openDnsapiDialog">新增DNS API</el-button>
+        <el-button type="primary" @click="openDnsapiDialog">新增 DNS 接口</el-button>
         <el-button :disabled="!selectedDnsapi.length" @click="removeDnsapiBatch">删除</el-button>
       </div>
       <AppTable
@@ -226,7 +230,7 @@
       </AppTable>
     </div>
 
-    <el-dialog v-model="dnsapiDialogVisible" title="新增DNS API" width="520px">
+    <el-dialog v-model="dnsapiDialogVisible" title="新增 DNS 接口" width="520px">
       <el-form :model="dnsapiForm" label-width="90px">
         <el-form-item label="名称" required>
           <el-input v-model="dnsapiForm.name" placeholder="请输入名称" />
@@ -431,12 +435,12 @@ const handleReissue = () => {
 }
 
 const handleDownload = row => {
-  request.get(`/certs/${row.id}/download`, { responseType: 'blob' }).then(res => {
+  request.get(`/certs/${row.id}/download`, { responseType: 'blob', params: { domain: row.domain } }).then(res => {
     const blob = new Blob([res], { type: 'application/octet-stream' })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${row.name || 'cert'}-${row.id}.pem`
+    link.download = `${row.name || 'cert'}-${row.id}.zip`
     link.click()
     window.URL.revokeObjectURL(url)
   })
@@ -462,8 +466,18 @@ const loadDnsapiList = () => {
 }
 
 const loadDnsapiTypes = () => {
-  request.get('/dnsapi/types').then(res => {
-    dnsapiTypes.value = res.data?.types || res.list || []
+  Promise.all([
+    request.get('/dns/providers/types'),
+    request.get('/dnsapi/types')
+  ]).then(([providerRes, dnsapiRes]) => {
+    const providerTypes = providerRes.data?.types || providerRes.types || []
+    const allow = new Set(providerTypes.map(item => item.type))
+    const dnsapiTypes = dnsapiRes.data?.types || dnsapiRes.types || []
+    dnsapiTypes.value = allow.size > 0 ? dnsapiTypes.filter(item => allow.has(item.type)) : dnsapiTypes
+  }).catch(() => {
+    request.get('/dnsapi/types').then(res => {
+      dnsapiTypes.value = res.data?.types || res.types || []
+    })
   })
 }
 
@@ -471,13 +485,13 @@ const currentDnsapiType = computed(() => dnsapiTypes.value.find(t => t.type === 
 
 const dnsapiFieldLabel = (type, field) => {
   const mapping = {
-    aliyun: { id: 'AccessKey ID', secret: 'AccessKey Secret' },
-    huawei: { id: 'Access Key ID', secret: 'Secret Access Key' },
-    dnsla: { id: 'API ID', secret: 'API密钥' },
-    dnspod: { id: 'ID', token: 'Token' },
-    dnspod_intl: { secret_id: 'SecretId', secret_key: 'SecretKey' },
-    cloudflare: { email: 'Email', key: 'API Key' },
-    godaddy: { key: 'Key', secret: 'Secret' }
+    aliyun: { id: 'AccessKey ID（访问密钥ID）', secret: 'AccessKey Secret（访问密钥密码）' },
+    huawei: { id: 'Access Key ID（访问密钥ID）', secret: 'Secret Access Key（访问密钥密码）' },
+    dnsla: { id: 'API ID', secret: 'API 密钥' },
+    dnspod: { id: 'ID', token: '令牌' },
+    dnspod_intl: { secret_id: 'SecretId（密钥ID）', secret_key: 'SecretKey（密钥密码）' },
+    cloudflare: { email: '邮箱', key: 'API 密钥' },
+    godaddy: { key: '密钥', secret: '密钥密码' }
   }
   if (mapping[type] && mapping[type][field]) {
     return mapping[type][field]
@@ -539,7 +553,7 @@ const submitDnsapi = () => {
 }
 
 const removeDnsapi = row => {
-  ElMessageBox.confirm('确认删除该DNS API?', '提示', {
+  ElMessageBox.confirm('确认删除该 DNS 接口?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -558,7 +572,7 @@ const handleDnsapiSelection = rows => {
 const removeDnsapiBatch = () => {
   if (!selectedDnsapi.value.length) return
   const ids = selectedDnsapi.value.map(row => row.id)
-  ElMessageBox.confirm('确定删除选中DNS API?', '提示', {
+  ElMessageBox.confirm('确定删除选中的 DNS 接口?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'

@@ -104,7 +104,7 @@ func processSiteCreateTask(task *models.Task) {
 		ApplySiteDefaults(site, defaults)
 	}
 	if globalDefaults := GetGlobalDefaultConfig(); globalDefaults != nil {
-		ApplySiteTemplateDefaults(site, globalDefaults.Website)
+		ApplySiteTemplateDefaultsByType(site, globalDefaults)
 	}
 
 	// Transaction to save Site and Group Relation

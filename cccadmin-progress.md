@@ -5,6 +5,7 @@
 - [x] 四层转发列表（增删改/批量/启用禁用）
 - [x] 转发添加弹窗（普通用户隐藏用户选择/默认套餐）
 - [x] 证书管理与 DNS 接口（含 DNS API 列表/新增/删除/默认设置）
+- [x] 证书管理证书内容显示修复（非上传仅签发后回显、忽略非上传提交 cert/key）
 - [x] 转发默认设置
 - [x] 转发实时监控
 - [x] 转发监控黑夜模式图标适配
@@ -19,6 +20,7 @@
 - [x] 个人资料板块顶部保存按钮移除
 - [x] 个人资料黑夜模式字体可读性修复
 - [x] 黑夜模式全局黑灰文字可读性修复（含网站管理顶部背景）
+- [x] 用户清空缓存任务权限修复（绑定 user_id 元信息，兼容旧任务校验）
 - [x] 网站管理-基本配置（普通用户）
 - [x] 网站管理-回源设置（普通用户）
 - [x] 网站管理-HTTPS配置（普通用户）
@@ -33,6 +35,15 @@
 - [x] L2 TCP/UDP 健康下线与回退（stream 按 L2 探测过滤、全失效直连源站）
 - [x] 套餐 L2 开关贯通（套餐/用户套餐/站点 current 下发，前后端配置）
 - [x] 备用线路组自动切换实现（主线路全下线切换、连续 10 次正常恢复）
+- [x] 站点 CNAME DNS 修复（清理任务保留站点 CNAME host、创建/更新/批量更新触发 CNAME 重算与重同步）
+- [x] Playwright DNS CNAME 回归测试（网站/套餐 CNAME 解析 + 删除验证）
+- [x] DNS 接口类型列表对齐（网站 DNS 接口弹窗与节点 DNS 列表共用类型）
+- [x] 套餐切换 CNAME 纠正与证书泛域名拦截（修复 CNAME 域名空值回退、套餐切换重同步、泛证书要求 DNSAPI）
+- [x] DNS 接口类型统一（网站/证书入口共用 node/dns 类型列表，字段仍用 DNSAPI key）
+- [x] 节点离线保留 CNAME + 离线阈值翻倍（避免离线删除 CNAME，降低误判）
+- [x] DNS 泛域名证书挑战优化（TXT 记录自动更新 + 传播等待加长）
+- [x] DNSLA OpenAPI Basic 认证接入（recordList/record 接口）
+- [x] DNSLA 泛域名证书签发验证（真实申请通过）
 
 ## 测试记录
 - `npx playwright test tests/e2e/user-site-actions.spec.ts` ✅
@@ -75,3 +86,20 @@
 - `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
 - `cd cdn-system/web/admin && npm run build` ✅（黑夜模式全局文字）
 - `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- `cd cdn-system/api && go test ./...` ✅（用户清空缓存任务）
+- `cd cdn-system/api && go test ./...` ✅（用户清空缓存任务兼容旧任务）
+- `cd cdn-system/api && go test ./...` ✅（站点 CNAME DNS 修复）
+- `cd cdn-system/web/admin && npm run test:e2e -- tests/e2e/user-dns-cname.spec.ts` ✅（E2E_DNS 未设置，测试跳过）
+- `cd cdn-system/web/admin && npm run build` ✅（DNS CNAME 测试用例）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- `cd cdn-system/web/admin && npm run build` ✅（DNS 接口类型列表）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- `cd cdn-system/api && go test ./...` ✅（套餐切换 CNAME 修复 + 泛域名证书校验）
+- `cd cdn-system/web/admin && npm run build` ✅（DNS 接口类型统一）
+- `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- `cd cdn-system/api && go test ./...` ✅（节点离线 CNAME 保留 + 阈值翻倍）
+- `cd cdn-system/api && go test ./...` ✅（DNS 泛域名证书挑战优化）
+- `cd cdn-system/api && go test ./...` ✅（DNS TXT 更新/等待完善）
+- `cd cdn-system/api && go test ./...` ✅（DNSLA OpenAPI 认证接入）
+- `ACME_DNS_E2E=1 npx playwright test tests/e2e/user-acme-dns-wildcard.spec.ts` ✅（DNSLA 泛域名签发）
+- `cd cdn-system/api && go test ./...` ✅（证书管理内容回显修复）

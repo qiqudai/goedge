@@ -32,11 +32,17 @@ func LookupMessageSubscription(userID int64, msgType string) (bool, bool, bool) 
 }
 
 func CreateUserMessage(userID int64, msgType, title, content string, packageID, siteID int64) error {
+	now := time.Now()
+	policy := ResolveNotifyPolicy(msgType, now)
+	if !policy.enabled {
+		return nil
+	}
 	phone, email, ok := LookupMessageSubscription(userID, msgType)
 	if !ok {
 		return nil
 	}
-	now := time.Now()
+	allowEmail := email && policy.allowEmail && policy.inPeriod
+	allowPhone := phone && policy.allowSMS && policy.inPeriod
 	msg := models.Message{
 		Type:          msgType,
 		Receive:       userID,
@@ -46,8 +52,8 @@ func CreateUserMessage(userID int64, msgType, title, content string, packageID, 
 		UserPackageID: packageID,
 		SiteID:        siteID,
 		IsShow:        true,
-		EmailNeedSend: email,
-		PhoneNeedSend: phone,
+		EmailNeedSend: allowEmail,
+		PhoneNeedSend: allowPhone,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}

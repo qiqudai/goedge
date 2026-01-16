@@ -305,7 +305,31 @@ func (c *TaskController) Get(ctx *gin.Context) {
 	if isTaskUserRequest(ctx) {
 		userID := parseTaskUserIDAny(taskMustGet(ctx, "userID"))
 		meta := parseTaskMeta(task.Res)
-		if userID == 0 || meta.UserID != userID {
+		if userID == 0 {
+			ctx.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
+		if meta.UserID != 0 {
+			if meta.UserID != userID {
+				ctx.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+				return
+			}
+		} else if task.Type == "clear_cache" {
+			var payload struct {
+				SiteIDs []int64 `json:"site_ids"`
+			}
+			allowed := false
+			if err := json.Unmarshal([]byte(task.Data), &payload); err == nil && len(payload.SiteIDs) > 0 {
+				ids, err := filterSiteIDsForUser(payload.SiteIDs, userID)
+				if err == nil && len(ids) == len(payload.SiteIDs) {
+					allowed = true
+				}
+			}
+			if !allowed {
+				ctx.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+				return
+			}
+		} else {
 			ctx.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
 			return
 		}

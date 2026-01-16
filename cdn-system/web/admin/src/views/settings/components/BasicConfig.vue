@@ -8,7 +8,7 @@
 
       <el-row :gutter="20">
         <el-col :span="8">
-          <el-form-item label="Favicon">
+          <el-form-item label="网站图标">
              <el-upload
                class="avatar-uploader"
                :action="uploadUrl"
@@ -23,7 +23,7 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="Logo">
+          <el-form-item label="站点标志">
              <el-upload
                class="avatar-uploader"
                :action="uploadUrl"
@@ -61,14 +61,14 @@
          <el-input v-model="systemInfo.admin_console_title" placeholder="CDN管理员控制台" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="底部链接">
-        <el-input type="textarea" :rows="3" v-model="systemInfo.footer_link" placeholder="名称|URL (换行分隔)" @blur="handleBlurSave" />
+        <el-input type="textarea" :rows="3" v-model="systemInfo.footer_link" placeholder="名称|URL（换行分隔）" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="底部版权">
         <el-input type="textarea" :rows="2" v-model="systemInfo.footer_copyright" placeholder="" @blur="handleBlurSave" />
       </el-form-item>
-      <el-form-item label="Master Host">
+      <el-form-item label="主控主机">
         <el-input v-model="bindMasterHost" placeholder="" @blur="handleBlurSave" />
-        <div class="form-helper">绑定主节点Host，用于节点通信。</div>
+        <div class="form-helper">绑定主节点 Host，用于节点通信。</div>
       </el-form-item>
     </el-card>
   </el-form>

@@ -123,14 +123,12 @@ func (f HostFilter) HTTPCondition() string {
 	if len(f.Exact) > 0 {
 		quoted := make([]string, 0, len(f.Exact))
 		for _, host := range f.Exact {
-			host = strings.ReplaceAll(host, "'", "\\'")
-			quoted = append(quoted, "'"+host+"'")
+			quoted = append(quoted, quoteClickHouseString(host))
 		}
 		conditions = append(conditions, "host IN ("+strings.Join(quoted, ",")+")")
 	}
 	for _, suffix := range f.Wildcards {
-		suffix = strings.ReplaceAll(suffix, "'", "\\'")
-		conditions = append(conditions, "host LIKE '%"+suffix+"'")
+		conditions = append(conditions, "host LIKE "+quoteClickHouseString("%"+suffix))
 	}
 	if len(conditions) == 0 {
 		return ""

@@ -1,6 +1,6 @@
 <template>
   <div class="dnsapi-toolbar">
-    <el-button type="primary" @click="handleEdit()">新增DNS API</el-button>
+    <el-button type="primary" @click="handleEdit()">新增 DNS 接口</el-button>
     <el-button :disabled="!selectedRows.length" @click="handleDeleteBatch">删除</el-button>
   </div>
   <AppTable
@@ -28,7 +28,7 @@
     </el-table-column>
   </AppTable>
 
-  <el-dialog v-model="visible" title="DNS API设置" width="600px">
+  <el-dialog v-model="visible" title="DNS 接口设置" width="600px">
     <el-form :model="form" label-width="120px">
       <el-form-item label="名称" required><el-input v-model="form.name" /></el-form-item>
       <el-form-item label="类型" required>
@@ -76,6 +76,34 @@ const currentType = computed(() => {
   return types.value.find(t => t.type === form.type)
 })
 
+const labelTranslations = {
+  'AccessKey ID': 'AccessKey ID（访问密钥ID）',
+  'AccessKey Secret': 'AccessKey Secret（访问密钥密码）',
+  'Access Key ID': 'Access Key ID（访问密钥ID）',
+  'Secret Access Key': 'Secret Access Key（访问密钥密码）',
+  'Access Key': 'Access Key（访问密钥）',
+  'Secret Key': 'Secret Key（密钥密码）',
+  'API ID': 'API ID',
+  'API Password': 'API 密码',
+  'API Key': 'API 密钥',
+  'API Secret': 'API 密钥密码',
+  'API Token': 'API 令牌',
+  Token: '令牌',
+  Email: '邮箱',
+  Username: '用户名',
+  User: '用户',
+  'Client IP': '客户端 IP',
+  'App ID': '应用 ID',
+  'App Secret': '应用密钥',
+  'Auth ID': '认证 ID',
+  'Auth Password': '认证密码',
+  SecretId: 'SecretId（密钥ID）',
+  SecretKey: 'SecretKey（密钥密码）',
+  ID: 'ID'
+}
+
+const translateLabel = (label) => labelTranslations[label] || label
+
 
 const getTypeName = (type) => {
   const t = types.value.find(item => item.type === type)
@@ -85,9 +113,9 @@ const getTypeName = (type) => {
 const formatFieldLabel = (type, field) => {
   const typeConfig = DNS_API_FIELD_LABELS[type]
   if (typeConfig && typeConfig[field]) {
-    return typeConfig[field]
+    return translateLabel(typeConfig[field])
   }
-  return field
+  return translateLabel(field)
 }
 
 
@@ -104,13 +132,24 @@ const handleTypeChange = () => {
 const fetchData = async () => {
   loading.value = true
   const res = await request.get('/dnsapi')
-  list.value = res.list || []
+  list.value = res.data?.list || res.list || []
   loading.value = false
 }
 
 const fetchTypes = async () => {
-  const res = await request.get('/dnsapi/types')
-  types.value = res.types || []
+  try {
+    const [providerRes, dnsapiRes] = await Promise.all([
+      request.get('/dns/providers/types'),
+      request.get('/dnsapi/types')
+    ])
+    const providerTypes = providerRes.data?.types || providerRes.types || []
+    const allow = new Set(providerTypes.map(item => item.type))
+    const dnsapiTypes = dnsapiRes.data?.types || dnsapiRes.types || []
+    types.value = allow.size > 0 ? dnsapiTypes.filter(item => allow.has(item.type)) : dnsapiTypes
+  } catch (e) {
+    const res = await request.get('/dnsapi/types')
+    types.value = res.data?.types || res.types || []
+  }
 }
 
 const handleEdit = (row) => {
@@ -153,7 +192,7 @@ const handleDelete = (row) => {
 
 const handleDeleteBatch = () => {
   if (!selectedRows.value.length) return
-  ElMessageBox.confirm(`确定删除选中的 ${selectedRows.value.length} 个API?`, '提示').then(async () => {
+  ElMessageBox.confirm(`确定删除选中的 ${selectedRows.value.length} 个 DNS 接口?`, '提示').then(async () => {
     // Assuming backend supports batch delete or we loop
     // Since we don't have batch endpoint confirmed, we'll try loop
     for (const row of selectedRows.value) {

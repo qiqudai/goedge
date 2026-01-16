@@ -4,7 +4,7 @@
     <el-card shadow="never" class="mb-20">
       <template #header>主控获取源IP</template>
       <el-form-item label="源IP请求头">
-        <el-input v-model="form.master_client_ip_header" placeholder="X-Real-IP"  @blur="handleBlurSave" />
+        <el-input v-model="form.master_client_ip_header" placeholder="如：X-Real-IP"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
 
@@ -47,10 +47,10 @@
 
     <!-- Group 5: HTTP Proxy -->
     <el-card shadow="never" class="mb-20">
-      <template #header>http代理设置</template>
-      <el-form-item label="http代理">
+      <template #header>HTTP 代理设置</template>
+      <el-form-item label="HTTP 代理">
         <el-input v-model="form.http_proxy" placeholder="格式为 http://用户名:密码@代理ip:代理端口"  @blur="handleBlurSave" />
-        <div class="form-helper">当设置时，用户添加的dns api使用代理连接，系统提供的免费代理为:http://cdn:6d0d3e31@proxy.lotcdn.com:8888</div>
+        <div class="form-helper">当设置时，用户添加的 DNS 接口使用代理连接，系统提供的免费代理为:http://cdn:6d0d3e31@proxy.lotcdn.com:8888</div>
       </el-form-item>
     </el-card>
     
@@ -62,11 +62,11 @@
         </el-form-item>
         
         <div v-if="form.api_key_status === '1'" class="pl-20">
-           <el-form-item label="api_key">
+           <el-form-item label="API 密钥">
              <span>{{ apiKeyInfo.api_key }}</span>
              <el-button link type="primary" class="ml-10" @click="copy(apiKeyInfo.api_key)"><el-icon><CopyDocument /></el-icon></el-button>
            </el-form-item>
-           <el-form-item label="api_secret">
+           <el-form-item label="API 密钥密码">
              <span>{{ apiKeyInfo.api_secret }}</span>
              <el-button link type="primary" class="ml-10" @click="copy(apiKeyInfo.api_secret)"><el-icon><CopyDocument /></el-icon></el-button>
            </el-form-item>

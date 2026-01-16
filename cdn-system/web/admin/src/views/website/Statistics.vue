@@ -42,10 +42,10 @@
              <el-radio-button value="domain">域名排行</el-radio-button>
              <el-radio-button value="url">热门URL</el-radio-button>
              <el-radio-button value="latency">耗时排行</el-radio-button>
-             <el-radio-button value="ip">Top客户端IP</el-radio-button>
+             <el-radio-button value="ip">客户端IP排行</el-radio-button>
              <el-radio-button value="country">国家排行</el-radio-button>
              <el-radio-button value="province">省份排行</el-radio-button>
-             <el-radio-button value="referer">热门Referer</el-radio-button>
+             <el-radio-button value="referer">热门来源</el-radio-button>
            </el-radio-group>
 
            <div style="margin-bottom: 20px;">
@@ -134,7 +134,7 @@ const itemLabel = computed(() => {
         'ip': 'IP地址',
         'country': '国家',
         'province': '省份',
-        'referer': 'Referer'
+        'referer': '来源'
     }
     return map[rankingType.value] || '项目'
 })
@@ -147,7 +147,7 @@ const searchPlaceholder = computed(() => {
         'ip': '输入IP',
         'country': '输入国家',
         'province': '输入省份',
-        'referer': '输入Referer'
+        'referer': '输入来源'
     }
     return map[rankingType.value] || '输入关键词'
 })
@@ -202,8 +202,8 @@ const fetchBasicStats = async () => {
         if (res.code === 0) {
             const data = res.data
             await nextTick()
-            initChart(bandwidthChartRef.value, '带宽', data.x_axis, [{ name: 'Bandwidth', type: 'line', data: data.bandwidth, areaStyle: {} }], 'Mbps')
-            initChart(trafficChartRef.value, '流量', data.x_axis, [{ name: 'Traffic', type: 'line', data: data.traffic, areaStyle: {} }], 'MB')
+            initChart(bandwidthChartRef.value, '带宽', data.x_axis, [{ name: '带宽', type: 'line', data: data.bandwidth, areaStyle: {} }], 'Mbps')
+            initChart(trafficChartRef.value, '流量', data.x_axis, [{ name: '流量', type: 'line', data: data.traffic, areaStyle: {} }], 'MB')
             initChart(qpsChartRef.value, 'QPS', data.x_axis, [{ name: 'QPS', type: 'line', data: data.qps, areaStyle: {} }], 'req/s')
         }
     } catch (e) { console.error(e) }
@@ -215,7 +215,7 @@ const fetchQualityStats = async () => {
         if (res.code === 0) {
             const data = res.data
              await nextTick()
-            initChart(hitRateChartRef.value, '请求命中率', data.x_axis, [{ name: 'Hit Rate', type: 'line', data: data.hit_rate }], '%')
+            initChart(hitRateChartRef.value, '请求命中率', data.x_axis, [{ name: '命中率', type: 'line', data: data.hit_rate }], '%')
             initChart(statusChartRef.value, '状态码', data.x_axis, [
                 { name: '4xx', type: 'line', data: data.status_4xx },
                 { name: '5xx', type: 'line', data: data.status_5xx }

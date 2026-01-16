@@ -89,7 +89,7 @@
     <el-dialog v-model="cnameDialogVisible" :title="cnameForm.id > 0 ? '编辑CNAME域名' : '添加CNAME域名'" width="500px">
       <el-form :model="cnameForm" label-width="100px">
         <el-form-item label="域名" required>
-          <el-input v-model="cnameForm.domain" placeholder="example.com" @blur="handleCnameBlur" />
+          <el-input v-model="cnameForm.domain" placeholder="如：example.com" @blur="handleCnameBlur" />
         </el-form-item>
         <el-form-item label="DNS提供商" required>
           <el-select v-model="cnameForm.dns_provider_id" placeholder="请选择" style="width: 100%;">
@@ -139,12 +139,39 @@ const form = ref({
 })
 
 const labelMaps = DNS_API_FIELD_LABELS
+const labelTranslations = {
+  'AccessKey ID': 'AccessKey ID（访问密钥ID）',
+  'AccessKey Secret': 'AccessKey Secret（访问密钥密码）',
+  'Access Key ID': 'Access Key ID（访问密钥ID）',
+  'Secret Access Key': 'Secret Access Key（访问密钥密码）',
+  'Access Key': 'Access Key（访问密钥）',
+  'Secret Key': 'Secret Key（密钥密码）',
+  'API ID': 'API ID',
+  'API Password': 'API 密码',
+  'API Key': 'API 密钥',
+  'API Secret': 'API 密钥密码',
+  'API Token': 'API 令牌',
+  Token: '令牌',
+  Email: '邮箱',
+  Username: '用户名',
+  User: '用户',
+  'Client IP': '客户端 IP',
+  'App ID': '应用 ID',
+  'App Secret': '应用密钥',
+  'Auth ID': '认证 ID',
+  'Auth Password': '认证密码',
+  SecretId: 'SecretId（密钥ID）',
+  SecretKey: 'SecretKey（密钥密码）',
+  ID: 'ID'
+}
+
+const translateLabel = (label) => labelTranslations[label] || label
 
 const getDynamicLabel = (type, field) => {
   if (labelMaps[type] && labelMaps[type][field]) {
-    return labelMaps[type][field]
+    return translateLabel(labelMaps[type][field])
   }
-  return field.replace(/_/g, ' ').toUpperCase()
+  return translateLabel(field.replace(/_/g, ' ').toUpperCase())
 }
 
 const currentTypeConfig = computed(() => {

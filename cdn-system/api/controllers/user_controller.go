@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -217,26 +216,26 @@ func (ctr *UserController) UpdateUser(c *gin.Context) {
 	}
 
 	var req struct {
-		Email       string `json:"email"`
-		Name        string `json:"name"`
-		Des         string `json:"des"`
-		Phone       string `json:"phone"`
-		QQ          string `json:"qq"`
-		Password    string `json:"password"`
-		GroupID     int    `json:"group_id"`
-		Enable      bool   `json:"enable"`
-		
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Des      string `json:"des"`
+		Phone    string `json:"phone"`
+		QQ       string `json:"qq"`
+		Password string `json:"password"`
+		GroupID  int    `json:"group_id"`
+		Enable   bool   `json:"enable"`
+
 		// Real-name
-		CertName     string `json:"cert_name"`
-		CertNo       string `json:"cert_no"`
-		Company      string `json:"company"`
-		TeaCode      string `json:"tea_code"`
-		
+		CertName string `json:"cert_name"`
+		CertNo   string `json:"cert_no"`
+		Company  string `json:"company"`
+		TeaCode  string `json:"tea_code"`
+
 		// Secondary
 		SecondaryAuth         bool   `json:"secondary_auth"`
 		SecondaryAuthDeadline string `json:"secondary_auth_deadline"`
 		SecondaryAuthAction   string `json:"secondary_auth_action"`
-		
+
 		// Security
 		LoginCaptcha string `json:"login_captcha"`
 		WhiteIP      string `json:"white_ip"`
@@ -262,22 +261,26 @@ func (ctr *UserController) UpdateUser(c *gin.Context) {
 	updates["qq"] = req.QQ
 	updates["group_id"] = req.GroupID
 	updates["enable"] = req.Enable
-	
+
 	updates["cert_name"] = req.CertName
 	updates["cert_no"] = req.CertNo
 	updates["company"] = req.Company
 	updates["tea_code"] = req.TeaCode
-	
+
 	updates["secondary_auth"] = req.SecondaryAuth
 	updates["secondary_auth_deadline"] = req.SecondaryAuthDeadline
 	updates["secondary_auth_action"] = req.SecondaryAuthAction
-	
+
 	updates["login_captcha"] = req.LoginCaptcha
 	updates["white_ip"] = req.WhiteIP
 
 	if req.Password != "" {
-		hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-		updates["password"] = string(hash)
+		hash, err := utils.HashPasswordForStorage(req.Password)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update user")})
+			return
+		}
+		updates["password"] = hash
 	}
 
 	if err := db.DB.Model(&user).Updates(updates).Error; err != nil {

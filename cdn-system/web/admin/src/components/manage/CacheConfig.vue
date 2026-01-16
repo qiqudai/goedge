@@ -19,7 +19,7 @@
         <el-option label="全站缓存" value="all" />
         <el-option label="静态资源缓存" value="static" />
         <el-option label="视频资源" value="video" />
-        <el-option label="Wordpress 缓存" value="wordpress" />
+        <el-option label="WordPress 缓存" value="wordpress" />
       </el-select>
     </div>
     

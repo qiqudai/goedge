@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 import { useLoading } from '@/composables/useLoading'
 
 const DEFAULT_API_BASE = 'https://goai.665305.cc'
-const API_BASE = (() => {
+export const API_BASE = (() => {
   if (typeof window === 'undefined') {
     return DEFAULT_API_BASE
   }

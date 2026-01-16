@@ -47,10 +47,10 @@
           <el-form-item label="类型">
             <el-radio-group v-model="form.type">
               <el-radio value="upload">自己上传</el-radio>
-              <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio value="zerossl">ZeroSSL（推荐）</el-radio>
               <el-radio value="letsencrypt">Let's Encrypt</el-radio>
               <el-radio value="buypass">BuyPass</el-radio>
-              <el-radio value="google">GoogleCA</el-radio>
+              <el-radio value="google">Google CA</el-radio>
             </el-radio-group>
           </el-form-item>
 
@@ -67,16 +67,16 @@
              <el-input v-model="form.domain" placeholder="输入域名, 多个域名空格分隔" />
           </el-form-item>
 
-          <el-form-item label="DNS API" v-if="form.type !== 'upload'">
+          <el-form-item label="DNS 接口" v-if="form.type !== 'upload'">
              <el-select v-model="form.dnsapi" clearable placeholder="不选择 (HTTP验证)" style="width: 100%;">
                 <el-option label="不选择 (HTTP验证)" :value="0" />
                 <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
              </el-select>
              <div class="form-helper" v-if="!form.dnsapi">
-               不选择DNS API时，需要将域名解析CNAME地址，这种方式无法申请通配符域名；
+               不选择 DNS 接口时，需要将域名解析 CNAME 地址，这种方式无法申请通配符域名；
              </div>
              <div class="form-helper" v-else>
-               选择DNS API时，可以申请所有类型的域名，包括通配符，申请成功率比较高。
+               选择 DNS 接口时，可以申请所有类型的域名，包括通配符，申请成功率比较高。
              </div>
           </el-form-item>
 
@@ -107,22 +107,22 @@
           </el-form-item>
            <el-form-item label="类型">
             <el-radio-group v-model="batchForm.type">
-              <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio value="zerossl">ZeroSSL（推荐）</el-radio>
               <el-radio value="letsencrypt">Let's Encrypt</el-radio>
               <el-radio value="buypass">BuyPass</el-radio>
-              <el-radio value="google">GoogleCA</el-radio>
+              <el-radio value="google">Google CA</el-radio>
             </el-radio-group>
           </el-form-item>
           <el-form-item label="域名">
             <el-input v-model="batchForm.domains" type="textarea" :rows="6" placeholder="一行一个域名" />
           </el-form-item>
-          <el-form-item label="DNS API">
+          <el-form-item label="DNS 接口">
              <el-select v-model="batchForm.dnsapi" clearable placeholder="不选择 (HTTP验证)" style="width: 100%;">
                 <el-option label="不选择 (HTTP验证)" :value="0" />
                 <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
              </el-select>
              <div class="form-helper">
-               这里选择的DNS API将应用于所有批量申请的域名。
+               这里选择的 DNS 接口将应用于所有批量申请的域名。
              </div>
           </el-form-item>
         </el-form>
@@ -151,25 +151,25 @@
           </el-form-item>
           <el-form-item label="类型">
             <el-radio-group v-model="wildcardForm.type">
-              <el-radio value="zerossl">ZeroSSL(推荐)</el-radio>
+              <el-radio value="zerossl">ZeroSSL（推荐）</el-radio>
               <el-radio value="letsencrypt">Let's Encrypt</el-radio>
               <el-radio value="buypass">BuyPass</el-radio>
-              <el-radio value="google">GoogleCA</el-radio>
+              <el-radio value="google">Google CA</el-radio>
             </el-radio-group>
           </el-form-item>
           <el-form-item label="验证域名">
             <el-input v-model="wildcardForm.domain" placeholder="*.example.com" />
           </el-form-item>
-          <el-form-item label="DNS API">
+          <el-form-item label="DNS 接口">
             <el-select v-model="wildcardForm.dnsapi" clearable placeholder="不选择 (手动TXT)" style="width: 100%;">
               <el-option label="不选择 (手动TXT)" :value="0" />
               <el-option v-for="d in dnsapiOptions" :key="d.id" :label="d.name" :value="d.id" />
             </el-select>
             <div class="form-helper" v-if="!wildcardForm.dnsapi">
-              不选择DNS API时，需要手动添加TXT记录完成验证。
+              不选择 DNS 接口时，需要手动添加 TXT 记录完成验证。
             </div>
             <div class="form-helper" v-else>
-              选择DNS API时会自动设置TXT记录，无需手动解析。
+              选择 DNS 接口时会自动设置 TXT 记录，无需手动解析。
             </div>
           </el-form-item>
         </el-form>
@@ -446,7 +446,7 @@ const submit = () => {
         const domains = form.domain.split(/[\s,;]+/).filter(Boolean)
         const hasWildcard = domains.some(d => d.trim().startsWith('*.'))
         if (hasWildcard && !form.dnsapi) {
-            ElMessage.warning('泛证书请在泛证书申请页或选择DNS API')
+            ElMessage.warning('泛证书请在泛证书申请页或选择 DNS 接口')
             return
         }
         const batchPayload = {
@@ -479,7 +479,7 @@ const submitBatch = () => {
     }
     const hasWildcard = domains.some(d => d.startsWith('*.'))
     if (hasWildcard && !batchForm.dnsapi) {
-        ElMessage.warning('泛证书必须选择DNS API')
+        ElMessage.warning('泛证书必须选择 DNS 接口')
         return
     }
     const payload = {

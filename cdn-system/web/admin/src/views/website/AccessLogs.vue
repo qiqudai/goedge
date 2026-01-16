@@ -100,7 +100,7 @@
               <el-input v-model="listQuery.node_ip" placeholder="节点IP" clearable />
             </el-form-item>
             <el-form-item label="协议">
-              <el-select v-model="listQuery.scheme" clearable placeholder="http/https">
+              <el-select v-model="listQuery.scheme" clearable placeholder="HTTP/HTTPS">
                 <el-option label="http" value="http" />
                 <el-option label="https" value="https" />
               </el-select>
@@ -117,13 +117,10 @@
               </el-select>
             </el-form-item>
             <el-form-item label="来源">
-              <el-input v-model="listQuery.referer" placeholder="Referer" clearable />
+              <el-input v-model="listQuery.referer" placeholder="来源地址" clearable />
             </el-form-item>
             <el-form-item label="浏览器">
-              <el-input v-model="listQuery.user_agent" placeholder="User-Agent" clearable />
-            </el-form-item>
-            <el-form-item label="回源地址">
-              <el-input v-model="listQuery.upstream_addr" placeholder="回源地址" clearable />
+              <el-input v-model="listQuery.user_agent" placeholder="浏览器标识" clearable />
             </el-form-item>
             <el-form-item label="SSL协议">
               <el-input v-model="listQuery.ssl_protocol" placeholder="SSL协议" clearable />
@@ -233,7 +230,6 @@ const listQuery = reactive({
   cache_status: '',
   referer: '',
   user_agent: '',
-  upstream_addr: '',
   ssl_protocol: '',
   ssl_cipher: ''
 })
@@ -283,7 +279,6 @@ const resetFilters = () => {
   listQuery.cache_status = ''
   listQuery.referer = ''
   listQuery.user_agent = ''
-  listQuery.upstream_addr = ''
   listQuery.ssl_protocol = ''
   listQuery.ssl_cipher = ''
   handleFilter()

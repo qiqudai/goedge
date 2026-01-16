@@ -74,7 +74,7 @@ func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
 		}
 	}
 
-	clientIP := c.ClientIP()
+	clientIP := resolveClientIP(c)
 	if clientIP == "" {
 		return 0
 	}
@@ -171,20 +171,29 @@ func (ctr *AgentController) GetL2Nodes(c *gin.Context) {
 
 	var nodes []models.Node
 	if err := db.DB.Where("id IN ? AND level = ? AND enable = ?", l2NodeIDs, 2, true).
-		Select("id", "ip", "port", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
+		Select("id", "ip", "port", "region_id", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
 		Find(&nodes).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("failed to load l2 nodes")})
 		return
 	}
 
+	metaMap := services.LoadRegionMetaMap()
 	result := make([]gin.H, 0, len(nodes))
 	for _, n := range nodes {
+		checkPort := n.CheckPort
+		if checkPort == 0 {
+			checkPort = services.ResolveRegionL2CheckPort(metaMap, n.RegionID)
+		}
+		checkProtocol := strings.TrimSpace(n.CheckProtocol)
+		if checkProtocol == "" {
+			checkProtocol = "tcp"
+		}
 		result = append(result, gin.H{
 			"id":             n.ID,
 			"ip":             n.IP,
 			"port":           n.Port,
-			"check_protocol": n.CheckProtocol,
-			"check_port":     n.CheckPort,
+			"check_protocol": checkProtocol,
+			"check_port":     checkPort,
 			"check_host":     n.CheckHost,
 			"check_path":     n.CheckPath,
 			"check_timeout":  n.CheckTimeout,
@@ -446,26 +455,9 @@ func notifyTaskCompletion(task models.Task, state string, ret string) {
 	if userID == 0 {
 		return
 	}
-	phone, email, ok := services.LookupMessageSubscription(userID, task.Type)
-	if !ok {
-		return
-	}
 	title := buildTaskTitle(task.Type, state)
 	content := buildTaskContent(task.Type, state, task.Data, ret)
-
-	msg := models.Message{
-		Type:          task.Type,
-		Receive:       userID,
-		Title:         title,
-		Content:       content,
-		PhoneContent:  content,
-		IsShow:        true,
-		EmailNeedSend: email,
-		PhoneNeedSend: phone,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	_ = db.DB.Create(&msg).Error
+	_ = services.CreateUserMessage(userID, task.Type, title, content, 0, 0)
 }
 
 func parseTaskUserID(raw string) int64 {

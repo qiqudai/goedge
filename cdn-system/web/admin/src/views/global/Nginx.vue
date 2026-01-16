@@ -8,20 +8,20 @@
       </template>
 
       <el-form label-width="200px" v-if="config.nginx">
-        <h3>Worker 进程配置</h3>
-        <el-form-item label="Worker Processes">
-             <el-input v-model="config.nginx.worker_processes" placeholder="auto" style="width: 200px;" @blur="saveConfig" />
-             <div class="tip">工作进程数，建议设置为 CPU 核心数 or "auto"</div>
+        <h3>工作进程配置</h3>
+        <el-form-item label="工作进程数">
+             <el-input v-model="config.nginx.worker_processes" placeholder="自动 (auto)" style="width: 200px;" @blur="saveConfig" />
+             <div class="tip">工作进程数，建议设置为 CPU 核心数或 "auto"</div>
         </el-form-item>
-        <el-form-item label="Worker Connections">
+        <el-form-item label="工作进程连接数">
              <el-input-number v-model="config.nginx.worker_connections" :min="1024" :step="1024" @blur="saveConfig" />
              <div class="tip">每个工作进程的最大连接数</div>
         </el-form-item>
-        <el-form-item label="Worker Rlimit Nofile">
+        <el-form-item label="打开文件数限制">
              <el-input-number v-model="config.nginx.worker_rlimit_nofile" :min="1024" :step="1024" @blur="saveConfig" />
              <div class="tip">最大打开文件描述符数 (ulimit -n)</div>
         </el-form-item>
-        <el-form-item label="Worker Shutdown Timeout">
+        <el-form-item label="优雅退出超时">
              <el-input v-model="config.nginx.worker_shutdown_timeout" placeholder="60s" style="width: 200px;" @blur="saveConfig" />
              <div class="tip">优雅退出超时时间</div>
         </el-form-item>
@@ -29,7 +29,7 @@
         <el-divider />
 
         <h3>路径配置</h3>
-        <el-form-item label="日志目录 (Access/Error)">
+        <el-form-item label="日志目录（访问/错误）">
              <el-input v-model="config.nginx.log_directory" placeholder="/usr/local/nginx/logs/" @blur="saveConfig" />
              <div class="tip">Nginx 访问日志和错误日志的存放目录</div>
         </el-form-item>
@@ -37,14 +37,14 @@
         <el-divider />
 
         <h3>其他设置</h3>
-         <el-form-item label="Keepalive Timeout">
+         <el-form-item label="Keepalive 超时">
              <el-input-number v-model="config.nginx.keepalive_timeout" @blur="saveConfig" /> <span class="unit">秒</span>
         </el-form-item>
         <el-form-item label="开启 Gzip">
             <el-switch v-model="config.nginx.gzip" @change="saveConfig" />
         </el-form-item>
-        <el-form-item label="自定义配置片段 (http block)">
-            <el-input type="textarea" v-model="config.nginx.custom_snippet" :rows="5" placeholder="# Custom nginx directives..." @blur="saveConfig" />
+        <el-form-item label="自定义配置片段（HTTP 块）">
+            <el-input type="textarea" v-model="config.nginx.custom_snippet" :rows="5" placeholder="# 自定义 Nginx 指令..." @blur="saveConfig" />
         </el-form-item>
 
       </el-form>

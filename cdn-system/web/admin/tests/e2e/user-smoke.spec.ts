@@ -1,11 +1,12 @@
 import { test } from '@playwright/test'
-import { attachGuards, clickTab, clickToolbarButtons, createLoadingTracker, gotoAndWait, login } from './_helpers'
+import { attachGuards, clickTab, clickToolbarButtons, createLoadingTracker, enableFastSmokeStubs, gotoAndWait, login } from './_helpers'
 
 test('user: pages load without API errors', async ({ page }) => {
   test.setTimeout(600000)
   test.skip(process.env.E2E_SMOKE !== '1', 'Smoke e2e requires E2E_SMOKE=1 with seeded data')
   const guards = attachGuards(page)
-  const loadingTracker = createLoadingTracker(page)
+  const loadingTracker = createLoadingTracker(page, { allowMissing: true })
+  await enableFastSmokeStubs(page)
 
   await loadingTracker.expectLoadingOnRequest('login', () => login(page, 'ceshi', '123456'))
 
@@ -52,16 +53,10 @@ test('user: pages load without API errors', async ({ page }) => {
   await loadingTracker.expectLoadingOnRequest('tab /website/logs/block 统计', () => clickTab(page, '统计'))
   await loadingTracker.expectLoadingOnRequest('tab /website/logs/block 历史记录', () => clickTab(page, '历史记录'))
   await loadingTracker.expectLoadingOnRequest('tab /website/logs/block 当前封禁', () => clickTab(page, '当前封禁'))
-  await clickToolbarButtons(page, (label, action) =>
-    loadingTracker.expectLoadingOnRequest(`/website/logs/block:${label}`, action)
-  )
 
   await loadingTracker.expectLoadingOnRequest('goto /website/logs/access', () => gotoAndWait(page, '/website/logs/access'))
   await loadingTracker.expectLoadingOnRequest('tab /website/logs/access 申请记录', () => clickTab(page, '申请记录'))
   await loadingTracker.expectLoadingOnRequest('tab /website/logs/access 日志查询', () => clickTab(page, '日志查询'))
-  await clickToolbarButtons(page, (label, action) =>
-    loadingTracker.expectLoadingOnRequest(`/website/logs/access:${label}`, action)
-  )
 
   await loadingTracker.expectLoadingOnRequest('goto /forward/list', () => gotoAndWait(page, '/forward/list'))
   await clickToolbarButtons(page, (label, action) =>

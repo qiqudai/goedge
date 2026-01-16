@@ -99,11 +99,6 @@ func HandleNodeOffline(nodeID int64) {
 	if nodeID <= 0 || db.DB == nil {
 		return
 	}
-	go func(id int64) {
-		if err := SyncPackageCnameForNodes([]int64{id}, "delete"); err != nil {
-			log.Printf("[DNS] package cname offline sync failed node=%d err=%v", id, err)
-		}
-	}(nodeID)
 	var lines []models.Line
 	if err := db.DB.Where("node_ip_id = ? OR node_id = ?", nodeID, nodeID).Find(&lines).Error; err != nil {
 		return

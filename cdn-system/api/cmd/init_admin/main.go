@@ -4,11 +4,10 @@ import (
 	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/utils"
 	"fmt"
 	"os"
 	"strings"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -41,7 +40,7 @@ func main() {
 			fmt.Println("user already exists; set FORCE=1 to overwrite password and role")
 			os.Exit(1)
 		}
-		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		hashed, err := utils.HashPasswordForStorage(password)
 		if err != nil {
 			fmt.Println("failed to hash password:", err)
 			os.Exit(1)
@@ -60,7 +59,7 @@ func main() {
 		return
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashed, err := utils.HashPasswordForStorage(password)
 	if err != nil {
 		fmt.Println("failed to hash password:", err)
 		os.Exit(1)

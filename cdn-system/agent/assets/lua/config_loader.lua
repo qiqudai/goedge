@@ -2,22 +2,49 @@
 local cjson = require "cjson.safe"
 local _M = {}
 
-local function resolve_config_path()
+local function resolve_prefix()
     local prefix = ngx.config.prefix() or ""
     if prefix ~= "" and prefix:sub(-1) ~= "/" then
         prefix = prefix .. "/"
     end
-    return prefix .. "conf/cdn_config.json"
+    return prefix
+end
+
+local function resolve_config_path()
+    return resolve_prefix() .. "conf/cdn_config.json"
 end
 
 -- Config file path (relative to nginx prefix)
 local CONFIG_FILE = resolve_config_path()
+local L2_STATUS_FILE = resolve_prefix() .. "conf/l2_status.json"
 local CHECK_INTERVAL = 1 -- seconds
+local L2_STATUS_INTERVAL = 2
 
 -- Shared dictionary to store config version/metadata if needed
 -- For worker-level cache, we use a local module variable (upvalue)
 local current_config = nil
 local last_version = 0
+
+local function load_l2_status()
+    local f = io.open(L2_STATUS_FILE, "r")
+    if not f then
+        return
+    end
+    local content = f:read("*a")
+    f:close()
+    if not content or content == "" then
+        return
+    end
+    local data = cjson.decode(content)
+    if not data then
+        return
+    end
+    local status = data.nodes or data
+    if type(status) ~= "table" then
+        return
+    end
+    _G.cdn_l2_status = status
+end
 
 -- Redis reporting removed (use API-based reporting if needed).
 
@@ -92,14 +119,32 @@ local function check_config(premature)
     end
 end
 
+local function check_l2_status(premature)
+    if premature then return end
+
+    local ok, err = pcall(load_l2_status)
+    if not ok then
+        ngx.log(ngx.ERR, "Error loading L2 status: ", err)
+    end
+    local ok, err = ngx.timer.at(L2_STATUS_INTERVAL, check_l2_status)
+    if not ok then
+        ngx.log(ngx.ERR, "Failed to schedule L2 status timer: ", err)
+    end
+end
+
 -- Public Init Function
 function _M.init()
     -- Run immediately once
     _M.load_config()
+    load_l2_status()
     -- Start polling loop
     local ok, err = ngx.timer.at(CHECK_INTERVAL, check_config)
     if not ok then
         ngx.log(ngx.ERR, "Failed to start config timer: ", err)
+    end
+    local ok, err = ngx.timer.at(L2_STATUS_INTERVAL, check_l2_status)
+    if not ok then
+        ngx.log(ngx.ERR, "Failed to start L2 status timer: ", err)
     end
 end
 

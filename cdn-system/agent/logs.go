@@ -14,9 +14,11 @@ import (
 
 func startAccessLogShip() {
 	shipAccessLogs()
+	shipStreamLogs()
 	ticker := time.NewTicker(LOG_SHIP_INT)
 	for range ticker.C {
 		shipAccessLogs()
+		shipStreamLogs()
 	}
 }
 
@@ -36,6 +38,7 @@ func startLogCleanup() {
 }
 
 var accessLogPathLogged bool
+var streamLogPathLogged bool
 
 func cleanupStoredLogs() {
 	dir, hours := getLogStorageSettings()
@@ -61,7 +64,7 @@ func cleanupStoredLogs() {
 			continue
 		}
 		name := entry.Name()
-		if name == "access.json" || name == "access.offset" {
+		if name == "access.json" || name == "access.offset" || name == "stream_access.json" || name == "stream_access.offset" {
 			continue
 		}
 		info, err := entry.Info()
@@ -149,6 +152,55 @@ func shipAccessLogs() {
 	saveOffset(offsetPath, newOffset)
 }
 
+func shipStreamLogs() {
+	logPath, offsetPath := getStreamLogPaths()
+	if DebugMode && !streamLogPathLogged {
+		log.Printf("[Debug] Stream log ship path=%s offset=%s", logPath, offsetPath)
+		streamLogPathLogged = true
+	}
+	fi, err := os.Stat(logPath)
+	if err != nil {
+		return
+	}
+	offset := loadOffset(offsetPath)
+	if offset > fi.Size() {
+		offset = 0
+	}
+
+	file, err := os.Open(logPath)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return
+	}
+
+	reader := bufio.NewReader(file)
+	lines := make([]string, 0, 200)
+	for len(lines) < 200 {
+		line, err := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+		if err != nil {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+
+	newOffset, _ := file.Seek(0, io.SeekCurrent)
+	if err := sendStreamLogs(lines); err != nil {
+		log.Printf("[Error] Stream log ship failed: %v", err)
+		return
+	}
+	saveOffset(offsetPath, newOffset)
+}
+
 func shipMetrics() {
 	req, _ := http.NewRequest("GET", "http://127.0.0.1:9100/metrics", nil)
 	body, status, err := doRequest(req, 5*time.Second, true)
@@ -195,4 +247,21 @@ func getAccessLogPaths() (string, string) {
 	}
 	_ = os.MkdirAll(logsDir, 0755)
 	return filepath.Join(logsDir, "access.json"), filepath.Join(logsDir, "access.offset")
+}
+
+func getStreamLogPaths() (string, string) {
+	logsDir := filepath.Join(WorkDir, "logs")
+	localConfigMu.RLock()
+	nginx := LocalNginxConfig
+	localConfigMu.RUnlock()
+	if nginx != nil {
+		if dir := strings.TrimSpace(nginx.LogsDir); dir != "" {
+			logsDir = dir
+			if !filepath.IsAbs(logsDir) {
+				logsDir = filepath.Join(WorkDir, logsDir)
+			}
+		}
+	}
+	_ = os.MkdirAll(logsDir, 0755)
+	return filepath.Join(logsDir, "stream_access.json"), filepath.Join(logsDir, "stream_access.offset")
 }

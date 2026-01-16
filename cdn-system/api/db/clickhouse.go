@@ -70,6 +70,26 @@ func ensureClickHouseTables(db *sql.DB) error {
 		) ENGINE = MergeTree
 		PARTITION BY toDate(ts)
 		ORDER BY (host, node_id, ts)`,
+		`CREATE TABLE IF NOT EXISTS node_stream_logs (
+			ts DateTime,
+			node_id String,
+			node_ip String,
+			remote_addr String,
+			server_port UInt16,
+			protocol String,
+			status UInt16,
+			bytes_sent UInt64,
+			bytes_received UInt64,
+			session_time Float64,
+			upstream_addr String,
+			upstream_bytes_sent UInt64,
+			upstream_bytes_received UInt64,
+			upstream_connect_time Float64,
+			upstream_session_time Float64,
+			raw String
+		) ENGINE = MergeTree
+		PARTITION BY toDate(ts)
+		ORDER BY (server_port, node_id, ts)`,
 		`CREATE TABLE IF NOT EXISTS node_metrics (
 			ts DateTime,
 			node_id String,

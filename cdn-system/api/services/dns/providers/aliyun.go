@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -166,7 +165,8 @@ func (p *AliyunProvider) doRequest(params url.Values) ([]byte, error) {
 	encodedParams := params.Encode()
 	reqUrl := "https://alidns.aliyuncs.com/?" + encodedParams
 	
-	resp, err := http.Get(reqUrl)
+	client := dns.NewHTTPClient(30 * time.Second)
+	resp, err := client.Get(reqUrl)
 	if err != nil {
 		return nil, err
 	}

@@ -154,9 +154,11 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	if raw, ok := site.Settings["http_enable"]; ok {
 		httpEnable = parseBoolValue(raw, true)
 	}
-	if len(site.HttpListen) == 0 && httpEnable {
-		if v := defaults["http_listen-port"]; v != "" {
-			site.HttpListen = splitFields(v)
+	if httpEnable {
+		if len(site.HttpListen) == 0 || (len(site.HttpListen) == 1 && site.HttpListen[0] == "80") {
+			if v := defaults["http_listen-port"]; v != "" {
+				site.HttpListen = splitFields(v)
+			}
 		}
 	}
 	httpsCfg := getSubMap(site.Settings, "https")
@@ -240,7 +242,7 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	securityCfg := getSubMap(site.Settings, "security")
 	setIfMissing(securityCfg, "default_rule", site.CcDefaultRule)
 	if v := defaults["security_bot"]; v != "" {
-		setIfMissing(securityCfg, "bot", v)
+		setIfMissing(securityCfg, "crawlers_action", v)
 	}
 	if v := defaults["black_ip"]; v != "" {
 		setIfMissing(securityCfg, "blacklist", splitFields(v))
@@ -249,27 +251,27 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 		setIfMissing(securityCfg, "whitelist", splitFields(v))
 	}
 	if v := defaults["security_black_time"]; v != "" {
+		setIfMissing(securityCfg, "ip_black_timeout", parseInt64(v))
 		setIfMissing(securityCfg, "black_time_mode", "custom")
 		setIfMissing(securityCfg, "black_time_custom", parseInt64(v))
 	}
 	if v := defaults["security_white_time"]; v != "" {
+		setIfMissing(securityCfg, "ip_white_timeout", parseInt64(v))
 		setIfMissing(securityCfg, "white_time_mode", "custom")
 		setIfMissing(securityCfg, "white_time_custom", parseInt64(v))
 	}
 	if v := defaults["security_shield_proxy"]; v != "" {
-		setIfMissing(securityCfg, "shield_proxy", parseBool(v, false))
+		setIfMissing(securityCfg, "block_transparent_proxy", parseBool(v, false))
 	}
 	if v := defaults["block_region"]; v != "" {
 		if site.BlockRegionRaw == "" {
 			site.BlockRegionRaw = v
 		}
-		if _, ok := securityCfg["region_mode"]; !ok {
+		if _, ok := securityCfg["region_block"]; !ok {
 			if v == "none" {
-				securityCfg["region_mode"] = "none"
-				securityCfg["region_custom"] = []string{}
+				securityCfg["region_block"] = []string{}
 			} else {
-				securityCfg["region_mode"] = "custom"
-				securityCfg["region_custom"] = splitCommaList(v)
+				securityCfg["region_block"] = splitCommaList(v)
 			}
 		}
 	}
@@ -328,6 +330,24 @@ func ApplySiteTemplateDefaults(site *models.Site, template models.SiteTemplate) 
 	securityCfg := getSubMap(site.Settings, "security")
 	if _, ok := securityCfg["waf_enable"]; !ok {
 		securityCfg["waf_enable"] = template.WAFEnable
+	}
+}
+
+func ApplySiteTemplateDefaultsByType(site *models.Site, defaults *models.DefaultSiteConfig) {
+	if site == nil || defaults == nil {
+		return
+	}
+	siteType := ""
+	if site.Settings != nil {
+		siteType = strings.ToLower(parseStringValue(site.Settings["site_type"]))
+	}
+	switch siteType {
+	case "api":
+		ApplySiteTemplateDefaults(site, defaults.API)
+	case "download":
+		ApplySiteTemplateDefaults(site, defaults.Download)
+	default:
+		ApplySiteTemplateDefaults(site, defaults.Website)
 	}
 }
 

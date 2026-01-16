@@ -3,7 +3,7 @@
     <el-tabs v-if="!hideTabs" v-model="activeTopTab" class="site-tabs" @tab-click="handleTopTab">
       <el-tab-pane label="网站列表" name="list" />
       <el-tab-pane label="默认设置" name="default" />
-      <el-tab-pane label="DNS API" name="dns" />
+      <el-tab-pane label="DNS 接口" name="dns" />
       <el-tab-pane label="解析检测" name="resolve" />
     </el-tabs>
 
@@ -78,7 +78,7 @@
       <el-tag v-else type="info" size="small">未检测</el-tag>
     </template>
   </el-table-column>
-  <el-table-column prop="dns_api" label="DNS API" min-width="150" />
+  <el-table-column prop="dns_api" label="DNS 接口" min-width="150" />
   <el-table-column prop="task_status" label="任务状态" width="100" />
 </AppTable>
 </div>

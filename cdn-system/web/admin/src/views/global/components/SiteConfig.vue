@@ -21,7 +21,7 @@
     <el-form-item label="强制HTTPS" style="max-width: 500px;">
       <el-switch v-model="form.httpsForce" @change="saveConfig" />
     </el-form-item>
-    <el-form-item label="ssl_protocols" style="max-width: 600px;">
+    <el-form-item label="SSL 协议" style="max-width: 600px;">
       <el-checkbox-group v-model="form.sslProtocols" @change="saveConfig">
         <el-checkbox value="SSLv2">SSLv2</el-checkbox>
         <el-checkbox value="SSLv3">SSLv3</el-checkbox>
@@ -31,17 +31,17 @@
         <el-checkbox value="TLSv1.3">TLSv1.3</el-checkbox>
       </el-checkbox-group>
     </el-form-item>
-    <el-form-item label="ssl_ciphers" style="max-width: 600px;">
+    <el-form-item label="SSL 加密套件" style="max-width: 600px;">
       <el-input
         v-model="form.sslCiphers"
         type="textarea"
         :rows="2"
         @change="saveConfig" />
     </el-form-item>
-    <el-form-item label="ssl_prefer_server_ciphers" style="max-width: 500px;">
+    <el-form-item label="优先服务端加密套件" style="max-width: 500px;">
       <el-switch v-model="form.sslPreferServerCiphers" @change="saveConfig" />
     </el-form-item>
-    <el-form-item label="ocsp_stapling" style="max-width: 500px;">
+    <el-form-item label="OCSP 装订" style="max-width: 500px;">
       <el-switch v-model="form.ocspStapling" @change="saveConfig" />
     </el-form-item>
     <el-divider />
@@ -89,7 +89,7 @@
           <el-option label="全站缓存" value="all" />
           <el-option label="静态资源缓存" value="static" />
           <el-option label="视频文件缓存" value="video" />
-          <el-option label="Wordpress缓存" value="wordpress" />
+          <el-option label="WordPress 缓存" value="wordpress" />
         </el-select>
       </el-form-item>
     </div>
@@ -202,10 +202,10 @@
     <el-form-item label="开启Gzip" style="max-width: 500px;">
       <el-switch v-model="form.gzipEnable" @change="saveConfig" />
     </el-form-item>
-    <el-form-item label="gzip types" style="max-width: 600px;">
+    <el-form-item label="Gzip 类型" style="max-width: 600px;">
       <el-input v-model="form.gzipTypes" @change="saveConfig" />
     </el-form-item>
-    <el-form-item label="开启Websocket" style="max-width: 500px;">
+    <el-form-item label="开启 WebSocket" style="max-width: 500px;">
       <el-switch v-model="form.websocketEnable" @change="saveConfig" />
     </el-form-item>
     <el-form-item label="屏蔽透明代理" style="max-width: 500px;">

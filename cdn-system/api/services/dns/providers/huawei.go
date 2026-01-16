@@ -447,7 +447,7 @@ func (p *HuaweiProvider) sendRequest(method, urlStr string, body []byte) ([]byte
 	// Sign
 	p.sign(req, body)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := dns.NewHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

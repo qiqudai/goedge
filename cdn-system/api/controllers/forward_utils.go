@@ -47,9 +47,9 @@ func loadUsersForForward(items []models.Forward) (map[int64]string, error) {
 	return result, nil
 }
 
-func loadUserPackagesForForward(items []models.Forward) (map[int64]string, error) {
+func loadUserPackagesForForward(items []models.Forward) (map[int64]models.UserPackage, error) {
 	ids := uniqueIDsForward(items, func(f models.Forward) int64 { return f.UserPackageID })
-	result := map[int64]string{}
+	result := map[int64]models.UserPackage{}
 	if len(ids) == 0 {
 		return result, nil
 	}
@@ -58,7 +58,7 @@ func loadUserPackagesForForward(items []models.Forward) (map[int64]string, error
 		return nil, err
 	}
 	for _, p := range pkgs {
-		result[p.ID] = p.Name
+		result[p.ID] = p
 	}
 	return result, nil
 }

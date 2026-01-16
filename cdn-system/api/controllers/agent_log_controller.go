@@ -29,7 +29,7 @@ func (ctr *AgentLogController) AccessLogs(c *gin.Context) {
 		}
 	}
 	if req.NodeIP == "" {
-		req.NodeIP = c.ClientIP()
+		req.NodeIP = resolveClientIP(c)
 	}
 	inserted := services.InsertAccessLogs(req.NodeID, req.NodeIP, req.Lines)
 	log.Printf("[CK] Access logs inserted: %d", inserted)
@@ -54,7 +54,7 @@ func (ctr *AgentLogController) Metrics(c *gin.Context) {
 		}
 	}
 	if req.NodeIP == "" {
-		req.NodeIP = c.ClientIP()
+		req.NodeIP = resolveClientIP(c)
 	}
 	inserted := services.InsertMetrics(req.NodeID, req.NodeIP, req.Content)
 	log.Printf("[CK] Metrics inserted: %d", inserted)
@@ -80,7 +80,7 @@ func (ctr *AgentLogController) Events(c *gin.Context) {
 		}
 	}
 	if req.NodeIP == "" {
-		req.NodeIP = c.ClientIP()
+		req.NodeIP = resolveClientIP(c)
 	}
 	if req.Type == "" {
 		req.Type = "event"

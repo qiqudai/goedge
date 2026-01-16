@@ -167,7 +167,7 @@
           <el-table-column prop="subject" label="标题" min-width="150" show-overflow-tooltip />
           <el-table-column prop="medium" label="媒介" width="100">
              <template #default="{row}">
-               <el-tag size="small" type="info">{{ row.medium || 'Email' }}</el-tag>
+               <el-tag size="small" type="info">{{ row.medium || '邮件' }}</el-tag>
              </template>
           </el-table-column>
           <el-table-column prop="fails" label="失败次数" width="90" align="center" />
