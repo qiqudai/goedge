@@ -587,16 +587,42 @@ func resolveSiteGroups(site models.Site, pkg models.UserPackage, plan planGroup)
 }
 
 func resolveSiteCnameTarget(site models.Site, pkg models.UserPackage) (string, string) {
+	siteMode := strings.TrimSpace(site.CnameMode)
+	pkgMode := strings.TrimSpace(pkg.CnameMode)
+
+	if siteMode == "package" || (siteMode == "" && pkgMode == "package") {
+		domainKey := normalizePackageDomain(pkg.CnameDomain)
+		host := normalizePackageDomain(pkg.CnameHostname)
+		if host == "" {
+			host = normalizePackageDomain(pkg.RecordID)
+		}
+		if host == "" {
+			return domainKey, ""
+		}
+		if domainKey == "" {
+			root, name := splitRootDomain(host)
+			if root == "" || name == "" {
+				return "", ""
+			}
+			return normalizePackageDomain(root), name
+		}
+		suffix := "." + domainKey
+		if host == domainKey {
+			host = "@"
+		} else if strings.HasSuffix(host, suffix) {
+			host = strings.TrimSuffix(host, suffix)
+		}
+		host = strings.TrimSuffix(host, ".")
+		return domainKey, host
+	}
+
 	domainKey := normalizePackageDomain(site.CnameDomain)
 	if domainKey == "" {
 		domainKey = normalizePackageDomain(pkg.CnameDomain)
 	}
 	full := normalizePackageDomain(site.CnameHostname)
-	if full == "" && pkg.CnameHostname != "" {
-		full = normalizePackageDomain(pkg.CnameHostname)
-		if domainKey != "" {
-			full = full + "." + domainKey
-		}
+	if full == "" && len(site.Domains) > 0 && domainKey != "" {
+		full = normalizePackageDomain(site.Domains[0] + "." + domainKey)
 	}
 	if full == "" {
 		return domainKey, ""

@@ -199,12 +199,34 @@ func (ctr *PlanController) CreatePlan(c *gin.Context) {
 		return
 	}
 
+	regionID := getInt64(payload, "region")
+	if err := ensureRegionValid(regionID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+		return
+	}
+	nodeGroupID := getInt64(payload, "line_group")
+	if err := ensureNodeGroupValid(nodeGroupID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+		return
+	}
+	backupGroupID := getInt64(payload, "backup_group")
+	if backupGroupID != 0 {
+		if backupGroupID == nodeGroupID {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("backup group cannot equal line group")})
+			return
+		}
+		if err := ensureNodeGroupValid(backupGroupID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+			return
+		}
+	}
+
 	pkg := models.Package{
 		Name:               name,
 		Description:        getString(payload, "desc"),
-		RegionID:           getInt64(payload, "region"),
-		NodeGroupID:        getInt64(payload, "line_group"),
-		BackupNode:         getInt64(payload, "backup_group"),
+		RegionID:           regionID,
+		NodeGroupID:        nodeGroupID,
+		BackupNode:         backupGroupID,
 		CnameDomain:        getString(payload, "cname_domain"),
 		CnameHost2:         getString(payload, "cname_hostname2"),
 		CnameMode:          getString(payload, "cname_mode"),
@@ -259,6 +281,12 @@ func (ctr *PlanController) UpdatePlan(c *gin.Context) {
 		return
 	}
 
+	var current models.Package
+	if err := db.DB.Where("id = ?", id).First(&current).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": T("Not Found")})
+		return
+	}
+
 	updates := map[string]interface{}{"update_at": time.Now()}
 	if v, ok := getStringValue(payload, "name"); ok {
 		updates["name"] = v
@@ -267,13 +295,46 @@ func (ctr *PlanController) UpdatePlan(c *gin.Context) {
 		updates["des"] = v
 	}
 	if hasKey(payload, "region") {
-		updates["region_id"] = getInt64(payload, "region")
+		regionID := getInt64(payload, "region")
+		if err := ensureRegionValid(regionID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+			return
+		}
+		updates["region_id"] = regionID
 	}
 	if hasKey(payload, "line_group") {
-		updates["node_group_id"] = getInt64(payload, "line_group")
+		nodeGroupID := getInt64(payload, "line_group")
+		if err := ensureNodeGroupValid(nodeGroupID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+			return
+		}
+		backupGroupID := current.BackupNode
+		if hasKey(payload, "backup_group") {
+			backupGroupID = getInt64(payload, "backup_group")
+		}
+		if backupGroupID != 0 && backupGroupID == nodeGroupID {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("backup group cannot equal line group")})
+			return
+		}
+		updates["node_group_id"] = nodeGroupID
 	}
 	if hasKey(payload, "backup_group") {
-		updates["backup_node_group"] = getInt64(payload, "backup_group")
+		backupGroupID := getInt64(payload, "backup_group")
+		nodeGroupID := current.NodeGroupID
+		if val, ok := updates["node_group_id"]; ok {
+			nodeGroupID = val.(int64)
+		}
+		if backupGroupID != 0 {
+			if backupGroupID == nodeGroupID {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("backup group cannot equal line group")})
+				return
+			}
+			if err := ensureNodeGroupValid(backupGroupID); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+				return
+			}
+		}
+		updates["backup_node_group"] = backupGroupID
 	}
 	if hasKey(payload, "cname_domain") {
 		updates["cname_domain"] = getString(payload, "cname_domain")
@@ -522,6 +583,24 @@ func (ctr *PlanController) AssignUserPlan(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Plan not found")})
 		return
 	}
+	if err := ensureRegionValid(pkg.RegionID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+		return
+	}
+	if err := ensureNodeGroupValid(pkg.NodeGroupID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+		return
+	}
+	if pkg.BackupNode != 0 {
+		if pkg.BackupNode == pkg.NodeGroupID {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("backup group cannot equal line group")})
+			return
+		}
+		if err := ensureNodeGroupValid(pkg.BackupNode); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+			return
+		}
+	}
 
 	now := time.Now()
 	endAt := time.Time{}
@@ -622,6 +701,34 @@ func randomToken(length int) (string, error) {
 	return string(buf), nil
 }
 
+func ensureRegionValid(regionID int64) error {
+	if regionID == 0 {
+		return errors.New("region is required")
+	}
+	var count int64
+	if err := db.DB.Model(&models.Region{}).Where("id = ?", regionID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("region not found")
+	}
+	return nil
+}
+
+func ensureNodeGroupValid(nodeGroupID int64) error {
+	if nodeGroupID == 0 {
+		return errors.New("line group is required")
+	}
+	var count int64
+	if err := db.DB.Model(&models.NodeGroup{}).Where("id = ?", nodeGroupID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("line group not found")
+	}
+	return nil
+}
+
 // UpdateUserPlan - PUT /api/v1/admin/user_plans/:id
 func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	if err := ensureUserPackageL2OriginColumn(); err != nil {
@@ -637,6 +744,12 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid params")})
+		return
+	}
+
+	var current models.UserPackage
+	if err := db.DB.Where("id = ?", id).First(&current).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": T("Not Found")})
 		return
 	}
 
@@ -658,13 +771,45 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 		}
 	}
 	if hasKey(payload, "region_id") {
-		updates["region_id"] = getInt64(payload, "region_id")
+		regionID := getInt64(payload, "region_id")
+		if err := ensureRegionValid(regionID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+			return
+		}
+		updates["region_id"] = regionID
 	}
 	if hasKey(payload, "node_group_id") {
-		updates["node_group_id"] = getInt64(payload, "node_group_id")
+		nodeGroupID := getInt64(payload, "node_group_id")
+		if err := ensureNodeGroupValid(nodeGroupID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+			return
+		}
+		backupGroupID := current.BackupNodeGroup
+		if hasKey(payload, "backup_group_id") {
+			backupGroupID = getInt64(payload, "backup_group_id")
+		}
+		if backupGroupID != 0 && backupGroupID == nodeGroupID {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("backup group cannot equal line group")})
+			return
+		}
+		updates["node_group_id"] = nodeGroupID
 	}
 	if hasKey(payload, "backup_group_id") {
 		backupGroupID := getInt64(payload, "backup_group_id")
+		nodeGroupID := current.NodeGroupID
+		if val, ok := updates["node_group_id"]; ok {
+			nodeGroupID = val.(int64)
+		}
+		if backupGroupID != 0 {
+			if backupGroupID == nodeGroupID {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("backup group cannot equal line group")})
+				return
+			}
+			if err := ensureNodeGroupValid(backupGroupID); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+				return
+			}
+		}
 		updates["backup_node_group"] = backupGroupID
 		if !hasKey(payload, "enable_backup_group") {
 			updates["enable_backup_group"] = backupGroupID > 0
@@ -684,7 +829,20 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 		updates["cname_hostname"] = getString(payload, "cname_hostname")
 	}
 	if hasKey(payload, "cname_mode") {
-		updates["cname_mode"] = getString(payload, "cname_mode")
+		newMode := getString(payload, "cname_mode")
+		updates["cname_mode"] = newMode
+		currentMode := strings.TrimSpace(current.CnameMode)
+		if currentMode == "" {
+			currentMode = "domain"
+		}
+		if strings.TrimSpace(newMode) != "" && strings.TrimSpace(newMode) != currentMode {
+			if err := db.DB.Model(&models.Site{}).
+				Where("user_package = ? AND (cname_mode = '' OR cname_mode IS NULL)", current.ID).
+				Update("cname_mode", currentMode).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
+				return
+			}
+		}
 	}
 
 	if len(updates) == 0 {

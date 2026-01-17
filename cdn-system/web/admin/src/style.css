@@ -254,6 +254,20 @@ a:hover {
   border-color: #409eff !important;
   color: #ffffff !important;
 }
+
+:root[data-theme="dark"] .el-button:not([class*="el-button--"]) {
+  --el-button-bg-color: #1f242b;
+  --el-button-text-color: #e5eaf3;
+  --el-button-border-color: #3a3f47;
+  --el-button-hover-bg-color: #2a2f36;
+  --el-button-hover-text-color: #e5eaf3;
+  --el-button-hover-border-color: #4a515c;
+  --el-button-active-bg-color: #2a2f36;
+  --el-button-active-border-color: #4a515c;
+  background-color: #1f242b;
+  border-color: #3a3f47;
+  color: #e5eaf3;
+}
 :root[data-theme="dark"] .el-tabs__nav-wrap::after {
   background-color: var(--border-color);
 }

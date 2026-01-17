@@ -502,7 +502,7 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 	}
 
 	now := time.Now()
-	createItems := make([]models.Line, 0, len(req.Items))
+	createItems := make([]*models.Line, 0, len(req.Items))
 	assignedIPIDs := make([]int64, 0, len(req.Items))
 	for _, item := range req.Items {
 		if item.NodeID == 0 {
@@ -512,7 +512,7 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 			continue
 		}
 		assignedIPIDs = append(assignedIPIDs, item.NodeIPID)
-		createItems = append(createItems, models.Line{
+		createItems = append(createItems, &models.Line{
 			NodeGroupID:             groupID,
 			NodeID:                  item.NodeID,
 			NodeIPID:                item.NodeIPID,
@@ -533,6 +533,7 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 		return
 	}
 
+	createdLines := make([]models.Line, 0, len(createItems))
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		for _, item := range createItems {
 			var existing models.Line
@@ -543,15 +544,20 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 			if result.RowsAffected > 0 {
 				continue
 			}
-			if err := tx.Create(&item).Error; err != nil {
+			if err := tx.Create(item).Error; err != nil {
 				return err
 			}
+			createdLines = append(createdLines, *item)
 		}
 		return nil
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("assign failed")})
 		return
+	}
+
+	if len(createdLines) > 0 {
+		services.WriteIPSwitchLogsForLines(createdLines, "assign", "line")
 	}
 
 	services.BumpConfigVersion("line", []int64{groupID})
@@ -700,6 +706,9 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Update failed")})
 		return
+	}
+	if len(targetLines) > 0 && (action == "enable" || action == "disable" || action == "delete") {
+		services.WriteIPSwitchLogsForLines(targetLines, action, "line")
 	}
 	services.BumpConfigVersion("line", []int64{groupID})
 	if len(targetLines) > 0 && (action == "enable" || action == "disable" || action == "delete" || action == "set_weight" || action == "set_sort") {

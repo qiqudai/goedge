@@ -65,8 +65,7 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="区域">
-              <el-select v-model="temp.region" placeholder="默认">
-                <el-option label="默认" :value="0" />
+              <el-select v-model="temp.region" placeholder="请选择">
                 <el-option
                   v-for="item in regionOptions"
                   :key="item.id"
@@ -79,7 +78,6 @@
           <el-col :span="8">
             <el-form-item label="线路分组">
               <el-select v-model="temp.line_group" placeholder="请选择">
-                <el-option label="默认" :value="0" />
                 <el-option
                   v-for="item in nodeGroupOptions"
                   :key="item.id"
@@ -94,7 +92,7 @@
           <el-col :span="8">
             <el-form-item label="备用分组">
               <el-select v-model="temp.backup_group" placeholder="请选择">
-                <el-option label="默认" :value="0" />
+                <el-option label="不设置" :value="0" />
                 <el-option
                   v-for="item in nodeGroupOptions"
                   :key="item.id"
@@ -417,6 +415,18 @@ const handleDelete = (row) => {
 }
 
 const saveData = () => {
+    if (!temp.value.region) {
+        ElMessage.error('请选择区域')
+        return
+    }
+    if (!temp.value.line_group) {
+        ElMessage.error('请选择线路分组')
+        return
+    }
+    if (temp.value.backup_group && temp.value.backup_group === temp.value.line_group) {
+        ElMessage.error('备用分组不能与线路分组相同')
+        return
+    }
     if (!temp.value.cname_domain) {
         ElMessage.error('CNAME域名必须选择，否则无法添加套餐')
         return

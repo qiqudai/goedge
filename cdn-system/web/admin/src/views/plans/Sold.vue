@@ -83,7 +83,7 @@
       </el-table-column>
       <el-table-column label="调试:模式" min-width="100">
           <template #default="{ row }">
-             {{ row.cname_mode }}
+             {{ formatCnameMode(row.cname_mode) }}
           </template>
       </el-table-column>
       <el-table-column label="操作" width="220">
@@ -204,8 +204,7 @@
         <el-row>
           <el-col :span="8">
             <el-form-item label="区域">
-              <el-select v-model="editForm.region_id" placeholder="默认">
-                <el-option label="默认" :value="0" />
+              <el-select v-model="editForm.region_id" placeholder="请选择">
                 <el-option v-for="item in regionOptions" :key="item.id" :label="item.name" :value="item.id" />
               </el-select>
             </el-form-item>
@@ -213,7 +212,6 @@
           <el-col :span="8">
             <el-form-item label="线路分组">
               <el-select v-model="editForm.node_group_id" placeholder="请选择">
-                <el-option label="默认" :value="0" />
                 <el-option v-for="item in nodeGroupOptions" :key="item.id" :label="item.name" :value="item.id" />
               </el-select>
             </el-form-item>
@@ -375,6 +373,11 @@ const selectedIds = ref([])
 const query = ref({ keywordType: 'user_id', keyword: '' })
 const page = ref(1)
 const pageSize = ref(10)
+
+const formatCnameMode = (mode) => {
+  const val = String(mode || '').trim().toLowerCase()
+  return val === 'package' ? '按套餐生成' : '按网站生成'
+}
 
 const detailVisible = ref(false)
 const detailTab = ref('usage')
@@ -568,6 +571,14 @@ const openEdit = (row) => {
 
 const submitEdit = () => {
   if (!editForm.value.id) {
+    return
+  }
+  if (!editForm.value.region_id) {
+    ElMessage.error('请选择区域')
+    return
+  }
+  if (!editForm.value.node_group_id) {
+    ElMessage.error('请选择线路分组')
     return
   }
   

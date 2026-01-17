@@ -99,34 +99,7 @@ func HandleNodeOffline(nodeID int64) {
 	if nodeID <= 0 || db.DB == nil {
 		return
 	}
-	var lines []models.Line
-	if err := db.DB.Where("node_ip_id = ? OR node_id = ?", nodeID, nodeID).Find(&lines).Error; err != nil {
-		return
-	}
-	if len(lines) == 0 {
-		return
-	}
-	type key struct {
-		groupID  int64
-		lineID   string
-		lineName string
-	}
-	seen := map[key]struct{}{}
-	groupIPIDs := map[key][]int64{}
-	for _, line := range lines {
-		k := key{groupID: line.NodeGroupID, lineID: line.LineID, lineName: line.LineName}
-		seen[k] = struct{}{}
-		if line.NodeIPID != 0 {
-			groupIPIDs[k] = append(groupIPIDs[k], line.NodeIPID)
-		}
-	}
-	for k := range seen {
-		ipIDs := uniqueInt64List(groupIPIDs[k])
-		if len(ipIDs) == 0 {
-			continue
-		}
-		_ = dns.SyncLineRecords(k.groupID, k.lineID, k.lineName, "delete", ipIDs)
-	}
+	// Intentionally skip DNS record removal when a node goes offline.
 }
 
 func HandleNodeRecover(nodeID int64) {

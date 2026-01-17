@@ -17,17 +17,17 @@ func SyncUserDNSRecords(oldSite, newSite *models.Site) error {
 		return nil
 	}
 
-	if oldSite != nil && oldSite.DNSProviderID != 0 && (newSite == nil || newSite.DNSProviderID != oldSite.DNSProviderID) {
-		if api, err := loadDNSAPI(oldSite.DNSProviderID, oldSite.UserID); err == nil {
+	if oldSite != nil && (newSite == nil || newSite.DNSProviderID != oldSite.DNSProviderID) {
+		if api, err := resolveDNSAPIForSite(oldSite); err == nil {
 			_ = deleteSiteDomains(api, oldSite.Domains, oldSite.CnameHostname)
 		}
 	}
 
-	if newSite == nil || newSite.DNSProviderID == 0 || len(newSite.Domains) == 0 {
+	if newSite == nil || len(newSite.Domains) == 0 {
 		return nil
 	}
 
-	api, err := loadDNSAPI(newSite.DNSProviderID, newSite.UserID)
+	api, err := resolveDNSAPIForSite(newSite)
 	if err != nil {
 		return err
 	}
@@ -55,6 +55,54 @@ func loadDNSAPI(id, uid int64) (*models.DNSAPI, error) {
 		return nil, err
 	}
 	return &api, nil
+}
+
+func resolveDNSAPIForSite(site *models.Site) (*models.DNSAPI, error) {
+	if site == nil {
+		return nil, errors.New("site is nil")
+	}
+	if site.DNSProviderID != 0 {
+		return loadDNSAPI(site.DNSProviderID, site.UserID)
+	}
+	domainKey := normalizeCnameDomain(site.CnameDomain)
+	if domainKey == "" && strings.TrimSpace(site.CnameHostname) != "" {
+		root, _ := splitRootDomain(site.CnameHostname)
+		domainKey = normalizeCnameDomain(root)
+	}
+	if domainKey == "" {
+		return nil, errors.New("dns provider not configured")
+	}
+	var cname models.CnameDomain
+	if err := db.DB.Where("domain = ?", domainKey).First(&cname).Error; err != nil {
+		return nil, err
+	}
+	if cname.DNSProviderID == 0 {
+		return nil, errors.New("dns provider not configured")
+	}
+	var api models.DNSAPI
+	if err := db.DB.Where("id = ?", cname.DNSProviderID).First(&api).Error; err != nil {
+		return nil, err
+	}
+	return &api, nil
+}
+
+func normalizeCnameDomain(input string) string {
+	host := strings.TrimSpace(strings.ToLower(input))
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "#"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "?"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	return strings.TrimRight(host, ".")
 }
 
 func upsertSiteDomains(api *models.DNSAPI, domains []string, cname string) error {

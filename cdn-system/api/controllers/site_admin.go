@@ -735,7 +735,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		}
 
 		// Recalculate CnameHostname when CNAME fields change.
-		if req.CnameDomain != nil || req.CnameMode != nil || req.UserPackageID != nil {
+		if req.CnameDomain != nil || req.CnameMode != nil {
 			// Load sites to recalculate CNAME.
 			var sites []models.Site
 			if err := tx.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
@@ -895,6 +895,12 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 	case "delete":
 		var sites []models.Site
 		_ = db.DB.Where("id IN ?", req.IDs).Find(&sites).Error
+		for _, site := range sites {
+			if site.Enable {
+				c.JSON(http.StatusBadRequest, gin.H{"error": T("Please disable site before delete")})
+				return
+			}
+		}
 		for _, site := range sites {
 			_ = services.SyncUserDNSRecords(&site, nil)
 		}
@@ -1309,6 +1315,9 @@ func refreshSiteCnameHostname(site *models.Site, overrideMode, overrideDomain *s
 	if site == nil || site.UserPackageID == 0 {
 		return false, nil
 	}
+	if overrideMode == nil && overrideDomain == nil && strings.TrimSpace(site.CnameHostname) != "" {
+		return false, nil
+	}
 	var pkg models.UserPackage
 	if err := db.DB.Select("cname_mode", "cname_hostname", "cname_domain").
 		Where("id = ?", site.UserPackageID).
@@ -1366,55 +1375,9 @@ func shouldResyncSiteCname(oldSite, newSite models.Site) bool {
 }
 
 func resyncSiteCnameForSite(site models.Site) {
-	groupID, err := resolveNodeGroupFromPackage(site.UserPackageID, site.NodeGroupID)
-	if err == nil && groupID != 0 {
-		resyncGroupLineCnames(groupID)
-	}
-
-	backupGroup := site.BackupNodeGroupID
-	enableBackup := site.EnableBackupGroup
-	if !enableBackup {
-		var pkg models.UserPackage
-		if err := db.DB.Select("backup_node_group", "enable_backup_group").
-			Where("id = ?", site.UserPackageID).
-			First(&pkg).Error; err == nil {
-			if backupGroup == 0 {
-				backupGroup = pkg.BackupNodeGroup
-			}
-			enableBackup = pkg.EnableBackup
-		}
-	}
-	if enableBackup && backupGroup != 0 {
-		resyncGroupLineCnames(backupGroup)
-	}
+	services.ResyncSiteCnameForSite(site)
 }
 
 func resyncGroupLineCnames(groupID int64) {
-	if groupID == 0 {
-		return
-	}
-	var lines []models.Line
-	if err := db.DB.Select("line_id", "line_name").
-		Where("node_group_id = ?", groupID).
-		Find(&lines).Error; err != nil {
-		return
-	}
-	lineMap := map[string]string{}
-	for _, line := range lines {
-		lineID := strings.TrimSpace(line.LineID)
-		if lineID == "" {
-			lineID = "default"
-		}
-		lineName := strings.TrimSpace(line.LineName)
-		if lineName == "" {
-			lineName = lineID
-		}
-		if _, ok := lineMap[lineID]; !ok {
-			lineMap[lineID] = lineName
-		}
-	}
-	for lineID, lineName := range lineMap {
-		ids := loadLineNodeIDs(groupID, lineID)
-		_ = services.SyncPackageCnameForLineChange(groupID, lineID, lineName, ids, "resync")
-	}
+	services.ResyncGroupLineCnames(groupID)
 }

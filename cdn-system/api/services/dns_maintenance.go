@@ -101,7 +101,9 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 	}
 
 	errs := make([]string, 0)
-	allowed := map[string]map[string]struct{}{}
+	allowedAValues := map[string]struct{}{}
+	allowedCnameValues := map[string]struct{}{}
+	domainSet := map[string]struct{}{}
 	groupIDs := make([]int64, 0, len(groups))
 	for _, group := range groups {
 		resolvedGroup, err := dns.EnsureGroupDNSConfig(group.ID)
@@ -115,37 +117,80 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 		if domainKey == "" {
 			continue
 		}
-		host := normalizeGroupHostname(group.CnameHostname, domainKey)
-		if host == "" {
-			continue
-		}
-		if _, ok := allowed[domainKey]; !ok {
-			allowed[domainKey] = map[string]struct{}{}
-		}
-		allowed[domainKey][normalizeRecordHost(host, domainKey)] = struct{}{}
+		domainSet[domainKey] = struct{}{}
+		lineValue := buildLineCnameValue(domainKey, group.CnameHostname)
+		addAllowedCnameValue(allowedCnameValues, lineValue)
 	}
 	if len(groupIDs) > 0 {
+		var lines []models.Line
+		if err := db.DB.Select("node_id", "node_ip_id", "enable").
+			Where("node_group_id IN ?", groupIDs).
+			Find(&lines).Error; err != nil {
+			errs = append(errs, err.Error())
+		} else {
+			nodeIDs := make([]int64, 0, len(lines))
+			for _, line := range lines {
+				if !line.Enable {
+					continue
+				}
+				nodeID := line.NodeIPID
+				if nodeID == 0 {
+					nodeID = line.NodeID
+				}
+				if nodeID != 0 {
+					nodeIDs = append(nodeIDs, nodeID)
+				}
+			}
+			nodeIDs = uniqueInt64List(nodeIDs)
+			if len(nodeIDs) > 0 {
+				var nodes []models.Node
+				if err := db.DB.Select("id", "ip").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+					errs = append(errs, err.Error())
+				} else {
+					for _, node := range nodes {
+						addAllowedAValue(allowedAValues, node.IP)
+					}
+				}
+			}
+		}
 		if infos, _, err := loadSiteCnameInfos(groupIDs); err != nil {
 			errs = append(errs, err.Error())
 		} else {
 			for _, info := range infos {
 				domainKey := normalizeDomainInput(info.DomainKey)
-				if domainKey == "" || strings.TrimSpace(info.Hostname) == "" {
+				if domainKey == "" {
 					continue
 				}
-				if _, ok := allowed[domainKey]; !ok {
-					allowed[domainKey] = map[string]struct{}{}
-				}
-				allowed[domainKey][normalizeRecordHost(info.Hostname, domainKey)] = struct{}{}
+				domainSet[domainKey] = struct{}{}
 			}
 		}
 	}
-	if len(allowed) == 0 {
+	type siteCnameRow struct {
+		CnameHostname  string `gorm:"column:cname_hostname"`
+		CnameHostname2 string `gorm:"column:cname_hostname2"`
+	}
+	siteCols := []string{"cname_hostname"}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cname_hostname2") {
+		siteCols = append(siteCols, "cname_hostname2")
+	}
+	var siteRows []siteCnameRow
+	if err := db.DB.Model(&models.Site{}).Select(siteCols).Find(&siteRows).Error; err != nil {
+		errs = append(errs, err.Error())
+	} else {
+		for _, row := range siteRows {
+			addAllowedCnameValue(allowedCnameValues, row.CnameHostname)
+			addAllowedCnameValue(allowedCnameValues, row.CnameHostname2)
+		}
+	}
+	if len(domainSet) == 0 {
+		return nil
+	}
+	if len(allowedAValues) == 0 && len(allowedCnameValues) == 0 {
 		return nil
 	}
 
-	domainList := make([]string, 0, len(allowed))
-	for domain := range allowed {
+	domainList := make([]string, 0, len(domainSet))
+	for domain := range domainSet {
 		domainList = append(domainList, domain)
 	}
 	var domainRows []models.CnameDomain
@@ -185,18 +230,29 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 			errs = append(errs, err.Error())
 			continue
 		}
-		allowedHosts := allowed[normalizeDomainInput(domain.Domain)]
 		for _, record := range records {
 			if strings.EqualFold(record.Type, "NS") {
+				continue
+			}
+			if !strings.EqualFold(record.Type, "A") && !strings.EqualFold(record.Type, "CNAME") {
 				continue
 			}
 			if isProtectedRecord(record.Name, domain.Domain, protected) {
 				continue
 			}
-			recordHost := normalizeRecordHost(record.Name, domain.Domain)
 			if strings.EqualFold(record.Type, "A") {
-				if _, ok := allowedHosts[recordHost]; ok {
-					continue
+				value := strings.TrimSpace(record.Value)
+				if value != "" {
+					if _, ok := allowedAValues[value]; ok {
+						continue
+					}
+				}
+			} else if strings.EqualFold(record.Type, "CNAME") {
+				value := normalizeDomainInput(record.Value)
+				if value != "" {
+					if _, ok := allowedCnameValues[value]; ok {
+						continue
+					}
 				}
 			}
 			if err := provider.DeleteRecord(domain.Domain, record); err != nil {
@@ -327,4 +383,39 @@ func normalizeGroupHostname(host, domain string) string {
 		}
 	}
 	return strings.TrimSuffix(normalized, ".")
+}
+
+func buildLineCnameValue(domainKey, host string) string {
+	domainKey = normalizeDomainInput(domainKey)
+	if domainKey == "" {
+		return ""
+	}
+	host = normalizeDomainInput(host)
+	if host == "" {
+		return ""
+	}
+	recordHost := normalizeRecordHost(host, domainKey)
+	if recordHost == "" {
+		return ""
+	}
+	if recordHost == "@" {
+		return domainKey
+	}
+	return recordHost + "." + domainKey
+}
+
+func addAllowedAValue(values map[string]struct{}, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	values[value] = struct{}{}
+}
+
+func addAllowedCnameValue(values map[string]struct{}, value string) {
+	value = normalizeDomainInput(value)
+	if value == "" {
+		return
+	}
+	values[value] = struct{}{}
 }

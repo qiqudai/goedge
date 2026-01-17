@@ -36,6 +36,7 @@ func (ctr *AgentController) Heartbeat(c *gin.Context) {
 	nodeID := resolveHeartbeatNodeID(c, payload.NodeID)
 	if nodeID != 0 {
 		services.MarkNodeOnline(nodeID, time.Now())
+		services.WriteNodeMonitorLog(nodeID, "heartbeat", true, c.ClientIP())
 	}
 	syncAction := ""
 	if nodeID != 0 {
@@ -218,6 +219,7 @@ func (ctr *AgentController) ReportL2Heartbeat(c *gin.Context) {
 	for _, id := range req.Nodes {
 		services.MarkNodeOnline(id, now)
 	}
+	services.WriteNodeMonitorLogs(req.Nodes, "l2_beat", true, nil)
 	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
 }
 
@@ -253,6 +255,7 @@ func (ctr *AgentController) SyncNodeStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid action")})
 		return
 	}
+	services.WriteNodeMonitorLog(nodeID, "sync", req.Success, c.ClientIP())
 	if !req.Success {
 		c.JSON(http.StatusOK, gin.H{"status": T("status.ignored")})
 		return

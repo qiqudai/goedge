@@ -249,9 +249,10 @@ export function useSiteSettings() {
           }
         }
 
+        const pkgUserId = data?.user_id || data?.uid || 0
         await Promise.allSettled([
           loadAux('/certs', certList),
-          loadAux('/user_packages', userPackages),
+          loadUserPackages(pkgUserId),
           loadAcls()
         ])
       } catch (error) {
@@ -487,9 +488,10 @@ export function useSiteSettings() {
     } catch (e) { console.error('Load certs failed', e) }
   })
 
-  const loadUserPackages = () => withLoading(async () => {
+  const loadUserPackages = (userId = 0) => withLoading(async () => {
     try {
-      const r = await request.get('/user_packages')
+      const params = userId ? { user_id: userId } : undefined
+      const r = await request.get('/user_packages', params ? { params } : undefined)
       userPackages.value = r.data?.list || r.list || []
     } catch (e) { console.error('Load user packages failed', e) }
   })

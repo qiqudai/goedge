@@ -71,6 +71,7 @@ func (ctr *NodeController) UpdateStatus(c *gin.Context) {
 			ctr.NodeService.SyncNodeToRedis(&sub)
 		}
 	}
+	recordNodeIPSwitchLogs(id, actionLabel(*req.Enable))
 	dnsAction := "delete"
 	if *req.Enable {
 		dnsAction = "add"
@@ -494,6 +495,7 @@ func (ctr *NodeController) DeleteNode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid ID")})
 		return
 	}
+	recordNodeIPSwitchLogs(id, "delete")
 	if err := services.SyncPackageCnameForNodes([]int64{id}, "delete"); err != nil {
 		log.Printf("[DNS] package cname delete sync failed node=%d err=%v", id, err)
 	}
@@ -559,6 +561,7 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 				"enable":    true,
 				"update_at": time.Now(),
 			}).Error
+		recordBatchNodeIPSwitchLogs(req.Ids, "enable")
 	case "stop":
 		if err := db.DB.Model(&models.Node{}).
 			Where("id IN ?", req.Ids).
@@ -576,7 +579,9 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 				"enable":    false,
 				"update_at": time.Now(),
 			}).Error
+		recordBatchNodeIPSwitchLogs(req.Ids, "disable")
 	case "delete":
+		recordBatchNodeIPSwitchLogs(req.Ids, "delete")
 		err := db.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("node_id IN ?", req.Ids).Delete(&models.Line{}).Error; err != nil {
 				return err
@@ -596,6 +601,38 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": fmt.Sprintf(T("Batch action executed on %d nodes"), len(req.Ids))})
+}
+
+func actionLabel(enable bool) string {
+	if enable {
+		return "enable"
+	}
+	return "disable"
+}
+
+func recordNodeIPSwitchLogs(nodeID int64, action string) {
+	if nodeID == 0 {
+		return
+	}
+	var subIDs []int64
+	_ = db.DB.Model(&models.Node{}).Where("pid = ?", nodeID).Pluck("id", &subIDs).Error
+	ids := append([]int64{nodeID}, subIDs...)
+	var lines []models.Line
+	_ = db.DB.Where("node_id IN ? OR node_ip_id IN ?", ids, ids).Find(&lines).Error
+	if len(lines) > 0 {
+		services.WriteIPSwitchLogsForLines(lines, action, "node")
+		return
+	}
+	var node models.Node
+	if err := db.DB.Select("id", "ip").Where("id = ?", nodeID).First(&node).Error; err == nil {
+		services.WriteIPSwitchLogForNode(node, action, "node", "")
+	}
+}
+
+func recordBatchNodeIPSwitchLogs(nodeIDs []int64, action string) {
+	for _, id := range nodeIDs {
+		recordNodeIPSwitchLogs(id, action)
+	}
 }
 
 func replaceSubIPs(tx *gorm.DB, parentID int64, parent models.Node, subIPs []models.NodeSubIP) error {

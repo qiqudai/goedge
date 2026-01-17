@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -96,8 +97,8 @@ func processSiteCreateTask(task *models.Task) {
 		Enable:        true,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
-		CnameHostname: payload.Domain + ".cdn.node.com",
 	}
+	applySiteCnameForTask(site, payload.Domain)
 
 	defaults, err := GetSiteDefaultMapWithGroup(payload.UserID, payload.GroupID)
 	if err == nil {
@@ -116,7 +117,21 @@ func processSiteCreateTask(task *models.Task) {
 	// For now, I'll inline the DB creation logic here.
 
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(site).Error; err != nil {
+		dbTx := tx
+		omitColumns := siteMissingColumnsForTask(tx)
+		if len(omitColumns) > 0 {
+			dbTx = dbTx.Omit(omitColumns...)
+		}
+		if site.RegionID == 0 {
+			dbTx = dbTx.Omit("region_id")
+		}
+		if site.NodeGroupID == 0 {
+			dbTx = dbTx.Omit("node_group_id")
+		}
+		if !site.EnableBackupGroup || site.BackupNodeGroupID == 0 {
+			dbTx = dbTx.Omit("backup_node_group")
+		}
+		if err := dbTx.Create(site).Error; err != nil {
 			return err
 		}
 		if payload.GroupID != 0 {
@@ -135,7 +150,69 @@ func processSiteCreateTask(task *models.Task) {
 
 	BumpConfigVersion("site", []int64{site.ID})
 	_ = SyncUserDNSRecords(nil, site)
+	ResyncSiteCnameForSite(*site)
 
 	// Success
 	db.DB.Model(task).Updates(map[string]interface{}{"state": "success", "end_at": time.Now(), "ret": ""})
+}
+
+func applySiteCnameForTask(site *models.Site, domain string) {
+	if site == nil || site.UserPackageID == 0 {
+		return
+	}
+	var pkg models.UserPackage
+	if err := db.DB.Select("cname_mode", "cname_hostname", "cname_domain", "record_id").
+		Where("id = ?", site.UserPackageID).
+		First(&pkg).Error; err != nil {
+		return
+	}
+
+	pkgMode := strings.TrimSpace(pkg.CnameMode)
+	pkgDomain := strings.TrimSpace(pkg.CnameDomain)
+	if pkgDomain == "" {
+		pkgDomain = "cdn.node.com"
+	}
+
+	if pkgMode == "package" {
+		pkgHost := strings.TrimSpace(pkg.CnameHostname)
+		if pkgHost == "" {
+			pkgHost = strings.TrimSpace(pkg.RecordID)
+		}
+		if pkgHost != "" {
+			site.CnameMode = "package"
+			site.CnameDomain = pkgDomain
+			site.CnameHostname = buildSiteCnameForTask(pkgHost, pkgDomain)
+			return
+		}
+	}
+
+	if strings.TrimSpace(domain) != "" {
+		site.CnameMode = "domain"
+		site.CnameDomain = pkgDomain
+		site.CnameHostname = buildSiteCnameForTask(domain, pkgDomain)
+	}
+}
+
+func buildSiteCnameForTask(hostname, cnameDomain string) string {
+	hostname = strings.TrimSpace(hostname)
+	cnameDomain = strings.TrimSpace(cnameDomain)
+	if hostname == "" || cnameDomain == "" {
+		return ""
+	}
+	return hostname + "." + cnameDomain
+}
+
+func siteMissingColumnsForTask(tx *gorm.DB) []string {
+	migrator := tx.Migrator()
+	missing := make([]string, 0, 3)
+	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
+		missing = append(missing, "dns_provider_id")
+	}
+	if !migrator.HasColumn(&models.Site{}, "settings") {
+		missing = append(missing, "settings")
+	}
+	if !migrator.HasColumn(&models.Site{}, "cname_hostname2") {
+		missing = append(missing, "cname_hostname2")
+	}
+	return missing
 }

@@ -96,15 +96,6 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 
 	log.Printf("[DNS] package cname resync start domain=%s host=%s line=%s", root, recordName, lineID)
 
-	hasNodes := false
-	lineIPs, err := loadLineNodeIPs(groupID, lineID)
-	if err != nil {
-		return err
-	}
-	if len(lineIPs) > 0 {
-		hasNodes = true
-	}
-
 	record := DNSRecord{
 		Type:  "CNAME",
 		Name:  recordName,
@@ -114,24 +105,12 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 	}
 
 	if updater, ok := provider.(RecordSetUpdater); ok {
-		values := []string{}
-		if hasNodes {
-			values = []string{lineHost}
-		}
+		values := []string{lineHost}
 		if err := updater.UpsertRecordSet(root, DNSRecord{Type: "CNAME", Name: recordName, TTL: ttl, Line: lineValue}, values); err != nil {
 			log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
 			return err
 		}
 		log.Printf("[DNS] package cname sync success host=%s.%s line=%s action=%s", recordName, root, lineID, action)
-		return nil
-	}
-
-	if !hasNodes {
-		if err := deleteAllByLine(provider, root, DNSRecord{Type: "CNAME", Name: recordName, Line: lineValue}); err != nil {
-			log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
-			return err
-		}
-		log.Printf("[DNS] package cname resync done domain=%s host=%s line=%s nodes=0", root, recordName, lineID)
 		return nil
 	}
 

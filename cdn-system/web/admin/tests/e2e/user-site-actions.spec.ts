@@ -11,7 +11,8 @@ test.describe('user: site actions', () => {
     const packagesBody = await expectApiSuccess(await api.get('/api/v1/user/user_packages', { params: { pageSize: 10 } }))
     const packages = packagesBody.data?.list || packagesBody.list || []
     expect(packages.length).toBeGreaterThan(0)
-    const pkgId = packages[0].id
+    const pkg = packages.find((item: { domain?: number }) => Number(item?.domain || 0) === 0) || packages[0]
+    const pkgId = pkg.id
 
     const domain = `autotest-${Date.now()}.example.com`
     const createBody = await expectApiSuccess(
@@ -55,6 +56,28 @@ test.describe('user: site actions', () => {
       })
     )
 
+    const waitForSiteId = async (domain: string) => {
+      const deadline = Date.now() + 30_000
+      while (Date.now() < deadline) {
+        const res = await api.get('/api/v1/user/sites', { params: { keyword: domain, search_field: 'domain' } })
+        if (res.ok()) {
+          const body = await res.json()
+          const list = body?.data?.list || body?.list || []
+          const match = list.find((item: { domains?: string[] }) => Array.isArray(item?.domains) && item.domains.includes(domain))
+          if (match?.id) return Number(match.id)
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+      return 0
+    }
+
+    const batchSiteId = await waitForSiteId(batchDomain)
+    if (batchSiteId) {
+      await expectApiSuccess(await api.post('/api/v1/user/sites/batch_action', { data: { action: 'disable', ids: [batchSiteId] } }))
+      await expectApiSuccess(await api.post('/api/v1/user/sites/batch_action', { data: { action: 'delete', ids: [batchSiteId] } }))
+    }
+
+    await expectApiSuccess(await api.post('/api/v1/user/sites/batch_action', { data: { action: 'disable', ids: [siteId] } }))
     await expectApiSuccess(await api.post('/api/v1/user/sites/batch_action', { data: { action: 'delete', ids: [siteId] } }))
 
     await api.dispose()

@@ -132,6 +132,11 @@ func (ctr *DnsController) DeleteProvider(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid ID")})
 		return
 	}
+	var used int64
+	if err := db.DB.Model(&models.CnameDomain{}).Where("dns_provider_id = ?", id).Count(&used).Error; err == nil && used > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("DNS provider is in use")})
+		return
+	}
 	if err := db.DB.Delete(&models.DNSAPI{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete failed")})
 		return

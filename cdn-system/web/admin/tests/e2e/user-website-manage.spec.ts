@@ -25,7 +25,8 @@ test.describe.serial('user: website manage', () => {
     const packagesBody = await expectApiSuccess(await api.get('/api/v1/user/user_packages', { params: { pageSize: 10 } }))
     const packages = packagesBody.data?.list || packagesBody.list || []
     expect(packages.length).toBeGreaterThan(0)
-    const pkgId = packages[0].id
+    const pkg = packages.find((item: { domain?: number }) => Number(item?.domain || 0) === 0) || packages[0]
+    const pkgId = pkg.id
 
     const domain = `autotest-manage-${Date.now()}.example.com`
     const createBody = await expectApiSuccess(

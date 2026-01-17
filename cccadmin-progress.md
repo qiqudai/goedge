@@ -108,3 +108,4 @@
 - `cd cdn-system/api && go test ./...` ✅（二进制忽略与索引清理）
 - `cd cdn-system/web/admin && npm run build` ✅（网站列表 DNS 接口复用）
 - `cd cdn-system/web/admin && node scripts/sync-wwwroot.cjs` ✅（同步 wwwroot）
+- cd cdn-system/api && go test ./... ✅（站点 CNAME 固定 + 线路/套餐记录保留）

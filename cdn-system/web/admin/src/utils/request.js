@@ -100,8 +100,9 @@ service.interceptors.response.use(
         window.location.href = '/login'
       }, 1000)
     } else {
+      const apiMessage = error.response?.data?.error || error.response?.data?.msg
       ElMessage({
-        message: error.message,
+        message: apiMessage || error.message,
         type: 'error',
         duration: 5 * 1000
       })

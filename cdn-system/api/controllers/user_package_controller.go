@@ -419,19 +419,8 @@ func resyncSitesForUserPackage(userPackageID int64) {
 		log.Printf("[WARN] resyncSitesForUserPackage load failed package=%d err=%v", userPackageID, err)
 		return
 	}
-	updated := make([]int64, 0)
 	for _, site := range sites {
-		changed, err := refreshSiteCnameHostname(&site, nil, nil)
-		if err != nil {
-			log.Printf("[WARN] resyncSitesForUserPackage refresh failed site=%d err=%v", site.ID, err)
-		}
-		if changed {
-			updated = append(updated, site.ID)
-		}
 		resyncSiteCnameForSite(site)
-	}
-	if len(updated) > 0 {
-		services.BumpConfigVersion("site", updated)
 	}
 }
 

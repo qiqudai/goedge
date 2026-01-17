@@ -114,6 +114,10 @@ func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs [
 		}
 
 		log.Printf("[DNS] sync start provider=%s group=%d line=%s action=%s nodes=%d domains=%d", api.Type, groupID, lineID, logAction, len(ipWeights), 1)
+		if len(ipWeights) == 0 {
+			log.Printf("[DNS] sync skip group=%d line=%s action=%s nodes=0", groupID, lineID, logAction)
+			return nil
+		}
 		errs := make([]string, 0)
 		if updater, ok := provider.(RecordSetUpdater); ok {
 			desiredIPs := make([]string, 0, len(ipWeights))
@@ -159,6 +163,10 @@ func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs [
 		deleteAll = remaining == 0
 	}
 	log.Printf("[DNS] sync start provider=%s group=%d line=%s action=%s nodes=%d domains=%d", api.Type, groupID, lineID, logAction, len(nodes), 1)
+	if deleteAll {
+		log.Printf("[DNS] sync skip delete-all group=%d line=%s action=%s nodes=0", groupID, lineID, logAction)
+		return nil
+	}
 	errs := make([]string, 0)
 	weightMap := map[int64]int{}
 	if action == "add" || action == "resync" {
@@ -170,19 +178,15 @@ func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs [
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("provider=%s list domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
 		} else {
-			if deleteAll {
-				desiredIPs = []string{}
+			if len(desiredIPs) == 0 {
+				log.Printf("[DNS] sync skip upsert group=%d line=%s action=%s nodes=0", groupID, lineID, logAction)
+				return nil
 			}
 			if err := updater.UpsertRecordSet(root, record, desiredIPs); err != nil {
 				errs = append(errs, fmt.Sprintf("provider=%s upsert domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
 			}
 		}
 	} else {
-		if deleteAll {
-			if err := deleteAllByLine(provider, root, record); err != nil {
-				errs = append(errs, fmt.Sprintf("provider=%s delete-all domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
-			}
-		}
 		for _, node := range nodes {
 			if strings.TrimSpace(node.IP) == "" {
 				continue
@@ -234,7 +238,7 @@ func syncLineRecordSetLegacy(provider Provider, domain string, record DNSRecord,
 		existingCount[r.Value]++
 	}
 	if len(desiredWeights) == 0 {
-		return deleteAllByLine(provider, domain, record)
+		return nil
 	}
 
 	replacer, canReplace := provider.(RecordValueReplacer)

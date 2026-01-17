@@ -537,6 +537,7 @@ func (c *AgentWSController) handleHeartbeat(nodeID int64, conn *websocket.Conn, 
 	}
 	if nodeID != 0 {
 		services.MarkNodeOnline(nodeID, time.Now())
+		services.WriteNodeMonitorLog(nodeID, "heartbeat", true, "")
 	}
 
 	syncAction := c.getSyncAction(nodeID)
@@ -576,6 +577,7 @@ func (c *AgentWSController) handleNodeSync(nodeID int64, raw []byte) {
 	if action != "enable" && action != "disable" {
 		return
 	}
+	services.WriteNodeMonitorLog(nodeID, "sync", req.Success, "")
 	if !req.Success {
 		return
 	}
@@ -672,6 +674,7 @@ func (c *AgentWSController) handleL2Heartbeat(nodeID int64, raw []byte) {
 	for _, id := range req.Nodes {
 		services.MarkNodeOnline(id, now)
 	}
+	services.WriteNodeMonitorLogs(req.Nodes, "l2_beat", true, nil)
 }
 
 func (c *AgentWSController) handleCertIssued(nodeID int64, raw []byte) {

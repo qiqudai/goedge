@@ -268,7 +268,11 @@ func siteMissingColumns(tx *gorm.DB) []string {
 }
 
 func ensureDNSRecords(site *models.Site) error {
-	if site == nil || site.DNSProviderID == 0 || len(site.Domains) == 0 {
+	if site == nil || len(site.Domains) == 0 {
+		return nil
+	}
+	_, _ = refreshSiteCnameHostname(site, nil, nil)
+	if site.DNSProviderID == 0 {
 		return nil
 	}
 	return services.SyncUserDNSRecords(nil, site)
@@ -498,38 +502,8 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		}
 		listenPorts := strings.Join(listenParts, " ")
 
-		cname := strings.TrimSpace(site.CnameHostname)
 		pkg := pkgMap[site.UserPackageID]
-
-		// Priority: Site Mode > Package Mode > Default
-		siteMode := strings.TrimSpace(site.CnameMode)
-		pkgMode := strings.TrimSpace(pkg.CnameMode)
-
-		isPkgMode := siteMode == "package" || (siteMode == "" && pkgMode == "package")
-
-		if isPkgMode && pkg.CnameHostname != "" {
-			cname = pkg.CnameHostname
-			if pkg.CnameDomain != "" {
-				cname += "." + pkg.CnameDomain
-			} else if site.CnameDomain != "" {
-				cname += "." + site.CnameDomain
-			} else {
-				cname += ".cdn.node.com"
-			}
-		} else {
-			// Custom or Default mode
-			// Reconstruct CNAME to ensure it reflects current CnameDomain (important for batch updates)
-			cnameDomain := strings.TrimSpace(site.CnameDomain)
-			if cnameDomain == "" {
-				cnameDomain = strings.TrimSpace(pkg.CnameDomain)
-			}
-			if cnameDomain == "" {
-				cnameDomain = "cdn.node.com"
-			}
-			if len(domains) > 0 && cnameDomain != "" {
-				cname = buildSiteCname(domains[0], cnameDomain)
-			}
-		}
+		cname := strings.TrimSpace(site.CnameHostname)
 		if cname == "" {
 			cname = "-"
 		}
