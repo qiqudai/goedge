@@ -85,6 +85,8 @@ func main() {
 	go services.StartDNSRecordRepairWorker()
 	// Start Backup Line Group switch worker
 	go services.StartBackupGroupSwitchWorker()
+	// Start Node Auto Weight Worker
+	go services.StartNodeAutoSwitchWorker()
 	// Start Cert Auto Renew Worker
 	go services.StartCertAutoRenewWorker()
 	// Start Cert Issue Worker

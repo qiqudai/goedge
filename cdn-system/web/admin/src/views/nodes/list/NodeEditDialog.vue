@@ -36,6 +36,9 @@
             <el-input v-model.number="form.cache_limit"><template #append>GB</template></el-input>
           </el-form-item>
           <el-form-item :label="NODE_T.logDir"><el-input v-model="form.log_dir" /></el-form-item>
+          <el-form-item :label="NODE_T.bwLimit">
+            <el-input v-model="form.bw_limit" placeholder="1000"><template #append>Mbps</template></el-input>
+          </el-form-item>
         </el-form>
       </el-tab-pane>
 
@@ -69,14 +72,14 @@ const emit = defineEmits(['update:modelValue', 'success'])
 
 const visible = ref(false)
 const activeTab = ref('basic')
-const form = reactive({ id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', sub_ips: [] })
+const form = reactive({ id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', bw_limit: '', sub_ips: [] })
 const subIpsText = ref('')
 const originalRegionId = ref(0)
 const regionLocked = computed(() => Number(props.item?.line_count || 0) > 0)
 
 const applyItem = (item) => {
   const nextRegionId = Number(item?.region_id || 0)
-  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', sub_ips: [] }, item, {
+  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', bw_limit: '', sub_ips: [] }, item, {
     region_id: nextRegionId
   })
   if (!item?.id && !form.region_id && props.regions.length > 0) {

@@ -29,6 +29,12 @@
       <el-form-item label="带宽超限次数">
         <el-input-number v-model="form.bw_exceed_times" :min="1" />
       </el-form-item>
+      <el-form-item label="高负载自动降权">
+        <el-checkbox v-model="form.auto_switch_enable">启用</el-checkbox>
+      </el-form-item>
+      <el-form-item label="高负载恢复时间(秒)">
+        <el-input-number v-model="form.auto_switch_recover" :min="300" />
+      </el-form-item>
       <el-form-item label="监控API">
         <el-input v-model="form.monitor_api" placeholder="如：http://..." />
       </el-form-item>
@@ -60,6 +66,8 @@ const form = reactive({
   email: '',
   phone: '',
   bw_exceed_times: 2,
+  auto_switch_enable: false,
+  auto_switch_recover: 300,
   monitor_api: '',
   interval: 30,
   failed_times: 3,
