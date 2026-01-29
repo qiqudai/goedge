@@ -5,9 +5,9 @@
     "log_storage_hours": 2
   },
   "forward": {
-    "disabled_ports": "80 443-e2e"
+    "disabled_ports": "80 443"
   },
   "public": {
-    "disabled_custom_ports": "22-e2e"
+    "disabled_custom_ports": "22"
   }
 }

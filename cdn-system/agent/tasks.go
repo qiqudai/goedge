@@ -33,7 +33,7 @@ func processTask(id int64, taskType string, data string) (string, error) {
 	case "refresh_dir":
 		return "", purgeDirs(splitLines(data))
 	case "clear_cache":
-		cacheDir := filepath.Join(WorkDir, "cache")
+		cacheDir := filepath.Join(runtimeRoot(), "cache")
 		return "", clearCacheDir(cacheDir)
 	case "preheat":
 		return "", preheatURLs(splitLines(data))
@@ -73,7 +73,7 @@ func issueCertTask(taskID int64, raw string) error {
 	if len(payload.Items) == 0 {
 		return fmt.Errorf("no cert items")
 	}
-	webroot := filepath.Join(WorkDir, "cert", "acme")
+	webroot := filepath.Join(runtimeRoot(), "cert", "acme")
 	accountKey := filepath.Join(webroot, "account_"+strings.ToLower(payload.CA)+".key")
 	tokenStore := newAPITokenStore()
 	issuer := acme.NewIssuer(acme.IssueOptions{
@@ -133,7 +133,7 @@ func purgeDirs(urls []string) error {
 	if len(urls) == 0 {
 		return nil
 	}
-	cacheDir := filepath.Join(WorkDir, "cache")
+	cacheDir := filepath.Join(runtimeRoot(), "cache")
 	return clearCacheDir(cacheDir)
 }
 
@@ -154,7 +154,7 @@ func purgeURL(raw string) error {
 	}
 	sum := md5.Sum([]byte(cacheKey))
 	hash := fmt.Sprintf("%x", sum)
-	cacheDir := filepath.Join(WorkDir, "cache")
+	cacheDir := filepath.Join(runtimeRoot(), "cache")
 	if len(hash) < 3 {
 		return nil
 	}
@@ -260,7 +260,7 @@ func syncUserPackageTask(raw string) (string, error) {
 		return "", fmt.Errorf("invalid payload: %v", err)
 	}
 
-	packagesDir := filepath.Join(WorkDir, "packages")
+	packagesDir := filepath.Join(runtimeRoot(), "packages")
 	if err := os.MkdirAll(packagesDir, 0755); err != nil {
 		return "", fmt.Errorf("create packages dir failed: %v", err)
 	}
@@ -329,7 +329,7 @@ func syncUserPackageTask(raw string) (string, error) {
 }
 
 func loadPersistedPackages() {
-	packagesDir := filepath.Join(WorkDir, "packages")
+	packagesDir := filepath.Join(runtimeRoot(), "packages")
 	entries, err := os.ReadDir(packagesDir)
 	if err != nil {
 		return

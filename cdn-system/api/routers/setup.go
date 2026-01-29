@@ -56,6 +56,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/nodes", nodeCtr.ListNodes)
 			admin.GET("/nodes/:id/monitor_logs", nodeCtr.ListMonitorLogs)
 			admin.POST("/nodes", nodeCtr.CreateNode)
+			admin.POST("/nodes/:id/install", nodeCtr.InstallNode)
 			admin.PUT("/nodes/:id", nodeCtr.UpdateNode)
 			admin.PUT("/nodes/:id/status", nodeCtr.UpdateStatus)
 			admin.DELETE("/nodes/:id", nodeCtr.DeleteNode)

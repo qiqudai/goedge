@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -39,6 +40,7 @@ func main() {
 			}
 		}
 	}
+	ensureNodeColumns()
 	if db.DB.Migrator().HasTable("job") {
 		if err := db.DB.Migrator().DropTable("job"); err != nil {
 			log.Printf("Failed to drop job table: %v", err)
@@ -54,6 +56,7 @@ func main() {
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, Pragma, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Auth-Token")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -104,4 +107,32 @@ func main() {
 	// Recommend running behind Nginx Load Balancer for HA
 	log.Printf("Starting CDN Core API on :%s", config.App.Port)
 	r.Run(":" + config.App.Port)
+}
+
+func ensureNodeColumns() {
+	if !db.DB.Migrator().HasTable(&models.Node{}) {
+		return
+	}
+	m := db.DB.Migrator()
+	ensureColumn(m, &models.Node{}, "Token")
+	ensureColumn(m, &models.Node{}, "SSHHost")
+	ensureColumn(m, &models.Node{}, "SSHPort")
+	ensureColumn(m, &models.Node{}, "SSHUser")
+	ensureColumn(m, &models.Node{}, "SSHAuthType")
+	ensureColumn(m, &models.Node{}, "SSHPassword")
+	ensureColumn(m, &models.Node{}, "SSHKey")
+	ensureColumn(m, &models.Node{}, "WorkDir")
+	ensureColumn(m, &models.Node{}, "AutoInstall")
+	ensureColumn(m, &models.Node{}, "InstallStatus")
+	ensureColumn(m, &models.Node{}, "InstallError")
+	ensureColumn(m, &models.Node{}, "InstallAt")
+}
+
+func ensureColumn(m gorm.Migrator, model interface{}, name string) {
+	if m.HasColumn(model, name) {
+		return
+	}
+	if err := m.AddColumn(model, name); err != nil {
+		log.Printf("Failed to add column %s: %v", name, err)
+	}
 }

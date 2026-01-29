@@ -9,11 +9,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 func nginxConfPath() string {
-	confPath := filepath.Join(WorkDir, "conf", "nginx.conf")
+	rootDir := runtimeRoot()
+	confPath := filepath.Join(rootDir, "conf", "nginx.conf")
 	if abs, err := filepath.Abs(confPath); err == nil {
 		confPath = abs
 	}
@@ -21,10 +21,11 @@ func nginxConfPath() string {
 }
 
 func expectedNginxPidPath() string {
-	if WorkDir == "" {
+	rootDir := runtimeRoot()
+	if rootDir == "" {
 		return ""
 	}
-	pidPath := filepath.Join(WorkDir, "logs", "nginx.pid")
+	pidPath := filepath.Join(rootDir, "logs", "nginx.pid")
 	if abs, err := filepath.Abs(pidPath); err == nil {
 		pidPath = abs
 	}
@@ -48,8 +49,9 @@ func findNginxMasterPID(confPath string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	absWorkDir := WorkDir
-	if abs, err := filepath.Abs(WorkDir); err == nil {
+	rootDir := runtimeRoot()
+	absWorkDir := rootDir
+	if abs, err := filepath.Abs(rootDir); err == nil {
 		absWorkDir = abs
 	}
 	for _, entry := range entries {
@@ -77,7 +79,7 @@ func findNginxMasterPID(confPath string) (int, error) {
 		if absWorkDir != "" && strings.Contains(cmdline, absWorkDir) {
 			return pid, nil
 		}
-		if WorkDir != "" && strings.Contains(cmdline, WorkDir) {
+		if rootDir != "" && strings.Contains(cmdline, rootDir) {
 			return pid, nil
 		}
 	}
@@ -112,8 +114,9 @@ func setNginxEnv(cmd *exec.Cmd) {
 		}
 		filteredEnv = append(filteredEnv, kv)
 	}
-	lualibPath := filepath.Join(WorkDir, "openresty", "lualib")
-	luaUserPath := filepath.Join(WorkDir, "lua")
+	rootDir := runtimeRoot()
+	lualibPath := filepath.Join(rootDir, "openresty", "lualib")
+	luaUserPath := filepath.Join(rootDir, "lua")
 	luaPath := strings.Join([]string{
 		filepath.Join(lualibPath, "?.lua"),
 		filepath.Join(lualibPath, "?", "init.lua"),
@@ -124,7 +127,7 @@ func setNginxEnv(cmd *exec.Cmd) {
 		filepath.Join(lualibPath, "?.so"),
 		filepath.Join(luaUserPath, "?.so"),
 	}, ";") + ";;"
-	libDir := filepath.Join(WorkDir, "openresty", "luajit", "lib")
+	libDir := filepath.Join(rootDir, "openresty", "luajit", "lib")
 	if info, err := os.Stat(libDir); err == nil && info.IsDir() {
 		if ldLibraryPath == "" {
 			ldLibraryPath = libDir
@@ -143,7 +146,7 @@ func startNginx() error {
 		return nil
 	}
 	confPath := nginxConfPath()
-	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-c", confPath)
+	cmd := exec.Command(NginxBinPath, "-p", runtimeRoot(), "-c", confPath)
 	setNginxEnv(cmd)
 	if runtime.GOOS == "windows" {
 		if err := cmd.Start(); err != nil {
@@ -164,7 +167,7 @@ func stopNginx() error {
 		return nil
 	}
 	confPath := nginxConfPath()
-	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-s", "stop", "-c", confPath)
+	cmd := exec.Command(NginxBinPath, "-p", runtimeRoot(), "-s", "stop", "-c", confPath)
 	setNginxEnv(cmd)
 	stopOutput, err := cmd.CombinedOutput()
 	if err != nil {
@@ -172,7 +175,7 @@ func stopNginx() error {
 		if runtime.GOOS != "windows" {
 			pid, pidErr := findNginxMasterPID(confPath)
 			if pidErr == nil && pid > 0 {
-				if signalErr := syscall.Kill(pid, syscall.SIGTERM); signalErr == nil {
+				if signalErr := sendSignal(pid, signalTerm); signalErr == nil {
 					log.Printf("[Warn] Nginx stopped via master pid=%d", pid)
 					return nil
 				}
@@ -190,6 +193,10 @@ func stopNginx() error {
 	return nil
 }
 
+func reloadNginx() error {
+	return executeReload()
+}
+
 func executeReload() error {
 	// Check if nginx is running first to avoid errors
 	// Use absolute path to the extracted binary
@@ -200,7 +207,7 @@ func executeReload() error {
 	confPath := nginxConfPath()
 
 	// nginx -t -c ... -p ...
-	cmd := exec.Command(NginxBinPath, "-p", WorkDir, "-t", "-c", confPath)
+	cmd := exec.Command(NginxBinPath, "-p", runtimeRoot(), "-t", "-c", confPath)
 	setNginxEnv(cmd)
 
 	testOutput, err := cmd.CombinedOutput()
@@ -217,7 +224,7 @@ func executeReload() error {
 			if pidPath, writeErr := ensureNginxPidFile(pid); writeErr == nil && pidPath != "" {
 				log.Printf("[Warn] Reload using master pid=%d pid_path=%s", pid, pidPath)
 			}
-			if signalErr := syscall.Kill(pid, syscall.SIGHUP); signalErr == nil {
+			if signalErr := sendSignal(pid, signalHup); signalErr == nil {
 				log.Println("[Success] Nginx Reloaded")
 				return nil
 			}
@@ -225,7 +232,7 @@ func executeReload() error {
 	}
 
 	// nginx -s reload -c ... -p ...
-	cmd = exec.Command(NginxBinPath, "-p", WorkDir, "-s", "reload", "-c", confPath)
+	cmd = exec.Command(NginxBinPath, "-p", runtimeRoot(), "-s", "reload", "-c", confPath)
 	setNginxEnv(cmd)
 
 	reloadOutput, err := cmd.CombinedOutput()
@@ -234,7 +241,7 @@ func executeReload() error {
 		if runtime.GOOS != "windows" {
 			if pid, pidErr := findNginxMasterPID(confPath); pidErr == nil && pid > 0 {
 				if pidPath, writeErr := ensureNginxPidFile(pid); writeErr == nil {
-					if signalErr := syscall.Kill(pid, syscall.SIGHUP); signalErr == nil {
+					if signalErr := sendSignal(pid, signalHup); signalErr == nil {
 						log.Printf("[Warn] Reload fallback: signaled master pid=%d pid_path=%s", pid, pidPath)
 						return nil
 					}

@@ -635,65 +635,6 @@ local function build_backend_target(addr, domain_conf)
     return scheme .. "://" .. target
 end
 
-local function build_l2_backend_target(addr, domain_conf)
-    local scheme = ngx.var.scheme or "http"
-    local target = addr
-    if not string.find(addr, ":", 1, true) then
-        if scheme == "https" and domain_conf.l2_https_port and domain_conf.l2_https_port ~= "" then
-            target = addr .. ":" .. domain_conf.l2_https_port
-        else
-            scheme = "http"
-            if domain_conf.l2_http_port and domain_conf.l2_http_port ~= "" then
-                target = addr .. ":" .. domain_conf.l2_http_port
-            else
-                target = addr .. ":80"
-            end
-        end
-    end
-    return scheme .. "://" .. target
-end
-
-local function normalize_selected_target(selected)
-    if type(selected) == "table" then
-        return selected.addr, selected
-    end
-    if selected ~= nil then
-        return tostring(selected), nil
-    end
-    return nil, nil
-end
-
-local function is_l2_node_available(node_id)
-    if not node_id then
-        return true
-    end
-    local status = _G.cdn_l2_status
-    if type(status) ~= "table" then
-        return true
-    end
-    local key = tostring(node_id)
-    local val = status[key]
-    if val == nil then
-        return true
-    end
-    return val == true
-end
-
-local function filter_l2_targets(targets)
-    local status = _G.cdn_l2_status
-    if type(status) ~= "table" then
-        return targets
-    end
-    local out = {}
-    for _, target in ipairs(targets) do
-        local node_id = target.node_id
-        if is_l2_node_available(node_id) then
-            table.insert(out, target)
-        end
-    end
-    return out
-end
-
 local function select_backend_target(domain_conf, client_ip)
     local ctx = {
         request_uri = ngx.var.request_uri or "",
@@ -727,11 +668,8 @@ local function select_backend_target(domain_conf, client_ip)
                 table.insert(targets, { addr = item })
             end
             local key = "cond:" .. override
-            local selected = balancer.get_target(key, targets, "round_robin")
-            local addr = normalize_selected_target(selected)
+            local addr = balancer.get_target(key, targets, "round_robin")
             if addr then
-                ngx.ctx.l2_used = false
-                ngx.ctx.l2_node_id = nil
                 return build_backend_target(addr, domain_conf)
             end
         end
@@ -741,23 +679,6 @@ local function select_backend_target(domain_conf, client_ip)
     if not config or not config.upstream_map then
         return nil
     end
-    if domain_conf.use_l2 and domain_conf.l2_upstream_key and domain_conf.l2_upstream_key ~= "" then
-        local l2_targets = config.upstream_map[domain_conf.l2_upstream_key]
-        if l2_targets then
-            l2_targets = filter_l2_targets(l2_targets)
-            if #l2_targets > 0 then
-                local policy = domain_conf.load_balance_policy or "round_robin"
-                local selected = balancer.get_target(domain_conf.l2_upstream_key, l2_targets, policy)
-                local addr, target = normalize_selected_target(selected)
-                if addr then
-                    ngx.ctx.l2_used = true
-                    ngx.ctx.l2_node_id = target and target.node_id or nil
-                    return build_l2_backend_target(addr, domain_conf)
-                end
-            end
-        end
-    end
-
     local upstream_key = domain_conf.upstream_key
     if not upstream_key or upstream_key == "" then
         return nil
@@ -767,13 +688,10 @@ local function select_backend_target(domain_conf, client_ip)
         return nil
     end
     local policy = domain_conf.load_balance_policy or "round_robin"
-    local selected = balancer.get_target(upstream_key, targets, policy)
-    local addr = normalize_selected_target(selected)
+    local addr = balancer.get_target(upstream_key, targets, policy)
     if not addr then
         return nil
     end
-    ngx.ctx.l2_used = false
-    ngx.ctx.l2_node_id = nil
     return build_backend_target(addr, domain_conf)
 end
 

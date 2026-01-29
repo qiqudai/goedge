@@ -12,9 +12,6 @@ import (
 )
 
 func resolveWorkDir(configPath string) {
-	if WorkDir == "" || filepath.IsAbs(WorkDir) {
-		return
-	}
 	baseDir := ""
 	if strings.TrimSpace(configPath) != "" {
 		if abs, err := filepath.Abs(configPath); err == nil {
@@ -25,6 +22,13 @@ func resolveWorkDir(configPath string) {
 		if exePath, err := os.Executable(); err == nil {
 			baseDir = filepath.Dir(exePath)
 		}
+	}
+	if WorkDir == "" || WorkDir == "." {
+		WorkDir = baseDir
+		return
+	}
+	if filepath.IsAbs(WorkDir) {
+		return
 	}
 	if baseDir != "" {
 		WorkDir = filepath.Join(baseDir, WorkDir)
@@ -48,15 +52,17 @@ func main() {
 	if abs, err := filepath.Abs(configPath); err == nil {
 		configPath = abs
 	}
-	resolveWorkDir(configPath)
-
 	// 2. Load from Config File
 	if fileData, err := ioutil.ReadFile(configPath); err == nil {
 		var fileConfig struct {
-			API    string `json:"api"`
-			Token  string `json:"token"`
-			NodeID string `json:"node_id"`
-			Debug  bool   `json:"debug"`
+			API            string `json:"api"`
+			Token          string `json:"token"`
+			NodeID         string `json:"node_id"`
+			Debug          bool   `json:"debug"`
+			WorkDir        string `json:"work_dir"`
+			ResetResources bool   `json:"reset_resources"`
+			BootstrapSync  bool   `json:"bootstrap_sync"`
+			BootstrapStart bool   `json:"bootstrap_start"`
 		}
 		if err := json.Unmarshal(fileData, &fileConfig); err == nil {
 			if fileConfig.API != "" {
@@ -71,6 +77,12 @@ func main() {
 			if fileConfig.Debug {
 				DebugMode = true
 			}
+			if strings.TrimSpace(fileConfig.WorkDir) != "" {
+				WorkDir = strings.TrimSpace(fileConfig.WorkDir)
+			}
+			ResetResources = fileConfig.ResetResources
+			BootstrapSync = fileConfig.BootstrapSync
+			BootstrapStart = fileConfig.BootstrapStart
 			log.Printf("[Info] Loaded config from %s", configPath)
 		}
 	}
@@ -88,6 +100,7 @@ func main() {
 	if *debugFlag {
 		DebugMode = true
 	}
+	resolveWorkDir(configPath)
 
 	if AuthToken == "" {
 		log.Fatal("Error: Token is required in either agent.json or -token flag.")
@@ -105,7 +118,13 @@ func main() {
 	log.Printf("Debug Mode:    %v", DebugMode)
 
 	// Initialize Environment (Unpack Assets)
+	if ResetResources {
+		if !resetWorkDirContents() {
+			ResetResources = false
+		}
+	}
 	initEnvironment()
+	bootstrapSyncAndStart()
 
 	// 2. Start Tickers
 	go startWebSocketClient() // Persistent Connection

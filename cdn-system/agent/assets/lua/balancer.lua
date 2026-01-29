@@ -16,10 +16,10 @@ end
 
 local function build_rr_list(targets)
     local list = {}
-    for i, t in ipairs(targets) do
+    for _, t in ipairs(targets) do
         local w = target_weight(t)
         for _ = 1, w do
-            table.insert(list, i)
+            table.insert(list, t.addr)
         end
     end
     return list
@@ -28,14 +28,7 @@ end
 local function targets_hash(targets)
     local parts = {}
     for _, t in ipairs(targets) do
-        local addr = ""
-        if type(t) == "table" then
-            addr = t.addr or ""
-        else
-            addr = tostring(t or "")
-        end
-        local weight = type(t) == "table" and t.weight or nil
-        table.insert(parts, addr .. ":" .. tostring(weight or ""))
+        table.insert(parts, (t.addr or "") .. ":" .. tostring(t.weight or ""))
     end
     return table.concat(parts, "|")
 end
@@ -69,9 +62,7 @@ end
 
 function _M.get_target(upstream_key, targets, policy)
     if not targets or #targets == 0 then return nil end
-    if #targets == 1 then
-        return targets[1]
-    end
+    if #targets == 1 then return targets[1].addr end
     
     policy = policy or "round_robin"
 
@@ -81,23 +72,23 @@ function _M.get_target(upstream_key, targets, policy)
             total = total + target_weight(t)
         end
         if total <= 0 then
-            return targets[math.random(#targets)]
+            return targets[math.random(#targets)].addr
         end
         local r = math.random(total)
         for _, t in ipairs(targets) do
             r = r - target_weight(t)
             if r <= 0 then
-                return t
+                return t.addr
             end
         end
-        return targets[#targets]
+        return targets[#targets].addr
         
     elseif policy == "ip_hash" then
         -- Simple hash of remote_addr
         local ip = ngx.var.remote_addr or ""
         local hash = ngx.crc32_short(ip)
         local idx = (hash % #targets) + 1
-        return targets[idx]
+        return targets[idx].addr
         
     else -- "round_robin"
         local hash = targets_hash(targets)
@@ -107,11 +98,11 @@ function _M.get_target(upstream_key, targets, policy)
             rr_state[upstream_key] = state
         end
         if #state.list == 0 then
-            return targets[1]
+            return targets[1].addr
         end
         state.index = state.index + 1
         if state.index > #state.list then state.index = 1 end
-        return targets[state.list[state.index]]
+        return state.list[state.index]
     end
 end
 

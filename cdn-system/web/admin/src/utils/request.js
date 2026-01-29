@@ -68,6 +68,10 @@ service.interceptors.response.use(
       redirectToMaintenance(res)
       return Promise.reject(new Error(res.msg || 'maintenance'))
     }
+    const refreshedToken = response.headers?.['x-auth-token']
+    if (refreshedToken) {
+      localStorage.setItem('admin_token', refreshedToken)
+    }
     // If backend returns code, check it (assuming 0 is success)
     if (res.code !== undefined && res.code !== 0) {
       ElMessage({

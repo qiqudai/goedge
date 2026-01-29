@@ -507,11 +507,7 @@ else
         local policy = domain_conf.load_balance_policy or "round_robin"
         
         -- Use Balancer Logic
-        local selected = balancer.get_target(upstream_key, targets, policy)
-        local target_addr = selected
-        if type(selected) == "table" then
-            target_addr = selected.addr
-        end
+        local target_addr = balancer.get_target(upstream_key, targets, policy)
         
         if target_addr then
             local scheme = domain_conf.origin_protocol or "http"

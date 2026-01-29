@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
+	"cdn-api/utils"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,6 +19,42 @@ import (
 
 type NodeController struct {
 	NodeService *services.NodeService
+}
+
+type nodeRequest struct {
+	ID             int64              `json:"id"`
+	RegionID       *int64             `json:"region_id"`
+	Name           string             `json:"name"`
+	Remark         string             `json:"remark"`
+	IP             string             `json:"ip"`
+	Host           string             `json:"host"`
+	Port           int                `json:"port"`
+	HttpProxy      string             `json:"http_proxy"`
+	IsMgmt         bool               `json:"is_mgmt"`
+	Enable         bool               `json:"enable"`
+	CheckOn        bool               `json:"check_on"`
+	CheckProtocol  string             `json:"check_protocol"`
+	CheckTimeout   int                `json:"check_timeout"`
+	CheckPort      int                `json:"check_port"`
+	CheckHost      string             `json:"check_host"`
+	CheckPath      string             `json:"check_path"`
+	CheckNodeGroup string             `json:"check_node_group"`
+	CheckAction    string             `json:"check_action"`
+	BwLimit        string             `json:"bw_limit"`
+	Level          int                `json:"type"`
+	Sort           int                `json:"sort_order"`
+	CacheDir       string             `json:"cache_dir"`
+	MaxCacheSize   int                `json:"cache_limit"`
+	LogDir         string             `json:"log_dir"`
+	SSHHost        string             `json:"ssh_host"`
+	SSHPort        int                `json:"ssh_port"`
+	SSHUser        string             `json:"ssh_user"`
+	SSHAuthType    string             `json:"ssh_auth_type"`
+	SSHPassword    string             `json:"ssh_password"`
+	SSHKey         string             `json:"ssh_key"`
+	WorkDir        string             `json:"work_dir"`
+	AutoInstall    bool               `json:"auto_install"`
+	SubIPs         []models.NodeSubIP `json:"sub_ips"`
 }
 
 // UpdateStatus toggles node enable status.
@@ -199,6 +237,18 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 				}
 			}
 		}
+
+		progressMap, _ := services.FetchInstallProgress(parentIDs)
+		if len(progressMap) > 0 {
+			for i := range nodes {
+				if progress, ok := progressMap[nodes[i].ID]; ok {
+					nodes[i].InstallStage = progress.Stage
+					nodes[i].InstallProgress = progress.Percent
+					nodes[i].InstallProgressBytes = progress.CurrentBytes
+					nodes[i].InstallProgressTotal = progress.TotalBytes
+				}
+			}
+		}
 	}
 
 	for i := range nodes {
@@ -304,7 +354,7 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 // CreateNode
 // POST /api/v1/admin/nodes
 func (ctr *NodeController) CreateNode(c *gin.Context) {
-	var req models.Node
+	var req nodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid Params")})
 		return
@@ -318,20 +368,65 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
 	}
+	req.WorkDir = "/www/node"
 
-	req.PID = 0
-	req.CreatedAt = time.Now()
-	req.UpdatedAt = time.Now()
-	if !req.Enable {
-		req.Enable = true
+	token := strings.TrimSpace(config.App.AgentToken)
+	if token == "" {
+		token = utils.GenerateNodeToken()
+		if token == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Failed to generate token")})
+			return
+		}
 	}
 
-	if err := db.DB.Create(&req).Error; err != nil {
+	node := models.Node{
+		PID:            0,
+		RegionID:       req.RegionID,
+		Name:           req.Name,
+		Remark:         req.Remark,
+		IP:             req.IP,
+		Token:          token,
+		Host:           req.Host,
+		Port:           req.Port,
+		HttpProxy:      req.HttpProxy,
+		IsMgmt:         req.IsMgmt,
+		Enable:         req.Enable,
+		CheckOn:        req.CheckOn,
+		CheckProtocol:  req.CheckProtocol,
+		CheckTimeout:   req.CheckTimeout,
+		CheckPort:      req.CheckPort,
+		CheckHost:      req.CheckHost,
+		CheckPath:      req.CheckPath,
+		CheckNodeGroup: req.CheckNodeGroup,
+		CheckAction:    req.CheckAction,
+		BwLimit:        req.BwLimit,
+		Level:          req.Level,
+		Sort:           req.Sort,
+		CacheDir:       req.CacheDir,
+		MaxCacheSize:   req.MaxCacheSize,
+		LogDir:         req.LogDir,
+		SSHHost:        req.SSHHost,
+		SSHPort:        req.SSHPort,
+		SSHUser:        req.SSHUser,
+		SSHAuthType:    req.SSHAuthType,
+		SSHPassword:    req.SSHPassword,
+		SSHKey:         req.SSHKey,
+		WorkDir:        req.WorkDir,
+		AutoInstall:    req.AutoInstall,
+		InstallStatus:  resolveInitialInstallStatus(req.AutoInstall),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	if !node.Enable {
+		node.Enable = true
+	}
+
+	if err := db.DB.Create(&node).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Create Failed")})
 		return
 	}
 
-	if err := replaceSubIPs(db.DB, req.ID, req, req.SubIPs); err != nil {
+	if err := replaceSubIPs(db.DB, node.ID, node, req.SubIPs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Create Sub IPs Failed")})
 		return
 	}
@@ -348,28 +443,41 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 		// I should update NodeService first to handle SubIP iteration or handle iteration here.
 
 		// Let's handle iteration here for now to avoid re-editing NodeService multiple times.
-		ctr.NodeService.SyncNodeToRedis(&req)
+		ctr.NodeService.SyncNodeToRedis(&node)
 
 		// Also sync sub nodes.
 		// replaceSubIPs creates new Node records with PID=req.ID.
 		// We should really fetch them to sync properly.
 		var subNodes []models.Node
-		db.DB.Where("pid = ?", req.ID).Find(&subNodes)
+		db.DB.Where("pid = ?", node.ID).Find(&subNodes)
 		for _, sub := range subNodes {
 			ctr.NodeService.SyncNodeToRedis(&sub)
 		}
 	}
-	if req.Enable {
-		if err := services.SyncPackageCnameForNodes([]int64{req.ID}, "add"); err != nil {
-			log.Printf("[DNS] package cname sync failed action=add node=%d err=%v", req.ID, err)
+	if node.Enable {
+		if err := services.SyncPackageCnameForNodes([]int64{node.ID}, "add"); err != nil {
+			log.Printf("[DNS] package cname sync failed action=add node=%d err=%v", node.ID, err)
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	if node.AutoInstall {
+		apiBase := services.ResolveAPIBaseURL(c.Request)
+		if err := updateInstallStatus(node.ID, "running", "", time.Now()); err != nil {
+			log.Printf("[Install] update running status failed node=%d err=%v", node.ID, err)
+		}
+		startNodeInstallAsync(node, apiBase)
+		node.InstallStatus = "running"
+		node.InstallError = ""
+		now := time.Now()
+		node.InstallAt = &now
+	}
+
+	resp := gin.H{
 		"code": 0,
 		"msg":  T("Node Created"),
-		"data": req,
-	})
+		"data": node,
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // UpdateNode
@@ -378,7 +486,7 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.ParseInt(idStr, 10, 64)
 
-	var req models.Node
+	var req nodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid Params")})
 		return
@@ -387,6 +495,7 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
 	}
+	req.WorkDir = "/www/node"
 
 	var existing models.Node
 	_ = db.DB.Select("enable", "region_id").Where("id = ?", id).First(&existing).Error
@@ -441,7 +550,19 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 			"cache_dir":        req.CacheDir,
 			"max_cache_size":   req.MaxCacheSize,
 			"log_dir":          req.LogDir,
+			"ssh_host":         req.SSHHost,
+			"ssh_port":         req.SSHPort,
+			"ssh_user":         req.SSHUser,
+			"ssh_auth_type":    req.SSHAuthType,
+			"work_dir":         req.WorkDir,
+			"auto_install":     req.AutoInstall,
 			"update_at":        time.Now(),
+		}
+		if strings.TrimSpace(req.SSHPassword) != "" {
+			updates["ssh_password"] = req.SSHPassword
+		}
+		if strings.TrimSpace(req.SSHKey) != "" {
+			updates["ssh_key"] = req.SSHKey
 		}
 		if syncTask != "" {
 			updates["config_task"] = syncTask
@@ -451,7 +572,18 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 			return err
 		}
 
-		if err := replaceSubIPs(tx, id, req, req.SubIPs); err != nil {
+		parent := models.Node{
+			RegionID:  req.RegionID,
+			Name:      req.Name,
+			Remark:    req.Remark,
+			IP:        req.IP,
+			Host:      req.Host,
+			Port:      req.Port,
+			HttpProxy: req.HttpProxy,
+			IsMgmt:    req.IsMgmt,
+			Enable:    req.Enable,
+		}
+		if err := replaceSubIPs(tx, id, parent, req.SubIPs); err != nil {
 			return err
 		}
 
@@ -603,6 +735,28 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": fmt.Sprintf(T("Batch action executed on %d nodes"), len(req.Ids))})
 }
 
+// InstallNode
+// POST /api/v1/admin/nodes/:id/install
+func (ctr *NodeController) InstallNode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid ID")})
+		return
+	}
+	var node models.Node
+	if err := db.DB.First(&node, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"msg": T("node not found")})
+		return
+	}
+	apiBase := services.ResolveAPIBaseURL(c.Request)
+	if err := updateInstallStatus(node.ID, "running", "", time.Now()); err != nil {
+		log.Printf("[Install] update running status failed node=%d err=%v", node.ID, err)
+	}
+	startNodeInstallAsync(node, apiBase)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Success"), "install_status": "running"})
+}
+
 func actionLabel(enable bool) string {
 	if enable {
 		return "enable"
@@ -633,6 +787,42 @@ func recordBatchNodeIPSwitchLogs(nodeIDs []int64, action string) {
 	for _, id := range nodeIDs {
 		recordNodeIPSwitchLogs(id, action)
 	}
+}
+
+func resolveInitialInstallStatus(autoInstall bool) string {
+	if autoInstall {
+		return "running"
+	}
+	return "idle"
+}
+
+func updateInstallStatus(nodeID int64, status, errMsg string, at time.Time) error {
+	updates := map[string]interface{}{
+		"install_status": status,
+		"install_error":  errMsg,
+		"install_at":     at,
+		"update_at":      time.Now(),
+	}
+	return db.DB.Model(&models.Node{}).Where("id = ?", nodeID).Updates(updates).Error
+}
+
+func startNodeInstallAsync(node models.Node, apiBase string) {
+	copyNode := node
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Install] panic node=%d err=%v", copyNode.ID, r)
+			}
+		}()
+		if err := services.InstallNodeAgent(&copyNode, apiBase); err != nil {
+			log.Printf("[Install] failed node=%d err=%v", copyNode.ID, err)
+			_ = updateInstallStatus(copyNode.ID, "failed", err.Error(), time.Now())
+			_ = services.UpdateInstallProgress(copyNode.ID, "failed", 0, 0, 0, err.Error())
+			return
+		}
+		_ = updateInstallStatus(copyNode.ID, "success", "", time.Now())
+		_ = services.UpdateInstallProgress(copyNode.ID, "success", 100, 0, 0, "")
+	}()
 }
 
 func replaceSubIPs(tx *gorm.DB, parentID int64, parent models.Node, subIPs []models.NodeSubIP) error {

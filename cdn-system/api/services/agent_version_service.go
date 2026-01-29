@@ -16,7 +16,7 @@ func ReadAgentBinaryVersion() string {
 	if v := strings.TrimSpace(os.Getenv("AGENT_VERSION")); v != "" {
 		return v
 	}
-	path := resolveAgentBinaryPath()
+	path := ResolveAgentBinaryPath()
 	if path == "" {
 		return "unknown"
 	}
@@ -32,22 +32,16 @@ func ReadAgentBinaryVersion() string {
 	return "unknown"
 }
 
-func resolveAgentBinaryPath() string {
-	if env := strings.TrimSpace(os.Getenv("AGENT_BINARY_PATH")); env != "" {
-		if fileExists(env) {
-			return env
-		}
-	}
-	candidates := []string{
-		filepath.Join("..", "agent", "agent-linux"),
-		filepath.Join("..", "agent", "agent.exe"),
-		filepath.Join("cdn-system", "agent", "agent-linux"),
-		filepath.Join("cdn-system", "agent", "agent.exe"),
-	}
+func ResolveAgentBinaryPath() string {
+	var candidates []string
 	if runtime.GOOS == "windows" {
-		candidates = append([]string{filepath.Join("..", "agent", "agent.exe")}, candidates...)
+		candidates = []string{
+			filepath.Join("agent", "cdn-agent.exe"),
+		}
 	} else {
-		candidates = append([]string{filepath.Join("..", "agent", "agent-linux")}, candidates...)
+		candidates = []string{
+			filepath.Join("agent", "cdn-agent"),
+		}
 	}
 	for _, candidate := range candidates {
 		if fileExists(candidate) {

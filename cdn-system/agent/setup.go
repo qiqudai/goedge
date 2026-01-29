@@ -15,19 +15,29 @@ import (
 )
 
 func initEnvironment() {
+	rootDir := runtimeRoot()
+	workDirMissing := !dirExists(rootDir) || ResetResources
+
 	// Create work directories
 	dirs := []string{
-		WorkDir,
-		filepath.Join(WorkDir, "conf"),
-		filepath.Join(WorkDir, "conf", "dynamic"),
-		filepath.Join(WorkDir, "logs"),
-		filepath.Join(WorkDir, "cache"),
-		filepath.Join(WorkDir, "cert"),
-		filepath.Join(WorkDir, "cert", "acme"),
-		filepath.Join(WorkDir, "data"),
+		rootDir,
+		filepath.Join(rootDir, "conf"),
+		filepath.Join(rootDir, "conf", "dynamic"),
+		filepath.Join(rootDir, "logs"),
+		filepath.Join(rootDir, "cache"),
+		filepath.Join(rootDir, "cert"),
+		filepath.Join(rootDir, "cert", "acme"),
+		filepath.Join(rootDir, "data"),
 	}
 	for _, d := range dirs {
 		os.MkdirAll(d, 0755)
+	}
+
+	if workDirMissing {
+		restoreDir("assets/conf", filepath.Join(rootDir, "conf"))
+		restoreDir("assets/lua", filepath.Join(rootDir, "lua"))
+		restoreDir("assets/data", filepath.Join(rootDir, "data"))
+		restoreDir("assets/cert", filepath.Join(rootDir, "cert"))
 	}
 
 	// 1. Unpack Binary / Runtime
@@ -35,57 +45,54 @@ func initEnvironment() {
 
 	if runtime.GOOS == "windows" {
 		binName = "nginx.exe"
-		restoreDir("assets/nginx-win", WorkDir)
-		NginxBinPath = filepath.Join(WorkDir, binName)
-	} else {
-		// Linux: Unzip the embedded openresty.zip
-		// Expect structure: openresty/nginx/sbin/nginx
-		zipPath := "assets/openresty.zip"
-		destDir := WorkDir
-
-		if err := unzipEmbedded(zipPath, destDir); err != nil {
-			log.Printf("[Warn] Failed to unzip %s: %v (Ignore if not Linux or file missing)", zipPath, err)
+		NginxBinPath = filepath.Join(rootDir, binName)
+		if _, err := os.Stat(NginxBinPath); err != nil {
+			restoreDir("assets/nginx-win", rootDir)
 		}
-
+	} else {
 		// Set generic path, adjust if structure differs
 		// Based on user provided zip: openresty/nginx/sbin/nginx
-		NginxBinPath = filepath.Join(WorkDir, "openresty", "nginx", "sbin", "nginx")
+		NginxBinPath = filepath.Join(rootDir, "openresty", "nginx", "sbin", "nginx")
+		if _, err := os.Stat(NginxBinPath); err != nil {
+			// Linux: Unzip the embedded openresty.zip
+			// Expect structure: openresty/nginx/sbin/nginx
+			zipPath := "assets/openresty.zip"
+			destDir := rootDir
+			if err := unzipEmbedded(zipPath, destDir); err != nil {
+				log.Printf("[Warn] Failed to unzip %s: %v (Ignore if not Linux or file missing)", zipPath, err)
+			}
+		}
 		os.Chmod(NginxBinPath, 0755)
 	}
 
-	// 2. Unpack Configs & Lua Scripts & Data (Recursive)
-	restoreDir("assets/conf", filepath.Join(WorkDir, "conf"))
-	restoreDir("assets/lua", filepath.Join(WorkDir, "lua"))
-	restoreDir("assets/data", filepath.Join(WorkDir, "data"))
-
 	// 3. Patch nginx.conf
-	confFile := filepath.Join(WorkDir, "conf", "nginx.conf")
+	confFile := filepath.Join(rootDir, "conf", "nginx.conf")
 	if data, err := ioutil.ReadFile(confFile); err == nil {
 		content := string(data)
-		absCache, _ := filepath.Abs(filepath.Join(WorkDir, "cache"))
+		absCache, _ := filepath.Abs(filepath.Join(rootDir, "cache"))
 		// Dynamically resolve data dir for ip2region
-		absData, _ := filepath.Abs(filepath.Join(WorkDir, "data", "ip2region.xdb"))
+		absData, _ := filepath.Abs(filepath.Join(rootDir, "data", "ip2region.xdb"))
 		content = strings.ReplaceAll(content, "/var/cache/nginx", filepath.ToSlash(absCache))
 		// Patch ip2region path
 		content = strings.ReplaceAll(content, "/opt/cdn-agent/data/ip2region.xdb", filepath.ToSlash(absData))
 		ioutil.WriteFile(confFile, []byte(content), 0644)
 	}
-	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "http.conf"))
-	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "http_global.conf"))
-	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "main.conf"))
-	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "events.conf"))
-	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "stream.conf"))
-	ensureDynamicConf(filepath.Join(WorkDir, "conf", "dynamic", "stream_global.conf"))
+	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "http.conf"))
+	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "http_global.conf"))
+	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "main.conf"))
+	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "events.conf"))
+	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "stream.conf"))
+	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "stream_global.conf"))
 
 	// 4. Generate Fallback Certs
-	generateFallbackCert(filepath.Join(WorkDir, "cert"))
+	generateFallbackCert(filepath.Join(rootDir, "cert"))
 
 	// 5. Set Global Config Path
 	if abs, err := filepath.Abs(NginxBinPath); err == nil {
 		NginxBinPath = abs
 	}
 
-	confPath := filepath.Join(WorkDir, "conf", "cdn_config.json")
+	confPath := filepath.Join(rootDir, "conf", "cdn_config.json")
 	if abs, err := filepath.Abs(confPath); err == nil {
 		CONFIG_PATH = abs
 	} else {
@@ -169,6 +176,14 @@ func unzipEmbedded(zipPath, dest string) error {
 }
 
 func restoreDir(embedPath, localPath string) {
+	restoreDirWithOptions(embedPath, localPath, true)
+}
+
+func restoreDirIfMissing(embedPath, localPath string) {
+	restoreDirWithOptions(embedPath, localPath, false)
+}
+
+func restoreDirWithOptions(embedPath, localPath string, overwrite bool) {
 	entries, err := assetsFS.ReadDir(embedPath)
 	if err != nil {
 		// Embed dir might not exist if user didn't put anything, safe to ignore for optional dirs
@@ -179,9 +194,9 @@ func restoreDir(embedPath, localPath string) {
 		fp := path.Join(embedPath, entry.Name())
 		lp := filepath.Join(localPath, entry.Name())
 		if entry.IsDir() {
-			restoreDir(fp, lp)
+			restoreDirWithOptions(fp, lp, overwrite)
 		} else {
-			restoreFile(fp, lp)
+			restoreFile(fp, lp, overwrite)
 		}
 	}
 }
@@ -205,7 +220,7 @@ func generateFallbackCert(certDir string) {
 	// Here we just ensure directory exists.
 }
 
-func restoreFile(embedPath, localPath string) {
+func restoreFile(embedPath, localPath string, overwrite bool) {
 	data, err := assetsFS.ReadFile(embedPath)
 	if err != nil {
 		// Log but don't crash, maybe user put binary manually
@@ -213,6 +228,11 @@ func restoreFile(embedPath, localPath string) {
 		return
 	}
 	os.MkdirAll(filepath.Dir(localPath), 0755)
+	if !overwrite {
+		if _, err := os.Stat(localPath); err == nil {
+			return
+		}
+	}
 	if err := ioutil.WriteFile(localPath, data, 0755); err != nil {
 		log.Printf("[Error] Failed to extract %s: %v", localPath, err)
 	}
@@ -225,4 +245,12 @@ func ensureDynamicConf(path string) {
 	if err := fsutil.WriteFileAtomic(path, []byte(""), 0o644); err != nil {
 		log.Printf("[Error] Ensure dynamic conf failed: %v", err)
 	}
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }

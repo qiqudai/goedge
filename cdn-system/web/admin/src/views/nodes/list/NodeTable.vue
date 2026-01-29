@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="filter-container node-actions">
     <el-button type="primary" @click="$emit('create')">{{ NODE_T.installNode }}</el-button>
     <el-button :disabled="!selectedRows.length" @click="$emit('batch', 'stop')">{{ NODE_T.disableNode }}</el-button>
@@ -17,16 +17,16 @@
   </div>
 
   <div class="filter-container node-filters">
-    <el-select v-model="query.region_id" placeholder="所有区域" class="filter-item" style="width: 150px;">
-      <el-option label="所有区域" value="" />
+    <el-select v-model="query.region_id" :placeholder="NODE_T.allRegions" class="filter-item" style="width: 150px;">
+      <el-option :label="NODE_T.allRegions" value="" />
       <el-option v-for="item in regions" :key="item.id" :label="item.name" :value="item.id" />
     </el-select>
-    <el-select v-model="query.status" placeholder="所有状态" class="filter-item" style="width: 150px;">
-      <el-option label="所有状态" value="" />
+    <el-select v-model="query.status" :placeholder="NODE_T.allStatus" class="filter-item" style="width: 150px;">
+      <el-option :label="NODE_T.allStatus" value="" />
       <el-option v-for="item in STATUS_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
     </el-select>
-    <el-select v-model="query.node_type" placeholder="所有类型" class="filter-item" style="width: 150px;">
-      <el-option label="所有类型" value="" />
+    <el-select v-model="query.node_type" :placeholder="NODE_T.allTypes" class="filter-item" style="width: 150px;">
+      <el-option :label="NODE_T.allTypes" value="" />
       <el-option v-for="item in TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
     </el-select>
     <el-input v-model="query.keyword" :placeholder="NODE_T.nodeKeyword" class="filter-item" style="width: 240px;" @keyup.enter="handleSearch">
@@ -60,9 +60,9 @@
         <div class="node-name-link" @click="$emit('edit', row)">{{ row.name }}</div>
       </template>
     </el-table-column>
-    <el-table-column label="区域" min-width="140px">
+    <el-table-column :label="NODE_T.region" min-width="140px">
       <template #default="{ row }">
-        <span>{{ row.region_name || '默认' }}</span>
+        <span>{{ row.region_name || NODE_T.defaultRegion }}</span>
         <el-link type="primary" underline="never" class="node-group-link" @click="$emit('go-groups', row)">
           {{ NODE_T.lineGroup }}({{ row.group_count || 1 }}{{ NODE_T.groupCountUnit }})
         </el-link>
@@ -100,7 +100,29 @@
           </div>
        </template>
     </el-table-column>
-    <el-table-column label="开启" align="center" width="90">
+    <el-table-column :label="NODE_T.installStatus" align="center" min-width="120">
+      <template #default="{ row }">
+        <el-popover
+          v-if="row.install_status === 'failed' && row.install_error"
+          placement="right"
+          trigger="hover"
+          width="320"
+        >
+          <template #reference>
+            <span class="install-status failed">{{ resolveInstallStatus(row.install_status) }}</span>
+          </template>
+          <div class="install-error">{{ row.install_error }}</div>
+        </el-popover>
+        <span v-else :class="['install-status', row.install_status]">
+          <el-icon v-if="row.install_status === 'running'" class="install-loading"><Loading /></el-icon>
+          {{ resolveInstallStatus(row.install_status) }}
+          <span v-if="row.install_status === 'running' && Number.isFinite(row.install_progress)" class="install-progress">
+            {{ row.install_progress }}%
+          </span>
+        </span>
+      </template>
+    </el-table-column>
+    <el-table-column :label="NODE_T.enableLabel" align="center" width="90">
       <template #default="{ row }">
         <el-switch v-model="row.enable" @change="$emit('status-change', row)" />
       </template>
@@ -112,9 +134,10 @@
         <div style="display: flex; justify-content: center; gap: 8px;">
           <el-button link type="primary" @click="$emit('edit', row)">{{ NODE_T.manage }}</el-button>
           <el-dropdown trigger="click" @command="(c) => $emit('row-action', c, row)">
-            <span class="link-more">更多<el-icon><ArrowDown /></el-icon></span>
+            <span class="link-more">{{ NODE_T.more }}<el-icon><ArrowDown /></el-icon></span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="install" :disabled="!row.ssh_user">{{ NODE_T.reinstall }}</el-dropdown-item>
                 <el-dropdown-item command="delete">{{ NODE_T.delete }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -127,7 +150,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { Search, ArrowDown } from '@element-plus/icons-vue'
+import { Search, ArrowDown, Loading } from '@element-plus/icons-vue'
 import { NODE_T, STATUS_OPTIONS, TYPE_OPTIONS } from './constants'
 
 const props = defineProps({
@@ -148,6 +171,16 @@ const resetFilters = () => {
   Object.assign(query, { region_id: '', status: '', node_type: '', keyword: '' })
   handleSearch()
 }
+const resolveInstallStatus = (status) => {
+  const normalized = (status || '').toLowerCase()
+  const map = {
+    idle: NODE_T.installStatusIdle,
+    running: NODE_T.installStatusRunning,
+    success: NODE_T.installStatusSuccess,
+    failed: NODE_T.installStatusFailed
+  }
+  return map[normalized] || NODE_T.installStatusIdle
+}
 </script>
 
 <style scoped>
@@ -163,4 +196,12 @@ const resetFilters = () => {
 .link-more { color: #409eff; cursor: pointer; font-size: 12px; margin-left: 10px; }
 .sub-ips { margin-top: 4px; }
 .ip-list { max-height: 200px; overflow-y: auto; line-height: 2; }
+.install-status { font-size: 12px; color: #909399; display: inline-flex; align-items: center; gap: 4px; }
+.install-status.running { color: #e6a23c; }
+.install-status.success { color: #67c23a; }
+.install-status.failed { color: #f56c6c; cursor: pointer; }
+.install-loading { animation: install-spin 1s linear infinite; }
+.install-progress { font-variant-numeric: tabular-nums; }
+.install-error { white-space: pre-wrap; word-break: break-all; }
+@keyframes install-spin { to { transform: rotate(360deg); } }
 </style>

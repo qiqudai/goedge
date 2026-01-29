@@ -87,13 +87,14 @@ func getLogStorageSettings() (string, int) {
 	resources := LocalResources
 	localConfigMu.RUnlock()
 
-	dir := filepath.Join(WorkDir, "logs")
+	rootDir := runtimeRoot()
+	dir := filepath.Join(rootDir, "logs")
 	hours := 0
 	if resources != nil {
 		if strings.TrimSpace(resources.Website.LogStorageDir) != "" {
 			dir = resources.Website.LogStorageDir
 			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(WorkDir, dir)
+				dir = filepath.Join(rootDir, dir)
 			}
 		}
 		if resources.Website.LogStorageHours > 0 {
@@ -233,7 +234,8 @@ func saveOffset(path string, offset int64) {
 }
 
 func getAccessLogPaths() (string, string) {
-	logsDir := filepath.Join(WorkDir, "logs")
+	rootDir := runtimeRoot()
+	logsDir := filepath.Join(rootDir, "logs")
 	localConfigMu.RLock()
 	nginx := LocalNginxConfig
 	localConfigMu.RUnlock()
@@ -241,7 +243,7 @@ func getAccessLogPaths() (string, string) {
 		if dir := strings.TrimSpace(nginx.LogsDir); dir != "" {
 			logsDir = dir
 			if !filepath.IsAbs(logsDir) {
-				logsDir = filepath.Join(WorkDir, logsDir)
+				logsDir = filepath.Join(rootDir, logsDir)
 			}
 		}
 	}
@@ -250,7 +252,8 @@ func getAccessLogPaths() (string, string) {
 }
 
 func getStreamLogPaths() (string, string) {
-	logsDir := filepath.Join(WorkDir, "logs")
+	rootDir := runtimeRoot()
+	logsDir := filepath.Join(rootDir, "logs")
 	localConfigMu.RLock()
 	nginx := LocalNginxConfig
 	localConfigMu.RUnlock()
@@ -258,7 +261,7 @@ func getStreamLogPaths() (string, string) {
 		if dir := strings.TrimSpace(nginx.LogsDir); dir != "" {
 			logsDir = dir
 			if !filepath.IsAbs(logsDir) {
-				logsDir = filepath.Join(WorkDir, logsDir)
+				logsDir = filepath.Join(rootDir, logsDir)
 			}
 		}
 	}

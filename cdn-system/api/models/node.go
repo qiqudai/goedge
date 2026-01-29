@@ -37,11 +37,26 @@ type Node struct {
 	Online         bool   `json:"online" gorm:"-"`
 	LineCount      int64  `json:"line_count" gorm:"-"`
 	// New fields for Node Settings
-	Level        int    `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2
-	Sort         int    `json:"sort_order" gorm:"column:sort;default:0"`
-	CacheDir     string `json:"cache_dir" gorm:"column:cache_dir"`
-	MaxCacheSize int    `json:"cache_limit" gorm:"column:max_cache_size"`
-	LogDir       string `json:"log_dir" gorm:"column:log_dir"`
+	Level                int        `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2
+	Sort                 int        `json:"sort_order" gorm:"column:sort;default:0"`
+	CacheDir             string     `json:"cache_dir" gorm:"column:cache_dir"`
+	MaxCacheSize         int        `json:"cache_limit" gorm:"column:max_cache_size"`
+	LogDir               string     `json:"log_dir" gorm:"column:log_dir"`
+	SSHHost              string     `json:"ssh_host" gorm:"column:ssh_host"`
+	SSHPort              int        `json:"ssh_port" gorm:"column:ssh_port"`
+	SSHUser              string     `json:"ssh_user" gorm:"column:ssh_user"`
+	SSHAuthType          string     `json:"ssh_auth_type" gorm:"column:ssh_auth_type"`
+	SSHPassword          string     `json:"-" gorm:"column:ssh_password"`
+	SSHKey               string     `json:"-" gorm:"column:ssh_key;type:longtext"`
+	WorkDir              string     `json:"work_dir" gorm:"column:work_dir"`
+	AutoInstall          bool       `json:"auto_install" gorm:"column:auto_install"`
+	InstallStatus        string     `json:"install_status" gorm:"column:install_status"`
+	InstallError         string     `json:"install_error" gorm:"column:install_error;type:text"`
+	InstallAt            *time.Time `json:"install_at" gorm:"column:install_at"`
+	InstallStage         string     `json:"install_stage" gorm:"-"`
+	InstallProgress      int        `json:"install_progress" gorm:"-"`
+	InstallProgressBytes int64      `json:"install_progress_bytes" gorm:"-"`
+	InstallProgressTotal int64      `json:"install_progress_total" gorm:"-"`
 
 	CreatedAt time.Time   `json:"create_at" gorm:"column:create_at"`
 	UpdatedAt time.Time   `json:"update_at" gorm:"column:update_at"`

@@ -4,6 +4,7 @@ import (
 	"cdn-api/config"
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"cdn-api/utils"
 	"net/http"
 	"os"
@@ -46,6 +47,13 @@ func AuthRequired(requiredRole string) gin.HandlerFunc {
 		// Store user info in context
 		c.Set("userID", claims.UserID)
 		c.Set("role", claims.Role)
+
+		// Sliding session: refresh token on activity
+		if ttl := services.ResolveLoginSessionTTL(); ttl > 0 {
+			if newToken, err := utils.GenerateTokenWithExpiry(claims.UserID, claims.Role, ttl); err == nil {
+				c.Header("X-Auth-Token", newToken)
+			}
+		}
 
 		c.Next()
 	}

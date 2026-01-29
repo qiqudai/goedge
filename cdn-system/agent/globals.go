@@ -19,7 +19,7 @@ var (
 	L2_CHECK_INT  = 10 * time.Second
 
 	// Dynamic Paths (will be set in initEnvironment)
-	WorkDir      = "./edge-node"
+	WorkDir      = "."
 	CONFIG_PATH  = "" // e.g. ./edge-node/conf/cdn_config.json
 	CONFIG_BAK   = ""
 	NginxBinPath = "" // e.g. ./edge-node/nginx
@@ -27,6 +27,11 @@ var (
 	NodeID    = "" // Unique Node ID
 	AuthToken = "" // Token from install parameter
 	DebugMode = false
+
+	// Bootstrap behavior
+	ResetResources = false // Clear WorkDir contents before init (requires safe path)
+	BootstrapSync  = false // Pull full config from API on startup
+	BootstrapStart = false // Start OpenResty after bootstrap sync
 
 	localConfigMu    sync.RWMutex
 	LocalResources   *edgeResources

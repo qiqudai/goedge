@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"os"
@@ -15,6 +16,9 @@ var (
 	loadErr  error
 )
 
+//go:embed messages.json
+var embeddedMessages []byte
+
 // Load reads the messages JSON into a read-only map.
 func Load(path string) error {
 	loadOnce.Do(func() {
@@ -27,7 +31,11 @@ func Load(path string) error {
 			}
 		}
 		if loadErr != nil {
-			return
+			if len(embeddedMessages) == 0 {
+				return
+			}
+			data = embeddedMessages
+			loadErr = nil
 		}
 		var parsed map[string]string
 		if err := json.Unmarshal(data, &parsed); err != nil {

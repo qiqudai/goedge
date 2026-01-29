@@ -36,7 +36,7 @@ func applyNodeSync(action string) error {
 	switch action {
 	case "enable":
 		if err := startNginx(); err != nil {
-			if reloadErr := executeReload(); reloadErr != nil {
+			if reloadErr := reloadNginx(); reloadErr != nil {
 				_ = reportNodeSync(action, false)
 				return err
 			}
@@ -77,11 +77,11 @@ type l2HealthState struct {
 }
 
 var l2HealthStore = struct {
-	mu          sync.Mutex
-	states      map[int64]*l2HealthState
+	mu           sync.Mutex
+	states       map[int64]*l2HealthState
 	lastSnapshot map[string]bool
 }{
-	states:      map[int64]*l2HealthState{},
+	states:       map[int64]*l2HealthState{},
 	lastSnapshot: map[string]bool{},
 }
 
@@ -248,10 +248,11 @@ func l2SnapshotEqual(next map[string]bool, current map[string]bool) bool {
 }
 
 func writeL2StatusSnapshot(snapshot map[string]bool) {
-	if WorkDir == "" {
+	rootDir := runtimeRoot()
+	if rootDir == "" {
 		return
 	}
-	path := filepath.Join(WorkDir, "conf", "l2_status.json")
+	path := filepath.Join(rootDir, "conf", "l2_status.json")
 	payload := map[string]interface{}{
 		"updated_at": time.Now().Unix(),
 		"nodes":      snapshot,

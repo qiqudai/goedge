@@ -1,8 +1,8 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-card shadow="never" class="layout-card">
       <el-tabs v-model="pageTab" class="custom-tabs" @tab-change="handleTabChange">
-        <el-tab-pane label="节点列表" name="list">
+        <el-tab-pane :label="NODE_T.nodeListTab" name="list">
           <NodeTable
             :list="list"
             :total="total"
@@ -23,7 +23,7 @@
           />
         </el-tab-pane>
 
-        <el-tab-pane label="区域管理" name="region">
+        <el-tab-pane :label="NODE_T.regionManageTab" name="region">
           <RegionList v-if="pageTab === 'region'" />
         </el-tab-pane>
       </el-tabs>
@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
@@ -53,6 +53,11 @@ import NodeTable from './list/NodeTable.vue'
 import RegionList from './list/RegionList.vue'
 import NodeEditDialog from './list/NodeEditDialog.vue'
 import MonitorLogDialog from './list/MonitorLogDialog.vue'
+import { NODE_T } from './list/constants'
+
+const INSTALL_TIMEOUT = 10000
+
+const INSTALL_POLL_INTERVAL = 5000
 
 const router = useRouter()
 const pageTab = ref('list')
@@ -61,21 +66,23 @@ const total = ref(0)
 const listLoading = ref(false)
 const selectedRows = ref([])
 const regions = ref([])
+const currentQuery = ref({})
 
 const editVisible = ref(false)
 const currentItem = ref({})
 
 const monitorVisible = ref(false)
 const currentNodeId = ref(0)
+let installPollingTimer = null
 
 const applyNodeStatus = (row) => {
   if (!row.enable) {
-    return { ...row, status_text: '禁用', status_class: 'disabled' }
+    return { ...row, status_text: '\u7981\u7528', status_class: 'disabled' }
   }
   if (row.online) {
-    return { ...row, status_text: '在线', status_class: 'online' }
+    return { ...row, status_text: '\u5728\u7ebf', status_class: 'online' }
   }
-  return { ...row, status_text: '离线', status_class: 'offline' }
+  return { ...row, status_text: '\u79bb\u7ebf', status_class: 'offline' }
 }
 
 const setNodeStatus = (row) => {
@@ -85,13 +92,38 @@ const setNodeStatus = (row) => {
   row.status_class = next.status_class
 }
 
-const fetchList = async (query = {}) => {
+const startInstallPolling = () => {
+  if (installPollingTimer) return
+  installPollingTimer = setInterval(() => {
+    if (!listLoading.value) fetchList()
+  }, INSTALL_POLL_INTERVAL)
+}
+
+const stopInstallPolling = () => {
+  if (!installPollingTimer) return
+  clearInterval(installPollingTimer)
+  installPollingTimer = null
+}
+
+const updateInstallPolling = (rows) => {
+  const hasRunning = rows.some((row) => String(row.install_status || '').toLowerCase() === 'running')
+  if (hasRunning) {
+    startInstallPolling()
+  } else {
+    stopInstallPolling()
+  }
+}
+
+const fetchList = async (query = currentQuery.value) => {
+  const nextQuery = { ...query }
+  currentQuery.value = nextQuery
   listLoading.value = true
   try {
-    const res = await request.get('/nodes', { params: query })
+    const res = await request.get('/nodes', { params: nextQuery })
     const rows = res.data?.list || []
     list.value = rows.map((row) => applyNodeStatus(row))
     total.value = res.data?.total || 0
+    updateInstallPolling(list.value)
   } finally {
     listLoading.value = false
   }
@@ -106,15 +138,15 @@ const handleTabChange = (name) => {
   if (name === 'list') fetchList()
 }
 
-const handleSearch = (q) => fetchList(q)
+const handleSearch = (q) => fetchList({ ...q })
 const handleCreate = () => { currentItem.value = { id: 0 }; editVisible.value = true }
 const handleEdit = (row) => { currentItem.value = { ...row }; editVisible.value = true }
 
 const handleBatch = async (action, ids) => {
   const targetIds = ids || selectedRows.value.map(r => r.id)
-  await ElMessageBox.confirm(`确定执行批量${action}操作吗？`, '提示')
+  await ElMessageBox.confirm(`\u786e\u5b9a\u6267\u884c\u6279\u91cf${action}\u64cd\u4f5c\u5417\uff1f`, '\u63d0\u793a')
   await request.post('/nodes/batch_action', { action, ids: targetIds })
-  ElMessage.success('操作成功')
+  ElMessage.success('\u64cd\u4f5c\u6210\u529f')
   fetchList()
 }
 
@@ -127,18 +159,29 @@ const handleStatusChange = async (row) => {
   try {
     await request.put(`/nodes/${row.id}/status`, { enable: row.enable })
     setNodeStatus(row)
-    ElMessage.success('状态更新成功')
+    ElMessage.success('\u72b6\u6001\u66f4\u65b0\u6210\u529f')
   } catch (err) {
     row.enable = !targetEnable
     setNodeStatus(row)
-    ElMessage.error('状态更新失败')
+    ElMessage.error('\u72b6\u6001\u66f4\u65b0\u5931\u8d25')
   }
 }
 
 const handleRowAction = (command, row) => {
   if (command === 'delete') {
-    ElMessageBox.confirm('确定删除节点吗？', '提示').then(async () => {
+    ElMessageBox.confirm('\u786e\u5b9a\u5220\u9664\u8282\u70b9\u5417\uff1f', '\u63d0\u793a').then(async () => {
       await request.delete(`/nodes/${row.id}`)
+      fetchList()
+    })
+    return
+  }
+  if (command === 'install') {
+    ElMessageBox.confirm('\u786e\u5b9a\u91cd\u65b0\u5b89\u88c5\u8282\u70b9\u5417\uff1f', '\u63d0\u793a').then(async () => {
+      const res = await request.post(`/nodes/${row.id}/install`, {}, { timeout: INSTALL_TIMEOUT })
+      ElMessage.success('\u64cd\u4f5c\u6210\u529f')
+      if (res?.install_error) {
+        ElMessage.warning(`\u5b89\u88c5\u5931\u8d25: ${res.install_error}`)
+      }
       fetchList()
     })
   }
@@ -148,9 +191,14 @@ onMounted(() => {
   fetchList()
   fetchRegions()
 })
+
+onBeforeUnmount(() => {
+  stopInstallPolling()
+})
 </script>
 
 <style scoped>
 .app-container { padding: 20px; }
 .layout-card { border: none; }
 </style>
+
