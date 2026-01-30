@@ -219,8 +219,19 @@ const handleSiteAction = async (type, data) => {
       ElMessage.warning('请先选择站点')
       return
     }
-    await request.post('/sites/apply_cert', { ids })
-    ElMessage.success('证书申请已提交')
+    const res = await request.post('/sites/apply_cert', { ids })
+    const payload = res?.data || res || {}
+    const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
+    const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
+    if (created.length > 0) {
+      ElMessage.success(`证书申请已提交：${created.length}个`)
+    }
+    if (skipped.length > 0) {
+      const msg = skipped
+        .map(item => `站点${item.site_id || '-'}：${item.reason || '已忽略'}`)
+        .join('\n')
+      ElMessage.warning(msg)
+    }
     fetchSites()
     return
   }

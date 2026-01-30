@@ -197,8 +197,19 @@ const applyCert = async () => {
     return
   }
   await ElMessageBox.confirm('确定申请证书吗？', '提示')
-  await request.post('/sites/apply_cert', { ids: [siteId.value] })
-  ElMessage.success('证书申请已提交')
+  const res = await request.post('/sites/apply_cert', { ids: [siteId.value] })
+  const payload = res?.data || res || {}
+  const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
+  const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
+  if (created.length > 0) {
+    ElMessage.success('证书申请已提交')
+  }
+  if (skipped.length > 0) {
+    const msg = skipped
+      .map(item => item.reason || '已忽略')
+      .join('\n')
+    ElMessage.warning(msg)
+  }
 }
 
 const handleSave = () => {

@@ -35,3 +35,6 @@ node_modules/
 /cdn-system/api/acme/accounts/account_letsencrypt.key
 /cdn-system/Dump*.sql
 \\\\wsl$\\Ubuntu-24.04\\usr\\local\\goedge\\nodes\\edge-node\\cert\\acme
+/cdn-system/tmp
+/cdn-system/build
+/cdn-system/tests

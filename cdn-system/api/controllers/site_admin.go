@@ -999,20 +999,45 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 		return
 	}
 
+	type applyCertSkipItem struct {
+		SiteID int64  `json:"site_id"`
+		Domain string `json:"domain"`
+		Reason string `json:"reason"`
+	}
+
+	skipped := make([]applyCertSkipItem, 0, len(sites))
 	createdIDs := make([]int64, 0, len(sites))
+	appliedSiteIDs := make([]int64, 0, len(sites))
 	for _, site := range sites {
 		if len(site.Domains) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": T("site domains are empty")})
 			return
 		}
-		if err := ensureNoExistingCert(site.UserID, site.Domains); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
-			return
+		if isSiteHTTPSOn(site) {
+			skipped = append(skipped, applyCertSkipItem{
+				SiteID: site.ID,
+				Domain: site.Domains[0],
+				Reason: "该网站已开启https，已忽略，继续下一个申请",
+			})
+			continue
 		}
 
 		certType, dnsapi := resolveCertDefaults(site.UserID)
-		if hasWildcardDomain(site.Domains) && dnsapi <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": T("wildcard requires dnsapi")})
+		if hasWildcardDomain(site.Domains) {
+			if dnsapi <= 0 {
+				skipped = append(skipped, applyCertSkipItem{
+					SiteID: site.ID,
+					Domain: site.Domains[0],
+					Reason: "通配符证书一键申请需设置dnsapi，继续下一个申请",
+				})
+				continue
+			}
+		} else {
+			dnsapi = 0
+		}
+
+		if err := ensureNoExistingCert(site.UserID, site.Domains); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 			return
 		}
 		cert := models.Cert{
@@ -1072,13 +1097,36 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 		}
 
 		createdIDs = append(createdIDs, int64(cert.ID))
+		appliedSiteIDs = append(appliedSiteIDs, site.ID)
 	}
 
-	services.BumpConfigVersion("site", req.IDs)
-	services.BumpConfigVersion("cert", createdIDs)
-	services.IssueCertsAsync(time.Now().Unix(), createdIDs)
+	if len(appliedSiteIDs) > 0 {
+		services.BumpConfigVersion("site", appliedSiteIDs)
+	}
+	if len(createdIDs) > 0 {
+		services.BumpConfigVersion("cert", createdIDs)
+		services.IssueCertsAsync(time.Now().Unix(), createdIDs)
+	}
 
-	c.JSON(http.StatusOK, gin.H{"message": T("Certificate apply queued")})
+	c.JSON(http.StatusOK, gin.H{
+		"message": T("Certificate apply queued"),
+		"data": gin.H{
+			"created_ids": createdIDs,
+			"skipped":     skipped,
+		},
+	})
+}
+
+func isSiteHTTPSOn(site models.Site) bool {
+	httpsOn := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
+	if site.Settings != nil {
+		if httpsCfg, ok := site.Settings["https"].(map[string]interface{}); ok {
+			if enable, ok := httpsCfg["enable"]; ok {
+				httpsOn = parseBoolValue(enable, httpsOn)
+			}
+		}
+	}
+	return httpsOn
 }
 
 func ensureNoExistingCert(userID int64, domains []string) error {

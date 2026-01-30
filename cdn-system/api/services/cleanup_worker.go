@@ -51,6 +51,7 @@ func runCleanup(cfg map[string]string) {
 	cleanupTableByDays("op_log", "create_at", parseDays(cfg["keep-op-log-days"], 30))
 	cleanupTableByDays("task", "create_at", parseDays(cfg["keep-task-log-days"], 7))
 	cleanupTableByDays("node_monitor_log", "create_at", parseDays(cfg["keep-node-log-days"], 7))
+	cleanupIssueCertTasks(cfg)
 
 	accessDays := minPositive(
 		parseDays(cfg["keep-access-log-days"], 0),
@@ -59,6 +60,43 @@ func runCleanup(cfg map[string]string) {
 	cleanupClickHouseByDays("node_access_logs", accessDays)
 	cleanupClickHouseByDays("node_events", parseDays(cfg["keep-node-log-days"], 0))
 	cleanupClickHouseByDays("node_metrics", parseDays(cfg["keep-node-traffic-days"], 0))
+}
+
+func cleanupIssueCertTasks(cfg map[string]string) {
+	timeoutMinutes := parseIntConfigOrDefault(cfg["cert_issue_timeout_minutes"], 120)
+	if timeoutMinutes <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(timeoutMinutes) * time.Minute)
+	var tasks []models.Task
+	if err := db.DB.Where("type = ? AND state IN ? AND enable = ?", "issue_cert", []string{"waiting", "running", "retrying"}, true).
+		Where("COALESCE(start_at, create_at) < ?", cutoff).
+		Find(&tasks).Error; err != nil {
+		log.Printf("[Cleanup] issue_cert task scan failed: %v", err)
+		return
+	}
+	if len(tasks) == 0 {
+		return
+	}
+
+	now := time.Now()
+	reason := fmt.Sprintf("证书签发超时（超过 %d 分钟）", timeoutMinutes)
+	ids := make([]int64, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	if err := db.DB.Model(&models.Task{}).Where("id IN ?", ids).Updates(map[string]interface{}{
+		"state":    "fail",
+		"enable":   false,
+		"ret":      reason,
+		"end_at":   now,
+		"retry_at": nil,
+	}).Error; err != nil {
+		log.Printf("[Cleanup] issue_cert task update failed: %v", err)
+	}
+	for _, task := range tasks {
+		MarkIssueTaskFailed(task.ID, reason)
+	}
 }
 
 func cleanupTableByDays(table, column string, days int) {

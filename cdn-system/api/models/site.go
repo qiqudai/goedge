@@ -33,24 +33,25 @@ type Site struct {
 	Domains   []string `json:"domains" gorm:"-"`
 
 	// Listen config.
-	HttpListenRaw  string `json:"-" gorm:"column:http_listen;type:text"`
-	HttpsListenRaw string `json:"-" gorm:"column:https_listen;type:text"`
+	HttpListenRaw  string   `json:"-" gorm:"column:http_listen;type:text"`
+	HttpsListenRaw string   `json:"-" gorm:"column:https_listen;type:text"`
 	HttpListen     []string `json:"http_listen" gorm:"-"`
 	HttpsListen    []string `json:"https_listen" gorm:"-"`
+	CertID         int64    `json:"cert_id" gorm:"column:cert_id"`
 
 	// Origin config.
-	BackendRaw      string `json:"-" gorm:"column:backend;type:text"`
-	BackendProtocol string `json:"backend_protocol" gorm:"type:varchar(32);default:'follow'"` // http, https, follow, follow_port
-	BalanceWay      string `json:"balance_way"`      // ip_hash, rr
+	BackendRaw      string   `json:"-" gorm:"column:backend;type:text"`
+	BackendProtocol string   `json:"backend_protocol" gorm:"type:varchar(32);default:'follow'"` // http, https, follow, follow_port
+	BalanceWay      string   `json:"balance_way"`                                               // ip_hash, rr
 	Backends        []string `json:"backends" gorm:"-"`
 
 	// Security config.
-	CcDefaultRule  int64  `json:"cc_default_rule"`
-	CcSwitchRaw    string `json:"-" gorm:"column:cc_switch;type:text"`
-	BlackIPRaw     string `json:"-" gorm:"column:black_ip;type:text"`
-	WhiteIPRaw     string `json:"-" gorm:"column:white_ip;type:text"`
-	BlockRegionRaw string `json:"-" gorm:"column:block_region;type:text"`
-	SettingsRaw    string `json:"-" gorm:"column:settings;type:longtext"`
+	CcDefaultRule  int64                  `json:"cc_default_rule"`
+	CcSwitchRaw    string                 `json:"-" gorm:"column:cc_switch;type:text"`
+	BlackIPRaw     string                 `json:"-" gorm:"column:black_ip;type:text"`
+	WhiteIPRaw     string                 `json:"-" gorm:"column:white_ip;type:text"`
+	BlockRegionRaw string                 `json:"-" gorm:"column:block_region;type:text"`
+	SettingsRaw    string                 `json:"-" gorm:"column:settings;type:longtext"`
 	Settings       map[string]interface{} `json:"settings" gorm:"-"`
 	// Status.
 	State     string    `json:"state"` // running, stop

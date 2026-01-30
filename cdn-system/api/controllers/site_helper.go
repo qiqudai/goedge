@@ -414,7 +414,7 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 		return nil, err
 	}
 
-	query = query.Select(strings.Join([]string{
+	selectCols := []string{
 		"id",
 		"uid",
 		"user_package",
@@ -432,7 +432,11 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 		"state",
 		"enable",
 		"create_at",
-	}, ","))
+	}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
+		selectCols = append(selectCols, "cert_id")
+	}
+	query = query.Select(strings.Join(selectCols, ","))
 
 	var sites []models.Site
 	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&sites).Error; err != nil {
@@ -528,6 +532,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			CNAME:           cname,
 			Backends:        site.Backends,
 			HTTPS:           httpsOn,
+			CertID:          site.CertID,
 			UserPackageID:   site.UserPackageID,
 			UserPackageName: pkg.Name,
 			DNSProviderID:   site.DNSProviderID,
