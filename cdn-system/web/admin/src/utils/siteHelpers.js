@@ -117,6 +117,260 @@ export function normalizeCacheRule(rule) {
   }
 }
 
+const splitCacheRuleValues = (value) => {
+  const raw = (value || '').trim()
+  if (!raw) return []
+  const parts = raw.includes('|') ? raw.split('|') : raw.split(/[\s\n]+/)
+  return parts.map(part => part.trim()).filter(Boolean)
+}
+
+const normalizeCachePathValue = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  return raw.startsWith('/') ? raw : `/${raw}`
+}
+
+const normalizeCacheExtValue = (value) => {
+  let raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  while (raw.startsWith('*')) raw = raw.slice(1)
+  if (raw.startsWith('.')) raw = raw.slice(1)
+  return raw
+}
+
+const normalizeRuleLocation = (rule) => {
+  const raw = String(rule || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('=') || raw.startsWith('^~') || raw.startsWith('~')) {
+    return raw
+  }
+  if (raw.startsWith('/')) {
+    return `^~ ${raw}`
+  }
+  if (raw.startsWith('.')) {
+    return `~* \\${raw}$`
+  }
+  return `~* ${raw}`
+}
+
+const normalizeLocationKey = (location) => {
+  const raw = String(location || '').trim()
+  if (!raw) return ''
+  const parts = raw.split(/\s+/).filter(Boolean)
+  if (!parts.length) return ''
+  const head = parts[0]
+  if (head === '=') {
+    return `exact ${parts.slice(1).join(' ')}`
+  }
+  if (head === '^~') {
+    return `prefix ${parts.slice(1).join(' ')}`
+  }
+  if (head.startsWith('~')) {
+    return `regex ${head}${parts.length > 1 ? ` ${parts.slice(1).join(' ')}` : ''}`
+  }
+  return `prefix ${parts.join(' ')}`
+}
+
+export function dedupeCacheRules(rules = []) {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    return { rules: [], removed: 0 }
+  }
+  const normalized = rules.map((rule) => {
+    const base = normalizeCacheRule(rule)
+    if (!base) return null
+    return { ...(rule || {}), ...base }
+  }).filter(Boolean)
+  const seen = new Set()
+  const result = []
+  let removed = 0
+
+  for (let i = normalized.length - 1; i >= 0; i -= 1) {
+    const rule = { ...normalized[i] }
+    let kept = false
+
+    const ruleExpr = (rule.rule || '').trim()
+    const uri = (rule.uri || '').trim()
+    const prefix = (rule.prefix || '').trim()
+    const ext = (rule.ext || '').trim()
+    const type = (rule.type || '').toLowerCase()
+
+    const tryKeep = (location) => {
+      const key = normalizeLocationKey(location)
+      if (!key || seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    }
+
+    if (ruleExpr) {
+      const location = normalizeRuleLocation(ruleExpr)
+      if (location && tryKeep(location)) {
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else if (uri) {
+      const value = normalizeCachePathValue(uri)
+      const location = value ? `= ${value}` : ''
+      if (location && tryKeep(location)) {
+        rule.uri = value
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else if (prefix) {
+      const value = normalizeCachePathValue(prefix)
+      const location = value ? `^~ ${value}` : ''
+      if (location && tryKeep(location)) {
+        rule.prefix = value
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else if (ext) {
+      const value = normalizeCacheExtValue(ext)
+      const location = value ? `~* \\.${value}$` : ''
+      if (location && tryKeep(location)) {
+        rule.ext = value
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else if (type === 'all') {
+      if (tryKeep('^~ /')) {
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else if (type === 'index') {
+      if (tryKeep('= /')) {
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else if (type === 'dir' || type === 'path' || type === 'suffix') {
+      const values = splitCacheRuleValues(rule.value)
+      const keptValues = []
+      for (const val of values) {
+        if (type === 'suffix') {
+          const extValue = normalizeCacheExtValue(val)
+          if (!extValue) continue
+          const location = `~* \\.${extValue}$`
+          if (!tryKeep(location)) {
+            removed += 1
+            continue
+          }
+          keptValues.push(extValue)
+        } else if (type === 'dir') {
+          const dirValue = normalizeCachePathValue(val)
+          if (!dirValue) continue
+          const location = `^~ ${dirValue}`
+          if (!tryKeep(location)) {
+            removed += 1
+            continue
+          }
+          keptValues.push(dirValue)
+        } else {
+          const pathValue = normalizeCachePathValue(val)
+          if (!pathValue) continue
+          const location = `= ${pathValue}`
+          if (!tryKeep(location)) {
+            removed += 1
+            continue
+          }
+          keptValues.push(pathValue)
+        }
+      }
+      if (keptValues.length > 0) {
+        rule.value = keptValues.join('|')
+        kept = true
+      } else {
+        removed += 1
+      }
+    } else {
+      kept = true
+    }
+
+    if (kept) {
+      result.push(rule)
+    }
+  }
+
+  result.reverse()
+  return { rules: result, removed }
+}
+
+export function dedupeHeaderRules(list = []) {
+  if (!Array.isArray(list) || list.length === 0) {
+    return { list: [], removed: 0 }
+  }
+  const seen = new Set()
+  const result = []
+  let removed = 0
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const item = list[i] || {}
+    const name = String(item.name || '').trim()
+    if (!name) {
+      removed += 1
+      continue
+    }
+    const key = name.toLowerCase()
+    if (seen.has(key)) {
+      removed += 1
+      continue
+    }
+    seen.add(key)
+    result.push({ ...item, name })
+  }
+  result.reverse()
+  return { list: result, removed }
+}
+
+const buildRedirectConditionKey = (conditions) => {
+  if (!Array.isArray(conditions) || conditions.length === 0) return ''
+  const items = []
+  for (const condition of conditions) {
+    if (!condition) continue
+    const key = String(condition.key || condition.item || '').trim().toLowerCase()
+    const value = String(condition.value || '').trim()
+    if (!key && !value) continue
+    items.push(`${key}=${value}`)
+  }
+  items.sort()
+  return items.join('&')
+}
+
+export function dedupeUrlRedirects(list = []) {
+  if (!Array.isArray(list) || list.length === 0) {
+    return { list: [], removed: 0 }
+  }
+  const seen = new Set()
+  const result = []
+  let removed = 0
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const item = list[i] || {}
+    const domain = String(item.domain || '').trim()
+    const match = String(item.match || '').trim()
+    const redirect = String(item.redirect || '').trim()
+    const code = String(item.code || '').trim()
+    const condKey = buildRedirectConditionKey(item.conditions)
+    const key = `${domain.toLowerCase()}|${match}|${redirect}|${code}|${condKey}`
+    if (!match || !redirect) {
+      removed += 1
+      continue
+    }
+    if (seen.has(key)) {
+      removed += 1
+      continue
+    }
+    seen.add(key)
+    result.push({ ...item, domain, match, redirect, code })
+  }
+  result.reverse()
+  return { list: result, removed }
+}
+
 /**
  * 分割字符串为数组
  * @param {string} str - 待分割的字符串

@@ -38,3 +38,6 @@ node_modules/
 /cdn-system/tmp
 /cdn-system/build
 /cdn-system/tests
+/cdn-system/web/admin/tests
+/cdn-system/web/admin/test-results
+/cdn-system/cnn.net

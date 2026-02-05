@@ -250,7 +250,7 @@ const config = ref({
 const loadConfig = () => {
   loading.value = true
   request.get('/global_config').then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       config.value = res.data || {}
       if (!config.value.waf) {
         config.value.waf = { ...defaultWaf }
@@ -302,7 +302,7 @@ const saveConfig = async (event) => {
   saving.value = true
   await nextTick()
   request.post('/global_config', config.value).then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       ElMessage.success('WAF 配置已保存')
     }
   }).finally(() => {
@@ -345,3 +345,4 @@ h4 {
   font-size: 14px;
 }
 </style>
+

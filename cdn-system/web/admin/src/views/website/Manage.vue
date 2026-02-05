@@ -96,7 +96,7 @@ import HeaderRuleDialog from '@/components/HeaderRuleDialog.vue'
 
 // 组合式API
 import { useSiteSettings } from '@/composables/useSiteSettings'
-import { getHotlinkPlaceholder, normalizeCacheRule } from '@/utils/siteHelpers'
+import { getHotlinkPlaceholder, normalizeCacheRule, dedupeCacheRules, dedupeHeaderRules } from '@/utils/siteHelpers'
 
 const route = useRoute()
 const router = useRouter()
@@ -140,11 +140,17 @@ const saveCacheRule = (newRule) => {
   const rule = normalizeCacheRule(newRule)
   if (!rule) return
 
-  const index = siteSettings.cache.rules.findIndex(r => r === editingCacheRule.value)
+  const nextRules = [...siteSettings.cache.rules]
+  const index = nextRules.findIndex(r => r === editingCacheRule.value)
   if (index > -1) {
-    siteSettings.cache.rules.splice(index, 1, rule)
+    nextRules.splice(index, 1, rule)
   } else {
-    siteSettings.cache.rules.push(rule)
+    nextRules.push(rule)
+  }
+  const { rules: mergedRules, removed } = dedupeCacheRules(nextRules)
+  siteSettings.cache.rules = mergedRules
+  if (removed > 0) {
+    ElMessage.warning('检测到重复缓存规则，已自动合并')
   }
   saveSettings(true)
 }
@@ -161,11 +167,21 @@ const saveHeader = (newRule) => {
     ? siteSettings.advanced.reqHeaders
     : siteSettings.advanced.resHeaders
 
-  const index = list.findIndex(r => r === editingHeaderRule.value)
+  const nextList = [...list]
+  const index = nextList.findIndex(r => r === editingHeaderRule.value)
   if (index > -1) {
-    list.splice(index, 1, newRule)
+    nextList.splice(index, 1, newRule)
   } else {
-    list.push(newRule)
+    nextList.push(newRule)
+  }
+  const { list: mergedList, removed } = dedupeHeaderRules(nextList)
+  if (headerRuleType.value === 'req') {
+    siteSettings.advanced.reqHeaders = mergedList
+  } else {
+    siteSettings.advanced.resHeaders = mergedList
+  }
+  if (removed > 0) {
+    ElMessage.warning('检测到重复 Header，已自动合并')
   }
   saveSettings(true)
 }

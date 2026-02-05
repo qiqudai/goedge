@@ -1,4 +1,4 @@
-import { splitStr } from './siteHelpers'
+import { splitStr, dedupeCacheRules, dedupeHeaderRules, dedupeUrlRedirects } from './siteHelpers'
 
 /**
  * 网站设置数据转换工具
@@ -11,10 +11,19 @@ import { splitStr } from './siteHelpers'
  * @returns {Object} 后端API负载
  */
 export function buildSettingsPayload(siteSettings) {
+  const { rules: cacheRules } = dedupeCacheRules(siteSettings.cache?.rules || [])
+  const { list: urlRedirects } = dedupeUrlRedirects(siteSettings.advanced?.urlRedirects || [])
+  const { list: reqHeaders } = dedupeHeaderRules(siteSettings.advanced?.reqHeaders || [])
+  const { list: resHeaders } = dedupeHeaderRules(siteSettings.advanced?.resHeaders || [])
+  const uploadLimitKB = siteSettings.advanced.uploadLimitMode === 'none'
+    ? 0
+    : parseInt(siteSettings.advanced.uploadLimitValue || 0)
+  const uploadLimitMB = uploadLimitKB > 0 ? Math.ceil(uploadLimitKB / 1024) : 0
+
   return {
     origin: buildOriginPayload(siteSettings.origin),
     https: buildHttpsPayload(siteSettings.https),
-    cache: buildCachePayload(siteSettings.cache),
+    cache: buildCachePayload({ ...siteSettings.cache, rules: cacheRules }),
     security: buildSecurityPayload(siteSettings.security),
     access: buildAccessPayload(siteSettings.access),
     http_enable: siteSettings.basic.httpEnable,
@@ -25,15 +34,17 @@ export function buildSettingsPayload(siteSettings) {
     search_engine_origin: siteSettings.advanced.searchEngineOrigin,
     search_engine_origin_ip: siteSettings.advanced.searchEngineOriginIp,
     url_rewrites: siteSettings.advanced.urlRewrites,
-    url_redirects: siteSettings.advanced.urlRedirects,
-    req_headers: siteSettings.advanced.reqHeaders,
-    res_headers: siteSettings.advanced.resHeaders,
+    url_redirects: urlRedirects,
+    req_headers: reqHeaders,
+    res_headers: resHeaders,
     origin_cert: siteSettings.advanced.originCert,
     realtime_identify: siteSettings.advanced.realtimeIdentify,
     realtime_send: siteSettings.advanced.realtimeSend,
-    upload_limit: siteSettings.advanced.uploadLimitMode === 'none' 
-      ? 0 
-      : parseInt(siteSettings.advanced.uploadLimitValue || 0),
+    upload_limit: uploadLimitMB,
+    advanced: {
+      body_limit: uploadLimitKB,
+      body_limit_unit: 'kb'
+    },
     log_request_header: siteSettings.advanced.logRequestHeader,
     log_response_header: siteSettings.advanced.logResponseHeader,
     log_request_body: siteSettings.advanced.logRequestBody,

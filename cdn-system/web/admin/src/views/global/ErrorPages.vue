@@ -3,7 +3,7 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>自定义错误页面</span>
+          <span>Custom Error Pages</span>
         </div>
       </template>
 
@@ -20,7 +20,7 @@
                 v-model="errorPages[code.key]"
                 type="textarea"
                 :rows="25"
-                placeholder="<!-- 请输入 HTML 内容 -->"
+                placeholder="<!-- 请输入HTML 内容 -->"
                 font-family="monospace"
                 @blur="saveConfig"
               />
@@ -61,7 +61,7 @@ const errorCodes = [
 const loadConfig = () => {
   loading.value = true
   request.get('/global_config').then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       fullConfig.value = res.data || {}
       if (res.data?.error_pages) {
         Object.assign(errorPages, res.data.error_pages)
@@ -92,7 +92,7 @@ const saveConfig = async (event) => {
   await nextTick()
   fullConfig.value.error_pages = errorPages
   request.post('/global_config', fullConfig.value).then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       ElMessage.success('\u4fdd\u5b58\u6210\u529f')
     }
   }).finally(() => {
@@ -143,3 +143,4 @@ onMounted(() => {
   color: #909399;
 }
 </style>
+

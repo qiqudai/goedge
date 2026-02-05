@@ -4,7 +4,7 @@
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="DNS配置" name="dns">
           <el-form v-if="activeTab === 'dns'" v-loading="loading" :model="form" label-width="120px" class="dns-form">
-            <el-form-item label="DNS提供商" required>
+            <el-form-item label="DNS Provider" required>
               <el-select v-model="form.type" placeholder="请选择" @change="handleTypeChange" style="width: 320px;">
                 <el-option v-for="t in providerTypes" :key="t.type" :label="getProviderLabel(t)" :value="t.type" />
               </el-select>
@@ -17,7 +17,7 @@
                 :label="getDynamicLabel(form.type, field)"
                 required
               >
-                <el-input v-model="form.credentials[field]" :placeholder="'请输入' + getDynamicLabel(form.type, field)" style="width: 320px;" />
+                <el-input v-model="form.credentials[field]" :placeholder="'Please input ' + getDynamicLabel(form.type, field)" style="width: 320px;" />
               </el-form-item>
             </template>
 
@@ -67,7 +67,7 @@
             <el-table-column type="selection" width="55" />
             <el-table-column prop="id" label="ID" width="80" align="center" />
             <el-table-column prop="domain" label="域名" />
-            <el-table-column label="DNS提供商" min-width="200">
+            <el-table-column label="DNS Provider" min-width="200">
               <template #default="{ row }">
                 {{ getProviderNameById(row.dns_provider_id) }}
               </template>
@@ -91,7 +91,7 @@
         <el-form-item label="域名" required>
           <el-input v-model="cnameForm.domain" placeholder="如：example.com" @blur="handleCnameBlur" />
         </el-form-item>
-        <el-form-item label="DNS提供商" required>
+            <el-form-item label="DNS Provider" required>
           <el-select v-model="cnameForm.dns_provider_id" placeholder="请选择" style="width: 100%;">
             <el-option v-for="item in providers" :key="item.id" :label="getProviderLabel(item)" :value="item.id" />
           </el-select>
@@ -140,28 +140,28 @@ const form = ref({
 
 const labelMaps = DNS_API_FIELD_LABELS
 const labelTranslations = {
-  'AccessKey ID': 'AccessKey ID（访问密钥ID）',
-  'AccessKey Secret': 'AccessKey Secret（访问密钥密码）',
-  'Access Key ID': 'Access Key ID（访问密钥ID）',
-  'Secret Access Key': 'Secret Access Key（访问密钥密码）',
-  'Access Key': 'Access Key（访问密钥）',
-  'Secret Key': 'Secret Key（密钥密码）',
+  'AccessKey ID': 'AccessKey ID',
+  'AccessKey Secret': 'AccessKey Secret',
+  'Access Key ID': 'Access Key ID',
+  'Secret Access Key': 'Secret Access Key',
+  'Access Key': 'Access Key',
+  'Secret Key': 'Secret Key',
   'API ID': 'API ID',
-  'API Password': 'API 密码',
-  'API Key': 'API 密钥',
-  'API Secret': 'API 密钥密码',
-  'API Token': 'API 令牌',
-  Token: '令牌',
-  Email: '邮箱',
-  Username: '用户名',
-  User: '用户',
-  'Client IP': '客户端 IP',
-  'App ID': '应用 ID',
-  'App Secret': '应用密钥',
-  'Auth ID': '认证 ID',
-  'Auth Password': '认证密码',
-  SecretId: 'SecretId（密钥ID）',
-  SecretKey: 'SecretKey（密钥密码）',
+  'API Password': 'API Password',
+  'API Key': 'API Key',
+  'API Secret': 'API Secret',
+  'API Token': 'API Token',
+  Token: 'Token',
+  Email: 'Email',
+  Username: 'Username',
+  User: 'User',
+  'Client IP': 'Client IP',
+  'App ID': 'App ID',
+  'App Secret': 'App Secret',
+  'Auth ID': 'Auth ID',
+  'Auth Password': 'Auth Password',
+  SecretId: 'SecretId',
+  SecretKey: 'SecretKey',
   ID: 'ID'
 }
 
@@ -218,7 +218,7 @@ const applyProvider = item => {
 const loadProviders = (applyFirst = true) => {
   loading.value = true
   request.get('/dns/providers').then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       const list = res.data.list || []
       providers.value = list
       if (applyFirst && list.length > 0) {
@@ -236,7 +236,7 @@ const loadProviders = (applyFirst = true) => {
 
 const loadTypes = () => {
   request.get('/dns/providers/types').then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       providerTypes.value = res.data.types
     }
   })
@@ -256,14 +256,14 @@ const handleTypeChange = () => {
 
 const submitForm = () => {
   if (!form.value.type) {
-    ElMessage.error('请选择DNS提供商')
+    ElMessage.error('Please select DNS provider')
     return
   }
 
   if (currentTypeConfig.value) {
     for (const field of currentTypeConfig.value.fields) {
       if (!form.value.credentials[field]) {
-        ElMessage.error(`请输入${getDynamicLabel(form.value.type, field)}`)
+        ElMessage.error(`Please input ${getDynamicLabel(form.value.type, field)}`)
         return
       }
     }
@@ -282,7 +282,7 @@ const submitForm = () => {
   submitting.value = true
   const createProvider = () => {
     return request.post('/dns/providers', payload).then(res => {
-      if (res.code === 0) {
+      if (res.code === 0 || res.code === 200) {
         ElMessage.success('保存成功')
         loadProviders()
       } else {
@@ -294,9 +294,14 @@ const submitForm = () => {
   }
 
   if (currentProviderId.value > 0) {
-    request.delete(`/dns/providers/${currentProviderId.value}`).then(() => {
-      createProvider()
-    }).catch(() => {
+    request.put(`/dns/providers/${currentProviderId.value}`, payload).then(res => {
+      if (res.code === 0 || res.code === 200) {
+        ElMessage.success('保存成功')
+        loadProviders()
+      } else {
+        ElMessage.error(res.msg || '操作失败')
+      }
+    }).finally(() => {
       submitting.value = false
     })
     return
@@ -314,7 +319,7 @@ const selectedCnames = ref([])
 const getCnameList = () => {
   cnameLoading.value = true
   request.get('/cname_domains').then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       let list = res.data.list || []
       if (cnameQuery.keyword) {
         list = list.filter(item => item.domain.includes(cnameQuery.keyword))
@@ -400,7 +405,7 @@ const testDNS = async () => {
   testingDns.value = true
   try {
     const res = await request.get('/dns/test', { skipLoading: true })
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       dnsError.value = '没有错误'
     } else {
       dnsError.value = res.msg || 'DNS测试失败'
@@ -420,7 +425,7 @@ const handleFixRecords = () => {
   }).then(() => {
     return request.post('/dns/records/fix')
   }).then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       ElMessage.success('修复完成')
     } else {
       ElMessage.error(res.msg || '修复失败')
@@ -437,7 +442,7 @@ const handleClearInvalid = () => {
   }).then(() => {
     return request.post('/dns/records/cleanup')
   }).then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       ElMessage.success('清理完成')
     } else {
       ElMessage.error(res.msg || '清理失败')
@@ -449,15 +454,15 @@ const handleClearInvalid = () => {
 const submitCnameForm = () => {
   const normalized = normalizeDomainInput(cnameForm.domain)
   if (!normalized) {
-    ElMessage.error('请输入域名')
+    ElMessage.error('Please enter domain')
     return
   }
   if (!isValidDomain(normalized)) {
-    ElMessage.error('域名格式不正确')
+    ElMessage.error('Invalid domain format')
     return
   }
   if (!cnameForm.dns_provider_id) {
-    ElMessage.error('请选择DNS提供商')
+    ElMessage.error('Please select DNS provider')
     return
   }
   cnameForm.domain = normalized
@@ -467,7 +472,7 @@ const submitCnameForm = () => {
     : request.post('/cname_domains', cnameForm)
 
   promise.then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       ElMessage.success('保存成功')
       cnameDialogVisible.value = false
       getCnameList()
@@ -478,14 +483,14 @@ const submitCnameForm = () => {
 }
 
 const handleDeleteCname = row => {
-  ElMessageBox.confirm('确认删除该CNAME域名吗?', '提示', {
+  ElMessageBox.confirm('确认删除该CNAME域名？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
     request.delete(`/cname_domains/${row.id}`).then(res => {
-      if (res.code === 0) {
-        ElMessage.success('已删除')
+      if (res.code === 0 || res.code === 200) {
+        ElMessage.success('Deleted successfully')
         getCnameList()
       }
     })
@@ -519,7 +524,7 @@ watch(
 )
 
 const handleBatchDeleteCname = () => {
-  ElMessage.warning('批量删除功能暂未开放')
+  ElMessage.warning('Batch delete is not available yet')
 }
 
 onMounted(() => {
@@ -542,3 +547,8 @@ onMounted(() => {
   color: #999;
 }
 </style>
+
+
+
+
+

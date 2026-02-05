@@ -21,63 +21,81 @@ func RepairDNSRecords() []string {
 
 	errs := make([]string, 0)
 	for _, group := range groups {
+		errs = append(errs, resyncGroupDNSRecords(group.ID)...)
+	}
+	return errs
+}
+
+func ResyncDNSForProvider(providerID int64) []string {
+	if providerID == 0 || db.DB == nil {
+		return nil
+	}
+	var domains []models.CnameDomain
+	if err := db.DB.Where("dns_provider_id = ?", providerID).Find(&domains).Error; err != nil {
+		return []string{err.Error()}
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		domainKey := normalizeDomainInput(domain.Domain)
+		if domainKey != "" {
+			keys = append(keys, domainKey)
+		}
+	}
+	return ResyncDNSForCnameDomains(keys)
+}
+
+func ResyncDNSForCnameDomains(domains []string) []string {
+	if db.DB == nil || len(domains) == 0 {
+		return nil
+	}
+	domainSet := map[string]struct{}{}
+	for _, domain := range domains {
+		domainKey := normalizeDomainInput(domain)
+		if domainKey == "" {
+			continue
+		}
+		domainSet[domainKey] = struct{}{}
+	}
+	if len(domainSet) == 0 {
+		return nil
+	}
+	domainList := make([]string, 0, len(domainSet))
+	for domain := range domainSet {
+		domainList = append(domainList, domain)
+	}
+
+	errs := make([]string, 0)
+	var groups []models.NodeGroup
+	if err := db.DB.
+		Where("cname_domain IN ? OR cname_domain = '' OR cname_domain IS NULL", domainList).
+		Find(&groups).Error; err != nil {
+		return []string{err.Error()}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+
+	groupIDs := make([]int64, 0, len(groups))
+	for _, group := range groups {
 		resolvedGroup, err := dns.EnsureGroupDNSConfig(group.ID)
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
 		}
-		group = resolvedGroup
-
-		var lines []models.Line
-		if err := db.DB.Select("line_id", "line_name", "node_id", "node_ip_id", "enable").
-			Where("node_group_id = ?", group.ID).
-			Find(&lines).Error; err != nil {
-			errs = append(errs, err.Error())
+		domainKey := normalizeDomainInput(resolvedGroup.CnameDomain)
+		if domainKey == "" {
 			continue
 		}
-
-		lineMap := map[string]*struct {
-			Name    string
-			NodeIDs []int64
-		}{}
-		for _, line := range lines {
-			if !line.Enable {
-				continue
-			}
-			lineKey := strings.TrimSpace(line.LineID)
-			if lineKey == "" {
-				lineKey = "default"
-			}
-			item := lineMap[lineKey]
-			if item == nil {
-				lineName := strings.TrimSpace(line.LineName)
-				if lineName == "" {
-					lineName = lineKey
-				}
-				item = &struct {
-					Name    string
-					NodeIDs []int64
-				}{Name: lineName}
-				lineMap[lineKey] = item
-			}
-			nodeID := line.NodeIPID
-			if nodeID == 0 {
-				nodeID = line.NodeID
-			}
-			if nodeID != 0 {
-				item.NodeIDs = append(item.NodeIDs, nodeID)
-			}
+		if _, ok := domainSet[domainKey]; ok {
+			groupIDs = append(groupIDs, resolvedGroup.ID)
 		}
-
-		for lineKey, item := range lineMap {
-			ids := uniqueInt64List(item.NodeIDs)
-			if err := dns.SyncLineRecords(group.ID, lineKey, item.Name, "resync", ids); err != nil {
-				errs = append(errs, err.Error())
-			}
-			if err := SyncPackageCnameForLineChange(group.ID, lineKey, item.Name, ids, "resync"); err != nil {
-				errs = append(errs, err.Error())
-			}
-		}
+	}
+	groupIDs = uniqueInt64List(groupIDs)
+	for _, groupID := range groupIDs {
+		errs = append(errs, resyncGroupDNSRecords(groupID)...)
 	}
 	return errs
 }
@@ -418,4 +436,69 @@ func addAllowedCnameValue(values map[string]struct{}, value string) {
 		return
 	}
 	values[value] = struct{}{}
+}
+
+func resyncGroupDNSRecords(groupID int64) []string {
+	if groupID == 0 || db.DB == nil {
+		return nil
+	}
+	resolvedGroup, err := dns.EnsureGroupDNSConfig(groupID)
+	if err != nil {
+		return []string{err.Error()}
+	}
+
+	var lines []models.Line
+	if err := db.DB.Select("line_id", "line_name", "node_id", "node_ip_id", "enable").
+		Where("node_group_id = ?", resolvedGroup.ID).
+		Find(&lines).Error; err != nil {
+		return []string{err.Error()}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+
+	lineMap := map[string]*struct {
+		Name    string
+		NodeIDs []int64
+	}{}
+	for _, line := range lines {
+		if !line.Enable {
+			continue
+		}
+		lineKey := strings.TrimSpace(line.LineID)
+		if lineKey == "" {
+			lineKey = "default"
+		}
+		item := lineMap[lineKey]
+		if item == nil {
+			lineName := strings.TrimSpace(line.LineName)
+			if lineName == "" {
+				lineName = lineKey
+			}
+			item = &struct {
+				Name    string
+				NodeIDs []int64
+			}{Name: lineName}
+			lineMap[lineKey] = item
+		}
+		nodeID := line.NodeIPID
+		if nodeID == 0 {
+			nodeID = line.NodeID
+		}
+		if nodeID != 0 {
+			item.NodeIDs = append(item.NodeIDs, nodeID)
+		}
+	}
+
+	errs := make([]string, 0)
+	for lineKey, item := range lineMap {
+		ids := uniqueInt64List(item.NodeIDs)
+		if err := dns.SyncLineRecords(resolvedGroup.ID, lineKey, item.Name, "resync", ids); err != nil {
+			errs = append(errs, err.Error())
+		}
+		if err := SyncPackageCnameForLineChange(resolvedGroup.ID, lineKey, item.Name, ids, "resync"); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	return errs
 }

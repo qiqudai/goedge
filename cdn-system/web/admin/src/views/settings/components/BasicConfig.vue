@@ -38,7 +38,7 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="登录页广告">
+          <el-form-item label="Login Ad">
              <el-upload
                class="avatar-uploader"
                :action="uploadUrl"
@@ -54,11 +54,11 @@
         </el-col>
       </el-row>
 
-      <el-form-item label="普通用户标题">
-         <el-input v-model="systemInfo.user_console_title" placeholder="CDN用户控制台" @blur="handleBlurSave" />
+      <el-form-item label="User Console Title">
+         <el-input v-model="systemInfo.user_console_title" placeholder="CDN User Console" @blur="handleBlurSave" />
       </el-form-item>
-      <el-form-item label="管理员标题">
-         <el-input v-model="systemInfo.admin_console_title" placeholder="CDN管理员控制台" @blur="handleBlurSave" />
+      <el-form-item label="Admin Console Title">
+         <el-input v-model="systemInfo.admin_console_title" placeholder="CDN Admin Console" @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="底部链接">
         <el-input type="textarea" :rows="3" v-model="systemInfo.footer_link" placeholder="名称|URL（换行分隔）" @blur="handleBlurSave" />
@@ -68,7 +68,7 @@
       </el-form-item>
       <el-form-item label="主控主机">
         <el-input v-model="bindMasterHost" placeholder="" @blur="handleBlurSave" />
-        <div class="form-helper">绑定主节点 Host，用于节点通信。</div>
+        <div class="form-helper">Bind master host for node communication.</div>
       </el-form-item>
     </el-card>
   </el-form>
@@ -108,7 +108,7 @@ const systemInfo = ref({
 const bindMasterHost = ref('')
 
 const handleUploadSuccess = (res, field) => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
         systemInfo.value[field] = res.url
         ElMessage.success('上传成功')
         handleSave()
@@ -233,3 +233,4 @@ const handleBlurSave = (event) => {
   display: block;
 }
 </style>
+

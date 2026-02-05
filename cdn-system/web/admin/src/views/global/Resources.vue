@@ -129,7 +129,7 @@ const config = ref({
 const loadConfig = () => {
   loading.value = true
   request.get('/global_config').then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       config.value = res.data || {}
       if (!config.value.resources) {
         config.value.resources = { website: {}, forward: {}, public: {} }
@@ -176,7 +176,7 @@ const saveConfig = async (event) => {
   saving.value = true
   await nextTick()
   request.post('/global_config', config.value).then(res => {
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       ElMessage.success('资源配置已保存')
     }
   }).finally(() => {
@@ -215,3 +215,4 @@ h4 {
   border-left: 4px solid #409eff;
 }
 </style>
+

@@ -42,11 +42,18 @@ func writeHTTPConfig(cfg edgeConfig) error {
 	}
 
 	var b strings.Builder
+	seenUpstreams := map[string]struct{}{}
 	for _, upstream := range cfg.Upstreams {
-		if upstream.ID == "" || len(upstream.Targets) == 0 {
+		id := strings.TrimSpace(upstream.ID)
+		if id == "" || len(upstream.Targets) == 0 {
 			continue
 		}
-		b.WriteString("upstream " + upstream.ID + " {\n")
+		if _, exists := seenUpstreams[id]; exists {
+			log.Printf("[Warn] Duplicate upstream skipped: id=%s", id)
+			continue
+		}
+		seenUpstreams[id] = struct{}{}
+		b.WriteString("upstream " + id + " {\n")
 		for _, target := range upstream.Targets {
 			if target.Addr == "" {
 				continue
@@ -321,7 +328,7 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		return
 	}
 	if domain.BodyLimit > 0 {
-		b.WriteString(fmt.Sprintf("    client_max_body_size %dm;\n", domain.BodyLimit))
+		b.WriteString(fmt.Sprintf("    client_max_body_size %dk;\n", domain.BodyLimit))
 	}
 	if domain.EnableGzip {
 		b.WriteString("    gzip on;\n")
@@ -430,7 +437,6 @@ func writeErrorPageServerDirectives(b *strings.Builder, pages map[string]string)
 	if len(pages) == 0 {
 		return
 	}
-	b.WriteString("    sub_filter_types text/html;\n")
 }
 
 func errorPageStatusForKey(key string) int {
@@ -483,6 +489,16 @@ func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
 	writeGuardLocations(b)
 	writeAcmeLocation(b)
 	cacheCfg := domain.Cache
+	seenLocations := map[string]string{}
+	seedLocation := func(location string, reason string) {
+		if key := normalizeLocationKey(location); key != "" {
+			seenLocations[key] = reason
+		}
+	}
+	seedLocation("= /_guard/captcha.png", "reserved:guard_captcha")
+	seedLocation("= /_guard/rotate_image", "reserved:guard_rotate")
+	seedLocation("^~ /_guard/", "reserved:guard_dir")
+	seedLocation("^~ /.well-known/acme-challenge/", "reserved:acme_challenge")
 	rules := make([]edgeCacheRule, 0)
 	if cacheCfg != nil && len(cacheCfg.Rules) > 0 {
 		rules = append(rules, cacheCfg.Rules...)
@@ -494,16 +510,33 @@ func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
 	for _, rule := range rules {
 		location := buildRuleLocation(rule)
 		if location == "" {
+			if hasRuleSpecifier(rule) {
+				log.Printf("[Warn] Invalid cache rule skipped: domain=%s rule=%q uri=%q prefix=%q ext=%q", domain.Name, rule.Rule, rule.URI, rule.Prefix, rule.Ext)
+			}
 			continue
+		}
+		key := normalizeLocationKey(location)
+		if key != "" {
+			if reason, exists := seenLocations[key]; exists {
+				log.Printf("[Warn] Duplicate cache location skipped: domain=%s location=%q (conflict with %s)", domain.Name, location, reason)
+				continue
+			}
+			seenLocations[key] = "cache_rule"
 		}
 		b.WriteString("    location " + location + " {\n")
 		writeProxyBlock(b, domain, tls, cacheCfg, &rule)
 		b.WriteString("    }\n")
 	}
 
-	b.WriteString("    location / {\n")
-	writeProxyBlock(b, domain, tls, cacheCfg, nil)
-	b.WriteString("    }\n")
+	defaultKey := normalizeLocationKey("/")
+	if reason, exists := seenLocations[defaultKey]; exists {
+		log.Printf("[Warn] Default cache location skipped: domain=%s location=%q (conflict with %s)", domain.Name, "/", reason)
+	} else {
+		b.WriteString("    location / {\n")
+		writeProxyBlock(b, domain, tls, cacheCfg, nil)
+		b.WriteString("    }\n")
+		seenLocations[defaultKey] = "cache_default"
+	}
 }
 
 func writeGuardLocations(b *strings.Builder) {
@@ -563,19 +596,68 @@ func buildRuleLocation(rule edgeCacheRule) string {
 		return normalizeRuleLocation(rule.Rule)
 	}
 	if rule.URI != "" {
-		return "= " + rule.URI
+		uri := strings.TrimSpace(rule.URI)
+		if !strings.HasPrefix(uri, "/") {
+			return ""
+		}
+		return "= " + uri
 	}
 	if rule.Prefix != "" {
-		return "^~ " + rule.Prefix
+		prefix := strings.TrimSpace(rule.Prefix)
+		if !strings.HasPrefix(prefix, "/") {
+			return ""
+		}
+		return "^~ " + prefix
 	}
 	if rule.Ext != "" {
-		ext := rule.Ext
+		ext := strings.TrimSpace(rule.Ext)
+		if ext == "" {
+			return ""
+		}
 		if !strings.HasPrefix(ext, ".") {
 			ext = "." + ext
 		}
 		return "~* \\" + ext + "$"
 	}
 	return ""
+}
+
+func hasRuleSpecifier(rule edgeCacheRule) bool {
+	return strings.TrimSpace(rule.Rule) != "" ||
+		strings.TrimSpace(rule.URI) != "" ||
+		strings.TrimSpace(rule.Prefix) != "" ||
+		strings.TrimSpace(rule.Ext) != ""
+}
+
+func normalizeLocationKey(location string) string {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return ""
+	}
+	parts := strings.Fields(location)
+	if len(parts) == 0 {
+		return ""
+	}
+	switch parts[0] {
+	case "=":
+		if len(parts) < 2 {
+			return "exact"
+		}
+		return "exact " + strings.Join(parts[1:], " ")
+	case "^~":
+		if len(parts) < 2 {
+			return "prefix"
+		}
+		return "prefix " + strings.Join(parts[1:], " ")
+	default:
+		if strings.HasPrefix(parts[0], "~") {
+			if len(parts) < 2 {
+				return "regex " + parts[0]
+			}
+			return "regex " + parts[0] + " " + strings.Join(parts[1:], " ")
+		}
+	}
+	return "prefix " + strings.Join(parts, " ")
 }
 
 func normalizeRuleLocation(rule string) string {
@@ -772,6 +854,12 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig) error {
 			b.WriteString("proxy_cache_methods " + v + ";\n")
 		}
 		if v := toString(cfg.HTTP["custom_snippet"]); v != "" {
+			if cleaned, removed := sanitizeCustomHTTPSnippet(v); removed {
+				log.Printf("[Warn] custom_snippet contains types directives; stripped to avoid duplicate MIME types")
+				v = cleaned
+			} else {
+				v = cleaned
+			}
 			if !strings.HasSuffix(v, "\n") {
 				v += "\n"
 			}
@@ -791,4 +879,47 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig) error {
 		}
 	}
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
+}
+
+func sanitizeCustomHTTPSnippet(snippet string) (string, bool) {
+	if snippet == "" {
+		return "", false
+	}
+	lines := strings.Split(snippet, "\n")
+	out := make([]string, 0, len(lines))
+	removed := false
+	inTypes := false
+	braceDepth := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			out = append(out, line)
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if inTypes {
+			braceDepth += strings.Count(line, "{") - strings.Count(line, "}")
+			if braceDepth <= 0 {
+				inTypes = false
+				braceDepth = 0
+			}
+			removed = true
+			continue
+		}
+		if strings.HasPrefix(lower, "include") && strings.Contains(lower, "mime.types") {
+			removed = true
+			continue
+		}
+		if lower == "types" || strings.HasPrefix(lower, "types ") || strings.HasPrefix(lower, "types{") {
+			removed = true
+			braceDepth = strings.Count(line, "{") - strings.Count(line, "}")
+			if braceDepth <= 0 {
+				braceDepth = 1
+			}
+			inTypes = true
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n"), removed
 }

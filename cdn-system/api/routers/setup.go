@@ -80,6 +80,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/dns/providers", dnsCtr.ListProviders)
 			admin.GET("/dns/providers/types", dnsCtr.GetProviderTypes)
 			admin.POST("/dns/providers", dnsCtr.CreateProvider)
+			admin.PUT("/dns/providers/:id", dnsCtr.UpdateProvider)
 			admin.DELETE("/dns/providers/:id", dnsCtr.DeleteProvider)
 			admin.GET("/dns/test", dnsCtr.TestDNS)
 			admin.POST("/dns/records/fix", dnsCtr.FixRecords)
@@ -138,6 +139,10 @@ func Setup(r *gin.Engine) {
 			admin.GET("/packages", (&controllers.PackageController{}).ListVersions)
 			admin.POST("/packages", (&controllers.PackageController{}).UploadVersion)
 			admin.POST("/packages/grayscale", (&controllers.PackageController{}).UpdateGrayScale)
+			admin.POST("/packages/stable", (&controllers.PackageController{}).SetStable)
+			admin.GET("/packages/nodes", (&controllers.PackageController{}).ListNodes)
+			admin.POST("/packages/upgrade", (&controllers.PackageController{}).SyncVersion)
+			admin.GET("/packages/upgrade/status", (&controllers.PackageController{}).UpgradeStatus)
 
 			// Plans (Packages)
 			planCtr := &controllers.PlanController{}
@@ -476,6 +481,7 @@ func Setup(r *gin.Engine) {
 			agentGroup.POST("/node/sync", agentCtr.SyncNodeStatus)
 			agentGroup.GET("/config", agentCtr.GetConfig)
 			agentGroup.GET("/upgrade", agentCtr.GetUpgrade)
+			agentGroup.GET("/upgrade/package", (&controllers.PackageController{}).DownloadPackage)
 			agentGroup.GET("/tasks", agentCtr.GetTasks)
 			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
 			agentGroup.GET("/l2/nodes", agentCtr.GetL2Nodes)

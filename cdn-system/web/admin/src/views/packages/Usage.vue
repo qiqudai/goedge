@@ -6,8 +6,8 @@
         <el-button-group class="range-button-group">
           <el-button size="small" :type="range === 'today' ? 'primary' : 'default'" @click="setRange('today')">今天</el-button>
           <el-button size="small" :type="range === 'yesterday' ? 'primary' : 'default'" @click="setRange('yesterday')">昨天</el-button>
-          <el-button size="small" :type="range === '7days' ? 'primary' : 'default'" @click="setRange('7days')">近7天</el-button>
-          <el-button size="small" :type="range === '30days' ? 'primary' : 'default'" @click="setRange('30days')">30天</el-button>
+          <el-button size="small" :type="range === '7days' ? 'primary' : 'default'" @click="setRange('7days')">7 days</el-button>
+          <el-button size="small" :type="range === '30days' ? 'primary' : 'default'" @click="setRange('30days')">30 days</el-button>
         </el-button-group>
         <el-button link type="primary" @click="loadUsage">刷新</el-button>
       </div>
@@ -15,15 +15,15 @@
 
     <div class="summary-row">
       <div class="summary-card">
-        <div class="summary-label">总流量</div>
+        <div class="summary-label">Total</div>
         <div class="summary-value">{{ summary.total }} {{ summary.unit }}</div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">峰值</div>
+        <div class="summary-label">Peak</div>
         <div class="summary-value">{{ summary.peak }} {{ summary.unit }}</div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">平均值</div>
+        <div class="summary-label">Average</div>
         <div class="summary-value">{{ summary.avg }} {{ summary.unit }}</div>
       </div>
     </div>
@@ -98,7 +98,7 @@ const loadUsage = async () => {
   loading.value = true
   try {
     const res = await request.get('/usage', { params: { range: range.value } })
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       const data = res.data || {}
       summary.value = {
         total: data.total ?? 0,
@@ -177,3 +177,4 @@ onMounted(() => {
   height: 320px;
 }
 </style>
+

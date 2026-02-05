@@ -90,26 +90,36 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 		}
 	}()
 
-	// 1. Create Task
+	// 1. Load Cert
+	if err := db.DB.First(&cert, certID).Error; err != nil {
+		log.Printf("[CertIssue] cert not found cert_id=%d err=%v", certID, err)
+		return
+	}
+
+	// 2. Create Task with payload data
+	payload, payloadErr := buildIssuePayload(cert)
+	if payloadErr != nil {
+		log.Printf("[CertIssue] build payload failed cert_id=%d err=%v", certID, payloadErr)
+		markCertIssueFailed(certID, payloadErr.Error())
+		return
+	}
+	payloadRaw, _ := json.Marshal(payload)
 	task = models.Task{
 		Type:     "issue_cert",
 		Name:     "Issue Cert " + strings.TrimSpace(strconv.FormatInt(certID, 10)),
 		State:    "waiting",
 		PID:      batchID,
 		Enable:   true,
+		Data:     string(payloadRaw),
 		CreateAt: time.Now(),
 	}
 	if err := db.DB.Create(&task).Error; err != nil {
 		log.Printf("[CertIssue] create task failed cert_id=%d err=%v", certID, err)
+		markCertIssueFailed(certID, err.Error())
 		return
 	}
 
-	// 2. Associate with Cert
-	if err := db.DB.First(&cert, certID).Error; err != nil {
-		log.Printf("[CertIssue] cert not found cert_id=%d err=%v", certID, err)
-		failTask(&task, "Cert not found")
-		return
-	}
+	// 3. Associate with Cert
 	db.DB.Model(&cert).Updates(map[string]interface{}{
 		"issue_task_id": task.ID,
 		"task_id":       task.ID,
@@ -117,7 +127,7 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 		"ret":           "",
 	})
 
-	// 3. Issue with retry
+	// 4. Issue with retry
 	started := false
 	for {
 		if err := db.DB.First(&cert, certID).Error; err != nil {
@@ -140,7 +150,8 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 			errMsg := err.Error()
 			log.Printf("[CertIssue] issue failed cert_id=%d err=%v", certID, err)
 			db.DB.Model(&models.Cert{ID: cert.ID}).Updates(map[string]interface{}{
-				"ret": errMsg,
+				"state": "fail",
+				"ret":   errMsg,
 			})
 			if isFatalIssueError(err) {
 				failTask(&task, errMsg)
@@ -275,6 +286,32 @@ func UpdateIssuedCert(certID int64, certPEM string, keyPEM string, notBefore tim
 
 func ParseCertTimes(certPEM string) (time.Time, time.Time, error) {
 	return acme.ParseCertTimes(certPEM)
+}
+
+func buildIssuePayload(cert models.Cert) (IssueCertTaskPayload, error) {
+	email := strings.TrimSpace(config.App.AcmeEmail)
+	if email == "" {
+		return IssueCertTaskPayload{}, errors.New("acme_email is required")
+	}
+	domains := splitCertDomains(cert.Domain)
+	if len(domains) == 0 {
+		return IssueCertTaskPayload{}, errors.New("cert domain is empty")
+	}
+	ca := strings.ToLower(strings.TrimSpace(cert.Type))
+	if ca == "" {
+		ca = "letsencrypt"
+	}
+	return IssueCertTaskPayload{
+		CA:       ca,
+		CADirURL: BuildCADirURL(ca),
+		Email:    email,
+		Items: []IssueCertItem{
+			{
+				CertID:  int64(cert.ID),
+				Domains: domains,
+			},
+		},
+	}, nil
 }
 
 func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {

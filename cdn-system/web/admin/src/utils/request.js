@@ -3,27 +3,39 @@ import { ElMessage } from 'element-plus'
 import { useLoading } from '@/composables/useLoading'
 
 const DEFAULT_API_BASE = 'https://goai.665305.cc'
-export const API_BASE = (() => {
-  if (typeof window === 'undefined') {
-    return DEFAULT_API_BASE
-  }
-  const host = window.location.hostname
-  if (host === '127.0.0.1' || host === 'localhost') {
-    return 'http://127.0.0.1:8080'
+const resolveApiBase = () => {
+  const envBase = String(import.meta.env?.VITE_API_BASE || '').trim()
+  if (envBase) return envBase
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.localStorage?.getItem('api_base')
+      if (stored) return stored
+    } catch {
+      // ignore storage errors
+    }
+    const host = window.location?.hostname || ''
+    if (host === '127.0.0.1' || host === 'localhost') {
+      return 'http://127.0.0.1:8080'
+    }
   }
   return DEFAULT_API_BASE
-})()
+}
+export const API_BASE = resolveApiBase()
 
 // Create axios instance
 const service = axios.create({
   baseURL: `${API_BASE}/api/v1/admin`, // Default, overridden per-role
-  timeout: 5000
+  timeout: 120000
 })
 
 const { showLoading, hideLoading } = useLoading()
 
+const isSuccessCode = code => code === 0 || code === 200
+
+const resolveMessage = payload => payload?.message || payload?.msg || payload?.data?.message || payload?.error || ''
+
 const redirectToMaintenance = payload => {
-  const message = payload?.msg || payload?.data?.message || '系统维护中'
+  const message = resolveMessage(payload) || 'Maintenance'
   localStorage.setItem('maintenance_msg', message)
   if (window.location.pathname !== '/maintenance') {
     window.location.href = '/maintenance'
@@ -66,20 +78,20 @@ service.interceptors.response.use(
     const res = response.data
     if (res?.maintenance) {
       redirectToMaintenance(res)
-      return Promise.reject(new Error(res.msg || 'maintenance'))
+      return Promise.reject(new Error(resolveMessage(res) || 'maintenance'))
     }
     const refreshedToken = response.headers?.['x-auth-token']
     if (refreshedToken) {
       localStorage.setItem('admin_token', refreshedToken)
     }
     // If backend returns code, check it (assuming 0 is success)
-    if (res.code !== undefined && res.code !== 0) {
+    if (res.code !== undefined && !isSuccessCode(res.code)) {
       ElMessage({
-        message: res.msg || 'Error',
+        message: resolveMessage(res) || 'Error',
         type: 'error',
         duration: 5 * 1000
       })
-      return Promise.reject(new Error(res.msg || 'Error'))
+      return Promise.reject(new Error(resolveMessage(res) || 'Error'))
     } else {
       return res
     }
@@ -104,7 +116,7 @@ service.interceptors.response.use(
         window.location.href = '/login'
       }, 1000)
     } else {
-      const apiMessage = error.response?.data?.error || error.response?.data?.msg
+      const apiMessage = error.response?.data?.error || error.response?.data?.message || error.response?.data?.msg
       ElMessage({
         message: apiMessage || error.message,
         type: 'error',
@@ -116,3 +128,5 @@ service.interceptors.response.use(
 )
 
 export default service
+
+

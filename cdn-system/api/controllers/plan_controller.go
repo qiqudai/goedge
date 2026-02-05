@@ -859,6 +859,12 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	if err := services.NewUserPackageService().SyncUserPackage(id, "update"); err != nil {
 		fmt.Printf("[WARN] SyncUserPackage (Update) Failed: %v\n", err)
 	}
+	// Resync site configs so nodes pick up updated package state (e.g. end_at).
+	var siteIDs []int64
+	if err := db.DB.Model(&models.Site{}).Where("user_package = ?", id).Pluck("id", &siteIDs).Error; err == nil && len(siteIDs) > 0 {
+		services.BumpConfigVersion("site", siteIDs)
+	}
+	resyncUserPackageGroupCnames(id)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
 
@@ -911,6 +917,53 @@ func getString(payload map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+func resyncUserPackageGroupCnames(userPackageID int64) {
+	if userPackageID == 0 {
+		return
+	}
+	groupSet := map[int64]struct{}{}
+
+	var pack struct {
+		NodeGroupID   int64 `gorm:"column:node_group_id"`
+		BackupGroupID int64 `gorm:"column:backup_node_group"`
+	}
+	if err := db.DB.Model(&models.UserPackage{}).
+		Select("node_group_id", "backup_node_group").
+		Where("id = ?", userPackageID).
+		First(&pack).Error; err == nil {
+		if pack.NodeGroupID > 0 {
+			groupSet[pack.NodeGroupID] = struct{}{}
+		}
+		if pack.BackupGroupID > 0 {
+			groupSet[pack.BackupGroupID] = struct{}{}
+		}
+	}
+
+	var sites []struct {
+		NodeGroupID   int64 `gorm:"column:node_group_id"`
+		BackupGroupID int64 `gorm:"column:backup_node_group"`
+	}
+	if err := db.DB.Model(&models.Site{}).
+		Select("node_group_id", "backup_node_group").
+		Where("user_package = ?", userPackageID).
+		Find(&sites).Error; err != nil {
+		fmt.Printf("[WARN] resyncUserPackageGroupCnames load failed package=%d err=%v\n", userPackageID, err)
+		return
+	}
+	for _, site := range sites {
+		if site.NodeGroupID > 0 {
+			groupSet[site.NodeGroupID] = struct{}{}
+		}
+		if site.BackupGroupID > 0 {
+			groupSet[site.BackupGroupID] = struct{}{}
+		}
+	}
+
+	for groupID := range groupSet {
+		services.ResyncGroupLineCnames(groupID)
+	}
 }
 
 func getInt64(payload map[string]interface{}, key string) int64 {

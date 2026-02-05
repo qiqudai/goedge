@@ -1628,21 +1628,46 @@ func extractHTTPSConfig(settings map[string]interface{}) httpsConfig {
 
 func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
 	cfg := advancedConfig{}
+	bodyLimitSet := false
 	adv := getMap(settings, "advanced")
-	if adv == nil {
-		return cfg
+	if adv != nil {
+		cfg.gzip = parseBoolValue(adv["gzip"], false)
+		cfg.gzipTypes = sanitizeNginxValue(parseString(adv["gzip_types"]))
+		cfg.websocket = parseBoolValue(adv["websocket"], false)
+		cfg.rangeEnabled = parseBoolValue(adv["range"], false)
+		cfg.proxyHTTPVersion = sanitizeProxyHTTPVersion(parseString(adv["proxy_http_version"]))
+		cfg.proxySSLProtocols = sanitizeNginxValue(parseString(adv["proxy_ssl_protocols"]))
+		if raw, ok := adv["body_limit"]; ok {
+			cfg.bodyLimit = normalizeBodyLimitToKB(raw, adv["body_limit_unit"])
+			bodyLimitSet = true
+		}
+		cfg.keepalive = parseBoolValue(adv["ups_keepalive"], false)
+		cfg.keepaliveConn = parseIntValue(adv["ups_keepalive_conn"], 0)
+		cfg.keepaliveTimeout = parseIntValue(adv["ups_keepalive_timeout"], 0)
 	}
-	cfg.gzip = parseBoolValue(adv["gzip"], false)
-	cfg.gzipTypes = sanitizeNginxValue(parseString(adv["gzip_types"]))
-	cfg.websocket = parseBoolValue(adv["websocket"], false)
-	cfg.rangeEnabled = parseBoolValue(adv["range"], false)
-	cfg.proxyHTTPVersion = sanitizeProxyHTTPVersion(parseString(adv["proxy_http_version"]))
-	cfg.proxySSLProtocols = sanitizeNginxValue(parseString(adv["proxy_ssl_protocols"]))
-	cfg.bodyLimit = int64(parseIntValue(adv["body_limit"], 0))
-	cfg.keepalive = parseBoolValue(adv["ups_keepalive"], false)
-	cfg.keepaliveConn = parseIntValue(adv["ups_keepalive_conn"], 0)
-	cfg.keepaliveTimeout = parseIntValue(adv["ups_keepalive_timeout"], 0)
+	if !bodyLimitSet && settings != nil {
+		if raw, ok := settings["upload_limit"]; ok {
+			cfg.bodyLimit = normalizeBodyLimitToKB(raw, "mb")
+			bodyLimitSet = true
+		}
+	}
 	return cfg
+}
+
+func normalizeBodyLimitToKB(raw interface{}, unitRaw interface{}) int64 {
+	value := int64(parseIntValue(raw, 0))
+	if value <= 0 {
+		return 0
+	}
+	unit := strings.ToLower(strings.TrimSpace(parseString(unitRaw)))
+	switch unit {
+	case "kb", "k":
+		return value
+	case "mb", "m":
+		return value * 1024
+	default:
+		return value * 1024
+	}
 }
 
 func extractProxyTimeouts(settings map[string]interface{}) proxyTimeoutConfig {
@@ -1721,6 +1746,10 @@ func parseCacheRulesFromSettings(raw interface{}) []models.EdgeCacheRule {
 			}
 		}
 	}
+	if len(rules) == 0 {
+		return nil
+	}
+	rules = dedupeEdgeCacheRules(rules)
 	if len(rules) == 0 {
 		return nil
 	}

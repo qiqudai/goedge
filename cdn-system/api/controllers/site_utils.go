@@ -515,13 +515,50 @@ func resolveNodeGroupFromPackage(userPackageID int64, requestedID int64) (int64,
 		return 0, nil
 	}
 	var pkg models.UserPackage
-	if err := db.DB.Select("node_group_id").Where("id = ?", userPackageID).First(&pkg).Error; err != nil {
+	if err := db.DB.Select("node_group_id", "package").Where("id = ?", userPackageID).First(&pkg).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, nil
 		}
 		return 0, err
 	}
-	return pkg.NodeGroupID, nil
+	if pkg.NodeGroupID != 0 {
+		return pkg.NodeGroupID, nil
+	}
+	if pkg.PackageID != 0 {
+		var plan models.Package
+		if err := db.DB.Select("node_group_id").Where("id = ?", pkg.PackageID).First(&plan).Error; err == nil {
+			return plan.NodeGroupID, nil
+		}
+	}
+	return 0, nil
+}
+
+func resolveRegionFromPackage(userPackageID int64, nodeGroupID int64) int64 {
+	if userPackageID != 0 {
+		var pkg models.UserPackage
+		if err := db.DB.Select("region_id", "package").Where("id = ?", userPackageID).First(&pkg).Error; err == nil {
+			if pkg.RegionID != 0 {
+				return pkg.RegionID
+			}
+			if pkg.PackageID != 0 {
+				var plan models.Package
+				if err := db.DB.Select("region_id").Where("id = ?", pkg.PackageID).First(&plan).Error; err == nil {
+					if plan.RegionID != 0 {
+						return plan.RegionID
+					}
+				}
+			}
+		}
+	}
+	if nodeGroupID != 0 {
+		var group models.NodeGroup
+		if err := db.DB.Select("region_id").Where("id = ?", nodeGroupID).First(&group).Error; err == nil {
+			if group.RegionID != nil && *group.RegionID > 0 {
+				return *group.RegionID
+			}
+		}
+	}
+	return 0
 }
 
 func isUserRequest(c *gin.Context) bool {

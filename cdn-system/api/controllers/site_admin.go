@@ -94,6 +94,12 @@ func (ctrl *SiteController) AdminGet(c *gin.Context) {
 		site.GroupID = site.GroupIDs[0]
 	}
 
+	siteTypeMeta := ""
+	if site.Settings == nil || site.Settings["site_type"] == nil {
+		siteTypeMeta = services.LoadSiteTypeMeta(site.ID)
+	}
+	applyDefaultsIfSettingsMissing(&site, site.GroupID, siteTypeMeta)
+
 	// Enrich Site Data
 	items, err := buildSiteListItems([]models.Site{site})
 	if err != nil || len(items) == 0 {
@@ -143,7 +149,6 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		HttpsListen     *[]string              `json:"https_listen"`
 		BalanceWay      *string                `json:"balance_way"`
 		BackendProtocol *string                `json:"backend_protocol"`
-		CertID          *int64                 `json:"cert_id"`
 		Domains         *[]string              `json:"domains"`
 		Enable          *bool                  `json:"enable"`
 		State           *string                `json:"state"`
@@ -219,6 +224,9 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	if hasWhitelist {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromSettings)
 	}
+	if req.Settings != nil {
+		services.NormalizeSiteSettings(req.Settings)
+	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
@@ -241,21 +249,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 			updates["balance_way"] = *req.BalanceWay
 		}
 		if req.BackendProtocol != nil {
-			updates["backend_protocol"] = *req.BackendProtocol
-		}
-		if req.CertID != nil {
-			if *req.CertID < 0 {
-				updates["cert_id"] = 0
-			} else {
-				updates["cert_id"] = *req.CertID
-			}
-		}
-		if req.CertID != nil {
-			if *req.CertID < 0 {
-				updates["cert_id"] = 0
-			} else {
-				updates["cert_id"] = *req.CertID
-			}
+			updates["backend_protocol"] = normalizeBackendProtocolValue(*req.BackendProtocol)
 		}
 		if req.Domains != nil && len(*req.Domains) > 0 {
 			updates["domain"] = encodeList(*req.Domains)
@@ -360,6 +354,16 @@ func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 		return
 	}
 
+	if !db.DB.Migrator().HasColumn(&models.Site{}, "settings") {
+		siteType := ""
+		if site.Settings != nil {
+			siteType = strings.TrimSpace(fmt.Sprint(site.Settings["site_type"]))
+		}
+		if siteType != "" {
+			_ = services.UpsertSiteTypeMeta(site.ID, siteType)
+		}
+	}
+
 	services.BumpConfigVersion("site", []int64{site.ID})
 	_ = ensureDNSRecords(site)
 	resyncSiteCnameForSite(*site)
@@ -378,6 +382,16 @@ func (ctrl *SiteController) Create(c *gin.Context) {
 	if err := createSiteWithGroup(site, groupIDs); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 		return
+	}
+
+	if !db.DB.Migrator().HasColumn(&models.Site{}, "settings") {
+		siteType := ""
+		if site.Settings != nil {
+			siteType = strings.TrimSpace(fmt.Sprint(site.Settings["site_type"]))
+		}
+		if siteType != "" {
+			_ = services.UpsertSiteTypeMeta(site.ID, siteType)
+		}
 	}
 
 	services.BumpConfigVersion("site", []int64{site.ID})
@@ -570,7 +584,6 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		BalanceWay        *string                `json:"balance_way"`
 		BackendProtocol   *string                `json:"backend_protocol"`
 		Backends          *[]string              `json:"backends"`
-		CertID            *int64                 `json:"cert_id"`
 		CcDefaultRule     *int64                 `json:"cc_default_rule"`
 		BlackIP           *string                `json:"black_ip"`
 		WhiteIP           *string                `json:"white_ip"`
@@ -682,6 +695,9 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	} else if hasWhitelist {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromSettings)
 	}
+	if req.Settings != nil {
+		services.NormalizeSiteSettings(req.Settings)
+	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
@@ -704,7 +720,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 			updates["balance_way"] = *req.BalanceWay
 		}
 		if req.BackendProtocol != nil {
-			updates["backend_protocol"] = *req.BackendProtocol
+			updates["backend_protocol"] = normalizeBackendProtocolValue(*req.BackendProtocol)
 		}
 		if req.CcDefaultRule != nil {
 			updates["cc_default_rule"] = *req.CcDefaultRule
@@ -999,6 +1015,23 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 		return
 	}
 
+	defaultCertPEM := ""
+	defaultKeyPEM := ""
+	defaultKeyEncrypted := ""
+	hasDefaultCert := false
+	if systemCfg, err := services.LoadSystemConfig(); err == nil {
+		defaultCertPEM = strings.TrimSpace(systemCfg["https_cert"])
+		defaultKeyPEM = strings.TrimSpace(systemCfg["https_key"])
+		if defaultKeyPEM != "" {
+			if encryptedKey, err := services.Crypto.Encrypt(defaultKeyPEM); err == nil {
+				defaultKeyEncrypted = encryptedKey
+			} else {
+				defaultKeyEncrypted = defaultKeyPEM
+			}
+		}
+		hasDefaultCert = defaultCertPEM != "" && defaultKeyEncrypted != ""
+	}
+
 	type applyCertSkipItem struct {
 		SiteID int64  `json:"site_id"`
 		Domain string `json:"domain"`
@@ -1053,6 +1086,10 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			CreateAt:    time.Now(),
 			UpdateAt:    time.Now(),
 		}
+		if hasDefaultCert {
+			cert.Cert = defaultCertPEM
+			cert.Key = defaultKeyEncrypted
+		}
 
 		if err := db.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Select(
@@ -1076,19 +1113,32 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 				return err
 			}
 			now := time.Now()
-			if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("update_at", now).Error; err != nil {
-				return err
+			siteUpdates := map[string]interface{}{
+				"update_at": now,
+			}
+			settings := site.Settings
+			if settings == nil {
+				settings = map[string]interface{}{}
+			}
+			httpsCfg, ok := settings["https"].(map[string]interface{})
+			if !ok || httpsCfg == nil {
+				httpsCfg = map[string]interface{}{}
+				settings["https"] = httpsCfg
+			}
+			httpsCfg["enable"] = true
+			httpsCfg["certificate_id"] = cert.ID
+			if settingsRaw, err := json.Marshal(settings); err == nil {
+				if tx.Migrator().HasColumn(&models.Site{}, "settings") {
+					siteUpdates["settings"] = string(settingsRaw)
+				} else {
+					siteUpdates["SettingsRaw"] = string(settingsRaw)
+				}
 			}
 			if len(site.HttpsListen) == 0 && strings.TrimSpace(site.HttpsListenRaw) == "" {
-				if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).
-					Update("https_listen", encodeList([]string{"443"})).Error; err != nil {
-					return err
-				}
+				siteUpdates["https_listen"] = encodeList([]string{"443"})
 			}
-			if tx.Migrator().HasColumn(&models.Site{}, "cert_id") {
-				if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Update("cert_id", cert.ID).Error; err != nil {
-					return err
-				}
+			if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Updates(siteUpdates).Error; err != nil {
+				return err
 			}
 			return nil
 		}); err != nil {

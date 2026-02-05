@@ -3,7 +3,7 @@
     <!-- Group 1: Master Source IP -->
     <el-card shadow="never" class="mb-20">
       <template #header>主控获取源IP</template>
-      <el-form-item label="源IP请求头">
+      <el-form-item label="Master IP Header">
         <el-input v-model="form.master_client_ip_header" placeholder="如：X-Real-IP"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
@@ -15,23 +15,23 @@
         <el-radio-group v-model.number="form.record_repair_enable" @change="handleSave">
           <el-radio :label="0">关闭</el-radio>
           <el-radio :label="1">定时修复记录</el-radio>
-          <el-radio :label="2">定时修复并删除多余记录</el-radio>
+          <el-radio :label="2">Scheduled repair and purge</el-radio>
         </el-radio-group>
       </el-form-item>
       <el-form-item label="DNS记录保护">
-        <el-input v-model="form.dns_rs_protect" placeholder="输入主机名,即域名的前面部分,多个以逗号分隔"  @blur="handleBlurSave" />
+        <el-input v-model="form.dns_rs_protect" placeholder="输入主机名即域名的前面部分,多个以逗号分隔"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
 
     <!-- Group 3: Config Sync -->
     <el-card shadow="never" class="mb-20">
       <template #header>配置同步</template>
-      <el-form-item label="单次同步站点最大个数">
+      <el-form-item label="Max sites per sync">
         <el-input v-model.number="form.max_site_stream_sync_one_time"  @blur="handleBlurSave" />
       </el-form-item>
       <el-form-item label="同步范围">
         <el-radio-group v-model="form.sync_site_config_scope" @change="handleSave">
-          <el-radio label="region">按区域</el-radio>
+          <el-radio label="region">By region</el-radio>
           <el-radio label="group">按线路组</el-radio>
         </el-radio-group>
       </el-form-item>
@@ -40,7 +40,7 @@
     <!-- Group 4: Resource Limit -->
     <el-card shadow="never" class="mb-20">
       <template #header>资源限制</template>
-      <el-form-item label="资源排行显示的数量">
+      <el-form-item label="Resource ranking size">
         <el-input v-model.number="form.res_rank_size"  @blur="handleBlurSave" />
       </el-form-item>
     </el-card>
@@ -49,15 +49,15 @@
     <el-card shadow="never" class="mb-20">
       <template #header>HTTP 代理设置</template>
       <el-form-item label="HTTP 代理">
-        <el-input v-model="form.http_proxy" placeholder="格式为 http://用户名:密码@代理ip:代理端口"  @blur="handleBlurSave" />
-        <div class="form-helper">当设置时，用户添加的 DNS 接口使用代理连接，系统提供的免费代理为:http://cdn:6d0d3e31@proxy.lotcdn.com:8888</div>
+        <el-input v-model="form.http_proxy" placeholder="格式：http://用户:密码@代理ip:代理端口"  @blur="handleBlurSave" />
+        <div class="form-helper">当设置时，用户添加的 DNS 接口使用代理连接，系统提供的免费代理：http://cdn:6d0d3e31@proxy.lotcdn.com:8888</div>
       </el-form-item>
     </el-card>
     
     <!-- Group 6: API Key -->
     <el-card shadow="never" class="mb-20">
       <template #header>API密钥</template>
-        <el-form-item label="密钥状态">
+        <el-form-item label="API Key Status">
            <el-switch v-model="form.api_key_status" active-value="1" inactive-value="0" @change="handleApiKeyStatusChange" />
         </el-form-item>
         
@@ -70,7 +70,7 @@
              <span>{{ apiKeyInfo.api_secret }}</span>
              <el-button link type="primary" class="ml-10" @click="copy(apiKeyInfo.api_secret)"><el-icon><CopyDocument /></el-icon></el-button>
            </el-form-item>
-           <el-form-item label="IP白名单">
+           <el-form-item label="API IP Allowlist">
              <el-input v-model="apiKeyInfo.api_ip" placeholder="多个IP以|分隔 (例如: 1.2.3.4|5.6.7.8)"  @blur="handleBlurSave" />
              <div class="form-helper">只允许指定IP访问API，留空表示不限制</div>
            </el-form-item>
@@ -89,10 +89,9 @@
           <el-radio :label="1.1">1.1</el-radio>
         </el-radio-group>
         <div class="form-helper mt-10 text-gray-500 line-height-1.5">
-          由于TCP/IP包头和TCP重传等原因，实际节点流量消耗要比从Nginx日志文件里统计的要大，所以提供一个系数选择。<br>
+          由于TCP/IP包头和TCP重传等原因，实际节点流量消耗要比从Nginx日志文件里统计的要大，所以提供一个系数可选择：<br>
           当tcp系数为1.0时，只统计应用层流量，不统计TCP头的消耗，此时统计到的流量要比节点实际的流量消耗要小；<br>
-          当tcp系数为1.1时，在应用层流量的基础上，再增加10%的流量消耗得出最终计费流量。这样最接近节点实际的流量消耗。
-        </div>
+          当tcp系数为1.1时，在应用层流量的基础上，再增加10%的流量消耗得出最终计费流量；这样最接近节点实际的流量消耗。        </div>
       </el-form-item>
     </el-card>
 
@@ -241,7 +240,7 @@ watch(() => props.configItems, (items) => {
 
 const fetchApiKey = () => {
     return request.get('/api_key').then(res => {
-        if(res.code === 0 && res.data) {
+        if((res.code === 0 || res.code === 200) && res.data) {
             apiKeyInfo.value = res.data
         }
     })
@@ -255,15 +254,15 @@ const handleApiKeyStatusChange = async (val) => {
 }
 
 const resetSecret = () => {
-    ElMessageBox.confirm('确定要重置密钥吗？旧的密钥将即刻失效。', '警告', {
+    ElMessageBox.confirm('Reset API secret? Old secret becomes invalid immediately.', 'Warning', {
         confirmButtonText: '确定重置',
         cancelButtonText: '取消',
         type: 'warning'
     }).then(() => {
         request.post('/api_key/reset').then(res => {
-             if(res.code === 0 && res.data) {
+             if((res.code === 0 || res.code === 200) && res.data) {
                  apiKeyInfo.value.api_secret = res.data.api_secret
-                 ElMessage.success('密钥已重置')
+                 ElMessage.success('Secret reset')
              }
         })
     })
@@ -272,7 +271,7 @@ const resetSecret = () => {
 const copy = (text) => {
     if (!text) return
     navigator.clipboard.writeText(text).then(() => {
-        ElMessage.success('已复制')
+        ElMessage.success('Copied')
     }).catch(() => {
         ElMessage.error('复制失败')
     })
@@ -326,3 +325,4 @@ const save = async () => {
     margin-top: 5px;
 }
 </style>
+

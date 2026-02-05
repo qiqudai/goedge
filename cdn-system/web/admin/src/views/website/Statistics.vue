@@ -51,9 +51,9 @@
            <div style="margin-bottom: 20px;">
                 <el-radio-group v-model="timeRange" size="small" @change="fetchRankingList" style="margin-right: 10px;">
                     <el-radio-button value="10min">10分钟实时</el-radio-button>
-                    <el-radio-button value="30min">近30分钟</el-radio-button>
-                    <el-radio-button value="1h">近1小时</el-radio-button>
-                    <el-radio-button value="custom">自定义</el-radio-button>
+                    <el-radio-button value="30min">30分钟</el-radio-button>
+                    <el-radio-button value="1h">1小时</el-radio-button>
+                    <el-radio-button value="custom">Custom</el-radio-button>
                 </el-radio-group>
                 <el-input v-model="rankingKeyword" :placeholder="searchPlaceholder" style="width: 200px;" class="filter-item" @keyup.enter="fetchRankingList" />
                 <el-button class="filter-item" type="primary" :icon="Search" @click="fetchRankingList" style="margin-left: 10px;">刷新</el-button>
@@ -149,7 +149,7 @@ const searchPlaceholder = computed(() => {
         'province': '输入省份',
         'referer': '输入来源'
     }
-    return map[rankingType.value] || '输入关键词'
+    return map[rankingType.value] || 'Enter keyword'
 })
 
 const isLatency = computed(() => rankingType.value === 'latency')
@@ -172,7 +172,7 @@ const fetchRankingList = async () => {
         keyword: rankingKeyword.value
       }
     })
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
         rankingList.value = res.data.list
     }
   } catch (error) {
@@ -199,7 +199,7 @@ const initChart = (dom, title, xAxisData, seriesData, unit) => {
 const fetchBasicStats = async () => {
     try {
         const res = await request.get('/stats/basic')
-        if (res.code === 0) {
+        if (res.code === 0 || res.code === 200) {
             const data = res.data
             await nextTick()
             initChart(bandwidthChartRef.value, '带宽', data.x_axis, [{ name: '带宽', type: 'line', data: data.bandwidth, areaStyle: {} }], 'Mbps')
@@ -212,10 +212,10 @@ const fetchBasicStats = async () => {
 const fetchQualityStats = async () => {
     try {
         const res = await request.get('/stats/quality')
-        if (res.code === 0) {
+        if (res.code === 0 || res.code === 200) {
             const data = res.data
              await nextTick()
-            initChart(hitRateChartRef.value, '请求命中率', data.x_axis, [{ name: '命中率', type: 'line', data: data.hit_rate }], '%')
+            initChart(hitRateChartRef.value, 'Hit Rate', data.x_axis, [{ name: 'Hit Rate', type: 'line', data: data.hit_rate }], '%')
             initChart(statusChartRef.value, '状态码', data.x_axis, [
                 { name: '4xx', type: 'line', data: data.status_4xx },
                 { name: '5xx', type: 'line', data: data.status_5xx }
@@ -227,7 +227,7 @@ const fetchQualityStats = async () => {
 const fetchOriginStats = async () => {
      try {
         const res = await request.get('/stats/origin')
-        if (res.code === 0) {
+        if (res.code === 0 || res.code === 200) {
             const data = res.data
              await nextTick()
             initChart(originBandwidthChartRef.value, '回源带宽', data.x_axis, [{ name: 'Origin Bandwidth', type: 'line', data: data.origin_bandwidth }], 'Mbps')
@@ -300,3 +300,4 @@ onMounted(() => {
   border-color: rgba(25, 135, 84, 0.3);
 }
 </style>
+

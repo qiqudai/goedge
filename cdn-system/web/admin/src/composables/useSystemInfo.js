@@ -54,7 +54,7 @@ const loadSystemInfo = async (force = false) => {
   loadingPromise = axios
     .get(`${API_BASE}/api/v1/system_info`)
     .then((res) => {
-      if (res?.data?.code === 0) {
+      if (res?.data?.code === 0 || res?.data?.code === 200) {
         applySystemInfo(res.data.data || {})
       }
     })

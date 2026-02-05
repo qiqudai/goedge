@@ -50,20 +50,20 @@
           </el-radio-group>
         </div>
         <div class="toolbar-row">
-          <span class="toolbar-label">时间</span>
+          <span class="toolbar-label">Time</span>
           <el-radio-group v-model="metrics.window">
-            <el-radio-button value="1h">1小时</el-radio-button>
-            <el-radio-button value="6h">6小时</el-radio-button>
-            <el-radio-button value="12h">12小时</el-radio-button>
-            <el-radio-button value="custom">自定义</el-radio-button>
+            <el-radio-button value="1h">1h</el-radio-button>
+            <el-radio-button value="6h">6h</el-radio-button>
+            <el-radio-button value="12h">12h</el-radio-button>
+            <el-radio-button value="custom">Custom</el-radio-button>
           </el-radio-group>
           <el-date-picker
             v-if="metrics.window === 'custom'"
             v-model="metrics.timeRange"
             type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
+            range-separator="to"
+            start-placeholder="Start time"
+            end-placeholder="End time"
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             class="time-range"
@@ -74,8 +74,8 @@
       </div>
 
       <AppTable :data="metrics.list" :loading="metricsLoading" border persist-key="node-metrics">
-        <el-table-column prop="time" label="时间" min-width="160" />
-        <el-table-column prop="value" label="数值" min-width="120" />
+        <el-table-column prop="time" label="Time" min-width="160" />
+        <el-table-column prop="value" label="Value" min-width="120" />
       </AppTable>
     </div>
 
@@ -87,20 +87,20 @@
           <el-checkbox v-model="traffic.in">入站流量</el-checkbox>
         </div>
         <div class="toolbar-row">
-          <span class="toolbar-label">时间</span>
+          <span class="toolbar-label">Time</span>
           <el-radio-group v-model="traffic.window">
-            <el-radio-button value="1d">1天</el-radio-button>
-            <el-radio-button value="7d">7天</el-radio-button>
-            <el-radio-button value="30d">30天</el-radio-button>
-            <el-radio-button value="custom">自定义</el-radio-button>
+            <el-radio-button value="1d">1d</el-radio-button>
+            <el-radio-button value="7d">7d</el-radio-button>
+            <el-radio-button value="30d">30d</el-radio-button>
+            <el-radio-button value="custom">Custom</el-radio-button>
           </el-radio-group>
           <el-date-picker
             v-if="traffic.window === 'custom'"
             v-model="traffic.timeRange"
             type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
+            range-separator="to"
+            start-placeholder="Start time"
+            end-placeholder="End time"
             value-format="YYYY-MM-DD HH:mm:ss"
             clearable
             class="time-range"
@@ -172,7 +172,7 @@ onMounted(() => {
 
 const fetchNodes = () => {
   request.get('/nodes', { params: { pageSize: 1000 } }).then(res => {
-    if (res.code === 0 && res.data && res.data.list) {
+    if ((res.code === 0 || res.code === 200) && res.data && res.data.list) {
       nodeOptions.value = res.data.list.map(node => ({
         label: node.name,
         value: node.id
@@ -245,7 +245,7 @@ const refreshTraffic = () => {
       }
   }).then(res => {
       myChart.hideLoading()
-      if (res.code === 0 && res.data) {
+      if ((res.code === 0 || res.code === 200) && res.data) {
           updateChartOption(res.data)
       }
   }).catch(() => {
@@ -410,3 +410,4 @@ const handleTrafficTimeRangeChange = () => {
   align-self: flex-start;
 }
 </style>
+

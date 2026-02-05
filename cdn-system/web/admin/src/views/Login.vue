@@ -106,8 +106,14 @@ const handleLogin = async () => {
     captcha: form.captcha,
     captcha_type: captchaType.value
   }).then(res => {
-    localStorage.setItem('admin_token', res.token)
-    localStorage.setItem('role', res.role || 'user')
+    const payload = res?.data || res || {}
+    if (!payload.token) {
+      ElMessage.error(res?.message || '登录失败')
+      loading.value = false
+      return
+    }
+    localStorage.setItem('admin_token', payload.token)
+    localStorage.setItem('role', payload.role || 'user')
     localStorage.setItem('username', form.username)
     ElMessage.success('登录成功')
     router.push('/dashboard')

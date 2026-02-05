@@ -7,6 +7,7 @@ import (
 	"cdn-api/services/dns"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -124,6 +125,84 @@ func (ctr *DnsController) CreateProvider(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Success")})
 }
 
+// UpdateProvider
+func (ctr *DnsController) UpdateProvider(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid ID")})
+		return
+	}
+
+	var req struct {
+		UserID      int64  `json:"user_id"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Credentials string `json:"credentials"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Request")})
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Type) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Name and type are required")})
+		return
+	}
+
+	if req.Type == "dnspod_intl" {
+		var auth struct {
+			SecretID  string `json:"secret_id"`
+			SecretKey string `json:"secret_key"`
+		}
+		if err := json.Unmarshal([]byte(req.Credentials), &auth); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Credentials: invalid auth format")})
+			return
+		}
+		if strings.TrimSpace(auth.SecretID) == "" || strings.TrimSpace(auth.SecretKey) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Credentials: secret_id/secret_key required")})
+			return
+		}
+	}
+
+	// Validate Credentials with Factory
+	if _, err := dns.GetProvider(req.Type, req.Credentials); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Credentials")})
+		return
+	}
+
+	if isUserRequest(c) {
+		uid := parseUserID(mustGet(c, "userID"))
+		if uid == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
+		var count int64
+		if err := db.DB.Model(&models.DNSAPI{}).Where("id = ? AND uid = ?", id, uid).Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update failed")})
+			return
+		}
+		if count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
+			return
+		}
+	}
+
+	updates := map[string]interface{}{
+		"name": req.Name,
+		"type": req.Type,
+		"auth": req.Credentials,
+	}
+	if err := db.DB.Model(&models.DNSAPI{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update failed")})
+		return
+	}
+
+	if errs := services.ResyncDNSForProvider(id); len(errs) > 0 {
+		log.Printf("[DNS] provider resync failed id=%d err=%s", id, strings.Join(errs, "; "))
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Success")})
+}
+
 // DeleteProvider
 func (ctr *DnsController) DeleteProvider(c *gin.Context) {
 	idStr := c.Param("id")
@@ -186,7 +265,8 @@ func (ctr *DnsController) TestDNS(c *gin.Context) {
 func (ctr *DnsController) FixRecords(c *gin.Context) {
 	errs := services.RepairDNSRecords()
 	if len(errs) > 0 {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": strings.Join(errs, "; ")})
+		translated := translateDNSErrorList(errs)
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": strings.Join(translated, "; "), "error": strings.Join(translated, "; "), "detail": strings.Join(errs, "; ")})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Success")})
@@ -196,8 +276,32 @@ func (ctr *DnsController) FixRecords(c *gin.Context) {
 func (ctr *DnsController) ClearInvalid(c *gin.Context) {
 	errs := services.CleanupInvalidDNSRecords()
 	if len(errs) > 0 {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": strings.Join(errs, "; ")})
+		translated := translateDNSErrorList(errs)
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": strings.Join(translated, "; "), "error": strings.Join(translated, "; "), "detail": strings.Join(errs, "; ")})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Success")})
+}
+
+func translateDNSErrorList(errs []string) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(errs))
+	seen := map[string]struct{}{}
+	for _, item := range errs {
+		msg, _ := resolveDNSSyncErrorMessageFromString(item)
+		if msg == "" {
+			continue
+		}
+		if _, ok := seen[msg]; ok {
+			continue
+		}
+		seen[msg] = struct{}{}
+		out = append(out, msg)
+	}
+	if len(out) == 0 {
+		return errs
+	}
+	return out
 }

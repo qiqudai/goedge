@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <el-tabs type="border-card">
       <el-tab-pane label="核心设置">

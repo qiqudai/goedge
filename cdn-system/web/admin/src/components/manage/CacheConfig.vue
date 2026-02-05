@@ -42,9 +42,9 @@
 
 <script setup>
 import { ref, watch, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { cacheTypeLabelMap } from '@/constants/origin'
-import { getCachePreset, normalizeCacheRule } from '@/utils/siteHelpers'
+import { getCachePreset, normalizeCacheRule, dedupeCacheRules } from '@/utils/siteHelpers'
 
 import { useSiteSettings } from '@/composables/useSiteSettings'
 
@@ -157,8 +157,12 @@ const applyCachePreset = (val) => {
   if (preset) {
     const rule = normalizeCacheRule(preset)
     if (rule) {
-      cacheSettings.value.rules.push(rule)
-      // Since manual save, we must trigger save here
+      const nextRules = [...cacheSettings.value.rules, rule]
+      const { rules: mergedRules, removed } = dedupeCacheRules(nextRules)
+      cacheSettings.value.rules = mergedRules
+      if (removed > 0) {
+        ElMessage.warning('检测到重复缓存规则，已自动合并')
+      }
       handleSave()
     }
   }

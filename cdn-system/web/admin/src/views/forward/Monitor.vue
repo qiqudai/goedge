@@ -155,7 +155,7 @@ const loadTraffic = async () => {
     const res = await request.get('/forward/traffic', {
       params: { range: range.value, keyword: query.keyword }
     })
-    if (res.code === 0) {
+    if (res.code === 0 || res.code === 200) {
       await nextTick()
       updateCharts(res.data || {})
     }
@@ -228,3 +228,4 @@ onUnmounted(() => {
   color: var(--muted-text);
 }
 </style>
+

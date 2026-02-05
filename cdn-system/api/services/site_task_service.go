@@ -122,18 +122,32 @@ func processSiteCreateTask(task *models.Task) {
 		if len(omitColumns) > 0 {
 			dbTx = dbTx.Omit(omitColumns...)
 		}
+		// Always omit cert_id on create to keep compatibility with schemas lacking this column.
+		dbTx = dbTx.Omit("CertID", "cert_id")
 		if site.RegionID == 0 {
-			dbTx = dbTx.Omit("region_id")
+			dbTx = dbTx.Omit("RegionID")
 		}
 		if site.NodeGroupID == 0 {
-			dbTx = dbTx.Omit("node_group_id")
+			dbTx = dbTx.Omit("NodeGroupID")
 		}
 		if !site.EnableBackupGroup || site.BackupNodeGroupID == 0 {
-			dbTx = dbTx.Omit("backup_node_group")
+			dbTx = dbTx.Omit("BackupNodeGroupID")
+		}
+		selectCols := selectSiteCreateColumns(tx, site)
+		if len(selectCols) > 0 {
+			dbTx = dbTx.Select(selectCols)
 		}
 		if err := dbTx.Create(site).Error; err != nil {
+			if isUnknownColumnError(err, "cert_id") {
+				if retryErr := dbTx.Omit("CertID", "cert_id").Create(site).Error; retryErr == nil {
+					goto created
+				} else {
+					return retryErr
+				}
+			}
 			return err
 		}
+	created:
 		if payload.GroupID != 0 {
 			rel := models.SiteGroupRelation{SiteID: site.ID, GroupID: payload.GroupID}
 			if err := tx.Create(&rel).Error; err != nil {
@@ -206,13 +220,76 @@ func siteMissingColumnsForTask(tx *gorm.DB) []string {
 	migrator := tx.Migrator()
 	missing := make([]string, 0, 3)
 	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
-		missing = append(missing, "dns_provider_id")
+		missing = append(missing, "DNSProviderID")
 	}
 	if !migrator.HasColumn(&models.Site{}, "settings") {
-		missing = append(missing, "settings")
+		missing = append(missing, "SettingsRaw")
 	}
 	if !migrator.HasColumn(&models.Site{}, "cname_hostname2") {
-		missing = append(missing, "cname_hostname2")
+		missing = append(missing, "CnameHostname2")
+	}
+	if !migrator.HasColumn(&models.Site{}, "cert_id") {
+		missing = append(missing, "CertID")
 	}
 	return missing
+}
+
+func isUnknownColumnError(err error, column string) bool {
+	if err == nil || column == "" {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unknown column") && strings.Contains(msg, strings.ToLower(column))
+}
+
+func selectSiteCreateColumns(tx *gorm.DB, site *models.Site) []string {
+	if tx == nil || site == nil {
+		return nil
+	}
+	existing := map[string]struct{}{}
+	if types, err := tx.Migrator().ColumnTypes(&models.Site{}); err == nil {
+		for _, ct := range types {
+			name := strings.TrimSpace(ct.Name())
+			if name != "" {
+				existing[name] = struct{}{}
+			}
+		}
+	}
+
+	stmt := &gorm.Statement{DB: tx}
+	if err := stmt.Parse(site); err != nil || stmt.Schema == nil {
+		return nil
+	}
+	cols := make([]string, 0, len(stmt.Schema.Fields))
+	for _, field := range stmt.Schema.Fields {
+		if !field.Creatable || field.DBName == "" {
+			continue
+		}
+		if len(existing) > 0 {
+			if _, ok := existing[field.DBName]; !ok {
+				continue
+			}
+		} else if !tx.Migrator().HasColumn(&models.Site{}, field.DBName) {
+			continue
+		}
+
+		switch field.DBName {
+		case "cert_id":
+			continue
+		case "region_id":
+			if site.RegionID == 0 {
+				continue
+			}
+		case "node_group_id":
+			if site.NodeGroupID == 0 {
+				continue
+			}
+		case "backup_node_group":
+			if !site.EnableBackupGroup || site.BackupNodeGroupID == 0 {
+				continue
+			}
+		}
+		cols = append(cols, field.DBName)
+	}
+	return cols
 }

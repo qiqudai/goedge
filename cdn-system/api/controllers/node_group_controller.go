@@ -562,11 +562,13 @@ func (ctr *NodeGroupController) AssignResolutionLines(c *gin.Context) {
 
 	services.BumpConfigVersion("line", []int64{groupID})
 	if err := dns.SyncLineRecords(groupID, lineID, lineName, "add", assignedIPIDs); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": T("dns sync failed"), "error": T("dns sync failed")})
+		msg, detail := resolveDNSSyncErrorMessage(err)
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": msg, "error": msg, "detail": detail})
 		return
 	}
 	if err := services.SyncPackageCnameForLineChange(groupID, lineID, lineName, assignedIPIDs, "add"); err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": T("dns sync failed"), "error": T("dns sync failed")})
+		msg, detail := resolveDNSSyncErrorMessage(err)
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": msg, "error": msg, "detail": detail})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0})
@@ -743,11 +745,13 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 					continue
 				}
 				if err := dns.SyncLineRecords(gid, key.ID, key.Name, dnsAction, ids); err != nil {
-					c.JSON(http.StatusOK, gin.H{"code": 1, "msg": T("dns sync failed"), "error": T("dns sync failed")})
+					msg, detail := resolveDNSSyncErrorMessage(err)
+					c.JSON(http.StatusOK, gin.H{"code": 1, "msg": msg, "error": msg, "detail": detail})
 					return
 				}
 				if err := services.SyncPackageCnameForLineChange(gid, key.ID, key.Name, ids, dnsAction); err != nil {
-					c.JSON(http.StatusOK, gin.H{"code": 1, "msg": T("dns sync failed"), "error": T("dns sync failed")})
+					msg, detail := resolveDNSSyncErrorMessage(err)
+					c.JSON(http.StatusOK, gin.H{"code": 1, "msg": msg, "error": msg, "detail": detail})
 					return
 				}
 			}

@@ -588,6 +588,9 @@ type CertDetail struct {
 
 	UserName     string `json:"user_name,omitempty"`
 	IssueTaskRet string `json:"issue_task_ret,omitempty"`
+	IssueTaskState string     `json:"issue_task_state,omitempty"`
+	IssueTaskRetryAt *time.Time `json:"issue_task_retry_at,omitempty"`
+	IssueTaskErrTimes int       `json:"issue_task_err_times,omitempty"`
 }
 
 type certListResult struct {
@@ -669,15 +672,29 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 		fmt.Println("DEBUG: No userIDs collected from certs.")
 	}
 
-	tasksMap := make(map[int64]string)
+	type taskInfo struct {
+		Ret     string
+		State   string
+		RetryAt *time.Time
+		ErrTimes int
+	}
+	tasksMap := make(map[int64]taskInfo)
 	if len(taskIDs) > 0 {
 		var tasks []struct {
-			ID  int64  `gorm:"column:id"`
-			Ret string `gorm:"column:ret"`
+			ID       int64      `gorm:"column:id"`
+			Ret      string     `gorm:"column:ret"`
+			State    string     `gorm:"column:state"`
+			RetryAt  *time.Time `gorm:"column:retry_at"`
+			ErrTimes int        `gorm:"column:err_times"`
 		}
-		if err := db.DB.Model(&models.Task{}).Select("id, ret").Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
+		if err := db.DB.Model(&models.Task{}).Select("id, ret, state, retry_at, err_times").Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
 			for _, t := range tasks {
-				tasksMap[t.ID] = t.Ret
+				tasksMap[t.ID] = taskInfo{
+					Ret:      t.Ret,
+					State:    t.State,
+					RetryAt:  t.RetryAt,
+					ErrTimes: t.ErrTimes,
+				}
 			}
 		}
 	}
@@ -721,8 +738,11 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 		if name, ok := usersMap[int64(cert.UserID)]; ok {
 			detail.UserName = name
 		}
-		if ret, ok := tasksMap[cert.IssueTaskID]; ok {
-			detail.IssueTaskRet = ret
+		if info, ok := tasksMap[cert.IssueTaskID]; ok {
+			detail.IssueTaskRet = info.Ret
+			detail.IssueTaskState = info.State
+			detail.IssueTaskRetryAt = info.RetryAt
+			detail.IssueTaskErrTimes = info.ErrTimes
 		}
 		details = append(details, detail)
 	}

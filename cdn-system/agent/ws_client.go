@@ -117,11 +117,15 @@ func setWSConn(conn *websocket.Conn) {
 }
 
 func sendAgentHello(conn *websocket.Conn) error {
+	version := strings.TrimSpace(Version)
+	if version == "" {
+		version = "unknown"
+	}
 	msg := map[string]interface{}{
 		"kind":          "agent_hello",
 		"node_id":       NodeID, // Hostname
 		"token":         AuthToken,
-		"agent_version": "1.0.0",
+		"agent_version": version,
 		"capabilities": []string{
 			i18n.T("agent.capability.sync_package"),
 			i18n.T("agent.capability.acl_publish"),
@@ -265,7 +269,10 @@ func handleTaskDispatch(raw []byte) {
 
 	// Execute
 	// We call the existing processTask function in tasks.go
-	ret, err := processTask(runID, taskType, payload)
+	progressReporter := func(percent int, message string) error {
+		return sendTaskProgress(msg.MsgID, taskID, taskType, percent, message)
+	}
+	ret, err := processTask(runID, taskType, payload, progressReporter)
 
 	status := "success"
 	errMsg := ""
@@ -311,6 +318,30 @@ func sendTaskAck(msgID string, taskID int64, taskType, status, ret, errorMsg str
 	if err := sendWSJSON(ack); err != nil {
 		log.Printf("[WS] Failed to send ACK: %v", err)
 	}
+}
+
+func sendTaskProgress(msgID string, taskID int64, taskType string, percent int, message string) error {
+	payload := map[string]interface{}{
+		"progress": percent,
+	}
+	if strings.TrimSpace(message) != "" {
+		payload["message"] = message
+	}
+	raw, _ := json.Marshal(payload)
+	return sendTaskAckProgress(msgID, taskID, taskType, string(raw))
+}
+
+func sendTaskAckProgress(msgID string, taskID int64, taskType string, ret string) error {
+	ack := map[string]interface{}{
+		"kind":      "task_ack",
+		"msg_id":    msgID,
+		"node_id":   0,
+		"task_id":   taskID,
+		"task_type": taskType,
+		"status":    "progress",
+		"ret":       ret,
+	}
+	return sendWSJSON(ack)
 }
 
 type L2NodesResponseMsg struct {

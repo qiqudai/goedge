@@ -409,12 +409,17 @@ const startAutoRefresh = () => {
 const handleRegionChange = () => {
   if (filteredGroups.value.length === 0) {
     selectedGroupId.value = 0
+    resetSelectionState()
+    allAvailable.value = []
+    allAssigned.value = []
     return
   }
   if (!filteredGroups.value.find(item => item.id === selectedGroupId.value)) {
     selectedGroupId.value = filteredGroups.value[0].id
   }
   if (selectedGroupId.value) {
+    resetSelectionState()
+    loadResolution()
     router.push({ name: 'NodeGroupResolution', params: { id: selectedGroupId.value } })
   }
 }
@@ -423,6 +428,8 @@ const handleGroupChange = () => {
   if (!selectedGroupId.value) {
     return
   }
+  resetSelectionState()
+  loadResolution()
   router.push({ name: 'NodeGroupResolution', params: { id: selectedGroupId.value } })
 }
 
@@ -442,6 +449,14 @@ const handleRightSelection = (rows) => {
 
 const handleLeftSearch = () => {
   leftKeyword.value = leftSearchValue.value
+}
+
+const resetSelectionState = () => {
+  leftSelected.value = []
+  rightSelected.value = []
+  leftSearchValue.value = ''
+  leftKeyword.value = ''
+  rightKeyword.value = ''
 }
 
 const handleAssign = (isBackup = false) => {
@@ -570,6 +585,7 @@ watch(
     const parsed = Number(val || 0)
     if (parsed && parsed !== selectedGroupId.value) {
       selectedGroupId.value = parsed
+      resetSelectionState()
       loadResolution()
     }
   }

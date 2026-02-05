@@ -103,12 +103,15 @@
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
           <el-tag v-if="!row.enable" type="danger" size="small">禁用</el-tag>
-          <el-tag v-else-if="row.state === 'dns_pending'" type="warning" size="small">DNS验证中</el-tag>
-          <el-tag v-else-if="row.state === 'waiting'" type="info" size="small">待签发</el-tag>
-          <el-tag v-else-if="row.state === 'issuing'" type="warning" size="small">签发中</el-tag>
-          <el-tag v-else-if="row.state === 'ready' || row.state === 'success' || !row.state" type="success" size="small">已签发</el-tag>
-          <el-tag v-else-if="row.state === 'fail'" type="danger" size="small">失败</el-tag>
+          <el-tag v-else-if="displayState(row) === 'dns_pending'" type="warning" size="small">DNS验证中</el-tag>
+          <el-tag v-else-if="displayState(row) === 'waiting'" type="info" size="small">待签发</el-tag>
+          <el-tag v-else-if="displayState(row) === 'issuing'" type="warning" size="small">签发中</el-tag>
+          <el-tag v-else-if="displayState(row) === 'ready' || displayState(row) === 'success' || !displayState(row)" type="success" size="small">已签发</el-tag>
+          <el-tag v-else-if="displayState(row) === 'fail'" type="danger" size="small">失败</el-tag>
           <el-tag v-else type="info" size="small">正常</el-tag>
+          <div v-if="displayState(row) === 'fail' && row.issue_task_retry_at" class="retry-text">
+            下次重试: {{ formatTime(row.issue_task_retry_at) }}
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="失败原因" min-width="150" show-overflow-tooltip>
@@ -286,6 +289,19 @@ const formatTime = (t) => {
   // Assuming backend returns RFC3339 string. 
   // If strict +08 is needed, might need date library, but simple replacement is standard in this project.
   return t.replace('T', ' ').substring(0, 19)
+}
+
+const displayState = (row) => {
+  if (!row) return ''
+  const state = row.state || ''
+  const taskState = row.issue_task_state || ''
+  if ((taskState === 'fail' || taskState === 'retrying') && state !== 'ready' && state !== 'success') {
+    return 'fail'
+  }
+  if (state === 'issuing' && Number(row.issue_task_err_times) > 0) {
+    return 'fail'
+  }
+  return state
 }
 
 const showError = (err) => {
@@ -485,6 +501,7 @@ onMounted(() => {
 }
 .error-text { color: #f56c6c; cursor: pointer; text-decoration: underline; }
 .error-text:hover { color: #f78989; }
+.retry-text { font-size: 11px; color: #909399; margin-top: 4px; }
 :deep(.error-dialog-pre .el-message-box__message) { white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
 .default-empty {
   color: #909399;

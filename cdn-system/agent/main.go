@@ -1,15 +1,18 @@
-package main
+﻿package main
 
 import (
 	"cdn-common/i18n"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+var Version = "1.0.4"
 
 func resolveWorkDir(configPath string) {
 	baseDir := ""
@@ -42,7 +45,13 @@ func main() {
 	tokenFlag := flag.String("token", "", "Node Auth Token")
 	nodeIDFlag := flag.String("node-id", "", "Node ID (string, usually numeric node id)")
 	debugFlag := flag.Bool("debug", false, "Enable debug logging")
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(Version)
+		return
+	}
 
 	if err := i18n.Load(""); err != nil {
 		log.Printf("i18n load failed: %v", err)
@@ -137,3 +146,7 @@ func main() {
 	// 3. Keep Alive
 	select {}
 }
+
+
+
+

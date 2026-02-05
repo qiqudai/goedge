@@ -117,7 +117,7 @@ const siteSettings = reactive({
   },
   advanced: {
     uploadLimitMode: 'none',
-    uploadLimitValue: 100,
+    uploadLimitValue: 102400,
     gzip: false,
     websocket: false,
     searchEngineOrigin: false,
@@ -336,7 +336,9 @@ export function useSiteSettings() {
     const hasHttpsListen = Array.isArray(data.https_listen) && data.https_listen.length > 0
     siteSettings.https.enable = typeof data.https === 'boolean' ? data.https : hasHttpsListen
     siteSettings.https.listenPorts = (data.https_listen || []).join(' ')
-    siteSettings.https.certId = data.cert_id || null
+    const certIdFromSettings = data.settings?.https?.certificate_id
+    const resolvedCertId = data.cert_id || parseInt(certIdFromSettings || 0, 10) || null
+    siteSettings.https.certId = resolvedCertId
     
     // 如果 settings 中有明确配置，则覆盖
     if (data.settings?.https) {
@@ -378,9 +380,16 @@ export function useSiteSettings() {
       siteSettings.advanced.websocket = !!(s.websocket ?? sAdv.websocket)
       siteSettings.advanced.searchEngineOrigin = !!(s.search_engine_origin ?? sAdv.search_engine_origin)
       siteSettings.advanced.searchEngineOriginIp = s.search_engine_origin_ip || sAdv.search_engine_origin_ip || ''
-      const uploadLimit = parseInt(s.upload_limit || sAdv.body_limit || 0)
-      siteSettings.advanced.uploadLimitMode = uploadLimit > 0 ? 'custom' : 'none'
-      siteSettings.advanced.uploadLimitValue = uploadLimit || 100
+      const hasAdvBodyLimit = Object.prototype.hasOwnProperty.call(sAdv, 'body_limit')
+      const advLimitRaw = hasAdvBodyLimit ? Number(sAdv.body_limit || 0) : 0
+      const advLimitUnit = String(sAdv.body_limit_unit || '').toLowerCase()
+      const advLimitKB = hasAdvBodyLimit
+        ? (advLimitUnit === 'kb' ? advLimitRaw : advLimitRaw * 1024)
+        : 0
+      const legacyLimitMB = hasAdvBodyLimit ? 0 : Number(s.upload_limit || 0)
+      const uploadLimitKB = advLimitKB > 0 ? advLimitKB : legacyLimitMB * 1024
+      siteSettings.advanced.uploadLimitMode = uploadLimitKB > 0 ? 'custom' : 'none'
+      siteSettings.advanced.uploadLimitValue = uploadLimitKB || 102400
       siteSettings.advanced.logRequestHeader = !!(s.log_request_header ?? sAdv.log_request_header)
       siteSettings.advanced.logResponseHeader = !!(s.log_response_header ?? sAdv.log_response_header)
       siteSettings.advanced.logRequestBody = !!(s.log_request_body ?? sAdv.log_request_body)

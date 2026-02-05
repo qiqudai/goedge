@@ -12,9 +12,9 @@
             v-if="advancedSettings.uploadLimitMode === 'custom'" 
             v-model="advancedSettings.uploadLimitValue" 
             style="width: 150px" 
-            placeholder="100"
+            placeholder="102400"
            @blur="handleBlurSave">
-            <template #append>MB</template>
+            <template #append>KB</template>
           </el-input>
         </div>
       </el-form-item>
@@ -161,9 +161,11 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
+import { dedupeUrlRedirects } from '@/utils/siteHelpers'
 
 const { saveSettings } = useSiteSettings()
 
@@ -193,7 +195,7 @@ const emit = defineEmits([
 
 const localSettings = ref({
   uploadLimitMode: props.modelValue?.uploadLimitMode || 'none',
-  uploadLimitValue: props.modelValue?.uploadLimitValue || 100,
+  uploadLimitValue: props.modelValue?.uploadLimitValue || 102400,
   gzip: props.modelValue?.gzip || false,
   websocket: props.modelValue?.websocket || false,
   searchEngineOrigin: props.modelValue?.searchEngineOrigin || false,
@@ -228,7 +230,7 @@ watch(() => props.modelValue, (newVal) => {
   if (newVal && !isInternalUpdate) {
     localSettings.value = {
       uploadLimitMode: newVal.uploadLimitMode || 'none',
-      uploadLimitValue: newVal.uploadLimitValue || 100,
+      uploadLimitValue: newVal.uploadLimitValue || 102400,
       gzip: newVal.gzip || false,
       websocket: newVal.websocket || false,
       searchEngineOrigin: newVal.searchEngineOrigin || false,
@@ -280,9 +282,13 @@ const handleRedirectSubmit = (ruleData) => {
     })
   }
   
+  const { list: mergedRedirects, removed } = dedupeUrlRedirects(urlRedirects)
+  if (removed > 0) {
+    ElMessage.warning('检测到重复转向规则，已自动合并')
+  }
   advancedSettings.value = {
     ...advancedSettings.value,
-    urlRedirects
+    urlRedirects: mergedRedirects
   }
   
   // 重置状态

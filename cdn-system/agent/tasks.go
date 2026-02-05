@@ -26,7 +26,9 @@ func pullTasks() {
 	log.Printf("[Info] Task pull disabled; waiting for WS dispatch")
 }
 
-func processTask(id int64, taskType string, data string) (string, error) {
+type TaskProgressReporter func(percent int, message string) error
+
+func processTask(id int64, taskType string, data string, report TaskProgressReporter) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(taskType)) {
 	case "refresh_url":
 		return "", purgeURLs(splitLines(data))
@@ -48,6 +50,8 @@ func processTask(id int64, taskType string, data string) (string, error) {
 		return syncUserPackageTask(data)
 	case i18n.T("agent.task_sync_package"):
 		return syncUserPackageTask(data)
+	case "agent_upgrade":
+		return upgradeAgentPackage(data, report)
 	default:
 		return "", fmt.Errorf("unknown task type: %s", taskType)
 	}
@@ -81,7 +85,7 @@ func issueCertTask(taskID int64, raw string) error {
 		CADirURL:       payload.CADirURL,
 		Webroot:        webroot,
 		AccountKeyPath: accountKey,
-		Timeout:        60 * time.Second,
+		Timeout:        3 * time.Minute,
 		TokenStore:     tokenStore,
 	})
 

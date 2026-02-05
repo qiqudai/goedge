@@ -19,6 +19,8 @@ type TaskTarget struct {
 	Tries   int    `json:"tries"`
 	RetryAt int64  `json:"retry_at"`
 	Ret     string `json:"ret,omitempty"`
+	Progress int   `json:"progress,omitempty"`
+	Message  string `json:"message,omitempty"`
 	LastAt  int64  `json:"last_at,omitempty"`
 }
 
@@ -160,6 +162,10 @@ func (t *TaskTargets) ensureNode(nodeID string) *TaskTarget {
 		t.Nodes[nodeID] = target
 	}
 	return target
+}
+
+func (t *TaskTargets) EnsureNode(nodeID string) *TaskTarget {
+	return t.ensureNode(nodeID)
 }
 
 func jitterRetryDelay() time.Duration {

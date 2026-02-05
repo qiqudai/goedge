@@ -1,5 +1,5 @@
 port: "8080"
-db_dsn: "root:tPKWjjSDpZiL7Aws@tcp(172.18.0.1:13306)/CK?charset=utf8mb4&parseTime=True&loc=Local"
+db_dsn: "root:123456@tcp(127.0.0.1:3306)/cdnfly?charset=utf8mb4&parseTime=True&loc=Local"
 debug: false
 agent_token: "1e53b4aaf19c4feda09cc353f28e4c7e"
 clickhouse_enabled: true

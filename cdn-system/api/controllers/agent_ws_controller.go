@@ -396,6 +396,26 @@ func buildAckRet(ack TaskAckMsg) string {
 	return ""
 }
 
+type taskProgressPayload struct {
+	Progress int    `json:"progress"`
+	Message  string `json:"message"`
+}
+
+func parseTaskProgress(ack TaskAckMsg) (int, string) {
+	var payload taskProgressPayload
+	if strings.TrimSpace(ack.Ret) != "" {
+		if json.Unmarshal([]byte(ack.Ret), &payload) == nil {
+			return payload.Progress, strings.TrimSpace(payload.Message)
+		}
+	}
+	if len(ack.Applied) > 0 {
+		if json.Unmarshal(ack.Applied, &payload) == nil {
+			return payload.Progress, strings.TrimSpace(payload.Message)
+		}
+	}
+	return 0, ""
+}
+
 func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, task models.Task) {
 	state := "fail"
 	switch ack.Status {
@@ -412,8 +432,6 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 		"ret":      retLog,
 		"progress": progress,
 	}
-	finalFail := false
-
 	if state == "fail" {
 		nextErrTimes := task.ErrTimes + 1
 		maxRetries := 3
@@ -423,7 +441,6 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 		if nextErrTimes >= maxRetries {
 			updates["state"] = "fail"
 			updates["end_at"] = time.Now()
-			finalFail = true
 		} else {
 			updates["state"] = "waiting"
 			updates["retry_at"] = time.Now().Add(time.Duration(nextErrTimes*30) * time.Second)
@@ -438,7 +455,7 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 	if err := db.DB.Model(&models.Task{}).Where("id = ?", ack.TaskID).Updates(updates).Error; err != nil {
 		log.Printf("[WS] Task ACK update failed: %v", err)
 	}
-	if finalFail && strings.EqualFold(task.Type, "issue_cert") {
+	if strings.EqualFold(task.Type, "issue_cert") && state == "fail" {
 		services.MarkIssueTaskFailed(task.ID, buildAckRet(ack))
 	}
 }
@@ -457,6 +474,8 @@ func (c *AgentWSController) handleTargetsTaskAck(nodeID int64, ack TaskAckMsg, t
 		retMessage := buildAckRet(ack)
 		state := "fail"
 		switch ack.Status {
+		case "progress":
+			state = "running"
 		case "success", "ignored":
 			state = "done"
 		case "fail":
@@ -465,6 +484,32 @@ func (c *AgentWSController) handleTargetsTaskAck(nodeID int64, ack TaskAckMsg, t
 
 		retLog := current.Ret
 		var attempt int
+		if ack.Status == "progress" {
+			progress, message := parseTaskProgress(ack)
+			target := targets.EnsureNode(nodeIDStr)
+			target.State = services.TargetStateRunning
+			if progress > 0 {
+				target.Progress = progress
+			}
+			if message != "" {
+				target.Message = message
+			}
+			if strings.TrimSpace(retMessage) != "" {
+				target.Ret = retMessage
+			}
+			target.LastAt = now.Unix()
+			updates := map[string]interface{}{
+				"targets_json": targets.Marshal(),
+				"state":        "running",
+			}
+			if current.StartAt == nil {
+				updates["start_at"] = now
+			}
+			if err := db.DB.Model(&models.Task{}).Where("id = ?", current.ID).Updates(updates).Error; err != nil {
+				log.Printf("[WS] Task progress update failed: %v", err)
+			}
+			return
+		}
 		if state == "done" {
 			attempt = targets.MarkSuccess(nodeIDStr, retMessage, now)
 			retLog = appendTaskLog(retLog, nodeIDStr, state, retMessage, attempt)
@@ -906,7 +951,7 @@ func dispatchPendingTasksForNode(nodeID int64) {
 			})
 			if strings.EqualFold(task.Type, "issue_cert") {
 				_ = db.DB.Model(&models.Cert{}).
-					Where("issue_task_id = ? AND state = ?", task.ID, "waiting").
+					Where("issue_task_id = ? AND state IN ?", task.ID, []string{"waiting", "fail"}).
 					Update("state", "issuing").Error
 			}
 		}

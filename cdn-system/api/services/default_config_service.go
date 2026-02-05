@@ -76,6 +76,27 @@ func GetSiteDefaultMapWithGroup(userID, groupID int64) (map[string]string, error
 	return merged, nil
 }
 
+func GetSiteScopedDefaultMap(userID, groupID int64) map[string]string {
+	scoped := map[string]string{}
+	if userID != 0 {
+		if legacyUser, err := LoadConfigMap("site_default_config", "user", userID); err == nil && len(legacyUser) > 0 {
+			scoped = MergeConfigMap(scoped, legacyUser)
+		}
+		if userGlobal, err := LoadConfigMap("site_default_config", "global", userID); err == nil && len(userGlobal) > 0 {
+			scoped = MergeConfigMap(scoped, userGlobal)
+		}
+	}
+	if groupID != 0 {
+		if groupDefaults, err := LoadConfigMap("site_default_config", "group", groupID); err == nil && len(groupDefaults) > 0 {
+			scoped = MergeConfigMap(scoped, groupDefaults)
+		}
+	}
+	if len(scoped) == 0 {
+		return nil
+	}
+	return scoped
+}
+
 func GetStreamDefaultMap(userID int64) (map[string]string, error) {
 	global, err := LoadConfigMap("stream_default_config", "global", 0)
 	if err != nil {
@@ -288,7 +309,10 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(advCfg, "ups_keepalive", parseBool(defaults["ups_keepalive"], false))
 	setIfMissing(advCfg, "ups_keepalive_conn", parseInt64(defaults["ups_keepalive_conn"]))
 	setIfMissing(advCfg, "ups_keepalive_timeout", parseInt64(defaults["ups_keepalive_timeout"]))
-	setIfMissing(advCfg, "body_limit", parseInt64(defaults["post_size_limit"]))
+	if v := defaults["post_size_limit"]; v != "" {
+		setIfMissing(advCfg, "body_limit", parseInt64(v))
+		setIfMissing(advCfg, "body_limit_unit", "kb")
+	}
 	setIfMissing(advCfg, "log_request_header", parseBool(defaults["log_request_header"], false))
 	setIfMissing(advCfg, "log_response_header", parseBool(defaults["log_response_header"], false))
 	setIfMissing(advCfg, "log_request_body", parseBool(defaults["log_request_body"], false))
@@ -296,6 +320,29 @@ func ApplySiteDefaults(site *models.Site, defaults map[string]string) {
 	setIfMissing(advCfg, "realtime_return", parseBool(defaults["realtime_return"], false))
 	if v := defaults["origin_headers"]; v != "" {
 		setIfMissing(advCfg, "origin_headers", parseHeaderList(v))
+	}
+}
+
+func ApplySiteDefaultsScopedOverrides(site *models.Site, defaults map[string]string) {
+	if site == nil || defaults == nil {
+		return
+	}
+	if site.Settings == nil {
+		site.Settings = map[string]interface{}{}
+	}
+	if v := defaults["gzip_enable"]; v != "" {
+		advCfg := getSubMap(site.Settings, "advanced")
+		advCfg["gzip"] = parseBool(v, false)
+	}
+	if v := defaults["https_listen-ssl_ciphers"]; v != "" {
+		httpsCfg := getSubMap(site.Settings, "https")
+		httpsCfg["ssl_ciphers"] = v
+	}
+	if v := defaults["proxy_cache"]; v != "" {
+		cacheCfg := getSubMap(site.Settings, "cache")
+		raw := strings.TrimSpace(v)
+		cacheCfg["enable"] = raw != "" && raw != "[]"
+		cacheCfg["rules"] = parseCacheRules(v)
 	}
 }
 
@@ -475,6 +522,9 @@ func applyLegacyAdvancedSettings(settings map[string]interface{}, advCfg map[str
 	setIfMissing(advCfg, "gzip", settings["gzip"])
 	setIfMissing(advCfg, "websocket", settings["websocket"])
 	setIfMissing(advCfg, "body_limit", settings["upload_limit"])
+	if _, ok := settings["upload_limit"]; ok {
+		setIfMissing(advCfg, "body_limit_unit", "mb")
+	}
 	setIfMissing(advCfg, "log_request_header", settings["log_request_header"])
 	setIfMissing(advCfg, "log_response_header", settings["log_response_header"])
 	setIfMissing(advCfg, "log_request_body", settings["log_request_body"])

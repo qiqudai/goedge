@@ -829,11 +829,11 @@
               <el-input
                 v-if="form.advanced.uploadLimitMode === 'custom'"
                 v-model.number="form.advanced.uploadLimitValue"
-                placeholder="100"
+                placeholder="102400"
                 :disabled="!selected.advanced.uploadLimit"
                 style="width: 160px"
               >
-                <template #append>MB</template>
+                <template #append>KB</template>
               </el-input>
             </div>
           </div>
@@ -1216,7 +1216,7 @@ const defaultForm = () => ({
   },
   advanced: {
     uploadLimitMode: 'none',
-    uploadLimitValue: 100,
+    uploadLimitValue: 102400,
     gzip: false,
     websocket: false,
     searchEngineOrigin: false,
@@ -1796,7 +1796,8 @@ const buildSectionPayload = (section) => {
       const uploadLimit = form.advanced.uploadLimitMode === 'none'
         ? 0
         : Number(form.advanced.uploadLimitValue || 0)
-      settings.upload_limit = uploadLimit
+      setSetting(settings, ['advanced', 'body_limit'], uploadLimit)
+      setSetting(settings, ['advanced', 'body_limit_unit'], 'kb')
     }
     if (selected.advanced.gzip) {
       settings.gzip = !!form.advanced.gzip

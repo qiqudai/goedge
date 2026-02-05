@@ -6,6 +6,7 @@ package main
 import (
 	"cdn-api/config"
 	"cdn-api/db"
+	"cdn-api/middleware"
 	"cdn-api/models"
 	"cdn-api/routers"
 	"cdn-api/services"
@@ -65,6 +66,9 @@ func main() {
 
 		c.Next()
 	})
+
+	// Unified response wrapper (JSON only)
+	r.Use(middleware.ResponseWrapper())
 
 	routers.Setup(r)
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -13,6 +14,7 @@ var (
 	loadOnce sync.Once
 	loaded   bool
 	messages map[string]string
+	reverse  map[string]string
 	loadErr  error
 )
 
@@ -43,6 +45,15 @@ func Load(path string) error {
 			return
 		}
 		messages = parsed
+		reverse = make(map[string]string, len(messages))
+		for key, val := range messages {
+			if val == "" {
+				continue
+			}
+			if _, exists := reverse[val]; !exists {
+				reverse[val] = key
+			}
+		}
 		loaded = true
 	})
 	return loadErr
@@ -57,6 +68,50 @@ func T(key string) string {
 		return val
 	}
 	return key
+}
+
+// NormalizeLang returns a normalized language code (zh/en) or empty when unknown.
+func NormalizeLang(lang string) string {
+	lang = strings.TrimSpace(strings.ToLower(lang))
+	if lang == "" {
+		return ""
+	}
+	if strings.HasPrefix(lang, "zh") || lang == "cn" {
+		return "zh"
+	}
+	if strings.HasPrefix(lang, "en") {
+		return "en"
+	}
+	return ""
+}
+
+// Translate returns a localized message based on requested language.
+// If lang is empty or unsupported, it falls back to zh when available.
+func Translate(lang, message string) string {
+	if message == "" {
+		return message
+	}
+	lang = NormalizeLang(lang)
+	if lang == "" {
+		lang = "zh"
+	}
+	switch lang {
+	case "en":
+		// If message is a key, return key itself (English).
+		if _, ok := messages[message]; ok {
+			return message
+		}
+		// If message is a localized value, map back to key.
+		if key, ok := reverse[message]; ok {
+			return key
+		}
+		return message
+	default: // zh
+		if val, ok := messages[message]; ok {
+			return val
+		}
+		return message
+	}
 }
 
 func resolvePaths(path string) []string {

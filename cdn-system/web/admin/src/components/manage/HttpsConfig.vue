@@ -154,7 +154,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'calc-cert-days'])
 
-const { saveSettings, siteId } = useSiteSettings()
+const { saveSettings, siteId, loadSite, loadCerts } = useSiteSettings()
 
 const localSettings = ref({
   enable: props.modelValue?.enable || false,
@@ -203,6 +203,12 @@ const applyCert = async () => {
   const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
   if (created.length > 0) {
     ElMessage.success('证书申请已提交')
+    localSettings.value.enable = true
+    localSettings.value.certId = created[0]
+    if (!localSettings.value.listenPorts) {
+      localSettings.value.listenPorts = '443'
+    }
+    await Promise.allSettled([loadCerts(), loadSite()])
   }
   if (skipped.length > 0) {
     const msg = skipped
