@@ -85,12 +85,41 @@ func InstallNodeAgent(node *models.Node, apiBase string) error {
 	log.Printf("[Install] upload config done node=%d dst=%s", node.ID, configPath)
 	_ = UpdateInstallProgress(node.ID, "config", 100, 0, 0, "")
 
+	isRoot := remoteIsRoot(client)
+	hasSystemd := remoteHasCommand(client, "systemctl")
 	logPath := path.Join(agentDir, "agent.log")
-	startCmd := fmt.Sprintf("nohup %s -config %s > %s 2>&1 &", shellQuote(agentPath), shellQuote(configPath), shellQuote(logPath))
-	if err := runRemoteCommand(client, startCmd); err != nil {
-		return fmt.Errorf("start agent failed: %w", err)
+	startMode := "systemd"
+	if isRoot && hasSystemd {
+		servicePath := path.Join(agentDir, "cdn-agent.service")
+		servicePayload := buildRemoteAgentService(agentDir, agentPath, configPath)
+		if err := uploadBytes(client, servicePayload, servicePath, 0o644); err != nil {
+			return fmt.Errorf("upload service file failed: %w", err)
+		}
+		if err := runRemoteCommand(client, fmt.Sprintf("mv %s /etc/systemd/system/cdn-agent.service", shellQuote(servicePath))); err != nil {
+			return fmt.Errorf("install service failed: %w", err)
+		}
+		if err := runRemoteCommand(client, "systemctl daemon-reload"); err != nil {
+			return fmt.Errorf("systemctl daemon-reload failed: %w", err)
+		}
+		if err := runRemoteCommand(client, "systemctl enable --now cdn-agent"); err != nil {
+			return fmt.Errorf("systemctl enable/start failed: %w", err)
+		}
+		if err := runRemoteCommand(client, "systemctl is-active --quiet cdn-agent"); err != nil {
+			return fmt.Errorf("cdn-agent service not active: %w", err)
+		}
+	} else {
+		startCmd := fmt.Sprintf("nohup %s -config %s > %s 2>&1 &", shellQuote(agentPath), shellQuote(configPath), shellQuote(logPath))
+		if err := runRemoteCommand(client, startCmd); err != nil {
+			return fmt.Errorf("start agent failed: %w", err)
+		}
+		startMode = "nohup"
+		log.Printf("[Install] systemd unavailable (root=%v systemd=%v), fallback to nohup", isRoot, hasSystemd)
 	}
-	log.Printf("[Install] agent started node=%d log=%s", node.ID, logPath)
+
+	if err := verifyRemoteInstall(client, agentDir, agentPath); err != nil {
+		return fmt.Errorf("verify deploy failed: %w", err)
+	}
+	log.Printf("[Install] agent started node=%d mode=%s log=%s", node.ID, startMode, logPath)
 	_ = UpdateInstallProgress(node.ID, "running", 100, 0, 0, "")
 	return nil
 }
@@ -151,12 +180,14 @@ func buildInstallConfig(node *models.Node, apiBase string) (*NodeInstallConfig, 
 
 func buildAgentJSON(cfg *NodeInstallConfig) ([]byte, error) {
 	payload := map[string]interface{}{
-		"api":             cfg.APIBase,
-		"token":           cfg.NodeToken,
-		"node_id":         fmt.Sprintf("%d", cfg.NodeID),
-		"reset_resources": true,
-		"bootstrap_sync":  true,
-		"bootstrap_start": true,
+		"api":                cfg.APIBase,
+		"token":              cfg.NodeToken,
+		"node_id":            fmt.Sprintf("%d", cfg.NodeID),
+		"geneva_enable":      false,
+		"geneva_window_size": 4,
+		"reset_resources":    true,
+		"bootstrap_sync":     true,
+		"bootstrap_start":    true,
 	}
 	return json.MarshalIndent(payload, "", "  ")
 }
@@ -209,6 +240,72 @@ func runRemoteCommand(client *ssh.Client, cmd string) error {
 	}
 	defer session.Close()
 	return session.Run(cmd)
+}
+
+func runRemoteCommandOutput(client *ssh.Client, cmd string) (string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+	var out bytes.Buffer
+	session.Stdout = &out
+	session.Stderr = &out
+	err = session.Run(cmd)
+	return strings.TrimSpace(out.String()), err
+}
+
+func remoteHasCommand(client *ssh.Client, name string) bool {
+	err := runRemoteCommand(client, fmt.Sprintf("command -v %s >/dev/null 2>&1", shellQuote(name)))
+	return err == nil
+}
+
+func remoteIsRoot(client *ssh.Client) bool {
+	out, err := runRemoteCommandOutput(client, "id -u")
+	return err == nil && strings.TrimSpace(out) == "0"
+}
+
+func buildRemoteAgentService(agentDir, agentPath, configPath string) []byte {
+	libDir := path.Join(agentDir, "edge-node", "openresty", "luajit", "lib")
+	content := fmt.Sprintf(`[Unit]
+Description=CDN Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%s
+Environment=LD_LIBRARY_PATH=%s
+ExecStart=%s -config %s
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+`, agentDir, libDir, agentPath, configPath)
+	return []byte(content)
+}
+
+func verifyRemoteInstall(client *ssh.Client, agentDir, agentPath string) error {
+	if _, err := runRemoteCommandOutput(client, fmt.Sprintf("%s -version", shellQuote(agentPath))); err != nil {
+		return fmt.Errorf("agent version check failed: %w", err)
+	}
+	edgeRoot := path.Join(agentDir, "edge-node")
+	nginxBin := path.Join(edgeRoot, "openresty", "nginx", "sbin", "nginx")
+	luajitLib := path.Join(edgeRoot, "openresty", "luajit", "lib")
+	nginxConf := path.Join(edgeRoot, "conf", "nginx.conf")
+	testCmd := fmt.Sprintf("if [ -x %s ]; then LD_LIBRARY_PATH=%s %s -t -p %s -c %s; else echo 'nginx-not-ready'; fi",
+		shellQuote(nginxBin),
+		shellQuote(luajitLib),
+		shellQuote(nginxBin),
+		shellQuote(edgeRoot+"/"),
+		shellQuote(nginxConf),
+	)
+	if out, err := runRemoteCommandOutput(client, testCmd); err != nil {
+		return fmt.Errorf("nginx test failed: %w output=%s", err, out)
+	}
+	return nil
 }
 
 func uploadFile(client *ssh.Client, localPath, remotePath string, perm os.FileMode) error {

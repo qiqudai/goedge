@@ -174,6 +174,7 @@ type edgeStreamTarget struct {
 type edgeStream struct {
 	ID                  int64              `json:"id"`
 	ListenPorts         []string           `json:"listen_ports"`
+	ListenProtocol      string             `json:"listen_protocol"`
 	Targets             []edgeStreamTarget `json:"targets"`
 	UseListenPort       bool               `json:"use_listen_port"`
 	BalanceWay          string             `json:"balance_way"`
@@ -195,17 +196,25 @@ type edgeUpstream struct {
 }
 
 type edgeCacheRule struct {
-	Rule       string `json:"rule"`
-	Ext        string `json:"ext"`
-	URI        string `json:"uri"`
-	Prefix     string `json:"prefix"`
-	TTL        int    `json:"ttl"`
-	Enable     *bool  `json:"enable"`
-	NoCache    bool   `json:"no_cache"`
-	ForceCache bool   `json:"force_cache"`
-	Priority   int    `json:"priority"`
-	IgnoreArgs bool   `json:"ignore_args"`
-	CacheKey   string `json:"cache_key"`
+	Rule           string               `json:"rule"`
+	Ext            string               `json:"ext"`
+	URI            string               `json:"uri"`
+	Prefix         string               `json:"prefix"`
+	TTL            int                  `json:"ttl"`
+	Enable         *bool                `json:"enable"`
+	NoCache        bool                 `json:"no_cache"`
+	ForceCache     bool                 `json:"force_cache"`
+	EnableRange    bool                 `json:"enable_range"`
+	IgnoreVary     bool                 `json:"ignore_vary"`
+	SkipConditions []edgeCacheCondition `json:"skip_conditions"`
+	Priority       int                  `json:"priority"`
+	IgnoreArgs     bool                 `json:"ignore_args"`
+	CacheKey       string               `json:"cache_key"`
+}
+
+type edgeCacheCondition struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
 }
 
 type edgeCacheConfig struct {
@@ -239,6 +248,7 @@ type edgeCookieConfig struct {
 
 type edgeDomain struct {
 	Name                  string                   `json:"name"`
+	SiteType              string                   `json:"site_type"`
 	UpstreamKey           string                   `json:"upstream_key"`
 	L2UpstreamKey         string                   `json:"l2_upstream_key"`
 	UseL2                 bool                     `json:"use_l2"`
@@ -255,11 +265,15 @@ type edgeDomain struct {
 	GuardPassTTL          int                      `json:"guard_pass_ttl"`
 	GuardBlockTTL         int                      `json:"guard_block_ttl"`
 	URLRedirects          []map[string]interface{} `json:"url_redirects"`
+	URLRewrites           []map[string]interface{} `json:"url_rewrites"`
 	OriginConditions      []map[string]interface{} `json:"origin_conditions"`
 	Status                string                   `json:"status"`
 	ConnLimit             int                      `json:"conn_limit"`
 	SSLCertData           string                   `json:"ssl_cert_data"`
 	SSLKeyData            string                   `json:"ssl_key_data"`
+	SSLCertPath           string                   `json:"ssl_cert_path"`
+	SSLKeyPath            string                   `json:"ssl_key_path"`
+	WAFEnable             *bool                    `json:"waf_enable"`
 	ACLDefaultAction      string                   `json:"acl_default_action"`
 	ACLRules              []struct {
 		IP     string `json:"ip"`
@@ -293,6 +307,16 @@ type edgeDomain struct {
 	EnableWebsocket             bool             `json:"enable_websocket"`
 	EnableRange                 bool             `json:"enable_range"`
 	BodyLimit                   int64            `json:"body_limit"`
+	LogRequestHeader            bool             `json:"log_request_header"`
+	LogResponseHeader           bool             `json:"log_response_header"`
+	LogRequestBody              bool             `json:"log_request_body"`
+	LogRequestBodySizeLimit     int              `json:"log_request_body_size_limit"`
+	OriginCert                  bool             `json:"origin_cert"`
+	RealtimeIdentify            bool             `json:"realtime_identify"`
+	RealtimeSend                bool             `json:"realtime_send"`
+	RealtimeReturn              bool             `json:"realtime_return"`
+	DefaultSite                 bool             `json:"default_site"`
+	IPv6Enable                  bool             `json:"ipv6_enable"`
 	LimitRate                   int64            `json:"limit_rate"`
 	UpstreamKeepalive           bool             `json:"upstream_keepalive"`
 	UpstreamKeepaliveConn       int              `json:"upstream_keepalive_conn"`
@@ -329,8 +353,46 @@ type edgeConfig struct {
 }
 
 type edgeWAFConfig struct {
-	Enable             bool `json:"enable"`
-	BlockUnboundDomain bool `json:"block_unbound_domain"`
+	Enable             bool   `json:"enable"`
+	BlockUnboundDomain bool   `json:"block_unbound_domain"`
+	DefaultBlockAction string `json:"default_block_action"`
+	AutoIPSetEnable    bool   `json:"auto_ipset_enable"`
+	AutoIPSetThreshold int    `json:"auto_ipset_threshold"`
+
+	BlockPageRateLimitEnable bool `json:"block_page_rate_limit_enable"`
+	BlockPageRateLimit       int  `json:"block_page_rate_limit"`
+	BlockPageTrafficFree     bool `json:"block_page_traffic_free"`
+
+	BlacklistTimeout        int `json:"blacklist_timeout"`
+	TempWhitelistTimeout    int `json:"temp_whitelist_timeout"`
+	TempWhitelistLimitTotal int `json:"temp_whitelist_limit_total"`
+	TempWhitelistLimitURL   int `json:"temp_whitelist_limit_url"`
+
+	PreventTLSHandshake bool `json:"prevent_tls_handshake"`
+	DisablePing         bool `json:"disable_ping"`
+
+	DefaultPageProtection          string `json:"default_page_protection"`
+	DefaultPageProtectionThreshold int    `json:"default_page_protection_threshold"`
+
+	SecretKey            string `json:"secret_key"`
+	NodeLogCleanStrategy string `json:"node_log_clean_strategy"`
+	CCRuleAutoSwitch     bool   `json:"cc_rule_auto_switch"`
+
+	AntiCCImageSource    string `json:"anti_cc_image_source"`
+	AntiCCImageCustomURL string `json:"anti_cc_image_custom_url"`
+	AntiCCType           string `json:"anti_cc_type"`
+	AntiCCDebug          bool   `json:"anti_cc_debug"`
+
+	WellKnownProtectionThreshold   int                `json:"well_known_protection_threshold"`
+	ResourceProtectionEnable       bool               `json:"resource_protection_enable"`
+	ResourceProtectionThreshold    int                `json:"resource_protection_threshold"`
+	ResourceProtectionBlockTimeout int                `json:"resource_protection_block_timeout"`
+	ResourceProtectionRules        []edgeResourceRule `json:"resource_protection_rules"`
+}
+
+type edgeResourceRule struct {
+	Duration    int `json:"duration"`
+	MaxRequests int `json:"max_requests"`
 }
 
 type edgeResources struct {
@@ -351,6 +413,7 @@ type edgeForwardResources struct {
 
 type edgePublicResources struct {
 	DisabledCustomPorts string `json:"disabled_custom_ports"`
+	AllowedCustomPorts  string `json:"allowed_custom_ports"`
 }
 
 type edgeDefaultConfig struct {
@@ -415,6 +478,7 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := persistDefaultConfig(cfg.DefaultConfig); err != nil {
 		return err
 	}
+	setLocalWAFConfig(cfg.WAF)
 	if err := persistFallbackCert(cfg.FallbackCertData, cfg.FallbackKeyData); err != nil {
 		return err
 	}
@@ -430,7 +494,8 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := writeEventsConfig(cfg.Nginx); err != nil {
 		return err
 	}
-	if err := writeHTTPGlobalConfig(cfg.Nginx); err != nil {
+	cacheEnabled := hasAnyCacheEnabled(cfg.Domains, cfg.DefaultConfig)
+	if err := writeHTTPGlobalConfig(cfg.Nginx, cacheEnabled); err != nil {
 		return err
 	}
 	if err := writeStreamGlobalConfig(cfg.Nginx); err != nil {
@@ -438,6 +503,24 @@ func generateDynamicConfigs(payload []byte) error {
 	}
 	setLocalNginxConfig(cfg.Nginx)
 	return nil
+}
+
+func hasAnyCacheEnabled(domains []edgeDomain, defaults *edgeDefaultConfig) bool {
+	if len(domains) == 0 {
+		return false
+	}
+	effectiveDefaults := defaults
+	if effectiveDefaults == nil {
+		effectiveDefaults = LocalDefaultConf
+	}
+	for _, domain := range domains {
+		item := domain
+		applyDefaultConfigToDomain(&item, effectiveDefaults)
+		if item.Cache != nil && item.Cache.Enable {
+			return true
+		}
+	}
+	return false
 }
 
 func parseResourcesFallback(payload []byte) *edgeResources {
@@ -475,6 +558,9 @@ func mergeResources(dst, src *edgeResources) {
 	}
 	if dst.Public.DisabledCustomPorts == "" && src.Public.DisabledCustomPorts != "" {
 		dst.Public.DisabledCustomPorts = src.Public.DisabledCustomPorts
+	}
+	if dst.Public.AllowedCustomPorts == "" && src.Public.AllowedCustomPorts != "" {
+		dst.Public.AllowedCustomPorts = src.Public.AllowedCustomPorts
 	}
 }
 
@@ -629,6 +715,12 @@ func setLocalDefaultConfig(cfg *edgeDefaultConfig) {
 	localConfigMu.Unlock()
 }
 
+func setLocalWAFConfig(cfg *edgeWAFConfig) {
+	localConfigMu.Lock()
+	LocalWAFConfig = cfg
+	localConfigMu.Unlock()
+}
+
 func setLocalNginxConfig(cfg *edgeNginxConfig) {
 	if cfg == nil {
 		return
@@ -693,6 +785,7 @@ func loadPersistedNginxConfig() {
 	var cfg edgeConfig
 	if err := fsutil.ReadJSONFile(CONFIG_PATH, &cfg); err == nil {
 		setLocalNginxConfig(cfg.Nginx)
+		setLocalWAFConfig(cfg.WAF)
 	} else if !os.IsNotExist(err) {
 		log.Printf("[Warn] Load cdn_config.json failed: %v", err)
 	}
@@ -783,11 +876,16 @@ func writeHTTPDirectives(b *strings.Builder, httpCfg map[string]interface{}) {
 		"proxy_connect_timeout":       "proxy_connect_timeout",
 		"proxy_send_timeout":          "proxy_send_timeout",
 		"proxy_read_timeout":          "proxy_read_timeout",
+		"proxy_cache_revalidate":      "proxy_cache_revalidate",
 		"client_max_body_size":        "client_max_body_size",
 		"large_client_header_buffers": "large_client_header_buffers",
 		"gzip":                        "gzip",
 		"keepalive_timeout":           "keepalive_timeout",
 		"keepalive_requests":          "keepalive_requests",
+		"reset_timedout_connection":   "reset_timedout_connection",
+		"sendfile_max_chunk":          "sendfile_max_chunk",
+		"client_header_timeout":       "client_header_timeout",
+		"client_body_timeout":         "client_body_timeout",
 		"gzip_comp_level":             "gzip_comp_level",
 		"gzip_http_version":           "gzip_http_version",
 		"gzip_min_length":             "gzip_min_length",
@@ -795,6 +893,10 @@ func writeHTTPDirectives(b *strings.Builder, httpCfg map[string]interface{}) {
 		"server_tokens":               "server_tokens",
 		"log_not_found":               "log_not_found",
 		"default_type":                "default_type",
+		"open_file_cache":             "open_file_cache",
+		"open_file_cache_valid":       "open_file_cache_valid",
+		"open_file_cache_min_uses":    "open_file_cache_min_uses",
+		"open_file_cache_errors":      "open_file_cache_errors",
 	}
 	for key, directive := range directives {
 		if value, ok := httpCfg[key]; ok {

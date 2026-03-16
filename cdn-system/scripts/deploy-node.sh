@@ -291,6 +291,9 @@ data = {
     "token": os.environ["AGENT_TOKEN"],
     "node_id": os.environ["NODE_ID"],
     "debug": False,
+    "geneva_enable": False,
+    "geneva_window_size": 4,
+    "auto_install_service": True,
 }
 print(json.dumps(data, indent=2))
 PY
@@ -305,6 +308,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${REMOTE_DIR}
+Environment=LD_LIBRARY_PATH=${REMOTE_DIR}/edge-node/openresty/luajit/lib
 ExecStart=${REMOTE_DIR}/cdn-agent -config ${REMOTE_DIR}/agent.json
 Restart=always
 RestartSec=3
@@ -358,11 +362,15 @@ if "${SSH_BASE[@]}" "$REMOTE_HOST" "command -v systemctl >/dev/null 2>&1"; then
   run_remote_sudo "systemctl daemon-reload"
   run_remote_sudo "systemctl enable --now cdn-agent"
   run_remote_sudo "systemctl is-active --quiet cdn-agent"
+  run_remote_sudo "sleep 2"
+  run_remote_sudo "test -x '$REMOTE_DIR/cdn-agent' && '$REMOTE_DIR/cdn-agent' -version >/dev/null"
+  run_remote_sudo "if [ -x '$REMOTE_DIR/edge-node/openresty/nginx/sbin/nginx' ]; then LD_LIBRARY_PATH='$REMOTE_DIR/edge-node/openresty/luajit/lib' '$REMOTE_DIR/edge-node/openresty/nginx/sbin/nginx' -t -p '$REMOTE_DIR/edge-node/' -c '$REMOTE_DIR/edge-node/conf/nginx.conf'; else echo 'info: nginx binary not ready yet'; fi"
   run_remote_sudo "rm -rf '$REMOTE_TMP'"
-  echo "Deploy OK. Node ID: ${NODE_ID}. Service: cdn-agent"
+  echo "Deploy OK. Node ID: ${NODE_ID}. Service: cdn-agent (systemd active + nginx test attempted)."
 else
   run_remote_sudo "rm -f /tmp/cdn-agent.log /tmp/cdn-agent.err"
   run_remote_sudo "nohup '$REMOTE_DIR/cdn-agent' -config '$REMOTE_DIR/agent.json' >/tmp/cdn-agent.log 2>/tmp/cdn-agent.err &"
+  run_remote_sudo "sleep 2; test -x '$REMOTE_DIR/cdn-agent' && '$REMOTE_DIR/cdn-agent' -version >/dev/null"
   run_remote_sudo "rm -rf '$REMOTE_TMP'"
   echo "Deploy OK. Node ID: ${NODE_ID}. Started with nohup (logs: /tmp/cdn-agent.log)."
 fi

@@ -404,6 +404,10 @@ func createIssueTask(batchID int64, nodeID int64, name string, payload IssueCert
 		State:    "waiting",
 		CreateAt: time.Now(),
 	}
+	if nodeID > 0 {
+		targets := NewTaskTargets([]int64{nodeID})
+		task.TargetsJSON = targets.Marshal()
+	}
 	if err := db.DB.Create(&task).Error; err != nil {
 		return task, err
 	}

@@ -242,10 +242,17 @@ const submitRenew = () => {
     ElMessage.warning('请选择续费时长')
     return
   }
-  request.post(`/user_packages/${current.value.id}/renew`, {
-    period: renewForm.value.period
-  }).then(() => {
-    ElMessage.success('续费成功')
+  request.post('/orders/package/renew', {
+    user_package_id: current.value.id,
+    period: renewForm.value.period,
+    pay_type: 'balance'
+  }).then((res) => {
+    const paid = (res?.data?.paid !== false)
+    if (paid) {
+      ElMessage.success('续费成功')
+    } else {
+      ElMessage.success('续费订单已创建，请完成支付')
+    }
     renewVisible.value = false
     fetchList()
   })

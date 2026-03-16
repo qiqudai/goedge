@@ -42,6 +42,7 @@ type EdgeConfig struct {
 
 type EdgeDomain struct {
 	Name                        string                   `json:"name"`
+	SiteType                    string                   `json:"site_type,omitempty"`
 	UpstreamKey                 string                   `json:"upstream_key"`
 	L2UpstreamKey               string                   `json:"l2_upstream_key,omitempty"`
 	UseL2                       bool                     `json:"use_l2,omitempty"`
@@ -58,6 +59,7 @@ type EdgeDomain struct {
 	GuardPassTTL                int                      `json:"guard_pass_ttl,omitempty"`
 	GuardBlockTTL               int                      `json:"guard_block_ttl,omitempty"`
 	URLRedirects                []map[string]interface{} `json:"url_redirects,omitempty"`
+	URLRewrites                 []map[string]interface{} `json:"url_rewrites,omitempty"`
 	OriginConditions            []map[string]interface{} `json:"origin_conditions,omitempty"`
 	Status                      string                   `json:"status,omitempty"` // active, suspended
 	ConnLimit                   int                      `json:"conn_limit,omitempty"`
@@ -65,6 +67,7 @@ type EdgeDomain struct {
 	SSLKeyData                  string                   `json:"ssl_key_data,omitempty"`
 	SSLCertPath                 string                   `json:"ssl_cert_path,omitempty"`
 	SSLKeyPath                  string                   `json:"ssl_key_path,omitempty"`
+	WAFEnable                   *bool                    `json:"waf_enable,omitempty"`
 	ACLDefaultAction            string                   `json:"acl_default_action,omitempty"`
 	ACLRules                    []EdgeACLRule            `json:"acl_rules,omitempty"`
 	BlackIPs                    []string                 `json:"black_ips,omitempty"`
@@ -96,6 +99,16 @@ type EdgeDomain struct {
 	EnableWebsocket             bool                     `json:"enable_websocket,omitempty"`
 	EnableRange                 bool                     `json:"enable_range,omitempty"`
 	BodyLimit                   int64                    `json:"body_limit,omitempty"`
+	LogRequestHeader            bool                     `json:"log_request_header,omitempty"`
+	LogResponseHeader           bool                     `json:"log_response_header,omitempty"`
+	LogRequestBody              bool                     `json:"log_request_body,omitempty"`
+	LogRequestBodySizeLimit     int                      `json:"log_request_body_size_limit,omitempty"`
+	OriginCert                  bool                     `json:"origin_cert,omitempty"`
+	RealtimeIdentify            bool                     `json:"realtime_identify,omitempty"`
+	RealtimeSend                bool                     `json:"realtime_send"`
+	RealtimeReturn              bool                     `json:"realtime_return"`
+	DefaultSite                 bool                     `json:"default_site,omitempty"`
+	IPv6Enable                  bool                     `json:"ipv6_enable,omitempty"`
 	LimitRate                   int64                    `json:"limit_rate,omitempty"`
 	UpstreamKeepalive           bool                     `json:"upstream_keepalive,omitempty"`
 	UpstreamKeepaliveConn       int                      `json:"upstream_keepalive_conn,omitempty"`
@@ -163,17 +176,25 @@ type EdgeCCFilter struct {
 }
 
 type EdgeCacheRule struct {
-	Rule       string `json:"rule,omitempty"`
-	Ext        string `json:"ext,omitempty"`
-	URI        string `json:"uri,omitempty"`
-	Prefix     string `json:"prefix,omitempty"`
-	TTL        int    `json:"ttl,omitempty"`
-	Enable     *bool  `json:"enable,omitempty"`
-	NoCache    bool   `json:"no_cache,omitempty"`
-	ForceCache bool   `json:"force_cache,omitempty"`
-	Priority   int    `json:"priority,omitempty"`
-	IgnoreArgs bool   `json:"ignore_args,omitempty"`
-	CacheKey   string `json:"cache_key,omitempty"`
+	Rule           string                   `json:"rule,omitempty"`
+	Ext            string                   `json:"ext,omitempty"`
+	URI            string                   `json:"uri,omitempty"`
+	Prefix         string                   `json:"prefix,omitempty"`
+	TTL            int                      `json:"ttl,omitempty"`
+	Enable         *bool                    `json:"enable,omitempty"`
+	NoCache        bool                     `json:"no_cache,omitempty"`
+	ForceCache     bool                     `json:"force_cache,omitempty"`
+	EnableRange    bool                     `json:"enable_range,omitempty"`
+	IgnoreVary     bool                     `json:"ignore_vary,omitempty"`
+	SkipConditions []EdgeCacheSkipCondition `json:"skip_conditions,omitempty"`
+	Priority       int                      `json:"priority,omitempty"`
+	IgnoreArgs     bool                     `json:"ignore_args,omitempty"`
+	CacheKey       string                   `json:"cache_key,omitempty"`
+}
+
+type EdgeCacheSkipCondition struct {
+	Type  string `json:"type,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 type EdgeCacheConfig struct {
@@ -185,6 +206,7 @@ type EdgeCacheConfig struct {
 type EdgeStream struct {
 	ID                  int64              `json:"id"`
 	ListenPorts         []string           `json:"listen_ports"`
+	ListenProtocol      string             `json:"listen_protocol,omitempty"`
 	Targets             []EdgeStreamTarget `json:"targets"`
 	UseListenPort       bool               `json:"use_listen_port,omitempty"`
 	BalanceWay          string             `json:"balance_way,omitempty"`

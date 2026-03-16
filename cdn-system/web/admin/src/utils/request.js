@@ -34,6 +34,59 @@ const isSuccessCode = code => code === 0 || code === 200
 
 const resolveMessage = payload => payload?.message || payload?.msg || payload?.data?.message || payload?.error || ''
 
+const AUTH_INVALID_CODES = new Set([401, 40101])
+const AUTH_INVALID_MESSAGES = new Set([
+  'Invalid or expired token',
+  'Authorization header missing',
+  'Invalid authorization format',
+  '令牌无效或已过期',
+  '授权信息缺失',
+  '登录失效',
+  '请重新登录'
+])
+let isRedirectingToLogin = false
+
+const isAuthInvalidResponse = payload => {
+  const code = Number(payload?.code)
+  if (AUTH_INVALID_CODES.has(code)) {
+    return true
+  }
+  const message = resolveMessage(payload)
+  if (!message) {
+    return false
+  }
+  if (AUTH_INVALID_MESSAGES.has(message)) {
+    return true
+  }
+  const lowered = message.toLowerCase()
+  return lowered.includes('invalid or expired token') ||
+    lowered.includes('authorization header missing') ||
+    lowered.includes('invalid authorization format') ||
+    lowered.includes('unauthorized')
+}
+
+const redirectToLogin = message => {
+  localStorage.removeItem('admin_token')
+  localStorage.removeItem('role')
+  const msg = message || '令牌无效或已过期，请重新登录'
+  if (window.location.pathname === '/login') {
+    if (msg) {
+      ElMessage.closeAll?.()
+      ElMessage({ message: msg, type: 'error', duration: 3000 })
+    }
+    return
+  }
+  if (isRedirectingToLogin) {
+    return
+  }
+  isRedirectingToLogin = true
+  ElMessage.closeAll?.()
+  ElMessage({ message: msg, type: 'error', duration: 3000 })
+  setTimeout(() => {
+    window.location.replace('/login')
+  }, 300)
+}
+
 const redirectToMaintenance = payload => {
   const message = resolveMessage(payload) || 'Maintenance'
   localStorage.setItem('maintenance_msg', message)
@@ -84,8 +137,19 @@ service.interceptors.response.use(
     if (refreshedToken) {
       localStorage.setItem('admin_token', refreshedToken)
     }
+    if (res.code === undefined) {
+      if (isAuthInvalidResponse(res)) {
+        redirectToLogin(resolveMessage(res))
+        return Promise.reject(new Error(resolveMessage(res) || 'Error'))
+      }
+      return res
+    }
     // If backend returns code, check it (assuming 0 is success)
-    if (res.code !== undefined && !isSuccessCode(res.code)) {
+    if (!isSuccessCode(res.code)) {
+      if (isAuthInvalidResponse(res)) {
+        redirectToLogin(resolveMessage(res))
+        return Promise.reject(new Error(resolveMessage(res) || 'Error'))
+      }
       ElMessage({
         message: resolveMessage(res) || 'Error',
         type: 'error',
@@ -105,16 +169,8 @@ service.interceptors.response.use(
       return Promise.reject(new Error(error.response.data?.msg || 'maintenance'))
     }
     if (error.response && error.response.status === 401) {
-      ElMessage({
-        message: '登录失效，请重新登录',
-        type: 'error',
-        duration: 3000
-      })
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('role')
-      setTimeout(() => {
-        window.location.href = '/login'
-      }, 1000)
+      redirectToLogin(resolveMessage(error.response.data))
+      return Promise.reject(error)
     } else {
       const apiMessage = error.response?.data?.error || error.response?.data?.message || error.response?.data?.msg
       ElMessage({

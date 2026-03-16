@@ -28,15 +28,20 @@ var (
 	AuthToken = "" // Token from install parameter
 	DebugMode = false
 
+	GenevaEnable     = false
+	GenevaWindowSize = uint16(4)
+
 	// Bootstrap behavior
-	ResetResources = false // Clear WorkDir contents before init (requires safe path)
-	BootstrapSync  = false // Pull full config from API on startup
-	BootstrapStart = false // Start OpenResty after bootstrap sync
+	ResetResources     = false // Clear WorkDir contents before init (requires safe path)
+	BootstrapSync      = false // Pull full config from API on startup
+	BootstrapStart     = false // Start OpenResty after bootstrap sync
+	AutoInstallService = true  // Linux: auto register systemd service on first start
 
 	localConfigMu    sync.RWMutex
 	LocalResources   *edgeResources
 	LocalErrorPages  map[string]string
 	LocalDefaultConf *edgeDefaultConfig
+	LocalWAFConfig   *edgeWAFConfig
 	LocalCCRules     map[int64][]edgeCCRuleItem
 	LocalCCMatchers  map[int64]edgeCCMatcher
 	LocalCCFilters   map[int64]edgeCCFilter

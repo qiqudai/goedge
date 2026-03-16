@@ -34,6 +34,7 @@
         v-model="query.keyword"
         placeholder="输入关键字"
         style="width: 200px;"
+        @blur="normalizeKeyword"
         @keyup.enter="handleSearch"
       />
       <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
@@ -74,6 +75,9 @@
            {{ row.domain_display || (row.domains && row.domains[0]) || '-' }}
         </span>
         <el-icon class="copy-icon" @click.stop="copyText(row.domain_display || (row.domains && row.domains[0]))"><CopyDocument /></el-icon>
+        <el-tooltip content="打开网站" placement="top">
+          <el-icon class="open-icon" @click.stop="openSite(row)"><BrowserOpenIcon /></el-icon>
+        </el-tooltip>
       </template>
     </el-table-column>
     <el-table-column prop="listen_ports" label="监听端口" width="170" />
@@ -91,7 +95,7 @@
     </el-table-column>
     <el-table-column label="HTTPS" width="80" align="center">
       <template #default="{ row }">
-        <el-tag v-if="row.https" type="success" size="small">开启</el-tag>
+        <el-tag v-if="isHttpsEnabled(row.https)" type="success" size="small">开启</el-tag>
         <el-tag v-else type="info" size="small">关闭</el-tag>
       </template>
     </el-table-column>
@@ -134,6 +138,8 @@
 import { reactive, ref } from 'vue'
 import { Search, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import BrowserOpenIcon from '@/components/BrowserOpenIcon.vue'
+import { isHttpsEnabled, openSiteInBrowser } from '@/utils/openSite'
 
 const props = defineProps({
   list: Array,
@@ -154,7 +160,38 @@ const query = reactive({
   searchField: 'all'
 })
 
-const handleSearch = () => emit('search', query)
+const normalizeSearchKeyword = (value) => {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+
+  const withoutScheme = text
+    .replace(/^[a-z][a-z\d+.-]*:\/\//i, '')
+    .replace(/^\/+/, '')
+  const authority = withoutScheme.split(/[/?#]/, 1)[0]?.trim() || ''
+  if (!authority) return ''
+
+  const withoutUserInfo = authority.includes('@')
+    ? authority.slice(authority.lastIndexOf('@') + 1)
+    : authority
+
+  if (withoutUserInfo.startsWith('[')) {
+    const ipv6End = withoutUserInfo.indexOf(']')
+    if (ipv6End > 0) {
+      return withoutUserInfo.slice(1, ipv6End)
+    }
+  }
+
+  return withoutUserInfo.replace(/:\d+$/, '').replace(/:$/, '')
+}
+
+const normalizeKeyword = () => {
+  query.keyword = normalizeSearchKeyword(query.keyword)
+}
+
+const handleSearch = () => {
+  normalizeKeyword()
+  emit('search', { ...query })
+}
 const handleAction = (type, data) => emit('action', type, data)
 
 const copyText = async (text) => {
@@ -187,6 +224,12 @@ const copyUserAccount = async (row) => {
     await copyText(String(userId))
   }
 }
+
+const openSite = (row) => {
+  if (!openSiteInBrowser(row)) {
+    ElMessage.warning('没有可打开的网站地址')
+  }
+}
 </script>
 
 <style scoped>
@@ -198,6 +241,8 @@ const copyUserAccount = async (row) => {
 .pagination-container { margin-top: 20px; text-align: right; }
 .copy-icon { margin-left: 5px; cursor: pointer; color: #909399; vertical-align: middle; }
 .copy-icon:hover { color: #409eff; }
+.open-icon { margin-left: 5px; cursor: pointer; color: #909399; vertical-align: middle; }
+.open-icon:hover { color: #409eff; }
 .copyable-text { cursor: pointer; }
 .copyable-text:hover { color: #409eff; }
 

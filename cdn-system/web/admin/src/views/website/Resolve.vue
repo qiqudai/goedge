@@ -48,6 +48,9 @@
         <template #default="{ row }">
           <span>{{ row.domain }}</span>
           <el-icon class="copy-icon" @click.stop="copyText(row.domain)"><CopyDocument /></el-icon>
+          <el-tooltip content="打开网站" placement="top">
+            <el-icon class="open-icon" @click.stop="openSite(row)"><BrowserOpenIcon /></el-icon>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column label="CNAME" min-width="200" show-overflow-tooltip>
@@ -90,6 +93,8 @@ import { useRouter } from 'vue-router'
 import { Search, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import BrowserOpenIcon from '@/components/BrowserOpenIcon.vue'
+import { isHttpsEnabled, openSiteInBrowser } from '@/utils/openSite'
 
 const props = defineProps({
 hideTabs: {
@@ -133,6 +138,12 @@ const copyText = async (text) => {
   }
 }
 
+const openSite = (row) => {
+  if (!openSiteInBrowser(row)) {
+    ElMessage.warning('没有可打开的网站地址')
+  }
+}
+
 const normalizeCname = value => {
 return (value || '').trim().replace(/\.$/, '').toLowerCase()
 }
@@ -154,6 +165,7 @@ list.value = rows.map(site => {
     id: site.id,
     site_id: site.id,
     domain,
+    https: isHttpsEnabled(site.https),
     cname: site.cname || site.cname_hostname || '-',
     resolveStatus: 'default',
     resolveResult: null,
@@ -264,4 +276,6 @@ fetchList(true)
 .highlight-val { color: var(--el-color-primary); font-weight: 500; }
 .copy-icon { margin-left: 5px; cursor: pointer; color: #909399; vertical-align: middle; }
 .copy-icon:hover { color: #409eff; }
+.open-icon { margin-left: 5px; cursor: pointer; color: #909399; vertical-align: middle; }
+.open-icon:hover { color: #409eff; }
 </style>

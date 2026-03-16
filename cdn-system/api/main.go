@@ -13,6 +13,7 @@ import (
 	"cdn-common/i18n"
 
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,9 @@ func main() {
 	if err := db.DB.AutoMigrate(&models.UserPackage{}); err != nil {
 		log.Fatal("Failed to migrate schemas:", err)
 	}
+	if err := db.DB.AutoMigrate(&models.BalanceLedger{}); err != nil {
+		log.Fatal("Failed to migrate balance ledger:", err)
+	}
 	if db.DB.Migrator().HasTable(&models.Task{}) {
 		if !db.DB.Migrator().HasColumn(&models.Task{}, "targets_json") {
 			if err := db.DB.Migrator().AddColumn(&models.Task{}, "TargetsJSON"); err != nil {
@@ -42,6 +46,7 @@ func main() {
 		}
 	}
 	ensureNodeColumns()
+	ensureSiteColumns()
 	if db.DB.Migrator().HasTable("job") {
 		if err := db.DB.Migrator().DropTable("job"); err != nil {
 			log.Printf("Failed to drop job table: %v", err)
@@ -102,6 +107,8 @@ func main() {
 	services.StartSiteCreateWorker()
 	// Start User Package Expiration Worker
 	services.StartUserPackageExpirationWorker()
+	// Start Package Auto Renew Worker
+	services.StartPackageAutoRenewWorker()
 	// Start User Package Traffic Worker
 	services.StartUserPackageTrafficWorker()
 	// Start Cleanup & Backup Worker
@@ -110,7 +117,16 @@ func main() {
 	// 4. Start Server
 	// Recommend running behind Nginx Load Balancer for HA
 	log.Printf("Starting CDN Core API on :%s", config.App.Port)
-	r.Run(":" + config.App.Port)
+	addr := strings.TrimSpace(config.App.Port)
+	if addr == "" {
+		addr = "8080"
+	}
+	if !strings.Contains(addr, ":") {
+		addr = ":" + addr
+	}
+	if err := r.Run(addr); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func ensureNodeColumns() {
@@ -130,6 +146,14 @@ func ensureNodeColumns() {
 	ensureColumn(m, &models.Node{}, "InstallStatus")
 	ensureColumn(m, &models.Node{}, "InstallError")
 	ensureColumn(m, &models.Node{}, "InstallAt")
+}
+
+func ensureSiteColumns() {
+	if !db.DB.Migrator().HasTable(&models.Site{}) {
+		return
+	}
+	m := db.DB.Migrator()
+	ensureColumn(m, &models.Site{}, "SettingsRaw")
 }
 
 func ensureColumn(m gorm.Migrator, model interface{}, name string) {

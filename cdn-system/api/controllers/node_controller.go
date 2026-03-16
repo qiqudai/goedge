@@ -627,12 +627,21 @@ func (ctr *NodeController) DeleteNode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid ID")})
 		return
 	}
+	inUse, err := hasLineBindings(db.DB, []int64{id})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
+	if inUse {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.delete_in_use")})
+		return
+	}
 	recordNodeIPSwitchLogs(id, "delete")
 	if err := services.SyncPackageCnameForNodes([]int64{id}, "delete"); err != nil {
 		log.Printf("[DNS] package cname delete sync failed node=%d err=%v", id, err)
 	}
 
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		var subIDs []int64
 		if err := tx.Model(&models.Node{}).Where("pid = ?", id).Pluck("id", &subIDs).Error; err != nil {
 			return err
@@ -642,9 +651,6 @@ func (ctr *NodeController) DeleteNode(c *gin.Context) {
 		ids = append(ids, id)
 		ids = append(ids, subIDs...)
 
-		if err := tx.Where("node_id IN ? OR node_ip_id IN ?", ids, ids).Delete(&models.Line{}).Error; err != nil {
-			return err
-		}
 		if err := tx.Where("pid = ?", id).Delete(&models.Node{}).Error; err != nil {
 			return err
 		}
@@ -713,11 +719,17 @@ func (ctr *NodeController) BatchAction(c *gin.Context) {
 			}).Error
 		recordBatchNodeIPSwitchLogs(req.Ids, "disable")
 	case "delete":
+		inUse, err := hasLineBindings(db.DB, req.Ids)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+			return
+		}
+		if inUse {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": T("node.delete_in_use")})
+			return
+		}
 		recordBatchNodeIPSwitchLogs(req.Ids, "delete")
-		err := db.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("node_id IN ?", req.Ids).Delete(&models.Line{}).Error; err != nil {
-				return err
-			}
+		err = db.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Where("pid IN ?", req.Ids).Delete(&models.Node{}).Error; err != nil {
 				return err
 			}
@@ -794,6 +806,26 @@ func resolveInitialInstallStatus(autoInstall bool) string {
 		return "running"
 	}
 	return "idle"
+}
+
+func hasLineBindings(tx *gorm.DB, nodeIDs []int64) (bool, error) {
+	if len(nodeIDs) == 0 {
+		return false, nil
+	}
+	var subIDs []int64
+	if err := tx.Model(&models.Node{}).Where("pid IN ?", nodeIDs).Pluck("id", &subIDs).Error; err != nil {
+		return false, err
+	}
+	ids := make([]int64, 0, len(nodeIDs)+len(subIDs))
+	ids = append(ids, nodeIDs...)
+	ids = append(ids, subIDs...)
+	var count int64
+	if err := tx.Model(&models.Line{}).
+		Where("node_id IN ? OR node_ip_id IN ?", ids, ids).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func updateInstallStatus(nodeID int64, status, errMsg string, at time.Time) error {

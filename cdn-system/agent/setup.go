@@ -91,6 +91,11 @@ func initEnvironment() {
 	if abs, err := filepath.Abs(NginxBinPath); err == nil {
 		NginxBinPath = abs
 	}
+	if runtime.GOOS != "windows" {
+		if err := ensureLinuxNginxWrapper(NginxBinPath); err != nil {
+			log.Printf("[Warn] Ensure nginx wrapper failed: %v", err)
+		}
+	}
 
 	confPath := filepath.Join(rootDir, "conf", "cdn_config.json")
 	if abs, err := filepath.Abs(confPath); err == nil {
@@ -253,4 +258,92 @@ func dirExists(path string) bool {
 		return false
 	}
 	return info.IsDir()
+}
+
+func ensureLinuxNginxWrapper(binPath string) error {
+	if runtime.GOOS == "windows" || strings.TrimSpace(binPath) == "" {
+		return nil
+	}
+	realPath := binPath + ".real"
+	hasReal := false
+	if info, err := os.Stat(realPath); err == nil && !info.IsDir() {
+		hasReal = true
+	}
+
+	switch {
+	case hasReal:
+		if fileLooksLikeELF(binPath) {
+			_ = os.Remove(realPath)
+			if err := os.Rename(binPath, realPath); err != nil {
+				return err
+			}
+		}
+		return writeNginxWrapper(
+			binPath,
+			realPath,
+			filepath.Join(runtimeRoot(), "openresty", "luajit", "lib"),
+			filepath.Join(runtimeRoot(), "openresty", "lualib"),
+		)
+	case fileLooksLikeELF(binPath):
+		if err := os.Rename(binPath, realPath); err != nil {
+			return err
+		}
+		return writeNginxWrapper(
+			binPath,
+			realPath,
+			filepath.Join(runtimeRoot(), "openresty", "luajit", "lib"),
+			filepath.Join(runtimeRoot(), "openresty", "lualib"),
+		)
+	default:
+		if isGeneratedNginxWrapper(binPath) {
+			return os.Chmod(binPath, 0o755)
+		}
+	}
+	return nil
+}
+
+func fileLooksLikeELF(path string) bool {
+	fp, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer fp.Close()
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(fp, header); err != nil {
+		return false
+	}
+	return bytes.Equal(header, []byte{0x7f, 'E', 'L', 'F'})
+}
+
+func isGeneratedNginxWrapper(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), "cdn-agent-nginx-wrapper")
+}
+
+func writeNginxWrapper(path, realPath, libDir, lualibDir string) error {
+	quotedReal := "'" + strings.ReplaceAll(realPath, "'", "'\\''") + "'"
+	quotedLib := "'" + strings.ReplaceAll(libDir, "'", "'\\''") + "'"
+	quotedLua := "'" + strings.ReplaceAll(lualibDir, "'", "'\\''") + "'"
+	content := "#!/usr/bin/env sh\n" +
+		"# cdn-agent-nginx-wrapper\n" +
+		"LIB_DIR=" + quotedLib + "\n" +
+		"LUALIB_DIR=" + quotedLua + "\n" +
+		"if [ -d \"$LIB_DIR\" ]; then\n" +
+		"  case \":${LD_LIBRARY_PATH:-}:\" in\n" +
+		"    *\":$LIB_DIR:\"*) ;;\n" +
+		"    *) export LD_LIBRARY_PATH=\"$LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\" ;;\n" +
+		"  esac\n" +
+		"fi\n" +
+		"if [ -d \"$LUALIB_DIR\" ]; then\n" +
+		"  export LUA_PATH=\"$LUALIB_DIR/?.lua;$LUALIB_DIR/?/init.lua;${LUA_PATH:-};;\"\n" +
+		"  export LUA_CPATH=\"$LUALIB_DIR/?.so;${LUA_CPATH:-};;\"\n" +
+		"fi\n" +
+		"exec " + quotedReal + " \"$@\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		return err
+	}
+	return os.Chmod(realPath, 0o755)
 }

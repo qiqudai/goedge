@@ -31,9 +31,11 @@ func startMetricsShip() {
 
 func startLogCleanup() {
 	cleanupStoredLogs()
+	handleLowDiskCleanup()
 	ticker := time.NewTicker(time.Hour)
 	for range ticker.C {
 		cleanupStoredLogs()
+		handleLowDiskCleanup()
 	}
 }
 

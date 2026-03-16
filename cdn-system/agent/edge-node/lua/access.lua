@@ -8,6 +8,7 @@ local balancer = require "lua.balancer" -- Phase 3
 local cc = require "lua.cc"
 local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
+local cjson = require "cjson.safe"
 
 -- 1. IP Blocking Check (Legacy/Fallback)
 if ip_block.is_blocked(ngx.var.remote_addr) then
@@ -18,10 +19,6 @@ end
 if anti_cc.check_limit(ngx.var.remote_addr) then
     ngx.exit(503)
 end
-
--- 3. WAF Protection (Phase 3: Requirement #4)
--- Checks User-Agent and Query Args for malicious patterns
-waf.check()
 
 -- 4. Dynamic Routing & Config Lookup
 
@@ -281,6 +278,94 @@ local function apply_cors_headers(cors)
     return true
 end
 
+local function encode_headers(headers)
+    if type(headers) ~= "table" then
+        return ""
+    end
+    local out = {}
+    for k, v in pairs(headers) do
+        if type(v) == "table" then
+            out[k] = table.concat(v, ",")
+        elseif v ~= nil then
+            out[k] = tostring(v)
+        end
+    end
+    local ok, encoded = pcall(cjson.encode, out)
+    if ok and encoded then
+        return encoded
+    end
+    return ""
+end
+
+local function read_body(limit_bytes)
+    ngx.req.read_body()
+    local data = ngx.req.get_body_data()
+    if data then
+        return data
+    end
+    local file = ngx.req.get_body_file()
+    if not file or file == "" then
+        return ""
+    end
+    local f = io.open(file, "rb")
+    if not f then
+        return ""
+    end
+    local content = f:read(limit_bytes or "*a")
+    f:close()
+    return content or ""
+end
+
+local function normalize_raw_header(raw)
+    if not raw or raw == "" then
+        return ""
+    end
+    raw = string.gsub(raw, "\r", "")
+    raw = string.gsub(raw, "\n", "\\n")
+    return raw
+end
+
+local function apply_realtime_send(domain_conf)
+    if not domain_conf then
+        return
+    end
+    if domain_conf.realtime_send == false then
+        ngx.var.cdn_realtime_send = "0"
+    else
+        ngx.var.cdn_realtime_send = "1"
+    end
+end
+
+local function apply_request_logging(domain_conf)
+    if not domain_conf then
+        return
+    end
+    local log_request_header = domain_conf.log_request_header
+    local log_request_body = domain_conf.log_request_body
+    if not log_request_header and not log_request_body then
+        return
+    end
+    if log_request_header then
+        local encoded = encode_headers(ngx.req.get_headers())
+        if encoded == "" then
+            encoded = normalize_raw_header(ngx.req.raw_header())
+        end
+        ngx.var.cdn_req_headers = encoded
+    end
+    if log_request_body then
+        local limit_kb = tonumber(domain_conf.log_request_body_size_limit) or 0
+        if limit_kb <= 0 then
+            limit_kb = 16
+        end
+        local limit_bytes = limit_kb * 1024
+        local body = read_body(limit_bytes)
+        if body and #body > limit_bytes then
+            body = string.sub(body, 1, limit_bytes)
+        end
+        ngx.var.cdn_req_body = body or ""
+    end
+end
+
 local function resolve_geo_record(ip)
     if not ip or not _G.IP_SEARCHER then
         return nil
@@ -412,6 +497,67 @@ local function apply_url_redirects(domain_conf, uri, args, host, port, ip)
     return false
 end
 
+local function apply_url_rewrites(domain_conf, uri, args)
+    local rules = domain_conf and domain_conf.url_rewrites
+    if type(rules) ~= "table" then
+        return false
+    end
+    for _, rule in ipairs(rules) do
+        local pattern = rule.match or ""
+        local target = rule.replace or rule.redirect or ""
+        if pattern ~= "" and target ~= "" then
+            local ok, m = pcall(ngx.re.find, uri, pattern, "jo")
+            if ok and m then
+                local replaced, _, err = ngx.re.sub(uri, pattern, target, "jo")
+                if replaced then
+                    target = replaced
+                else
+                    ngx.log(ngx.WARN, "rewrite regex failed: ", err or "")
+                end
+                if args and args ~= "" and not string.find(target, "?", 1, true) then
+                    target = target .. "?" .. args
+                end
+                local code = tostring(rule.code or "")
+                if code == "" or code == "internal" then
+                    ngx.req.set_uri(target, false)
+                    return false
+                end
+                local status = tonumber(code) or 302
+                return ngx.redirect(target, status)
+            end
+        end
+    end
+    return false
+end
+
+local function find_default_domain(config)
+    if not config or type(config.domains) ~= "table" then
+        return nil
+    end
+    for _, domain in ipairs(config.domains) do
+        if domain.default_site then
+            return domain
+        end
+    end
+    return nil
+end
+
+local function lookup_domain_conf(config, host)
+    if not config then
+        return nil
+    end
+    if config.domain_map and host and host ~= "" then
+        local domain = config.domain_map[host]
+        if domain then
+            return domain
+        end
+    end
+    if config.waf and config.waf.block_unbound_domain then
+        return nil
+    end
+    return find_default_domain(config)
+end
+
 local host = ngx.var.host
 local config = _G.cdn_config 
 local domain_conf = nil
@@ -421,14 +567,17 @@ if not config then
     ngx.exit(503)
 end
 
-if config.domain_map then
-    domain_conf = config.domain_map[host]
-end
+domain_conf = lookup_domain_conf(config, host)
 
 if not domain_conf then
     ngx.log(ngx.WARN, "Unknown domain: ", host)
     ngx.exit(404)
 else
+    if domain_conf.waf_enable ~= false then
+        waf.check()
+    end
+    apply_realtime_send(domain_conf)
+    apply_request_logging(domain_conf)
     local client_ip = ngx.var.remote_addr
     local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
     local crawler_allowed = false
@@ -469,6 +618,10 @@ else
         ngx.exit(403)
     end
 
+    if apply_url_rewrites(domain_conf, ngx.var.uri or "", ngx.var.args or "") then
+        return
+    end
+
     if apply_url_redirects(domain_conf, ngx.var.uri or "", ngx.var.args or "", host or "", ngx.var.server_port or "", client_ip) then
         return
     end
@@ -500,8 +653,18 @@ else
 
     -- 6. Upstream Selection (Phase 3: Requirement #7)
     local upstream_key = domain_conf.upstream_key
-    if config.upstream_map and config.upstream_map[upstream_key] then
-        local targets = config.upstream_map[upstream_key]
+    local targets = nil
+    local use_l2 = false
+    if config.upstream_map then
+        if domain_conf.use_l2 and domain_conf.l2_upstream_key and domain_conf.l2_upstream_key ~= "" then
+            if config.upstream_map[domain_conf.l2_upstream_key] then
+                upstream_key = domain_conf.l2_upstream_key
+                use_l2 = true
+            end
+        end
+        targets = config.upstream_map[upstream_key]
+    end
+    if targets then
         
         -- Get Policy from Domain Config (default to round_robin)
         local policy = domain_conf.load_balance_policy or "round_robin"
@@ -514,13 +677,27 @@ else
             scheme = string.lower(scheme)
             local target = target_addr
             if not string.find(target_addr, ":", 1, true) then
-                if scheme == "https" and domain_conf.origin_https_port and domain_conf.origin_https_port ~= "" then
-                    target = target_addr .. ":" .. domain_conf.origin_https_port
-                elseif scheme == "http" and domain_conf.origin_http_port and domain_conf.origin_http_port ~= "" then
-                    target = target_addr .. ":" .. domain_conf.origin_http_port
+                local port = ""
+                if use_l2 then
+                    if scheme == "https" and domain_conf.l2_https_port and domain_conf.l2_https_port ~= "" then
+                        port = domain_conf.l2_https_port
+                    elseif scheme == "http" and domain_conf.l2_http_port and domain_conf.l2_http_port ~= "" then
+                        port = domain_conf.l2_http_port
+                    end
+                end
+                if port == "" then
+                    if scheme == "https" and domain_conf.origin_https_port and domain_conf.origin_https_port ~= "" then
+                        port = domain_conf.origin_https_port
+                    elseif scheme == "http" and domain_conf.origin_http_port and domain_conf.origin_http_port ~= "" then
+                        port = domain_conf.origin_http_port
+                    end
+                end
+                if port ~= "" then
+                    target = target_addr .. ":" .. port
                 end
             end
             ngx.var.backend_target = scheme .. "://" .. target
+            ngx.ctx.l2_used = use_l2
             
              -- Add Custom Headers
             if domain_conf.headers then

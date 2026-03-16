@@ -92,6 +92,9 @@ func (c *TaskController) Create(ctx *gin.Context) {
 		CreateAt: time.Now(),
 		Enable:   true,
 	}
+	if targets := buildConnectedTargetsJSON(); targets != "" {
+		task.TargetsJSON = targets
+	}
 
 	if err := db.DB.Create(&task).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": T("Failed to create task")})
@@ -191,6 +194,9 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 		State:    "waiting",
 		CreateAt: time.Now(),
 		Enable:   true,
+	}
+	if targets := buildConnectedTargetsJSON(); targets != "" {
+		newTask.TargetsJSON = targets
 	}
 	if err := db.DB.Create(&newTask).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"code": 1, "msg": T("Failed to create task")})
@@ -370,6 +376,15 @@ func parseTaskMeta(raw string) purgeTaskMeta {
 	var meta purgeTaskMeta
 	_ = json.Unmarshal([]byte(raw), &meta)
 	return meta
+}
+
+func buildConnectedTargetsJSON() string {
+	nodeIDs := connectedNodeIDs()
+	if len(nodeIDs) == 0 {
+		return ""
+	}
+	targets := services.NewTaskTargets(nodeIDs)
+	return targets.Marshal()
 }
 
 func splitTaskLines(input string) []string {

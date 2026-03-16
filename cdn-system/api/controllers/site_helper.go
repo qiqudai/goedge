@@ -436,6 +436,12 @@ func siteMissingColumns(tx *gorm.DB) []string {
 	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
 		missing = append(missing, "DNSProviderID")
 	}
+	if !migrator.HasColumn(&models.Site{}, "platform_dns_record_id") {
+		missing = append(missing, "PlatformDNSRecordID")
+	}
+	if !migrator.HasColumn(&models.Site{}, "user_dns_record_id") {
+		missing = append(missing, "UserDNSRecordID")
+	}
 	if !migrator.HasColumn(&models.Site{}, "settings") {
 		missing = append(missing, "SettingsRaw")
 	}
@@ -446,6 +452,17 @@ func siteMissingColumns(tx *gorm.DB) []string {
 		missing = append(missing, "CertID")
 	}
 	return missing
+}
+
+func withSiteColumns(tx *gorm.DB) *gorm.DB {
+	if tx == nil {
+		return tx
+	}
+	omitColumns := siteMissingColumns(tx)
+	if len(omitColumns) == 0 {
+		return tx
+	}
+	return tx.Omit(omitColumns...)
 }
 
 func ensureDNSRecords(site *models.Site) error {
@@ -461,6 +478,7 @@ func ensureDNSRecords(site *models.Site) error {
 
 func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 	query := db.DB.Model(&models.Site{})
+	query = withSiteColumns(query)
 	if userID != nil && *userID != 0 {
 		query = query.Where("uid = ?", *userID)
 	}
@@ -601,11 +619,8 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 		"user_package",
 		"region_id",
 		"node_group_id",
-		"dns_provider_id",
 		"cname_domain",
 		"cname_hostname",
-		"cname_hostname2",
-		"cname_mode",
 		"domain",
 		"http_listen",
 		"https_listen",
@@ -613,6 +628,18 @@ func querySites(c *gin.Context, userID *int64) (*siteQueryResult, error) {
 		"state",
 		"enable",
 		"create_at",
+	}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "settings") {
+		selectCols = append(selectCols, "settings")
+	}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "dns_provider_id") {
+		selectCols = append(selectCols, "dns_provider_id")
+	}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cname_hostname2") {
+		selectCols = append(selectCols, "cname_hostname2")
+	}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cname_mode") {
+		selectCols = append(selectCols, "cname_mode")
 	}
 	if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
 		selectCols = append(selectCols, "cert_id")
@@ -680,10 +707,18 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		}
 		httpOn := len(site.HttpListen) > 0 || strings.TrimSpace(site.HttpListenRaw) != ""
 		httpsOn := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
+		certID := site.CertID
 		if site.Settings != nil {
 			if httpsCfg, ok := site.Settings["https"].(map[string]interface{}); ok {
 				if enable, ok := httpsCfg["enable"]; ok {
 					httpsOn = parseBoolValue(enable, httpsOn)
+				}
+				if certID == 0 {
+					if rawCertID, ok := httpsCfg["certificate_id"]; ok && rawCertID != nil {
+						if parsedCertID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprintf("%v", rawCertID)), 10, 64); err == nil {
+							certID = parsedCertID
+						}
+					}
 				}
 			}
 		}
@@ -731,7 +766,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			CNAME:           cname,
 			Backends:        site.Backends,
 			HTTPS:           httpsOn,
-			CertID:          site.CertID,
+			CertID:          certID,
 			UserPackageID:   site.UserPackageID,
 			UserPackageName: pkg.Name,
 			DNSProviderID:   site.DNSProviderID,

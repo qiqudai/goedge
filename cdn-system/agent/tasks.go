@@ -246,10 +246,10 @@ type AgentPackageConfig struct {
 	Version int    `json:"version"`
 	Status  string `json:"status"`
 	Limits  struct {
-		Traffic    int64 `json:"traffic"`
-		Bandwidth  int64 `json:"bandwidth"`
-		Connection int64 `json:"connection"`
-		Domain     int64 `json:"domain"`
+		Traffic    int64  `json:"traffic"`
+		Bandwidth  string `json:"bandwidth"`
+		Connection int64  `json:"connection"`
+		Domain     int64  `json:"domain"`
 	} `json:"limits"`
 	Features struct {
 		Websocket    bool `json:"websocket"`

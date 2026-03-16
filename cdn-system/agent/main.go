@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"cdn-common/i18n"
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var Version = "1.0.4"
+var Version = "1.0.11"
 
 func resolveWorkDir(configPath string) {
 	baseDir := ""
@@ -64,14 +64,17 @@ func main() {
 	// 2. Load from Config File
 	if fileData, err := ioutil.ReadFile(configPath); err == nil {
 		var fileConfig struct {
-			API            string `json:"api"`
-			Token          string `json:"token"`
-			NodeID         string `json:"node_id"`
-			Debug          bool   `json:"debug"`
-			WorkDir        string `json:"work_dir"`
-			ResetResources bool   `json:"reset_resources"`
-			BootstrapSync  bool   `json:"bootstrap_sync"`
-			BootstrapStart bool   `json:"bootstrap_start"`
+			API                string `json:"api"`
+			Token              string `json:"token"`
+			NodeID             string `json:"node_id"`
+			Debug              bool   `json:"debug"`
+			WorkDir            string `json:"work_dir"`
+			ResetResources     bool   `json:"reset_resources"`
+			BootstrapSync      bool   `json:"bootstrap_sync"`
+			BootstrapStart     bool   `json:"bootstrap_start"`
+			GenevaEnable       bool   `json:"geneva_enable"`
+			GenevaWindowSize   uint16 `json:"geneva_window_size"`
+			AutoInstallService *bool  `json:"auto_install_service"`
 		}
 		if err := json.Unmarshal(fileData, &fileConfig); err == nil {
 			if fileConfig.API != "" {
@@ -92,6 +95,13 @@ func main() {
 			ResetResources = fileConfig.ResetResources
 			BootstrapSync = fileConfig.BootstrapSync
 			BootstrapStart = fileConfig.BootstrapStart
+			GenevaEnable = fileConfig.GenevaEnable
+			if fileConfig.GenevaWindowSize > 0 {
+				GenevaWindowSize = fileConfig.GenevaWindowSize
+			}
+			if fileConfig.AutoInstallService != nil {
+				AutoInstallService = *fileConfig.AutoInstallService
+			}
 			log.Printf("[Info] Loaded config from %s", configPath)
 		}
 	}
@@ -110,6 +120,7 @@ func main() {
 		DebugMode = true
 	}
 	resolveWorkDir(configPath)
+	maybeConfigureAutostart(configPath)
 
 	if AuthToken == "" {
 		log.Fatal("Error: Token is required in either agent.json or -token flag.")
@@ -133,7 +144,9 @@ func main() {
 		}
 	}
 	initEnvironment()
+	runStartupDiagnostics()
 	bootstrapSyncAndStart()
+	startGenevaIfEnabled()
 
 	// 2. Start Tickers
 	go startWebSocketClient() // Persistent Connection
@@ -146,7 +159,3 @@ func main() {
 	// 3. Keep Alive
 	select {}
 }
-
-
-
-

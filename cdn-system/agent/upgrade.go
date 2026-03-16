@@ -94,6 +94,11 @@ func upgradeAgentPackage(raw string, report TaskProgressReporter) (string, error
 		if err := applyEdgeNodeUpgrade(edgeNodePath, runtimeRoot()); err != nil {
 			return "", err
 		}
+		if runtime.GOOS != "windows" {
+			if err := ensureLinuxNginxWrapper(NginxBinPath); err != nil {
+				log.Printf("[Upgrade] ensure nginx wrapper failed: %v", err)
+			}
+		}
 	}
 
 	reporter(75, "重启 OpenResty")

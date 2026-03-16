@@ -143,6 +143,15 @@ const handleCreate = () => { currentItem.value = { id: 0 }; editVisible.value = 
 const handleEdit = (row) => { currentItem.value = { ...row }; editVisible.value = true }
 
 const handleBatch = async (action, ids) => {
+  if (action === 'delete') {
+    const idSet = new Set((ids || selectedRows.value.map(r => r.id)))
+    const rows = list.value.filter(row => idSet.has(row.id))
+    const hasBindings = rows.some(row => Number(row.line_count || 0) > 0)
+    if (hasBindings) {
+      ElMessage.warning('该节点已加入线路分组，请先移除后再删除')
+      return
+    }
+  }
   const targetIds = ids || selectedRows.value.map(r => r.id)
   await ElMessageBox.confirm(`\u786e\u5b9a\u6267\u884c\u6279\u91cf${action}\u64cd\u4f5c\u5417\uff1f`, '\u63d0\u793a')
   await request.post('/nodes/batch_action', { action, ids: targetIds })
@@ -169,6 +178,10 @@ const handleStatusChange = async (row) => {
 
 const handleRowAction = (command, row) => {
   if (command === 'delete') {
+    if (Number(row.line_count || 0) > 0) {
+      ElMessage.warning('该节点已加入线路分组，请先移除后再删除')
+      return
+    }
     ElMessageBox.confirm('\u786e\u5b9a\u5220\u9664\u8282\u70b9\u5417\uff1f', '\u63d0\u793a').then(async () => {
       await request.delete(`/nodes/${row.id}`)
       fetchList()

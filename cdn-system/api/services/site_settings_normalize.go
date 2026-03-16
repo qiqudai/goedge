@@ -15,9 +15,15 @@ func NormalizeSiteSettings(settings map[string]interface{}) map[string]interface
 			cacheCfg["rules"] = normalizeCacheRulesRaw(raw)
 		}
 	}
+	if raw, ok := settings["url_rewrites"]; ok {
+		settings["url_rewrites"] = normalizeURLRewritesRaw(raw)
+	}
 	if adv := getMap(settings, "advanced"); adv != nil {
 		if raw, ok := adv["url_redirects"]; ok {
 			adv["url_redirects"] = normalizeURLRedirectsRaw(raw)
+		}
+		if raw, ok := adv["url_rewrites"]; ok {
+			adv["url_rewrites"] = normalizeURLRewritesRaw(raw)
 		}
 		if raw, ok := adv["req_headers"]; ok {
 			adv["req_headers"] = normalizeHeaderRulesRaw(raw)
@@ -242,6 +248,41 @@ func normalizeURLRedirectsRaw(raw interface{}) []map[string]interface{} {
 		item["domain"] = domain
 		item["match"] = match
 		item["redirect"] = redirect
+		item["code"] = code
+		out = append(out, item)
+	}
+	reverseMapSlice(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeURLRewritesRaw(raw interface{}) []map[string]interface{} {
+	items := normalizeMapSlice(raw)
+	if len(items) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]map[string]interface{}, 0, len(items))
+	for i := len(items) - 1; i >= 0; i-- {
+		item := items[i]
+		match := strings.TrimSpace(parseString(item["match"]))
+		replace := strings.TrimSpace(parseString(item["replace"]))
+		if replace == "" {
+			replace = strings.TrimSpace(parseString(item["redirect"]))
+		}
+		if match == "" || replace == "" {
+			continue
+		}
+		code := strings.TrimSpace(parseString(item["code"]))
+		key := strings.ToLower(match) + "|" + replace + "|" + code
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		item["match"] = match
+		item["replace"] = replace
 		item["code"] = code
 		out = append(out, item)
 	}

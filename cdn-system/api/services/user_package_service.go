@@ -114,17 +114,17 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 		groupIDs = append(groupIDs, up.BackupNodeGroup)
 	}
 
-	var nodes []models.Node
+	var nodeIDs []int64
 	if len(groupIDs) > 0 {
-		if err := db.DB.Where("group_id IN ? AND enable = ?", groupIDs, true).Find(&nodes).Error; err != nil {
+		if err := db.DB.Model(&models.Line{}).
+			Select("distinct node_id").
+			Where("node_group_id IN ?", groupIDs).
+			Where("node_id <> 0").
+			Pluck("node_id", &nodeIDs).Error; err != nil {
 			return err
 		}
 	}
-
-	nodeIDs := make([]int64, len(nodes))
-	for i, n := range nodes {
-		nodeIDs[i] = n.ID
-	}
+	nodeIDs = uniqueInt64List(nodeIDs)
 
 	// 5. Create Task
 	// task.data: packages: [{package_id, version, config: {...}}]

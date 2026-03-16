@@ -66,7 +66,7 @@ func (ctrl *SiteController) AdminGet(c *gin.Context) {
 	}
 
 	var site models.Site
-	query := db.DB.Where("id = ?", id)
+	query := withSiteColumns(db.DB).Where("id = ?", id)
 	if isUserRequest(c) {
 		uid := parseInt64(mustGet(c, "userID"))
 		if uid == 0 {
@@ -130,7 +130,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	}
 
 	var oldSite models.Site
-	if err := db.DB.Where("id = ?", id).First(&oldSite).Error; err != nil {
+	if err := withSiteColumns(db.DB).Where("id = ?", id).First(&oldSite).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load site")})
 		return
 	}
@@ -145,6 +145,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		GroupID         *int64                 `json:"group_id"`
 		GroupIDs        *[]int64               `json:"group_ids"`
 		DNSProviderID   *int64                 `json:"dns_provider_id"`
+		CertID          *int64                 `json:"cert_id"`
 		HttpListen      *[]string              `json:"http_listen"`
 		HttpsListen     *[]string              `json:"https_listen"`
 		BalanceWay      *string                `json:"balance_way"`
@@ -235,6 +236,9 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		}
 		if req.DNSProviderID != nil && tx.Migrator().HasColumn(&models.Site{}, "dns_provider_id") {
 			updates["dns_provider_id"] = *req.DNSProviderID
+		}
+		if req.CertID != nil && tx.Migrator().HasColumn(&models.Site{}, "cert_id") {
+			updates["cert_id"] = *req.CertID
 		}
 		if req.HttpListen != nil {
 			updates["http_listen"] = encodeList(*req.HttpListen)
@@ -579,6 +583,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		GroupID           *int64                 `json:"group_id"`
 		GroupIDs          *[]int64               `json:"group_ids"`
 		DNSProviderID     *int64                 `json:"dns_provider_id"`
+		CertID            *int64                 `json:"cert_id"`
 		HttpListen        *[]string              `json:"http_listen"`
 		HttpsListen       *[]string              `json:"https_listen"`
 		BalanceWay        *string                `json:"balance_way"`
@@ -706,6 +711,9 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		}
 		if req.DNSProviderID != nil && tx.Migrator().HasColumn(&models.Site{}, "dns_provider_id") {
 			updates["dns_provider_id"] = *req.DNSProviderID
+		}
+		if req.CertID != nil && tx.Migrator().HasColumn(&models.Site{}, "cert_id") {
+			updates["cert_id"] = *req.CertID
 		}
 		if req.HttpListen != nil {
 			updates["http_listen"] = encodeList(*req.HttpListen)
@@ -954,6 +962,9 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 			Enable:   true,
 			CreateAt: now,
 			RetryAt:  &now,
+		}
+		if targets := buildConnectedTargetsJSON(); targets != "" {
+			task.TargetsJSON = targets
 		}
 		if err := db.DB.Create(&task).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Create task failed")})

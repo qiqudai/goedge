@@ -763,6 +763,7 @@ func initDispatchLoop() {
 	dispatchOnce.Do(func() {
 		initDispatchPool()
 		services.SetDispatchPendingHook(triggerDispatchPending)
+		services.SetConnectedNodeProvider(connectedNodeIDs)
 		go dispatchWorker()
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)

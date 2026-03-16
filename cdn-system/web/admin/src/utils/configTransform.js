@@ -17,8 +17,7 @@ export function buildSettingsPayload(siteSettings) {
   const { list: resHeaders } = dedupeHeaderRules(siteSettings.advanced?.resHeaders || [])
   const uploadLimitKB = siteSettings.advanced.uploadLimitMode === 'none'
     ? 0
-    : parseInt(siteSettings.advanced.uploadLimitValue || 0)
-  const uploadLimitMB = uploadLimitKB > 0 ? Math.ceil(uploadLimitKB / 1024) : 0
+    : parseInt(siteSettings.advanced.uploadLimitValue || 0, 10)
 
   return {
     origin: buildOriginPayload(siteSettings.origin),
@@ -40,7 +39,6 @@ export function buildSettingsPayload(siteSettings) {
     origin_cert: siteSettings.advanced.originCert,
     realtime_identify: siteSettings.advanced.realtimeIdentify,
     realtime_send: siteSettings.advanced.realtimeSend,
-    upload_limit: uploadLimitMB,
     advanced: {
       body_limit: uploadLimitKB,
       body_limit_unit: 'kb'

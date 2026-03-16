@@ -193,6 +193,7 @@ export function useSiteSettings() {
           enable: siteSettings.basic.status,
           http_listen: siteSettings.basic.httpEnable ? splitStr(siteSettings.basic.httpPorts) : [],
           https_listen: siteSettings.https.enable ? splitStr(siteSettings.https.listenPorts) : [],
+          cert_id: siteSettings.https.certId || 0,
           user_package_id: siteSettings.basic.userPackageId || 0,
           group_id: (siteSettings.basic.groupIds || [])[0] || 0,
           group_ids: siteSettings.basic.groupIds || [],

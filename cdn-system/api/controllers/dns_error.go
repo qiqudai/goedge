@@ -33,6 +33,9 @@ func resolveDNSSyncErrorMessageFromString(errMsg string) (string, string) {
 		return T("dns.sync.dns_provider_unavailable"), raw
 	case strings.Contains(lower, "dnspod id/token required"),
 		strings.Contains(lower, "secret_id/secret_key"),
+		strings.Contains(lower, "authfailure"),
+		strings.Contains(lower, "secretid is not found"),
+		strings.Contains(lower, "secretid not found"),
 		strings.Contains(lower, "invalid credentials"),
 		strings.Contains(lower, "permission denied"),
 		strings.Contains(lower, "unauthorized"):

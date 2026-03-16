@@ -3,6 +3,8 @@
     "token": "1e53b4aaf19c4feda09cc353f28e4c7e",
     "node_id": "18",
     "debug": true,
+    "geneva_enable": false,
+    "geneva_window_size": 4,
     "reset_resources": true,
     "bootstrap_sync": true,
     "bootstrap_start": true

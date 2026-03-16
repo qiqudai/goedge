@@ -54,7 +54,7 @@
       <!-- Advanced Settings Area -->
       <div v-show="showAdvanced" class="advanced-settings">
         <el-form-item label="分片回源">
-           <el-switch v-model="form.enable_slice" />
+           <el-switch v-model="form.enable_range" />
         </el-form-item>
         
         <el-form-item label="忽略Vary">
@@ -121,7 +121,7 @@ const defaultFormState = () => ({
   ttl_unit: 'd',
   ignore_query: false,
   force_cache: false,
-  enable_slice: false,
+  enable_range: false,
   ignore_vary: false,
   skip_conditions: []
 });
@@ -166,13 +166,17 @@ watch(() => props.visible, (newVal) => {
   if (newVal) {
     if (props.rule) {
       const parsed = parseTTL(props.rule.ttl)
-      form.value = { 
+      const enableRange = props.rule.enable_range ?? props.rule.enable_slice ?? false
+      const merged = { 
         ...defaultFormState(),
         ...props.rule,
+        enable_range: enableRange,
         ttl_value: parsed.val,
         ttl_unit: parsed.unit,
         skip_conditions: JSON.parse(JSON.stringify(props.rule.skip_conditions || []))
       };
+      delete merged.enable_slice
+      form.value = merged;
     } else {
       form.value = defaultFormState();
     }

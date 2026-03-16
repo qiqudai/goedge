@@ -36,6 +36,7 @@ func Setup(r *gin.Engine) {
 	r.POST("/api/v1/login/captcha", authCtr.SendLoginCaptcha)
 	r.POST("/api/v1/admin/login/captcha", authCtr.SendLoginCaptcha)
 	r.POST("/api/v1/user/login/captcha", authCtr.SendLoginCaptcha)
+	r.POST("/api/v1/pay/shkeeper/callback", (&controllers.FinanceController{}).ShkeeperCallback)
 	sysInfoCtr := &controllers.SystemInfoController{}
 	r.GET("/api/v1/system_info", sysInfoCtr.Get)
 
@@ -161,6 +162,9 @@ func Setup(r *gin.Engine) {
 			// Finance
 			admin.GET("/orders", (&controllers.FinanceController{}).ListOrders)
 			admin.POST("/recharge", (&controllers.FinanceController{}).Recharge)
+			admin.POST("/orders/:id/mark_paid", (&controllers.FinanceController{}).AdminMarkOrderPaid)
+			admin.POST("/balance/adjust", (&controllers.FinanceController{}).AdminAdjustBalance)
+			admin.GET("/balance_logs", (&controllers.FinanceController{}).ListBalanceLogs)
 
 			// Announcements
 			annCtr := &controllers.AnnouncementController{}
@@ -326,6 +330,9 @@ func Setup(r *gin.Engine) {
 
 			// Orders
 			user.GET("/orders", (&controllers.FinanceController{}).ListUserOrders)
+			user.GET("/balance_logs", (&controllers.FinanceController{}).ListUserBalanceLogs)
+			user.POST("/orders/package/open", (&controllers.FinanceController{}).UserCreatePackageOpenOrder)
+			user.POST("/orders/package/renew", (&controllers.FinanceController{}).UserCreatePackageRenewOrder)
 			// Dashboard (shared UI entry, user uses /api/v1/user/dashboard via baseURL)
 			user.GET("/dashboard", (&controllers.DashboardController{}).Index)
 			user.GET("/logs/operation", (&controllers.LogController{}).ListOpLogsUser)

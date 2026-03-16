@@ -64,6 +64,9 @@ func ResponseWrapper() gin.HandlerFunc {
 }
 
 func shouldWrap(c *gin.Context, body []byte) bool {
+	if c != nil && strings.HasPrefix(c.Request.URL.Path, "/api/v1/agent/") {
+		return false
+	}
 	if ct := c.Writer.Header().Get("Content-Type"); ct != "" && !strings.Contains(ct, "json") {
 		return false
 	}

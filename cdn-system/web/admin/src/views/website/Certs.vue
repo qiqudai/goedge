@@ -238,6 +238,26 @@ const listQuery = reactive({
   searchField: 'domain'
 })
 
+const resolvePagedResult = (res) => {
+  const payload = res?.data && typeof res.data === 'object' && !Array.isArray(res.data)
+    ? res.data
+    : res
+
+  const rows = Array.isArray(payload?.list)
+    ? payload.list
+    : Array.isArray(res?.list)
+      ? res.list
+      : Array.isArray(res?.data)
+        ? res.data
+        : []
+
+  const count = Number(payload?.total ?? res?.total ?? 0)
+
+  return {
+    list: rows,
+    total: Number.isFinite(count) ? count : 0
+  }
+}
 
 const popupVisible = ref(false)
 const editingId = ref(0)
@@ -255,8 +275,9 @@ const fetchList = () => {
       search_field: listQuery.searchField
     }
   }).then(res => {
-    list.value = res.list || res.data || []
-    total.value = res.total || 0
+    const { list: rows, total: count } = resolvePagedResult(res)
+    list.value = rows
+    total.value = count
     listLoading.value = false
   }).catch(() => {
     listLoading.value = false

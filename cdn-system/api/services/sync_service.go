@@ -126,6 +126,9 @@ func createConfigSyncTask(change ConfigChange, nodeIDs []int64) {
 		EndAt:    &now,
 		RetryAt:  &now,
 	}
+	if len(nodeIDs) == 0 {
+		nodeIDs = ConnectedNodeIDs()
+	}
 	if len(nodeIDs) > 0 {
 		targets := NewTaskTargets(nodeIDs)
 		task.TargetsJSON = targets.Marshal()

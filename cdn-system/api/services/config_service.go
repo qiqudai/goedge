@@ -114,7 +114,11 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 
 	// 2. Find Sites assigned to these Node Groups
 	var sites []models.Site
-	if err := db.DB.Where("node_group_id IN ?", groupIDs).Find(&sites).Error; err != nil {
+	siteDB := db.DB
+	if omitColumns := siteMissingColumnsForTask(siteDB); len(omitColumns) > 0 {
+		siteDB = siteDB.Omit(omitColumns...)
+	}
+	if err := siteDB.Where("node_group_id IN ?", groupIDs).Find(&sites).Error; err != nil {
 		return nil, err
 	}
 	nodeGroupCounts := loadNodeGroupCounts(groupIDs)
@@ -190,6 +194,19 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		headers := buildHeaderMap(*effectiveSite)
 		responseHeaders := buildResponseHeaderMap(effectiveSite.Settings)
 		hasHTTPS := len(effectiveSite.HttpsListen) > 0 || strings.TrimSpace(effectiveSite.HttpsListenRaw) != ""
+		selectedCertID := effectiveSite.CertID
+		if effectiveSite.Settings != nil {
+			if httpsMap := getMap(effectiveSite.Settings, "https"); httpsMap != nil {
+				hasHTTPS = parseBoolValue(httpsMap["enable"], hasHTTPS)
+				if selectedCertID == 0 {
+					selectedCertID = int64(parseIntValue(httpsMap["certificate_id"], 0))
+				}
+			}
+		}
+		httpsListen := effectiveSite.HttpsListen
+		if hasHTTPS && len(httpsListen) == 0 {
+			httpsListen = []string{"443"}
+		}
 		if pkg, ok := userPackageMap[effectiveSite.UserPackageID]; ok {
 			if expireCloseEnabled && !pkg.EndAt.IsZero() && pkg.EndAt.Before(now) {
 				status = "expired"
@@ -201,11 +218,17 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		hotlinkCfg := extractHotlinkConfig(effectiveSite.Settings)
 		corsCfg := extractCorsConfig(effectiveSite.Settings)
 		cookieCfg := extractCookieConfig(effectiveSite.Settings)
+		wafEnable := extractWAFEnable(effectiveSite.Settings)
 		blockTransparentProxy := extractBlockTransparentProxy(effectiveSite.Settings)
 		crawlerAction := extractCrawlerAction(effectiveSite.Settings)
 		guardPassTTL, guardBlockTTL := extractGuardTTLs(effectiveSite.Settings)
 		urlRedirects := extractURLRedirects(effectiveSite.Settings)
+		urlRewrites := extractURLRewrites(effectiveSite.Settings)
 		originConditions := extractOriginConditions(effectiveSite.Settings)
+		siteType := strings.ToLower(strings.TrimSpace(parseString(effectiveSite.Settings["site_type"])))
+		if siteType == "" {
+			siteType = "website"
+		}
 		if effectiveSite.CcDefaultRule > 0 {
 			usedRuleIDs = append(usedRuleIDs, effectiveSite.CcDefaultRule)
 		}
@@ -226,6 +249,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			)
 			domainConf := models.EdgeDomain{
 				Name:                        domain,
+				SiteType:                    siteType,
 				UpstreamKey:                 upstreamKey,
 				L2UpstreamKey:               l2UpstreamKey,
 				UseL2:                       l2Enabled,
@@ -242,8 +266,10 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				GuardPassTTL:                guardPassTTL,
 				GuardBlockTTL:               guardBlockTTL,
 				URLRedirects:                urlRedirects,
+				URLRewrites:                 urlRewrites,
 				OriginConditions:            originConditions,
 				Status:                      status,
+				WAFEnable:                   wafEnable,
 				ACLDefaultAction:            aclDefault,
 				ACLRules:                    aclRules,
 				BlackIPs:                    parseIPList(effectiveSite.BlackIPRaw),
@@ -255,7 +281,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				OriginHTTPSPort:             originHTTPSPort,
 				Cache:                       cacheCfg,
 				HttpListen:                  effectiveSite.HttpListen,
-				HttpsListen:                 effectiveSite.HttpsListen,
+				HttpsListen:                 httpsListen,
 				HTTPSForce:                  httpsCfg.force,
 				HTTPSRedirectPort:           httpsCfg.redirectPort,
 				HTTPSHSTS:                   httpsCfg.hsts,
@@ -275,6 +301,16 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				EnableWebsocket:             advCfg.websocket,
 				EnableRange:                 advCfg.rangeEnabled,
 				BodyLimit:                   advCfg.bodyLimit,
+				LogRequestHeader:            advCfg.logRequestHeader,
+				LogResponseHeader:           advCfg.logResponseHeader,
+				LogRequestBody:              advCfg.logRequestBody,
+				LogRequestBodySizeLimit:     advCfg.logRequestBodySizeLimit,
+				OriginCert:                  advCfg.originCert,
+				RealtimeIdentify:            advCfg.realtimeIdentify,
+				RealtimeSend:                advCfg.realtimeSend,
+				RealtimeReturn:              advCfg.realtimeReturn,
+				DefaultSite:                 advCfg.defaultSite,
+				IPv6Enable:                  advCfg.ipv6Enable,
 				LimitRate:                   limitRate,
 				ConnLimit:                   connLimit,
 				UpstreamKeepalive:           advCfg.keepalive,
@@ -282,7 +318,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				UpstreamKeepaliveTimeout:    advCfg.keepaliveTimeout,
 			}
 			if hasHTTPS {
-				cert := findCertForDomain(domain, certs)
+				cert := findCertForSiteDomain(selectedCertID, domain, certs)
 				if cert != nil {
 					domainConf.SSLCertData = cert.Cert
 					// Decrypt key
@@ -667,6 +703,22 @@ func extractCookieConfig(settings map[string]interface{}) *models.EdgeCookieConf
 	return &models.EdgeCookieConfig{Enable: enable, Domain: domain}
 }
 
+func extractWAFEnable(settings map[string]interface{}) *bool {
+	if settings == nil {
+		return nil
+	}
+	security, ok := settings["security"].(map[string]interface{})
+	if !ok || security == nil {
+		return nil
+	}
+	raw, ok := security["waf_enable"]
+	if !ok || raw == nil {
+		return nil
+	}
+	val := parseBoolValue(raw, false)
+	return &val
+}
+
 func extractBlockTransparentProxy(settings map[string]interface{}) bool {
 	if settings == nil {
 		return false
@@ -737,6 +789,27 @@ func extractURLRedirects(settings map[string]interface{}) []map[string]interface
 			if json.Unmarshal(b, &parsed) == nil && len(parsed) > 0 {
 				return parsed
 			}
+		}
+	}
+	return nil
+}
+
+func extractURLRewrites(settings map[string]interface{}) []map[string]interface{} {
+	if settings == nil {
+		return nil
+	}
+	if raw, ok := settings["url_rewrites"]; ok {
+		if list := normalizeURLRewritesRaw(raw); len(list) > 0 {
+			return list
+		}
+	}
+	advanced, ok := settings["advanced"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	if raw, ok := advanced["url_rewrites"]; ok {
+		if list := normalizeURLRewritesRaw(raw); len(list) > 0 {
+			return list
 		}
 	}
 	return nil
@@ -1501,12 +1574,40 @@ func sanitizeProxyHTTPVersion(value string) string {
 	}
 }
 
+func findCertForSiteDomain(certID int64, domain string, certs []models.Cert) *models.Cert {
+	if certID > 0 {
+		for _, cert := range certs {
+			if int64(cert.ID) == certID {
+				return &cert
+			}
+		}
+	}
+	return findCertForDomain(domain, certs)
+}
+
 func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" {
+		return nil
+	}
 	for _, cert := range certs {
 		// Handle multi-domain certs (comma separated)
 		domains := strings.Split(cert.Domain, ",")
 		for _, d := range domains {
-			if strings.TrimSpace(d) == domain {
+			candidate := strings.TrimSpace(strings.ToLower(d))
+			if candidate == "" {
+				continue
+			}
+			if candidate == domain {
+				return &cert
+			}
+			if strings.HasPrefix(candidate, "*.") {
+				suffix := strings.TrimPrefix(candidate, "*")
+				if suffix != "" && strings.HasSuffix(domain, suffix) {
+					return &cert
+				}
+			}
+			if strings.HasPrefix(candidate, ".") && strings.HasSuffix(domain, candidate) {
 				return &cert
 			}
 		}
@@ -1565,16 +1666,26 @@ type httpsConfig struct {
 }
 
 type advancedConfig struct {
-	gzip              bool
-	gzipTypes         string
-	websocket         bool
-	rangeEnabled      bool
-	proxyHTTPVersion  string
-	proxySSLProtocols string
-	bodyLimit         int64
-	keepalive         bool
-	keepaliveConn     int
-	keepaliveTimeout  int
+	gzip                    bool
+	gzipTypes               string
+	websocket               bool
+	rangeEnabled            bool
+	proxyHTTPVersion        string
+	proxySSLProtocols       string
+	bodyLimit               int64
+	logRequestHeader        bool
+	logResponseHeader       bool
+	logRequestBody          bool
+	logRequestBodySizeLimit int
+	originCert              bool
+	realtimeIdentify        bool
+	realtimeSend            bool
+	realtimeReturn          bool
+	defaultSite             bool
+	ipv6Enable              bool
+	keepalive               bool
+	keepaliveConn           int
+	keepaliveTimeout        int
 }
 
 type proxyTimeoutConfig struct {
@@ -1641,6 +1752,16 @@ func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
 			cfg.bodyLimit = normalizeBodyLimitToKB(raw, adv["body_limit_unit"])
 			bodyLimitSet = true
 		}
+		cfg.logRequestHeader = parseBoolValue(adv["log_request_header"], false)
+		cfg.logResponseHeader = parseBoolValue(adv["log_response_header"], false)
+		cfg.logRequestBody = parseBoolValue(adv["log_request_body"], false)
+		cfg.logRequestBodySizeLimit = parseIntValue(adv["log_request_body_size_limit"], 0)
+		cfg.originCert = parseBoolValue(adv["origin_cert"], false)
+		cfg.realtimeIdentify = parseBoolValue(adv["realtime_identify"], false)
+		cfg.realtimeSend = parseBoolValue(adv["realtime_send"], false)
+		cfg.realtimeReturn = parseBoolValue(adv["realtime_return"], false)
+		cfg.defaultSite = parseBoolValue(adv["default_site"], false)
+		cfg.ipv6Enable = parseBoolValue(adv["ipv6"], false)
 		cfg.keepalive = parseBoolValue(adv["ups_keepalive"], false)
 		cfg.keepaliveConn = parseIntValue(adv["ups_keepalive_conn"], 0)
 		cfg.keepaliveTimeout = parseIntValue(adv["ups_keepalive_timeout"], 0)
@@ -1649,6 +1770,41 @@ func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
 		if raw, ok := settings["upload_limit"]; ok {
 			cfg.bodyLimit = normalizeBodyLimitToKB(raw, "mb")
 			bodyLimitSet = true
+		}
+	}
+	if settings != nil {
+		if cfg.logRequestHeader == false {
+			cfg.logRequestHeader = parseBoolValue(settings["log_request_header"], cfg.logRequestHeader)
+		}
+		if cfg.logResponseHeader == false {
+			cfg.logResponseHeader = parseBoolValue(settings["log_response_header"], cfg.logResponseHeader)
+		}
+		if cfg.logRequestBody == false {
+			cfg.logRequestBody = parseBoolValue(settings["log_request_body"], cfg.logRequestBody)
+		}
+		if cfg.logRequestBodySizeLimit == 0 {
+			cfg.logRequestBodySizeLimit = parseIntValue(settings["log_request_body_size_limit"], cfg.logRequestBodySizeLimit)
+		}
+		if cfg.originCert == false {
+			cfg.originCert = parseBoolValue(settings["origin_cert"], cfg.originCert)
+		}
+		if cfg.realtimeIdentify == false {
+			cfg.realtimeIdentify = parseBoolValue(settings["realtime_identify"], cfg.realtimeIdentify)
+		}
+		if cfg.realtimeSend == false {
+			cfg.realtimeSend = parseBoolValue(settings["realtime_send"], cfg.realtimeSend)
+		}
+		if cfg.realtimeReturn == false {
+			cfg.realtimeReturn = parseBoolValue(settings["realtime_return"], cfg.realtimeReturn)
+		}
+		if cfg.defaultSite == false {
+			cfg.defaultSite = parseBoolValue(settings["default_site"], cfg.defaultSite)
+		}
+		if cfg.ipv6Enable == false {
+			cfg.ipv6Enable = parseBoolValue(settings["ipv6"], cfg.ipv6Enable)
+			if cfg.ipv6Enable == false {
+				cfg.ipv6Enable = parseBoolValue(settings["ipv6_enable"], cfg.ipv6Enable)
+			}
 		}
 	}
 	return cfg
@@ -1792,19 +1948,70 @@ func mapToCacheRule(raw map[string]interface{}) models.EdgeCacheRule {
 	if !ignoreArgs {
 		ignoreArgs = parseBoolValue(raw["ignore_query"], false)
 	}
-	return models.EdgeCacheRule{
-		Rule:       parseString(raw["rule"]),
-		Ext:        parseString(raw["ext"]),
-		URI:        parseString(raw["uri"]),
-		Prefix:     parseString(raw["prefix"]),
-		TTL:        parseIntValue(raw["ttl"], 0),
-		Enable:     parseBoolPtr(raw["enable"]),
-		NoCache:    parseBoolValue(raw["no_cache"], false),
-		ForceCache: parseBoolValue(raw["force_cache"], false),
-		Priority:   parseIntValue(raw["priority"], 0),
-		IgnoreArgs: ignoreArgs,
-		CacheKey:   parseString(raw["cache_key"]),
+	enableRange := parseBoolValue(raw["enable_range"], false)
+	if !enableRange {
+		enableRange = parseBoolValue(raw["enable_slice"], false)
 	}
+	return models.EdgeCacheRule{
+		Rule:           parseString(raw["rule"]),
+		Ext:            parseString(raw["ext"]),
+		URI:            parseString(raw["uri"]),
+		Prefix:         parseString(raw["prefix"]),
+		TTL:            parseIntValue(raw["ttl"], 0),
+		Enable:         parseBoolPtr(raw["enable"]),
+		NoCache:        parseBoolValue(raw["no_cache"], false),
+		ForceCache:     parseBoolValue(raw["force_cache"], false),
+		EnableRange:    enableRange,
+		IgnoreVary:     parseBoolValue(raw["ignore_vary"], false),
+		SkipConditions: parseCacheSkipConditions(raw["skip_conditions"]),
+		Priority:       parseIntValue(raw["priority"], 0),
+		IgnoreArgs:     ignoreArgs,
+		CacheKey:       parseString(raw["cache_key"]),
+	}
+}
+
+func parseCacheSkipConditions(raw interface{}) []models.EdgeCacheSkipCondition {
+	if raw == nil {
+		return nil
+	}
+	out := make([]models.EdgeCacheSkipCondition, 0)
+	switch v := raw.(type) {
+	case []interface{}:
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				condType := parseString(m["type"])
+				condValue := parseString(m["value"])
+				if condType != "" && condValue != "" {
+					out = append(out, models.EdgeCacheSkipCondition{Type: condType, Value: condValue})
+				}
+			}
+		}
+	case []map[string]interface{}:
+		for _, item := range v {
+			condType := parseString(item["type"])
+			condValue := parseString(item["value"])
+			if condType != "" && condValue != "" {
+				out = append(out, models.EdgeCacheSkipCondition{Type: condType, Value: condValue})
+			}
+		}
+	default:
+		if b, err := json.Marshal(raw); err == nil {
+			var list []map[string]interface{}
+			if err := json.Unmarshal(b, &list); err == nil {
+				for _, item := range list {
+					condType := parseString(item["type"])
+					condValue := parseString(item["value"])
+					if condType != "" && condValue != "" {
+						out = append(out, models.EdgeCacheSkipCondition{Type: condType, Value: condValue})
+					}
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func splitCacheRuleValues(value string) []string {
@@ -1940,6 +2147,12 @@ func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup m
 		connectTimeout := ""
 		proxyTimeout := ""
 		connLimit := 0
+		listenProtocol := "tcp"
+		if streamSettings != nil {
+			if raw := strings.ToLower(strings.TrimSpace(parseString(streamSettings["listen_protocol"]))); raw == "udp" || raw == "tcp" {
+				listenProtocol = raw
+			}
+		}
 		if originCfg != nil {
 			connectTimeout = parseString(originCfg["connect_timeout"])
 			proxyTimeout = parseString(originCfg["proxy_timeout"])
@@ -2001,6 +2214,7 @@ func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup m
 		streams = append(streams, models.EdgeStream{
 			ID:                  effectiveForward.ID,
 			ListenPorts:         effectiveForward.ListenPorts,
+			ListenProtocol:      listenProtocol,
 			Targets:             targets,
 			UseListenPort:       useL2,
 			BalanceWay:          strings.TrimSpace(effectiveForward.BalanceWay),

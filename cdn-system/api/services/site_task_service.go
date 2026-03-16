@@ -222,6 +222,12 @@ func siteMissingColumnsForTask(tx *gorm.DB) []string {
 	if !migrator.HasColumn(&models.Site{}, "dns_provider_id") {
 		missing = append(missing, "DNSProviderID")
 	}
+	if !migrator.HasColumn(&models.Site{}, "platform_dns_record_id") {
+		missing = append(missing, "PlatformDNSRecordID")
+	}
+	if !migrator.HasColumn(&models.Site{}, "user_dns_record_id") {
+		missing = append(missing, "UserDNSRecordID")
+	}
 	if !migrator.HasColumn(&models.Site{}, "settings") {
 		missing = append(missing, "SettingsRaw")
 	}

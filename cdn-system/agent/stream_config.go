@@ -11,6 +11,94 @@ import (
 	"strings"
 )
 
+type streamListenEntry struct {
+	Raw         string
+	ListenValue string
+	Port        string
+	Protocol    string
+}
+
+func filterStreamPorts(ports []string, resources *edgeResources) []string {
+	if len(ports) == 0 {
+		return ports
+	}
+	if resources == nil {
+		return ports
+	}
+	disabled := strings.TrimSpace(resources.Forward.DisabledPorts)
+	if disabled == "" {
+		return ports
+	}
+	out := make([]string, 0, len(ports))
+	for _, portRaw := range ports {
+		port, ok := parseListenPort(portRaw)
+		if !ok {
+			out = append(out, portRaw)
+			continue
+		}
+		if isPortAllowed(port, "", disabled) {
+			out = append(out, portRaw)
+		}
+	}
+	return out
+}
+
+func normalizeStreamListenProtocol(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "udp" {
+		return "udp"
+	}
+	return "tcp"
+}
+
+func parseStreamListenEntry(raw string, defaultProto string) (streamListenEntry, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return streamListenEntry{}, false
+	}
+	proto := normalizeStreamListenProtocol(defaultProto)
+	listenValue := raw
+	if idx := strings.LastIndex(raw, "/"); idx != -1 {
+		suffix := strings.ToLower(strings.TrimSpace(raw[idx+1:]))
+		if suffix == "udp" || suffix == "tcp" {
+			proto = suffix
+			listenValue = strings.TrimSpace(raw[:idx])
+		}
+	}
+	if listenValue == "" {
+		return streamListenEntry{}, false
+	}
+	port, ok := parseListenPort(listenValue)
+	if !ok {
+		return streamListenEntry{}, false
+	}
+	return streamListenEntry{
+		Raw:         raw,
+		ListenValue: listenValue,
+		Port:        strconv.Itoa(port),
+		Protocol:    proto,
+	}, true
+}
+
+func normalizeStreamListenPorts(ports []string, defaultProto string) []streamListenEntry {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make([]streamListenEntry, 0, len(ports))
+	for _, raw := range ports {
+		entry, ok := parseStreamListenEntry(raw, defaultProto)
+		if !ok {
+			log.Printf("[Warn] Invalid stream listen port skipped: %s", raw)
+			continue
+		}
+		out = append(out, entry)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func loadL2StatusSnapshot() map[int64]bool {
 	rootDir := runtimeRoot()
 	if rootDir == "" {
@@ -78,8 +166,10 @@ func renderStreamConfig(streams []edgeStream, l2Status map[int64]bool) string {
 	}
 	var b strings.Builder
 	for _, stream := range streams {
+		listenPorts := filterStreamPorts(stream.ListenPorts, LocalResources)
+		listenEntries := normalizeStreamListenPorts(listenPorts, stream.ListenProtocol)
 		targets := selectStreamTargets(stream, l2Status)
-		if len(stream.ListenPorts) == 0 || len(targets) == 0 {
+		if len(listenEntries) == 0 || len(targets) == 0 {
 			continue
 		}
 		writeUpstream := func(name string, listenPort string) {
@@ -112,13 +202,17 @@ func renderStreamConfig(streams []edgeStream, l2Status map[int64]bool) string {
 			}
 			b.WriteString("}\n")
 		}
-		writeServer := func(port, upstreamName string) {
+		writeServer := func(entry streamListenEntry, upstreamName string) {
 			b.WriteString("server {\n")
-			if stream.ProxyProtocol {
-				b.WriteString("    listen " + port + " proxy_protocol;\n")
-			} else {
-				b.WriteString("    listen " + port + ";\n")
+			listenLine := entry.ListenValue
+			if entry.Protocol == "udp" {
+				listenLine += " udp"
 			}
+			// OpenResty stream does not allow "proxy_protocol" with UDP listens.
+			if stream.ProxyProtocol && entry.Protocol != "udp" {
+				listenLine += " proxy_protocol"
+			}
+			b.WriteString("    listen " + listenLine + ";\n")
 			b.WriteString("    proxy_pass " + upstreamName + ";\n")
 			if stream.ProxyConnectTimeout != "" {
 				b.WriteString("    proxy_connect_timeout " + stream.ProxyConnectTimeout + ";\n")
@@ -137,26 +231,21 @@ func renderStreamConfig(streams []edgeStream, l2Status map[int64]bool) string {
 		}
 
 		if stream.UseListenPort {
-			for _, port := range stream.ListenPorts {
-				port = strings.TrimSpace(port)
-				if port == "" {
-					continue
+			for _, entry := range listenEntries {
+				upstreamName := fmt.Sprintf("stream_up_%d_%s", stream.ID, sanitizeStreamUpstreamSuffix(entry.Port))
+				if entry.Protocol == "udp" {
+					upstreamName = upstreamName + "_udp"
 				}
-				upstreamName := fmt.Sprintf("stream_up_%d_%s", stream.ID, sanitizeStreamUpstreamSuffix(port))
-				writeUpstream(upstreamName, port)
-				writeServer(port, upstreamName)
+				writeUpstream(upstreamName, entry.Port)
+				writeServer(entry, upstreamName)
 			}
 			continue
 		}
 
 		upstreamName := fmt.Sprintf("stream_up_%d", stream.ID)
 		writeUpstream(upstreamName, "")
-		for _, port := range stream.ListenPorts {
-			port = strings.TrimSpace(port)
-			if port == "" {
-				continue
-			}
-			writeServer(port, upstreamName)
+		for _, entry := range listenEntries {
+			writeServer(entry, upstreamName)
 		}
 	}
 	return b.String()
@@ -215,7 +304,7 @@ func refreshStreamConfigForL2Status(snapshot map[string]bool) {
 		log.Printf("[Warn] L2 stream refresh failed: %v", err)
 		return
 	}
-	if err := reloadNginx(); err != nil {
+	if err := reloadNginxWithRollback(); err != nil {
 		log.Printf("[Warn] L2 stream reload failed: %v", err)
 	}
 }

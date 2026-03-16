@@ -63,6 +63,40 @@ local function guard_cookie_domain()
     return nil
 end
 
+local function waf_config()
+    local cfg = _G.cdn_config
+    if cfg and cfg.waf then
+        return cfg.waf
+    end
+    return nil
+end
+
+local function guard_debug_enabled()
+    local waf = waf_config()
+    return waf and waf.anti_cc_debug == true
+end
+
+local function guard_debug_log(...)
+    if guard_debug_enabled() then
+        ngx.log(ngx.INFO, ...)
+    end
+end
+
+local function guard_custom_image_url()
+    local waf = waf_config()
+    if not waf then
+        return ""
+    end
+    if waf.anti_cc_image_source ~= "custom" then
+        return ""
+    end
+    local url = tostring(waf.anti_cc_image_custom_url or "")
+    if url == "" then
+        return ""
+    end
+    return url
+end
+
 local function cookie(name)
     return ngx.var["cookie_" .. name]
 end
@@ -520,6 +554,7 @@ function _M.ensure_passed(filter, host, ip)
     local ok = false
     ok = validate_guardret(filter_type, nonce8, st, guardret_value)
     if ok == true then
+        guard_debug_log("guard passed host=", host or "", " ip=", ip or "", " type=", filter_type)
         local pass_ttl = guard_pass_ttl()
         set_cookie(COOKIE_GUARD_PASS, build_pass_cookie(host, ip, filter_type, filter_id, pass_ttl), {
             path = "/",
@@ -533,6 +568,7 @@ function _M.ensure_passed(filter, host, ip)
         delete_state(nonce8)
         return true
     end
+    guard_debug_log("guard failed host=", host or "", " ip=", ip or "", " type=", filter_type)
 
     st.attempts = (tonumber(st.attempts) or 0) + 1
     if st.attempts >= MAX_ATTEMPTS then
@@ -577,6 +613,7 @@ end
 function _M.challenge(filter, host, ip)
     local filter_type = normalize_type(filter.type or filter.Type or "")
     ensure_state(filter, host, ip)
+    guard_debug_log("guard challenge host=", host or "", " ip=", ip or "", " type=", filter_type)
 
     ngx.header["Content-Type"] = "text/html; charset=utf-8"
     ngx.header["Cache-Control"] = "no-store"
@@ -586,6 +623,14 @@ function _M.challenge(filter, host, ip)
     if not content then
         ngx.say("<html><body>Guard template missing</body></html>")
         return
+    end
+    local custom_url = guard_custom_image_url()
+    if custom_url ~= "" then
+        if filter_type == "rotate_captcha" then
+            content = string.gsub(content, "/_guard/rotate_image", custom_url)
+        elseif filter_type == "captcha" then
+            content = string.gsub(content, "/_guard/captcha%.png", custom_url)
+        end
     end
     ngx.print(content)
 end

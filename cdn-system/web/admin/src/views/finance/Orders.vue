@@ -28,7 +28,7 @@
       <el-table-column prop="status" label="状态" width="120">
         <template #default="{ row }">
           <el-tag type="success" v-if="row.status === 1">已支付</el-tag>
-          <el-tag type="info" v-else>已支付</el-tag>
+          <el-tag type="info" v-else>未支付</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="pay_type" label="支付方式" width="120" />
@@ -36,18 +36,36 @@
       <el-table-column prop="type" label="类型" width="120" />
       <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
       <el-table-column prop="created_at" label="创建时间" width="180" />
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button
+            v-if="row.status === 0"
+            type="primary"
+            link
+            @click="markPaid(row)"
+          >
+            标记已支付
+          </el-button>
+        </template>
+      </el-table-column>
     </AppTable>
 
-    <el-dialog title="手动充值" v-model="dialogVisible" width="420px">
+    <el-dialog title="余额调整" v-model="dialogVisible" width="460px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="用户ID">
           <el-input v-model.number="form.user_id" />
         </el-form-item>
+        <el-form-item label="动作">
+          <el-select v-model="form.action" style="width: 100%">
+            <el-option label="加款" value="credit" />
+            <el-option label="扣款" value="debit" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="金额">
           <el-input v-model.number="form.amount" type="number" />
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" />
+        <el-form-item label="原因">
+          <el-input v-model="form.reason" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -66,7 +84,7 @@ import { ElMessage } from 'element-plus'
 const list = ref([])
 const total = ref(0)
 const dialogVisible = ref(false)
-const form = reactive({ user_id: undefined, amount: 0, remark: '' })
+const form = reactive({ user_id: undefined, action: 'credit', amount: 0, reason: '' })
 
 const filters = reactive({
   keyword: '',
@@ -90,9 +108,16 @@ const handleRecharge = () => {
     ElMessage.warning('\u8bf7\u8f93\u5165\u7528\u6237ID\u548c\u91d1\u989d')
     return
   }
-  request.post('/recharge', form).then(() => {
-    ElMessage.success('\u5145\u503c\u6210\u529f')
+  request.post('/balance/adjust', form).then(() => {
+    ElMessage.success(form.action === 'debit' ? '扣款成功' : '加款成功')
     dialogVisible.value = false
+    getList()
+  })
+}
+
+const markPaid = row => {
+  request.post(`/orders/${row.id}/mark_paid`, { reason: 'admin debug mark paid' }).then(() => {
+    ElMessage.success('已标记支付')
     getList()
   })
 }

@@ -4,8 +4,10 @@ local waf = require "lua.waf"
 local quota = require "lua.quota"
 local cc = require "lua.cc"
 local balancer = require "lua.balancer"
+local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
 local bit = require "bit"
+local cjson = require "cjson.safe"
 
 local function acl_check(domain_conf, ip)
     if not domain_conf then return end
@@ -263,6 +265,94 @@ local function apply_cors_headers(cors)
     return true
 end
 
+local function encode_headers(headers)
+    if type(headers) ~= "table" then
+        return ""
+    end
+    local out = {}
+    for k, v in pairs(headers) do
+        if type(v) == "table" then
+            out[k] = table.concat(v, ",")
+        elseif v ~= nil then
+            out[k] = tostring(v)
+        end
+    end
+    local ok, encoded = pcall(cjson.encode, out)
+    if ok and encoded then
+        return encoded
+    end
+    return ""
+end
+
+local function read_body(limit_bytes)
+    ngx.req.read_body()
+    local data = ngx.req.get_body_data()
+    if data then
+        return data
+    end
+    local file = ngx.req.get_body_file()
+    if not file or file == "" then
+        return ""
+    end
+    local f = io.open(file, "rb")
+    if not f then
+        return ""
+    end
+    local content = f:read(limit_bytes or "*a")
+    f:close()
+    return content or ""
+end
+
+local function normalize_raw_header(raw)
+    if not raw or raw == "" then
+        return ""
+    end
+    raw = string.gsub(raw, "\r", "")
+    raw = string.gsub(raw, "\n", "\\n")
+    return raw
+end
+
+local function apply_realtime_send(domain_conf)
+    if not domain_conf then
+        return
+    end
+    if domain_conf.realtime_send == false then
+        ngx.var.cdn_realtime_send = "0"
+    else
+        ngx.var.cdn_realtime_send = "1"
+    end
+end
+
+local function apply_request_logging(domain_conf)
+    if not domain_conf then
+        return
+    end
+    local log_request_header = domain_conf.log_request_header
+    local log_request_body = domain_conf.log_request_body
+    if not log_request_header and not log_request_body then
+        return
+    end
+    if log_request_header then
+        local encoded = encode_headers(ngx.req.get_headers())
+        if encoded == "" then
+            encoded = normalize_raw_header(ngx.req.raw_header())
+        end
+        ngx.var.cdn_req_headers = encoded
+    end
+    if log_request_body then
+        local limit_kb = tonumber(domain_conf.log_request_body_size_limit) or 0
+        if limit_kb <= 0 then
+            limit_kb = 16
+        end
+        local limit_bytes = limit_kb * 1024
+        local body = read_body(limit_bytes)
+        if body and #body > limit_bytes then
+            body = string.sub(body, 1, limit_bytes)
+        end
+        ngx.var.cdn_req_body = body or ""
+    end
+end
+
 local function resolve_geo_record(ip)
     if not ip or not _G.IP_SEARCHER then
         return nil
@@ -388,6 +478,39 @@ local function apply_url_redirects(domain_conf, uri, args, host, port, ip)
                     local status = tonumber(code) or 302
                     return ngx.redirect(target, status)
                 end
+            end
+        end
+    end
+    return false
+end
+
+local function apply_url_rewrites(domain_conf, uri, args)
+    local rules = domain_conf and domain_conf.url_rewrites
+    if type(rules) ~= "table" then
+        return false
+    end
+    for _, rule in ipairs(rules) do
+        local pattern = rule.match or ""
+        local target = rule.replace or rule.redirect or ""
+        if pattern ~= "" and target ~= "" then
+            local ok, m = pcall(ngx.re.find, uri, pattern, "jo")
+            if ok and m then
+                local replaced, _, err = ngx.re.sub(uri, pattern, target, "jo")
+                if replaced then
+                    target = replaced
+                else
+                    ngx.log(ngx.WARN, "rewrite regex failed: ", err or "")
+                end
+                if args and args ~= "" and not string.find(target, "?", 1, true) then
+                    target = target .. "?" .. args
+                end
+                local code = tostring(rule.code or "")
+                if code == "" or code == "internal" then
+                    ngx.req.set_uri(target, false)
+                    return false
+                end
+                local status = tonumber(code) or 302
+                return ngx.redirect(target, status)
             end
         end
     end
@@ -615,7 +738,7 @@ local function resolve_origin_scheme(protocol)
     return proto, proto
 end
 
-local function build_backend_target(addr, domain_conf)
+local function build_backend_target(addr, domain_conf, use_l2)
     local scheme, proto = resolve_origin_scheme(domain_conf.origin_protocol)
     local target = addr
     if not string.find(addr, ":", 1, true) then
@@ -625,10 +748,23 @@ local function build_backend_target(addr, domain_conf)
                 target = addr .. ":" .. port
             end
         else
-            if scheme == "https" and domain_conf.origin_https_port and domain_conf.origin_https_port ~= "" then
-                target = addr .. ":" .. domain_conf.origin_https_port
-            elseif scheme == "http" and domain_conf.origin_http_port and domain_conf.origin_http_port ~= "" then
-                target = addr .. ":" .. domain_conf.origin_http_port
+            local port = ""
+            if use_l2 then
+                if scheme == "https" and domain_conf.l2_https_port and domain_conf.l2_https_port ~= "" then
+                    port = domain_conf.l2_https_port
+                elseif scheme == "http" and domain_conf.l2_http_port and domain_conf.l2_http_port ~= "" then
+                    port = domain_conf.l2_http_port
+                end
+            end
+            if port == "" then
+                if scheme == "https" and domain_conf.origin_https_port and domain_conf.origin_https_port ~= "" then
+                    port = domain_conf.origin_https_port
+                elseif scheme == "http" and domain_conf.origin_http_port and domain_conf.origin_http_port ~= "" then
+                    port = domain_conf.origin_http_port
+                end
+            end
+            if port ~= "" then
+                target = addr .. ":" .. port
             end
         end
     end
@@ -636,6 +772,18 @@ local function build_backend_target(addr, domain_conf)
 end
 
 local function select_backend_target(domain_conf, client_ip)
+    local config = _G.cdn_config
+    if not config then
+        return nil
+    end
+    local use_l2 = false
+    if config.upstream_map and domain_conf.use_l2 and domain_conf.l2_upstream_key and domain_conf.l2_upstream_key ~= "" then
+        if config.upstream_map[domain_conf.l2_upstream_key] then
+            use_l2 = true
+        end
+    end
+    ngx.ctx.l2_used = use_l2
+
     local ctx = {
         request_uri = ngx.var.request_uri or "",
         uri = ngx.var.uri or "",
@@ -659,27 +807,31 @@ local function select_backend_target(domain_conf, client_ip)
         ctx.node_city = node_geo.city or ""
         ctx.node_isp = node_geo.isp or ""
     end
-    local override = select_condition_origin(domain_conf, ctx)
-    if override and override ~= "" then
-        local items = split_origin_list(override)
-        if #items > 0 then
-            local targets = {}
-            for _, item in ipairs(items) do
-                table.insert(targets, { addr = item })
-            end
-            local key = "cond:" .. override
-            local addr = balancer.get_target(key, targets, "round_robin")
-            if addr then
-                return build_backend_target(addr, domain_conf)
+    if not use_l2 then
+        local override = select_condition_origin(domain_conf, ctx)
+        if override and override ~= "" then
+            local items = split_origin_list(override)
+            if #items > 0 then
+                local targets = {}
+                for _, item in ipairs(items) do
+                    table.insert(targets, { addr = item })
+                end
+                local key = "cond:" .. override
+                local addr = balancer.get_target(key, targets, "round_robin")
+                if addr then
+                    return build_backend_target(addr, domain_conf, false)
+                end
             end
         end
     end
 
-    local config = _G.cdn_config
-    if not config or not config.upstream_map then
+    if not config.upstream_map then
         return nil
     end
     local upstream_key = domain_conf.upstream_key
+    if use_l2 then
+        upstream_key = domain_conf.l2_upstream_key
+    end
     if not upstream_key or upstream_key == "" then
         return nil
     end
@@ -692,25 +844,90 @@ local function select_backend_target(domain_conf, client_ip)
     if not addr then
         return nil
     end
-    return build_backend_target(addr, domain_conf)
+    return build_backend_target(addr, domain_conf, use_l2)
+end
+
+local function find_default_domain(config)
+    if not config or type(config.domains) ~= "table" then
+        return nil
+    end
+    for _, domain in ipairs(config.domains) do
+        if domain.default_site then
+            return domain
+        end
+    end
+    return nil
 end
 
 local function lookup_domain_conf()
     local config = _G.cdn_config
-    if not config or not config.domain_map then
+    if not config then
         return nil
     end
-    return config.domain_map[ngx.var.host]
+    local host = ngx.var.host
+    if config.domain_map and host and host ~= "" then
+        local domain = config.domain_map[host]
+        if domain then
+            return domain
+        end
+    end
+    if config.waf and config.waf.block_unbound_domain then
+        return nil
+    end
+    return find_default_domain(config)
 end
 
 if ip_block.is_blocked(ngx.var.remote_addr) then
     ngx.exit(418)
 end
 
-waf.check()
+local function normalize_domain_conf(conf)
+    if not conf then
+        return
+    end
+    if type(conf.cookie) ~= "table" then
+        conf.cookie = nil
+    end
+    if type(conf.cors) ~= "table" then
+        conf.cors = nil
+    end
+    if type(conf.hotlink) ~= "table" then
+        conf.hotlink = nil
+    end
+    if type(conf.url_redirects) ~= "table" then
+        conf.url_redirects = nil
+    end
+    if type(conf.url_rewrites) ~= "table" then
+        conf.url_rewrites = nil
+    end
+    if type(conf.origin_conditions) ~= "table" then
+        conf.origin_conditions = nil
+    end
+    if type(conf.headers) ~= "table" then
+        conf.headers = nil
+    end
+    if type(conf.response_headers) ~= "table" then
+        conf.response_headers = nil
+    end
+    if type(conf.acl_rules) ~= "table" then
+        conf.acl_rules = nil
+    end
+    if type(conf.white_ips) ~= "table" then
+        conf.white_ips = nil
+    end
+    if type(conf.black_ips) ~= "table" then
+        conf.black_ips = nil
+    end
+end
 
 local domain_conf = lookup_domain_conf()
 if domain_conf then
+    normalize_domain_conf(domain_conf)
+    apply_realtime_send(domain_conf)
+    if domain_conf.waf_enable ~= false then
+        waf.check()
+    end
+    apply_request_logging(domain_conf)
     local client_ip = ngx.var.remote_addr
     local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
     local crawler_allowed = false
@@ -751,6 +968,10 @@ if domain_conf then
         ngx.exit(403)
     end
 
+    if apply_url_rewrites(domain_conf, ngx.var.uri or "", ngx.var.args or "") then
+        return
+    end
+
     if apply_url_redirects(domain_conf, ngx.var.uri or "", ngx.var.args or "", ngx.var.host or "", ngx.var.server_port or "", client_ip) then
         return
     end
@@ -769,6 +990,16 @@ if domain_conf then
     local rule_id = tonumber(ngx.var.cc_rule_id or 0) or 0
     if rule_id > 0 and not crawler_allowed then
         cc.check_rule_id(rule_id, domain_conf.name or "", client_ip, ngx.var.uri)
+    end
+
+    local bypass, ttl = cache.resolve(domain_conf, ngx.var.uri)
+    if bypass then
+        ngx.var.cache_bypass = "1"
+    else
+        ngx.var.cache_bypass = "0"
+    end
+    if ttl and tonumber(ttl) and tonumber(ttl) > 0 then
+        ngx.var.cache_ttl = tostring(ttl)
     end
 
     local backend_target = select_backend_target(domain_conf, client_ip)
