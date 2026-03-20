@@ -303,6 +303,20 @@ func fallbackKeyPath() string {
 	return filepath.ToSlash(keyPath)
 }
 
+func siteCertPath(domain edgeDomain) string {
+	if path := strings.TrimSpace(domain.SSLCertPath); path != "" {
+		return filepath.ToSlash(path)
+	}
+	return fallbackCertPath()
+}
+
+func siteKeyPath(domain edgeDomain) string {
+	if path := strings.TrimSpace(domain.SSLKeyPath); path != "" {
+		return filepath.ToSlash(path)
+	}
+	return fallbackKeyPath()
+}
+
 func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages map[string]string, errorPageDir string, status int, ipv6Enable bool) {
 	port = strings.TrimSpace(port)
 	if port == "" {
@@ -310,14 +324,12 @@ func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages ma
 	}
 	b.WriteString("server {\n")
 	if tls {
-		fallbackCert := fallbackCertPath()
-		fallbackKey := fallbackKeyPath()
 		b.WriteString("    listen " + port + " ssl default_server;\n")
 		if ipv6Enable {
 			b.WriteString("    listen [::]:" + port + " ssl default_server;\n")
 		}
-		b.WriteString("    ssl_certificate " + fallbackCert + ";\n")
-		b.WriteString("    ssl_certificate_key " + fallbackKey + ";\n")
+		b.WriteString("    ssl_certificate " + fallbackCertPath() + ";\n")
+		b.WriteString("    ssl_certificate_key " + fallbackKeyPath() + ";\n")
 	} else {
 		b.WriteString("    listen " + port + " default_server;\n")
 		if ipv6Enable {
@@ -407,8 +419,6 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		listenSuffix += " default_server"
 	}
 	if tls {
-		fallbackCert := fallbackCertPath()
-		fallbackKey := fallbackKeyPath()
 		b.WriteString("    listen " + port + listenSuffix + ";\n")
 		if domain.IPv6Enable {
 			b.WriteString("    listen [::]:" + port + listenSuffix + ";\n")
@@ -419,12 +429,8 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		if domain.HTTPSHTTP3 {
 			b.WriteString(fmt.Sprintf("    add_header Alt-Svc 'h3=\\\":%s\\\"; ma=86400' always;\n", port))
 		}
-		b.WriteString("    ssl_certificate " + fallbackCert + ";\n")
-		b.WriteString("    ssl_certificate_key " + fallbackKey + ";\n")
-		b.WriteString("    ssl_certificate_by_lua_block {\n")
-		b.WriteString("        local ssl_mgr = require \"lua.ssl_manager\"\n")
-		b.WriteString("        ssl_mgr.set_certificate()\n")
-		b.WriteString("    }\n")
+		b.WriteString("    ssl_certificate " + siteCertPath(domain) + ";\n")
+		b.WriteString("    ssl_certificate_key " + siteKeyPath(domain) + ";\n")
 		if protocols := sanitizeNginxValue(domain.HTTPSSSLProtocols); protocols != "" {
 			b.WriteString("    ssl_protocols " + protocols + ";\n")
 		}

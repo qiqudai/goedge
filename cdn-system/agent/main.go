@@ -146,6 +146,9 @@ func main() {
 	initEnvironment()
 	runStartupDiagnostics()
 	bootstrapSyncAndStart()
+	if !(BootstrapSync && BootstrapStart) {
+		ensureManagedNginxOnStartup()
+	}
 	startGenevaIfEnabled()
 
 	// 2. Start Tickers
@@ -157,5 +160,5 @@ func main() {
 	go startL2Monitor()
 
 	// 3. Keep Alive
-	select {}
+	waitForShutdownAndCleanup()
 }

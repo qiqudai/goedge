@@ -73,7 +73,7 @@ func bootstrapSyncAndStart() {
 		return
 	}
 	if BootstrapStart {
-		if err := startNginx(); err != nil {
+		if err := startOrRestartManagedNginx(); err != nil {
 			log.Printf("[Error] Bootstrap start nginx failed: %v", err)
 			return
 		}

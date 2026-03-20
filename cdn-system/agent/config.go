@@ -482,6 +482,9 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := persistFallbackCert(cfg.FallbackCertData, cfg.FallbackKeyData); err != nil {
 		return err
 	}
+	if err := persistDomainCertificates(cfg.Domains); err != nil {
+		return err
+	}
 	if err := writeHTTPConfig(cfg); err != nil {
 		return err
 	}
@@ -660,6 +663,63 @@ func persistFallbackCert(certData, keyData string) error {
 		return err
 	}
 	return nil
+}
+
+func persistDomainCertificates(domains []edgeDomain) error {
+	rootDir := runtimeRoot()
+	certDir := filepath.Join(rootDir, "cert", "sites")
+	if err := os.RemoveAll(certDir); err != nil {
+		return err
+	}
+	if err := fsutil.EnsureDir(certDir); err != nil {
+		return err
+	}
+	for i := range domains {
+		certData := strings.TrimSpace(domains[i].SSLCertData)
+		keyData := strings.TrimSpace(domains[i].SSLKeyData)
+		if certData == "" || keyData == "" {
+			continue
+		}
+		baseName := sanitizeCertificateFileName(domains[i].Name)
+		if baseName == "" {
+			baseName = fmt.Sprintf("domain_%d", i+1)
+		}
+		certPath := filepath.Join(certDir, baseName+".pem")
+		keyPath := filepath.Join(certDir, baseName+".key")
+		if err := fsutil.WriteFileAtomic(certPath, []byte(certData), 0o644); err != nil {
+			return err
+		}
+		if err := fsutil.WriteFileAtomic(keyPath, []byte(keyData), 0o600); err != nil {
+			return err
+		}
+		domains[i].SSLCertPath = filepath.ToSlash(certPath)
+		domains[i].SSLKeyPath = filepath.ToSlash(keyPath)
+	}
+	return nil
+}
+
+func sanitizeCertificateFileName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.' || r == '-' || r == '_':
+			b.WriteRune(r)
+		case r == '*':
+			b.WriteString("_wildcard_")
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return strings.Trim(b.String(), "._-")
 }
 
 func setLocalResources(resources *edgeResources) {

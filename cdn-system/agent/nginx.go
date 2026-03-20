@@ -193,6 +193,39 @@ func stopNginx() error {
 	return nil
 }
 
+func isManagedNginxRunning() bool {
+	if NginxBinPath == "" {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		pidPath := expectedNginxPidPath()
+		if pidPath == "" {
+			return false
+		}
+		if _, err := os.Stat(pidPath); err == nil {
+			return true
+		}
+		return false
+	}
+	pid, err := findNginxMasterPID(nginxConfPath())
+	return err == nil && pid > 0
+}
+
+func startOrRestartManagedNginx() error {
+	if NginxBinPath == "" {
+		return nil
+	}
+	if isManagedNginxRunning() {
+		log.Printf("[Info] Managed nginx detected under %s, restarting", runtimeRoot())
+		if err := stopNginx(); err != nil {
+			return err
+		}
+	} else {
+		log.Printf("[Info] Managed nginx not running under %s, starting", runtimeRoot())
+	}
+	return startNginx()
+}
+
 func reloadNginx() error {
 	return executeReload()
 }
