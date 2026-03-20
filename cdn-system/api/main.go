@@ -12,6 +12,8 @@ import (
 	"cdn-api/services"
 	"cdn-common/i18n"
 
+	"flag"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -20,7 +22,16 @@ import (
 	"gorm.io/gorm"
 )
 
+var Version = "1.0.12"
+
 func main() {
+	versionFlag := flag.Bool("version", false, "Print version and exit")
+	flag.Parse()
+	if *versionFlag {
+		fmt.Println(Version)
+		return
+	}
+
 	// 1. Load Config (Env or File)
 	config.Load()
 

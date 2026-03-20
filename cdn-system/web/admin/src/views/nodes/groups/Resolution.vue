@@ -5,13 +5,13 @@
       <div class="header-fields">
         <div class="field">
           <span class="label">区域:</span>
-          <el-select v-model="selectedRegionId" placeholder="请选择" style="width: 160px" @change="handleRegionChange">
+          <el-select v-model="selectedRegionId" class="bw-dropdown" placeholder="请选择" style="width: 160px" @change="handleRegionChange">
             <el-option v-for="region in regions" :key="region.id" :label="region.name" :value="region.id" />
           </el-select>
         </div>
         <div class="field">
           <span class="label">分组:</span>
-          <el-select v-model="selectedGroupId" placeholder="请选择" style="width: 200px" @change="handleGroupChange">
+          <el-select v-model="selectedGroupId" class="bw-dropdown" placeholder="请选择" style="width: 200px" @change="handleGroupChange">
             <el-option v-for="group in filteredGroups" :key="group.id" :label="group.name" :value="group.id" />
           </el-select>
         </div>
@@ -69,10 +69,11 @@
             <span class="label">当前线路:</span>
             <el-cascader
               v-model="currentLineId"
+              class="bw-dropdown"
               :options="lineOptions"
               :props="lineProps"
               style="width: 300px"
-              popper-class="long-cascader-dropdown"
+              popper-class="long-cascader-dropdown bw-cascader-dropdown"
               @change="handleLineChange"
             />
             <span class="line-tip">当前线路为“全部”时，新增节点会对所有线路生效。</span>
@@ -593,6 +594,47 @@ watch(
 </script>
 
 <style scoped>
+:deep(.bw-dropdown .el-input__wrapper),
+:deep(.bw-dropdown .el-select__wrapper) {
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  box-shadow: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+:deep(.bw-dropdown:hover .el-input__wrapper),
+:deep(.bw-dropdown:hover .el-select__wrapper) {
+  border-color: #c0c4cc;
+}
+
+:deep(.bw-dropdown.is-focus .el-input__wrapper),
+:deep(.bw-dropdown.is-focus .el-select__wrapper),
+:deep(.bw-dropdown .el-input__wrapper.is-focus),
+:deep(.bw-dropdown .el-select__wrapper.is-focused) {
+  border-color: #111111;
+  box-shadow: 0 0 0 1px #111111 inset;
+}
+
+:global(:root[data-theme="dark"] .bw-dropdown .el-input__wrapper),
+:global(:root[data-theme="dark"] .bw-dropdown .el-select__wrapper) {
+  background-color: #2a2f36;
+  border-color: #4a515c;
+  color: #e5eaf3;
+}
+
+:global(:root[data-theme="dark"] .bw-dropdown:hover .el-input__wrapper),
+:global(:root[data-theme="dark"] .bw-dropdown:hover .el-select__wrapper) {
+  border-color: #69707d;
+}
+
+:global(:root[data-theme="dark"] .bw-dropdown.is-focus .el-input__wrapper),
+:global(:root[data-theme="dark"] .bw-dropdown.is-focus .el-select__wrapper),
+:global(:root[data-theme="dark"] .bw-dropdown .el-input__wrapper.is-focus),
+:global(:root[data-theme="dark"] .bw-dropdown .el-select__wrapper.is-focused) {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 1px #ffffff inset;
+}
+
 .header-bar {
   display: flex;
   align-items: center;
@@ -664,5 +706,50 @@ watch(
 <style>
 .long-cascader-dropdown .el-cascader-menu__wrap {
   height: 400px;
+}
+
+.bw-cascader-dropdown {
+  border: 1px solid #dcdfe6;
+}
+
+.bw-cascader-dropdown .el-cascader-menu {
+  border-right-color: #ebeef5;
+}
+
+.bw-cascader-dropdown .el-cascader-node {
+  color: #303133;
+}
+
+.bw-cascader-dropdown .el-cascader-node:not(.is-disabled):hover,
+.bw-cascader-dropdown .el-cascader-node.in-active-path,
+.bw-cascader-dropdown .el-cascader-node.is-active,
+.bw-cascader-dropdown .el-cascader-node.is-selectable.in-checked-path {
+  background-color: #f5f7fa;
+  color: #111111;
+}
+
+:root[data-theme="dark"] .bw-cascader-dropdown {
+  background-color: #2a2f36;
+  border-color: #4a515c;
+}
+
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-menu {
+  background-color: #2a2f36;
+  border-right-color: #3a3f47;
+}
+
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node,
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node__label,
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node__postfix,
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-menu__empty-text {
+  color: #e5eaf3;
+}
+
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node:not(.is-disabled):hover,
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node.in-active-path,
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node.is-active,
+:root[data-theme="dark"] .bw-cascader-dropdown .el-cascader-node.is-selectable.in-checked-path {
+  background-color: #343a43;
+  color: #ffffff;
 }
 </style>
