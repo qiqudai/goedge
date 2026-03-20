@@ -9,26 +9,6 @@ local geo_country = require "lua.geo_country"
 local bit = require "bit"
 local cjson = require "cjson.safe"
 
-local function acl_check(domain_conf, ip)
-    if not domain_conf then return end
-    local rules = domain_conf.acl_rules
-    if rules then
-        for _, rule in ipairs(rules) do
-            if rule.ip == ip then
-                if rule.action == "deny" then
-                    ngx.exit(403)
-                else
-                    return
-                end
-            end
-        end
-    end
-    local default_action = domain_conf.acl_default_action
-    if default_action == "deny" then
-        ngx.exit(403)
-    end
-end
-
 local function ip_in_list(list, ip)
     if not list or not ip then
         return false
@@ -241,30 +221,6 @@ local function hotlink_allowed(domain_conf, uri)
     return false
 end
 
-local function apply_cors_headers(cors)
-    if not cors or cors.enable ~= true then
-        return false
-    end
-    local allow_origin = cors.allow_origin or "*"
-    ngx.header["Access-Control-Allow-Origin"] = allow_origin
-    if cors.allow_methods and cors.allow_methods ~= "" then
-        ngx.header["Access-Control-Allow-Methods"] = cors.allow_methods
-    end
-    if cors.allow_headers and cors.allow_headers ~= "" then
-        ngx.header["Access-Control-Allow-Headers"] = cors.allow_headers
-    end
-    if cors.expose_headers and cors.expose_headers ~= "" then
-        ngx.header["Access-Control-Expose-Headers"] = cors.expose_headers
-    end
-    if cors.allow_credentials == true then
-        ngx.header["Access-Control-Allow-Credentials"] = "true"
-    end
-    if cors.max_age and cors.max_age ~= "" then
-        ngx.header["Access-Control-Max-Age"] = cors.max_age
-    end
-    return true
-end
-
 local function encode_headers(headers)
     if type(headers) ~= "table" then
         return ""
@@ -449,34 +405,55 @@ local function match_redirect_conditions(rule, host, port, ip)
     return true
 end
 
+local function should_handle_url_rule(rule, rewrite)
+    if type(rule) ~= "table" then
+        return false
+    end
+    local conditions = rule.conditions
+    if type(conditions) == "table" and #conditions > 0 then
+        return true
+    end
+    local code = tostring(rule.code or "")
+    if code == "" or code == "internal" or code == "301" or code == "302" then
+        if rewrite and (code == "" or code == "internal") then
+            local target = rule.replace or rule.redirect or ""
+            return not string.find(target, "^/", 1)
+        end
+        return false
+    end
+    return true
+end
+
 local function apply_url_redirects(domain_conf, uri, args, host, port, ip)
     local rules = domain_conf and domain_conf.url_redirects
     if type(rules) ~= "table" then
         return false
     end
     for _, rule in ipairs(rules) do
-        local pattern = rule.match or ""
-        local target = rule.redirect or ""
-        if pattern ~= "" and target ~= "" then
-            local ok, m = pcall(ngx.re.find, uri, pattern, "jo")
-            if ok and m then
-                if match_redirect_conditions(rule, host, port, ip) then
-                    local replaced, _, err = ngx.re.sub(uri, pattern, target, "jo")
-                    if replaced then
-                        target = replaced
-                    else
-                        ngx.log(ngx.WARN, "redirect regex failed: ", err or "")
+        if should_handle_url_rule(rule, false) then
+            local pattern = rule.match or ""
+            local target = rule.redirect or ""
+            if pattern ~= "" and target ~= "" then
+                local ok, m = pcall(ngx.re.find, uri, pattern, "jo")
+                if ok and m then
+                    if match_redirect_conditions(rule, host, port, ip) then
+                        local replaced, _, err = ngx.re.sub(uri, pattern, target, "jo")
+                        if replaced then
+                            target = replaced
+                        else
+                            ngx.log(ngx.WARN, "redirect regex failed: ", err or "")
+                        end
+                        if args and args ~= "" and not string.find(target, "?", 1, true) then
+                            target = target .. "?" .. args
+                        end
+                        local code = tostring(rule.code or "")
+                        if code == "internal" then
+                            ngx.req.set_uri(target, false)
+                            return false
+                        end
+                        local status = tonumber(code) or 302
+                        return ngx.redirect(target, status)
                     end
-                    if args and args ~= "" and not string.find(target, "?", 1, true) then
-                        target = target .. "?" .. args
-                    end
-                    local code = tostring(rule.code or "")
-                    if code == "internal" then
-                        ngx.req.set_uri(target, false)
-                        return false
-                    end
-                    local status = tonumber(code) or 302
-                    return ngx.redirect(target, status)
                 end
             end
         end
@@ -490,27 +467,29 @@ local function apply_url_rewrites(domain_conf, uri, args)
         return false
     end
     for _, rule in ipairs(rules) do
-        local pattern = rule.match or ""
-        local target = rule.replace or rule.redirect or ""
-        if pattern ~= "" and target ~= "" then
-            local ok, m = pcall(ngx.re.find, uri, pattern, "jo")
-            if ok and m then
-                local replaced, _, err = ngx.re.sub(uri, pattern, target, "jo")
-                if replaced then
-                    target = replaced
-                else
-                    ngx.log(ngx.WARN, "rewrite regex failed: ", err or "")
+        if should_handle_url_rule(rule, true) then
+            local pattern = rule.match or ""
+            local target = rule.replace or rule.redirect or ""
+            if pattern ~= "" and target ~= "" then
+                local ok, m = pcall(ngx.re.find, uri, pattern, "jo")
+                if ok and m then
+                    local replaced, _, err = ngx.re.sub(uri, pattern, target, "jo")
+                    if replaced then
+                        target = replaced
+                    else
+                        ngx.log(ngx.WARN, "rewrite regex failed: ", err or "")
+                    end
+                    if args and args ~= "" and not string.find(target, "?", 1, true) then
+                        target = target .. "?" .. args
+                    end
+                    local code = tostring(rule.code or "")
+                    if code == "" or code == "internal" then
+                        ngx.req.set_uri(target, false)
+                        return false
+                    end
+                    local status = tonumber(code) or 302
+                    return ngx.redirect(target, status)
                 end
-                if args and args ~= "" and not string.find(target, "?", 1, true) then
-                    target = target .. "?" .. args
-                end
-                local code = tostring(rule.code or "")
-                if code == "" or code == "internal" then
-                    ngx.req.set_uri(target, false)
-                    return false
-                end
-                local status = tonumber(code) or 302
-                return ngx.redirect(target, status)
             end
         end
     end
@@ -974,17 +953,6 @@ if domain_conf then
 
     if apply_url_redirects(domain_conf, ngx.var.uri or "", ngx.var.args or "", ngx.var.host or "", ngx.var.server_port or "", client_ip) then
         return
-    end
-
-    local cors_enabled = apply_cors_headers(domain_conf.cors)
-    if cors_enabled and ngx.req.get_method() == "OPTIONS" then
-        ngx.status = 204
-        ngx.header["Content-Length"] = "0"
-        ngx.exit(204)
-    end
-
-    if not whitelisted then
-        acl_check(domain_conf, client_ip)
     end
 
     local rule_id = tonumber(ngx.var.cc_rule_id or 0) or 0

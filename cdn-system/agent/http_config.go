@@ -824,6 +824,9 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	writeProxyTimeouts(b, domain)
 	writeProxyBuffering(b, domain)
 	writeProxyRanges(b, domain, rule)
+	writeProxyAccessRules(b, domain)
+	writeProxyCORS(b, domain)
+	writeStaticURLRules(b, domain)
 	writeProxyCustomHeaders(b, domain.Headers, domain.ResponseHeaders)
 	b.WriteString("        proxy_pass $backend_target;\n")
 	writeProxySSL(b, domain)
@@ -916,6 +919,145 @@ func writeProxyCustomHeaders(b *strings.Builder, headers map[string]string, resp
 		}
 		b.WriteString("        add_header " + name + " " + quoteNginxValue(value) + " always;\n")
 	}
+}
+
+func writeProxyAccessRules(b *strings.Builder, domain edgeDomain) {
+	wroteRule := false
+	for _, ip := range domain.WhiteIPs {
+		if ip = sanitizeNginxToken(ip); ip != "" {
+			b.WriteString("        allow " + ip + ";\n")
+			wroteRule = true
+		}
+	}
+	for _, rule := range domain.ACLRules {
+		ip := sanitizeNginxToken(rule.IP)
+		if ip == "" {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(rule.Action)) {
+		case "allow":
+			b.WriteString("        allow " + ip + ";\n")
+			wroteRule = true
+		case "deny":
+			b.WriteString("        deny " + ip + ";\n")
+			wroteRule = true
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(domain.ACLDefaultAction), "deny") {
+		b.WriteString("        deny all;\n")
+		return
+	}
+	if wroteRule {
+		b.WriteString("        allow all;\n")
+	}
+}
+
+func writeProxyCORS(b *strings.Builder, domain edgeDomain) {
+	if domain.Cors == nil || !domain.Cors.Enable {
+		return
+	}
+	allowOrigin := sanitizeHeaderValue(domain.Cors.AllowOrigin)
+	if allowOrigin == "" {
+		allowOrigin = "*"
+	}
+	b.WriteString("        add_header Access-Control-Allow-Origin " + quoteNginxValue(allowOrigin) + " always;\n")
+	if v := sanitizeHeaderValue(domain.Cors.AllowMethods); v != "" {
+		b.WriteString("        add_header Access-Control-Allow-Methods " + quoteNginxValue(v) + " always;\n")
+	}
+	if v := sanitizeHeaderValue(domain.Cors.AllowHeaders); v != "" {
+		b.WriteString("        add_header Access-Control-Allow-Headers " + quoteNginxValue(v) + " always;\n")
+	}
+	if v := sanitizeHeaderValue(domain.Cors.ExposeHeaders); v != "" {
+		b.WriteString("        add_header Access-Control-Expose-Headers " + quoteNginxValue(v) + " always;\n")
+	}
+	if domain.Cors.AllowCredentials {
+		b.WriteString("        add_header Access-Control-Allow-Credentials \"true\" always;\n")
+	}
+	if v := sanitizeHeaderValue(domain.Cors.MaxAge); v != "" {
+		b.WriteString("        add_header Access-Control-Max-Age " + quoteNginxValue(v) + " always;\n")
+	}
+	b.WriteString("        if ($request_method = OPTIONS) {\n")
+	b.WriteString("            return 204;\n")
+	b.WriteString("        }\n")
+}
+
+func writeStaticURLRules(b *strings.Builder, domain edgeDomain) {
+	for _, rule := range domain.URLRewrites {
+		writeStaticURLRule(b, rule, true)
+	}
+	for _, rule := range domain.URLRedirects {
+		writeStaticURLRule(b, rule, false)
+	}
+}
+
+func writeStaticURLRule(b *strings.Builder, rule map[string]interface{}, rewrite bool) {
+	if !canRenderStaticURLRule(rule, rewrite) {
+		return
+	}
+	pattern := sanitizeRewritePattern(toString(rule["match"]))
+	target := sanitizeRewriteTarget(toString(firstNonEmpty(rule["replace"], rule["redirect"])))
+	if pattern == "" || target == "" {
+		return
+	}
+	code := strings.ToLower(strings.TrimSpace(toString(rule["code"])))
+	switch code {
+	case "", "internal":
+		b.WriteString("        rewrite " + pattern + " " + target + " break;\n")
+	case "301":
+		b.WriteString("        rewrite " + pattern + " " + target + " permanent;\n")
+	case "302":
+		b.WriteString("        rewrite " + pattern + " " + target + " redirect;\n")
+	}
+}
+
+func canRenderStaticURLRule(rule map[string]interface{}, rewrite bool) bool {
+	if len(rule) == 0 {
+		return false
+	}
+	pattern := sanitizeRewritePattern(toString(rule["match"]))
+	target := sanitizeRewriteTarget(toString(firstNonEmpty(rule["replace"], rule["redirect"])))
+	if pattern == "" || target == "" {
+		return false
+	}
+	if conditions, ok := rule["conditions"].([]interface{}); ok && len(conditions) > 0 {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(toString(rule["code"])))
+	switch code {
+	case "", "internal", "301", "302":
+	default:
+		return false
+	}
+	if rewrite && (code == "" || code == "internal") && !strings.HasPrefix(target, "/") {
+		return false
+	}
+	return true
+}
+
+func firstNonEmpty(values ...interface{}) string {
+	for _, value := range values {
+		if s := strings.TrimSpace(toString(value)); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func sanitizeRewritePattern(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	return value
+}
+
+func sanitizeRewriteTarget(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	if value == "" {
+		return ""
+	}
+	return quoteNginxValue(value)
 }
 
 func writeProxySSL(b *strings.Builder, domain edgeDomain) {

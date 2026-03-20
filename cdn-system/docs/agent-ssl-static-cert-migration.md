@@ -20,7 +20,13 @@ Date: 2026-03-20
 3. Agent generates nginx config with:
    - `ssl_certificate <domain pem>`
    - `ssl_certificate_key <domain key>`
-4. Agent reloads nginx.
+4. Agent also generates static nginx directives for:
+   - fixed request headers
+   - fixed response headers
+   - static CORS
+   - proxied-location ACL rules
+   - unconditional and equivalently-renderable rewrite/redirect rules
+5. Agent reloads nginx.
 
 This removes certificate selection from the TLS handshake Lua path.
 
@@ -49,24 +55,27 @@ Static certificate files plus nginx reload make the failure surface much smaller
 ### Can be replaced 100% by nginx config with no functional loss
 
 1. Dynamic TLS certificate selection
-   - Current result: migrated in this change.
+   - Current result: migrated.
    - Replacement: static `ssl_certificate` and `ssl_certificate_key` per server block.
    - Side effect: requires nginx reload when certificate data changes.
    - Functional loss: none.
 
 2. Static response header injection
+   - Current result: already generated in nginx config.
    - Scope: domain-level fixed response headers.
    - Replacement: `add_header`, `more_set_headers` if present, or generated nginx directives.
    - Side effect: none if headers are static and do not depend on upstream/runtime state.
    - Functional loss: none for fixed-value headers.
 
 3. Static request header forwarding
+   - Current result: already generated in nginx config.
    - Scope: domain-level fixed upstream request headers.
    - Replacement: `proxy_set_header`.
    - Side effect: none for constant mappings.
    - Functional loss: none for fixed-value headers.
 
 4. CORS with fixed policy
+   - Current result: migrated to generated nginx config for proxied locations.
    - Scope: allow-origin/methods/headers/expose/max-age that do not depend on runtime conditions.
    - Replacement: generated `add_header` and `if ($request_method = OPTIONS)` / dedicated location handling.
    - Side effect: nginx config becomes larger.
@@ -78,6 +87,7 @@ Static certificate files plus nginx reload make the failure surface much smaller
    - Functional loss: none.
 
 6. Simple URL redirect and rewrite rules
+   - Current result: unconditional and equivalently-renderable rules migrated.
    - Scope: path regex/path match rules that do not depend on geo, UA, header, IP metadata, or backend state.
    - Replacement: `return`, `rewrite`, `map`.
    - Side effect: regex-heavy config may become harder to maintain.
@@ -97,9 +107,10 @@ Static certificate files plus nginx reload make the failure surface much smaller
    - Functional loss: possible for complex scope combinations.
 
 2. ACL allow/deny rules
+   - Current result: migrated for proxied locations.
    - Replacement: `allow` / `deny`.
    - Side effect: dynamic rule generation expands config size.
-   - Functional loss: none for plain IP allow/deny, but rule composition is less flexible.
+   - Functional loss: none for the current exact-IP proxied-location ACL behavior.
 
 3. Simple cache bypass decisions
    - Replacement: `map`, `proxy_no_cache`, `proxy_cache_bypass`.
@@ -137,10 +148,8 @@ Static certificate files plus nginx reload make the failure surface much smaller
 
 If the goal is to reduce Lua surface area further without changing behavior materially, the safest next targets are:
 
-1. Fixed response headers
-2. Fixed request headers
-3. Static CORS policies
-4. Simple redirect/rewrite rules
-5. Plain IP allow/deny lists
+1. Validate the migrated ACL/CORS/rewrite paths on a Linux runtime with nginx reload
+2. Trim any remaining duplicated Lua branches after runtime verification
+3. Revisit hotlink protection only if a narrower rule model is acceptable
 
 These are the highest-confidence migrations with the lowest operational risk.
