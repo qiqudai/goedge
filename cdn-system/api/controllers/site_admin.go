@@ -161,6 +161,14 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
 		return
 	}
+	if err := validateListenPortsAgainstPolicy(derefStringSlice(req.HttpListen), derefStringSlice(req.HttpsListen)); err != nil {
+		if portErr, ok := err.(*listenPortPolicyError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": portErr.Error(), "data": portErr.ResponseData()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if isUserReq && req.UserPackageID != nil && *req.UserPackageID > 0 {
 		if err := ensureUserPackageOwnership(userID, *req.UserPackageID); err != nil {
@@ -603,6 +611,14 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
+		return
+	}
+	if err := validateListenPortsAgainstPolicy(derefStringSlice(req.HttpListen), derefStringSlice(req.HttpsListen)); err != nil {
+		if portErr, ok := err.(*listenPortPolicyError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": portErr.Error(), "data": portErr.ResponseData()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if len(req.IDs) == 0 {

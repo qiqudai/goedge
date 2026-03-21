@@ -44,6 +44,9 @@ func Load(path string) error {
 			loadErr = err
 			return
 		}
+		if _, ok := parsed["Custom listen port is not allowed by current custom port policy"]; !ok {
+			parsed["Custom listen port is not allowed by current custom port policy"] = "自定义监听端口不在当前允许范围内"
+		}
 		messages = parsed
 		reverse = make(map[string]string, len(messages))
 		for key, val := range messages {

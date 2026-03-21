@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"cdn-common/i18n"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -15,6 +16,172 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+type portRange struct {
+	min int
+	max int
+}
+
+type listenPortPolicyError struct {
+	InvalidPorts []string
+	AllowedSpec  string
+	DisabledSpec string
+}
+
+func (e *listenPortPolicyError) Error() string {
+	return "Custom listen port is not allowed by current custom port policy"
+}
+
+func (e *listenPortPolicyError) ResponseData() gin.H {
+	return gin.H{
+		"invalid_ports":         e.InvalidPorts,
+		"allowed_custom_ports":  e.AllowedSpec,
+		"disabled_custom_ports": e.DisabledSpec,
+	}
+}
+
+func parsePort(value string) (int, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	port, err := strconv.Atoi(value)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0, false
+	}
+	return port, true
+}
+
+func parseListenPort(value string) (int, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if idx := strings.LastIndex(value, "/"); idx != -1 {
+		value = strings.TrimSpace(value[:idx])
+	}
+	if strings.HasPrefix(value, "[") {
+		if idx := strings.LastIndex(value, "]"); idx != -1 && idx+1 < len(value) && value[idx+1] == ':' {
+			value = value[idx+2:]
+		}
+	} else if idx := strings.LastIndex(value, ":"); idx != -1 {
+		value = value[idx+1:]
+	}
+	return parsePort(value)
+}
+
+func parsePortRanges(spec string) []portRange {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(spec, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ',' || r == ';'
+	})
+	if len(parts) == 0 {
+		return nil
+	}
+	ranges := make([]portRange, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if dash := strings.Index(part, "-"); dash > 0 {
+			start := strings.TrimSpace(part[:dash])
+			end := strings.TrimSpace(part[dash+1:])
+			minPort, okMin := parsePort(start)
+			maxPort, okMax := parsePort(end)
+			if !okMin || !okMax {
+				continue
+			}
+			if minPort > maxPort {
+				minPort, maxPort = maxPort, minPort
+			}
+			ranges = append(ranges, portRange{min: minPort, max: maxPort})
+			continue
+		}
+		port, ok := parsePort(part)
+		if !ok {
+			continue
+		}
+		ranges = append(ranges, portRange{min: port, max: port})
+	}
+	if len(ranges) == 0 {
+		return nil
+	}
+	return ranges
+}
+
+func portInRanges(port int, ranges []portRange) bool {
+	for _, r := range ranges {
+		if port >= r.min && port <= r.max {
+			return true
+		}
+	}
+	return false
+}
+
+func isPortAllowed(port int, allowedSpec, disabledSpec string) bool {
+	allowedRanges := parsePortRanges(allowedSpec)
+	disabledRanges := parsePortRanges(disabledSpec)
+	if len(allowedRanges) > 0 && !portInRanges(port, allowedRanges) {
+		return false
+	}
+	if len(disabledRanges) > 0 && portInRanges(port, disabledRanges) {
+		return false
+	}
+	return true
+}
+
+func loadCustomPortPolicy() (string, string) {
+	var sys models.SysConfig
+	if err := db.DB.First(&sys, "name = ?", "global_config").Error; err != nil || strings.TrimSpace(sys.Value) == "" {
+		return "", ""
+	}
+	var cfg models.GlobalConfig
+	if err := json.Unmarshal([]byte(sys.Value), &cfg); err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(cfg.Resources.Public.AllowedCustomPorts), strings.TrimSpace(cfg.Resources.Public.DisabledCustomPorts)
+}
+
+func validateListenPortsAgainstPolicy(httpListen, httpsListen []string) error {
+	allowed, disabled := loadCustomPortPolicy()
+	if allowed == "" && disabled == "" {
+		return nil
+	}
+	allPorts := append(append([]string{}, httpListen...), httpsListen...)
+	invalid := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, raw := range allPorts {
+		port, ok := parseListenPort(raw)
+		if !ok || port == 80 || port == 443 || isPortAllowed(port, allowed, disabled) {
+			continue
+		}
+		key := strconv.Itoa(port)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		invalid = append(invalid, key)
+	}
+	if len(invalid) == 0 {
+		return nil
+	}
+	return &listenPortPolicyError{
+		InvalidPorts: invalid,
+		AllowedSpec:  allowed,
+		DisabledSpec: disabled,
+	}
+}
+
+func derefStringSlice(value *[]string) []string {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
 
 func findDefaultUserPackageID(userID int64) (int64, error) {
 	var pkg models.UserPackage
