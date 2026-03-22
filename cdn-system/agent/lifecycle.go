@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 	"os"
-	"os/signal"
+	osSignal "os/signal"
 	"syscall"
 )
 
@@ -15,8 +15,8 @@ func ensureManagedNginxOnStartup() {
 
 func waitForShutdownAndCleanup() {
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
+	osSignal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer osSignal.Stop(sigCh)
 
 	sig := <-sigCh
 	log.Printf("[Info] Received shutdown signal: %s", sig)
