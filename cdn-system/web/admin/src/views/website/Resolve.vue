@@ -49,7 +49,7 @@
           <span>{{ row.domain }}</span>
           <el-icon class="copy-icon" @click.stop="copyText(row.domain)"><CopyDocument /></el-icon>
           <el-tooltip content="打开网站" placement="top">
-            <el-icon class="open-icon" @click.stop="openSite(row)"><BrowserOpenIcon /></el-icon>
+            <el-icon class="open-icon" @click.stop="openSite(row)"><Connection /></el-icon>
           </el-tooltip>
         </template>
       </el-table-column>

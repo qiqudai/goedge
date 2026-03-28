@@ -129,11 +129,11 @@ const validate = () => {
 .invalid-list {
   max-height: 100px;
   overflow-y: auto;
-  border: 1px solid #fde2e2;
+  border: 1px solid var(--el-color-danger-light-7);
   padding: 5px;
-  background-color: #fef0f0;
+  background-color: var(--el-color-danger-light-9);
 }
-.text-danger { color: #F56C6C; }
+.text-danger { color: var(--el-color-danger); }
 .text-sm { font-size: 12px; }
 .text-xs { font-size: 11px; }
 .mt-2 { margin-top: 8px; }

@@ -36,6 +36,7 @@ var (
 	BootstrapSync      = false // Pull full config from API on startup
 	BootstrapStart     = false // Start OpenResty after bootstrap sync
 	AutoInstallService = true  // Linux: auto register systemd service on first start
+	AutoDisableFirewall = true // Linux: disable host firewall on startup to avoid blocked ports
 
 	localConfigMu    sync.RWMutex
 	LocalResources   *edgeResources

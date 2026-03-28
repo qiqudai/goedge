@@ -137,3 +137,16 @@ func createConfigSyncTask(change ConfigChange, nodeIDs []int64) {
 		TriggerDispatchPending()
 	}
 }
+
+func TriggerNodeConfigSync(nodeID int64) {
+	if nodeID == 0 {
+		return
+	}
+	change := ConfigChange{
+		Version:   GetConfigVersion(),
+		Resource:  "node_config",
+		IDs:       []int64{nodeID},
+		Timestamp: time.Now(),
+	}
+	createConfigSyncTask(change, []int64{nodeID})
+}

@@ -53,6 +53,7 @@ func applyConfigPayloadWithOptionsAndReload(body []byte, forceReload bool, skipR
 	if len(body) == 0 {
 		return "", fmt.Errorf("empty config payload")
 	}
+	applyNodeRuntimeControls(body)
 	newVersion := extractVersion(body)
 	currentVersion := readLocalVersion()
 	if !forceReload && newVersion != 0 && newVersion == currentVersion {
@@ -117,6 +118,19 @@ func extractVersion(body []byte) int64 {
 		return 0
 	}
 	return payload.Version
+}
+
+func applyNodeRuntimeControls(body []byte) {
+	var payload struct {
+		AntiBlocking *bool `json:"anti_blocking"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return
+	}
+	if payload.AntiBlocking != nil {
+		AutoDisableFirewall = *payload.AntiBlocking
+		applyAntiBlockingPreference(*payload.AntiBlocking, "config_sync")
+	}
 }
 
 func readLocalVersion() int64 {
@@ -459,6 +473,7 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := json.Unmarshal(payload, &cfg); err != nil {
 		return err
 	}
+	setLocalNginxConfig(cfg.Nginx)
 	if fallback := parseResourcesFallback(payload); fallback != nil {
 		if cfg.Resources == nil {
 			cfg.Resources = fallback

@@ -34,7 +34,7 @@
     </el-card>
 
     <!-- Global Advanced Search -->
-    <el-dialog v-model="advancedVisible" title="高级搜索" width="500px">
+    <el-dialog v-model="advancedVisible" class="site-list-dialog" title="高级搜索" width="500px">
        <el-form label-width="100px">
           <el-form-item label="状态">
              <el-select v-model="advQuery.status" style="width: 100%;">
@@ -76,7 +76,7 @@
       @completed="handleTaskCompleted"
     />
 
-    <el-dialog v-model="resolveCheckVisible" title="解析检测结果" width="900px" :close-on-click-modal="false">
+    <el-dialog v-model="resolveCheckVisible" class="site-list-dialog" title="解析检测结果" width="900px" :close-on-click-modal="false">
       <div v-if="resolveCheckLoading" style="color: #909399; margin-bottom: 10px;">正在检测解析，请稍候...</div>
       <el-table :data="resolveCheckResults" size="small" border style="width: 100%" max-height="420">
         <el-table-column prop="domain" label="域名" min-width="200" />
@@ -94,11 +94,46 @@
         <el-button @click="resolveCheckVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="applyCertVisible"
+      class="site-list-dialog apply-cert-dialog"
+      title="批量申请证书"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <div class="apply-cert-summary">
+        <div>已选站点：{{ applyCertRows.length }} 个</div>
+        <div v-if="applyCertWildcardCount > 0">包含泛域名站点：{{ applyCertWildcardCount }} 个</div>
+      </div>
+      <el-alert
+        v-if="applyCertWildcardCount > 0"
+        type="warning"
+        :closable="false"
+        class="apply-cert-alert"
+      >
+        已包含泛域名，系统将按 DNS-01 方式申请。
+      </el-alert>
+      <div class="apply-cert-list">
+        <div
+          v-for="row in applyCertRows"
+          :key="row.id"
+          class="apply-cert-item"
+        >
+          <span class="apply-cert-name">#{{ row.id }}</span>
+          <span>{{ row.domain_display || (row.domains && row.domains[0]) || '-' }}</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="applyCertVisible = false">取消</el-button>
+        <el-button type="primary" :loading="applyCertSubmitting" @click="submitApplyCert">提交申请</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
@@ -142,6 +177,9 @@ const taskMonitorTitle = ref('任务详情')
 const resolveCheckVisible = ref(false)
 const resolveCheckLoading = ref(false)
 const resolveCheckResults = ref([])
+const applyCertVisible = ref(false)
+const applyCertSubmitting = ref(false)
+const applyCertRows = ref([])
 
 const advancedVisible = ref(false)
 const advQuery = reactive({ status: '' })
@@ -219,20 +257,8 @@ const handleSiteAction = async (type, data) => {
       ElMessage.warning('请先选择站点')
       return
     }
-    const res = await request.post('/sites/apply_cert', { ids })
-    const payload = res?.data || res || {}
-    const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
-    const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
-    if (created.length > 0) {
-      ElMessage.success(`证书申请已提交：${created.length}个`)
-    }
-    if (skipped.length > 0) {
-      const msg = skipped
-        .map(item => `站点${item.site_id || '-'}：${item.reason || '已忽略'}`)
-        .join('\n')
-      ElMessage.warning(msg)
-    }
-    fetchSites()
+    applyCertRows.value = selectedSites.value.map(item => ({ ...item }))
+    applyCertVisible.value = true
     return
   }
 
@@ -305,6 +331,42 @@ const handleTaskCompleted = (t) => {
     ElMessage.error('任务执行失败，请查看任务日志')
   } else if (state === 'done') {
     ElMessage.success('任务执行完成')
+  }
+}
+
+const applyCertWildcardCount = computed(() => {
+  return applyCertRows.value.filter(row => {
+    const domains = Array.isArray(row.domains) ? row.domains : []
+    return domains.some(d => String(d || '').trim().startsWith('*.'))
+  }).length
+})
+
+const submitApplyCert = async () => {
+  if (applyCertSubmitting.value) return
+  const ids = applyCertRows.value.map(s => s.id).filter(Boolean)
+  if (!ids.length) {
+    ElMessage.warning('请先选择站点')
+    return
+  }
+  applyCertSubmitting.value = true
+  try {
+    const res = await request.post('/sites/apply_cert', { ids })
+    const payload = res?.data || res || {}
+    const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
+    const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
+    if (created.length > 0) {
+      ElMessage.success(`证书申请已提交：${created.length}个`)
+    }
+    if (skipped.length > 0) {
+      const msg = skipped
+        .map(item => `站点${item.site_id || '-'}：${item.reason || '已忽略'}`)
+        .join('\n')
+      ElMessage.warning(msg)
+    }
+    applyCertVisible.value = false
+    fetchSites()
+  } finally {
+    applyCertSubmitting.value = false
   }
 }
 
@@ -382,6 +444,47 @@ const handleBatchEditSuccess = async (payload) => {
   }
 }
 </script>
+
+<style scoped>
+.apply-cert-summary {
+  color: var(--el-text-color-primary);
+  margin-bottom: 10px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.apply-cert-alert {
+  margin-bottom: 10px;
+}
+
+.apply-cert-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  padding: 8px 10px;
+}
+
+.apply-cert-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 2px;
+  line-height: 1.4;
+  color: var(--el-text-color-primary);
+}
+
+.apply-cert-name {
+  min-width: 58px;
+  color: var(--el-text-color-secondary);
+}
+
+.site-list-dialog :deep(.el-dialog__body),
+.site-list-dialog :deep(.el-dialog__footer) {
+  background: var(--el-bg-color);
+}
+</style>
 
 <style scoped>
 .app-container { padding: 20px; }

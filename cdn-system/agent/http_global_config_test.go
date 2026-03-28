@@ -68,4 +68,30 @@ func TestWriteHTTPGlobalConfig_GenerateCachePathWhenCacheEnabled(t *testing.T) {
 	if !strings.Contains(out, "proxy_cache_revalidate on;") {
 		t.Fatalf("proxy_cache_revalidate default missing when cache is enabled")
 	}
+	if !strings.Contains(out, "map $upstream_status $cdn_no_cache_status {") {
+		t.Fatalf("cdn_no_cache_status map missing when cache is enabled")
+	}
+	if !strings.Contains(out, "~^(200|302)$ 0;") {
+		t.Fatalf("default cache status map entry missing")
+	}
+}
+
+func TestWriteHTTPGlobalConfig_UsesConfiguredCacheStatusCodes(t *testing.T) {
+	root := prepareHTTPGlobalConfigTestEnv(t)
+	cfg := &edgeNginxConfig{
+		HTTP: map[string]interface{}{
+			"proxy_cache_valid_statuses": "200,206,301,302",
+		},
+	}
+	if err := writeHTTPGlobalConfig(cfg, true); err != nil {
+		t.Fatalf("writeHTTPGlobalConfig failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "conf", "dynamic", "http_global.conf"))
+	if err != nil {
+		t.Fatalf("read http_global.conf failed: %v", err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "~^(200|206|301|302)$ 0;") {
+		t.Fatalf("configured cache status map entry missing")
+	}
 }

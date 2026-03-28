@@ -130,6 +130,40 @@ func runStartupDiagnostics() {
 	log.Printf("[Info] Startup check passed: nginx -t")
 }
 
+func applyAntiBlockingPreference(enable bool, source string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	if os.Geteuid() != 0 {
+		log.Printf("[Info] Anti-blocking update skipped: root required (source=%s)", source)
+		return
+	}
+	if !enable {
+		log.Printf("[Info] Anti-blocking disabled by config (source=%s); firewall state unchanged", source)
+		return
+	}
+	disableHostFirewall(source)
+}
+
+func disableHostFirewall(source string) {
+	if commandExists("ufw") {
+		if out, err := runCommand("ufw", "--force", "disable"); err != nil {
+			log.Printf("[Warn] Disable ufw failed (source=%s): %v output=%s", source, err, out)
+		} else {
+			log.Printf("[Info] UFW disabled (source=%s)", source)
+		}
+	}
+	if commandExists("systemctl") {
+		_, _ = runCommand("systemctl", "stop", "firewalld")
+		_, _ = runCommand("systemctl", "disable", "firewalld")
+	}
+}
+
+func commandExists(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
 func runCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()

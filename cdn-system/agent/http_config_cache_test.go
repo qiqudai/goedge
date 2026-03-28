@@ -142,3 +142,26 @@ func TestWriteCacheLocations_SkipInvalidRule(t *testing.T) {
 		t.Fatalf("expected default location / once, got %d", got)
 	}
 }
+
+func TestApplyCacheDirectives_UsesConfiguredStatusCodesAndNoCacheFlag(t *testing.T) {
+	prevNginxCfg := LocalNginxConfig
+	t.Cleanup(func() {
+		LocalNginxConfig = prevNginxCfg
+	})
+	LocalNginxConfig = &edgeNginxConfig{
+		HTTP: map[string]interface{}{
+			"proxy_cache_valid_statuses": "200 206 301 302",
+		},
+	}
+
+	var b strings.Builder
+	applyCacheDirectives(&b, &edgeCacheConfig{Enable: true, DefaultTTL: 60}, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_cache_valid 200 206 301 302 60s;") {
+		t.Fatalf("configured status codes were not used in proxy_cache_valid")
+	}
+	if !strings.Contains(out, "proxy_no_cache $cache_bypass $cdn_no_cache_status;") {
+		t.Fatalf("proxy_no_cache must include $cdn_no_cache_status")
+	}
+}

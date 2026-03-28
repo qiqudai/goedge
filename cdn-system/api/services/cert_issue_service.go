@@ -229,13 +229,20 @@ func issueCertLocal(cert models.Cert) error {
 }
 
 func splitCertDomains(raw string) []string {
+	raw = strings.NewReplacer(";", ",", "\n", ",", "\r", ",", "\t", ",", " ", ",").Replace(raw)
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
 	for _, part := range parts {
-		item := strings.TrimSpace(part)
-		if item != "" {
-			out = append(out, item)
+		item := strings.TrimSpace(strings.ToLower(part))
+		if item == "" {
+			continue
 		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
 	}
 	return out
 }
@@ -249,8 +256,10 @@ func requiresDNSChallenge(cert models.Cert) bool {
 
 func hasWildcardDomain(domains []string) bool {
 	for _, domain := range domains {
-		if strings.HasPrefix(strings.TrimSpace(domain), "*.") {
-			return true
+		for _, item := range splitCertDomains(domain) {
+			if strings.HasPrefix(strings.TrimSpace(item), "*.") {
+				return true
+			}
 		}
 	}
 	return false

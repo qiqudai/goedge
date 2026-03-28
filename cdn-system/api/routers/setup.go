@@ -60,6 +60,7 @@ func Setup(r *gin.Engine) {
 			admin.POST("/nodes/:id/install", nodeCtr.InstallNode)
 			admin.PUT("/nodes/:id", nodeCtr.UpdateNode)
 			admin.PUT("/nodes/:id/status", nodeCtr.UpdateStatus)
+			admin.PUT("/nodes/:id/anti_blocking", nodeCtr.UpdateAntiBlocking)
 			admin.DELETE("/nodes/:id", nodeCtr.DeleteNode)
 			admin.POST("/nodes/batch", nodeCtr.BatchAction)
 			admin.POST("/nodes/batch_action", nodeCtr.BatchAction) // Alias for frontend compatibility

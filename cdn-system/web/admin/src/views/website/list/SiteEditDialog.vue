@@ -3,6 +3,7 @@
     v-model="visible"
     :title="form.id ? '编辑网站' : '添加网站'"
     width="680px"
+    class="site-edit-dialog"
     @closed="handleClosed"
     :close-on-click-modal="false"
   >
@@ -603,12 +604,33 @@ async function fetchDomainUsage() {
 }
 .expand-more:hover { opacity: 0.8; }
 .extra-fields {
-  background: #f8f9fa;
+  background: var(--el-fill-color-light);
   padding: 15px;
   border-radius: 4px;
   margin-bottom: 20px;
 }
 .limit-alert {
   margin: 8px 0 16px;
+}
+
+.site-edit-dialog :deep(.el-dialog__body) {
+  max-height: min(68vh, 760px);
+  overflow-y: auto;
+  background: var(--el-bg-color);
+  padding-bottom: 12px;
+}
+
+.site-edit-dialog :deep(.el-dialog__footer) {
+  background: var(--el-bg-color);
+}
+
+.site-edit-dialog :deep(.el-tabs--card > .el-tabs__header .el-tabs__item) {
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color);
+  color: var(--el-text-color-primary);
+}
+
+.site-edit-dialog :deep(.el-tabs--card > .el-tabs__header .el-tabs__item.is-active) {
+  background: var(--el-bg-color);
 }
 </style>

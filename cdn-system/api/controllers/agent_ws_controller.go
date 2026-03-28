@@ -5,6 +5,8 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -43,6 +45,7 @@ var (
 	ackWaiters      = make(map[string]chan TaskAckMsg)
 	ackMutex        sync.Mutex
 	taskUpdateLocks sync.Map
+	heartbeatReport sync.Map
 	dispatchOnce    sync.Once
 	dispatchSignal  = make(chan struct{}, 1)
 	dispatchPool    sync.Once
@@ -84,9 +87,10 @@ type AgentHelloMsg struct {
 }
 
 type HeartbeatMsg struct {
-	Kind      string `json:"kind"`
-	Timestamp int64  `json:"timestamp"`
-	Status    string `json:"status"`
+	Kind           string                 `json:"kind"`
+	Timestamp      int64                  `json:"timestamp"`
+	Status         string                 `json:"status"`
+	ReportedConfig map[string]interface{} `json:"reported_config"`
 }
 
 type HeartbeatAckMsg struct {
@@ -583,6 +587,9 @@ func (c *AgentWSController) handleHeartbeat(nodeID int64, conn *websocket.Conn, 
 	if nodeID != 0 {
 		services.MarkNodeOnline(nodeID, time.Now())
 		services.WriteNodeMonitorLog(nodeID, "heartbeat", true, "")
+		if err := upsertHeartbeatReportedConfig(nodeID, hb.ReportedConfig); err != nil {
+			log.Printf("[WS] Persist reported_config failed for node %d: %v", nodeID, err)
+		}
 	}
 
 	syncAction := c.getSyncAction(nodeID)
@@ -593,6 +600,28 @@ func (c *AgentWSController) handleHeartbeat(nodeID int64, conn *websocket.Conn, 
 	if err := conn.WriteJSON(ack); err != nil {
 		log.Printf("[WS] Heartbeat ack failed for node %d: %v", nodeID, err)
 	}
+}
+
+func upsertHeartbeatReportedConfig(nodeID int64, reported map[string]interface{}) error {
+	if nodeID == 0 || len(reported) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(reported)
+	if err != nil {
+		return err
+	}
+	sum := md5.Sum(raw)
+	digest := hex.EncodeToString(sum[:])
+	if prev, ok := heartbeatReport.Load(nodeID); ok {
+		if prevDigest, ok := prev.(string); ok && prevDigest == digest {
+			return nil
+		}
+	}
+	if err := services.UpsertNodeConfigItem(nodeID, "reported_config", string(raw)); err != nil {
+		return err
+	}
+	heartbeatReport.Store(nodeID, digest)
+	return nil
 }
 
 func (c *AgentWSController) getSyncAction(nodeID int64) string {

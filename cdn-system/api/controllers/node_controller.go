@@ -6,6 +6,7 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"cdn-api/utils"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -118,6 +119,43 @@ func (ctr *NodeController) UpdateStatus(c *gin.Context) {
 		log.Printf("[DNS] package cname sync failed action=%s node=%d err=%v", dnsAction, id, err)
 	}
 
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
+}
+
+// UpdateAntiBlocking toggles anti-blocking behavior for a node.
+// PUT /api/v1/admin/nodes/:id/anti_blocking
+func (ctr *NodeController) UpdateAntiBlocking(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid ID")})
+		return
+	}
+
+	var req struct {
+		Enable *bool `json:"enable"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enable == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid Params")})
+		return
+	}
+
+	var count int64
+	if err := db.DB.Model(&models.Node{}).Where("id = ?", id).Count(&count).Error; err != nil || count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"msg": T("node not found")})
+		return
+	}
+
+	value := "0"
+	if *req.Enable {
+		value = "1"
+	}
+	if err := services.UpsertNodeConfigItem(id, "anti_blocking", value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Update Failed")})
+		return
+	}
+
+	services.TriggerNodeConfigSync(id)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
 
@@ -254,6 +292,23 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 	for i := range nodes {
 		nodes[i].Online = services.IsNodeOnline(nodes[i].ID, 30*time.Second)
 	}
+	antiBlockingMap, _ := services.GetNodeConfigMap("anti_blocking")
+	reportedConfigMap, _ := services.GetNodeConfigMap("reported_config")
+	for i := range nodes {
+		nodes[i].AntiBlocking = true
+		if raw, ok := antiBlockingMap[nodes[i].ID]; ok && strings.TrimSpace(raw) != "" {
+			nodes[i].AntiBlocking = services.ParseBoolFlag(raw)
+		}
+		reportedAntiBlocking := extractReportedAntiBlocking(reportedConfigMap[nodes[i].ID])
+		if reportedAntiBlocking != nil {
+			reportedVal := *reportedAntiBlocking
+			nodes[i].ReportedAntiBlocking = &reportedVal
+			if reportedVal != nodes[i].AntiBlocking {
+				nodes[i].ConfigDrift = true
+				nodes[i].ConfigDriftFields = []string{"anti_blocking"}
+			}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -262,6 +317,44 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 			"total": total,
 		},
 	})
+}
+
+func extractReportedAntiBlocking(raw string) *bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var reported map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &reported); err != nil {
+		return nil
+	}
+	value, ok := reported["anti_blocking"]
+	if !ok {
+		return nil
+	}
+	parsed, ok := toReportedBool(value)
+	if !ok {
+		return nil
+	}
+	result := parsed
+	return &result
+}
+
+func toReportedBool(value interface{}) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		return services.ParseBoolFlag(v), true
+	case float64:
+		return v != 0, true
+	case int:
+		return v != 0, true
+	case int64:
+		return v != 0, true
+	default:
+		return false, false
+	}
 }
 
 // ListMonitorLogs

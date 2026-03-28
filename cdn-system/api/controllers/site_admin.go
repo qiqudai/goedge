@@ -1083,16 +1083,7 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 		}
 
 		certType, dnsapi := resolveCertDefaults(site.UserID)
-		if hasWildcardDomain(site.Domains) {
-			if dnsapi <= 0 {
-				skipped = append(skipped, applyCertSkipItem{
-					SiteID: site.ID,
-					Domain: site.Domains[0],
-					Reason: "通配符证书一键申请需设置dnsapi，继续下一个申请",
-				})
-				continue
-			}
-		} else {
+		if !hasWildcardDomain(site.Domains) {
 			dnsapi = 0
 		}
 

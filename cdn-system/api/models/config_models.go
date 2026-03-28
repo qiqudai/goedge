@@ -25,6 +25,7 @@ type EdgeConfig struct {
 	Version          int64                      `json:"version"`
 	NodeID           string                     `json:"node_id,omitempty"`
 	NodeLevel        int                        `json:"node_level,omitempty"`
+	AntiBlocking     bool                       `json:"anti_blocking"`
 	Domains          []EdgeDomain               `json:"domains"`
 	Upstreams        []EdgeUpstream             `json:"upstreams"`
 	WAF              *WAFConfig                 `json:"waf,omitempty"`

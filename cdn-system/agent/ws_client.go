@@ -145,9 +145,10 @@ func startWSHeartbeat(conn *websocket.Conn, done <-chan struct{}) {
 			return
 		case <-ticker.C:
 			err := sendWSJSON(map[string]interface{}{
-				"kind":      "heartbeat",
-				"timestamp": time.Now().Unix(),
-				"status":    "active",
+				"kind":            "heartbeat",
+				"timestamp":       time.Now().Unix(),
+				"status":          "active",
+				"reported_config": buildReportedConfig(),
 			})
 			if err != nil {
 				log.Printf("[WS] Heartbeat failed: %v", err)

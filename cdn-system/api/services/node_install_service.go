@@ -188,6 +188,7 @@ func buildAgentJSON(cfg *NodeInstallConfig) ([]byte, error) {
 		"reset_resources":    true,
 		"bootstrap_sync":     true,
 		"bootstrap_start":    true,
+		"auto_disable_firewall": true,
 	}
 	return json.MarshalIndent(payload, "", "  ")
 }

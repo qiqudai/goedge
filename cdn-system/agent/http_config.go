@@ -849,6 +849,7 @@ func writeProxyLogVars(b *strings.Builder) {
 	b.WriteString("        set $cdn_req_headers \"\";\n")
 	b.WriteString("        set $cdn_resp_headers \"\";\n")
 	b.WriteString("        set $cdn_req_body \"\";\n")
+	b.WriteString("        set $cdn_cache_key \"\";\n")
 	b.WriteString("        set $cache_bypass 0;\n")
 	b.WriteString("        set $cache_ttl 0;\n")
 }
@@ -1126,8 +1127,9 @@ func applyCacheDirectives(b *strings.Builder, cacheCfg *edgeCacheConfig, rule *e
 	if rule != nil && rule.TTL > 0 {
 		ttl = rule.TTL
 	}
+	statusCodes := resolveCacheValidStatusCodes(LocalNginxConfig)
 	if ttl > 0 {
-		b.WriteString(fmt.Sprintf("        proxy_cache_valid 200 302 %ds;\n", ttl))
+		b.WriteString(fmt.Sprintf("        proxy_cache_valid %s %ds;\n", strings.Join(statusCodes, " "), ttl))
 	}
 	cacheKey := ""
 	if rule != nil && rule.CacheKey != "" {
@@ -1137,9 +1139,10 @@ func applyCacheDirectives(b *strings.Builder, cacheCfg *edgeCacheConfig, rule *e
 	} else {
 		cacheKey = "$host$uri$is_args$args"
 	}
-	b.WriteString("        proxy_cache_key " + cacheKey + ";\n")
+	b.WriteString("        set $cdn_cache_key " + cacheKey + ";\n")
+	b.WriteString("        proxy_cache_key $cdn_cache_key;\n")
 	b.WriteString("        proxy_cache_bypass $cache_bypass;\n")
-	b.WriteString("        proxy_no_cache $cache_bypass;\n")
+	b.WriteString("        proxy_no_cache $cache_bypass $cdn_no_cache_status;\n")
 }
 
 func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
@@ -1147,6 +1150,12 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
 	confPath := filepath.Join(rootDir, "conf", "dynamic", "http_global.conf")
 	var b strings.Builder
 	if cacheEnabled {
+		statusCodes := resolveCacheValidStatusCodes(cfg)
+		b.WriteString("map $upstream_status $cdn_no_cache_status {\n")
+		b.WriteString("    default 1;\n")
+		b.WriteString("    ~^(" + strings.Join(statusCodes, "|") + ")$ 0;\n")
+		b.WriteString("}\n")
+
 		defaultCacheDir := filepath.ToSlash(filepath.Join(rootDir, "cache"))
 		cacheDir := defaultCacheDir
 		cacheMaxSize := ""
@@ -1226,6 +1235,50 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
 		b.WriteString("access_log " + logs + "/access.json json_analytics if=$cdn_realtime_send;\n")
 	}
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
+}
+
+func resolveCacheValidStatusCodes(cfg *edgeNginxConfig) []string {
+	defaultCodes := []string{"200", "302"}
+	if cfg == nil || cfg.HTTP == nil {
+		return defaultCodes
+	}
+	raw := toString(cfg.HTTP["proxy_cache_valid_statuses"])
+	if strings.TrimSpace(raw) == "" {
+		raw = toString(cfg.HTTP["cache_valid_statuses"])
+	}
+	if strings.TrimSpace(raw) == "" {
+		return defaultCodes
+	}
+	tokens := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ' ' || r == ',' || r == ';' || r == '|'
+	})
+	out := make([]string, 0, len(tokens))
+	seen := map[string]struct{}{}
+	for _, token := range tokens {
+		code := strings.TrimSpace(token)
+		if len(code) != 3 {
+			continue
+		}
+		valid := true
+		for _, ch := range code {
+			if ch < '0' || ch > '9' {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	if len(out) == 0 {
+		return defaultCodes
+	}
+	return out
 }
 
 func sanitizeCustomHTTPSnippet(snippet string) (string, bool) {

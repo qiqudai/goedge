@@ -75,6 +75,7 @@ func main() {
 			GenevaEnable       bool   `json:"geneva_enable"`
 			GenevaWindowSize   uint16 `json:"geneva_window_size"`
 			AutoInstallService *bool  `json:"auto_install_service"`
+			AutoDisableFirewall *bool `json:"auto_disable_firewall"`
 		}
 		if err := json.Unmarshal(fileData, &fileConfig); err == nil {
 			if fileConfig.API != "" {
@@ -102,6 +103,9 @@ func main() {
 			if fileConfig.AutoInstallService != nil {
 				AutoInstallService = *fileConfig.AutoInstallService
 			}
+			if fileConfig.AutoDisableFirewall != nil {
+				AutoDisableFirewall = *fileConfig.AutoDisableFirewall
+			}
 			log.Printf("[Info] Loaded config from %s", configPath)
 		}
 	}
@@ -121,6 +125,7 @@ func main() {
 	}
 	resolveWorkDir(configPath)
 	maybeConfigureAutostart(configPath)
+	applyAntiBlockingPreference(AutoDisableFirewall, "startup")
 
 	if AuthToken == "" {
 		log.Fatal("Error: Token is required in either agent.json or -token flag.")

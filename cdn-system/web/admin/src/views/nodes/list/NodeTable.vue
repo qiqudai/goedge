@@ -127,6 +127,18 @@
         <el-switch v-model="row.enable" @change="$emit('status-change', row)" />
       </template>
     </el-table-column>
+    <el-table-column :label="NODE_T.antiBlocking" align="center" width="110">
+      <template #default="{ row }">
+        <el-switch v-model="row.anti_blocking" @change="$emit('anti-blocking-change', row)" />
+      </template>
+    </el-table-column>
+    <el-table-column :label="NODE_T.configSync" align="center" width="110">
+      <template #default="{ row }">
+        <el-tag v-if="row.config_drift" type="danger" size="small">{{ NODE_T.configOutOfSync }}</el-tag>
+        <el-tag v-else-if="hasReportedAntiBlocking(row)" type="success" size="small">{{ NODE_T.configInSync }}</el-tag>
+        <el-tag v-else type="info" size="small">{{ NODE_T.configNotReported }}</el-tag>
+      </template>
+    </el-table-column>
     <el-table-column :label="NODE_T.remark" prop="remark" min-width="100px" show-overflow-tooltip />
     <el-table-column :label="NODE_T.sort" prop="sort_order" width="80" align="center" sortable />
     <el-table-column :label="NODE_T.action" align="center" width="160" fixed="right">
@@ -161,7 +173,7 @@ const props = defineProps({
   regions: Array
 })
 
-const emit = defineEmits(['search', 'create', 'batch', 'refresh', 'selection-change', 'edit', 'go-groups', 'monitor-logs', 'go-monitor', 'status-change', 'row-action'])
+const emit = defineEmits(['search', 'create', 'batch', 'refresh', 'selection-change', 'edit', 'go-groups', 'monitor-logs', 'go-monitor', 'status-change', 'anti-blocking-change', 'row-action'])
 
 const query = reactive({ page: 1, pageSize: 20, keyword: '', region_id: '', status: '', node_type: '' })
 const tableRef = ref(null)
@@ -180,6 +192,10 @@ const resolveInstallStatus = (status) => {
     failed: NODE_T.installStatusFailed
   }
   return map[normalized] || NODE_T.installStatusIdle
+}
+
+const hasReportedAntiBlocking = (row) => {
+  return row?.reported_anti_blocking === true || row?.reported_anti_blocking === false
 }
 </script>
 

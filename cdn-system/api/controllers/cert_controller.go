@@ -283,10 +283,6 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("domains is required")})
 		return
 	}
-	if hasWildcardDomain(domains) && req.DNSAPI <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": T("wildcard requires dnsapi")})
-		return
-	}
 
 	// Generate BatchID (fits in int(11) pid)
 	batchID := time.Now().Unix()
@@ -586,11 +582,11 @@ type CertDetail struct {
 	Ret         string     `json:"ret"`
 	Version     int        `json:"version"`
 
-	UserName     string `json:"user_name,omitempty"`
-	IssueTaskRet string `json:"issue_task_ret,omitempty"`
-	IssueTaskState string     `json:"issue_task_state,omitempty"`
-	IssueTaskRetryAt *time.Time `json:"issue_task_retry_at,omitempty"`
-	IssueTaskErrTimes int       `json:"issue_task_err_times,omitempty"`
+	UserName          string     `json:"user_name,omitempty"`
+	IssueTaskRet      string     `json:"issue_task_ret,omitempty"`
+	IssueTaskState    string     `json:"issue_task_state,omitempty"`
+	IssueTaskRetryAt  *time.Time `json:"issue_task_retry_at,omitempty"`
+	IssueTaskErrTimes int        `json:"issue_task_err_times,omitempty"`
 }
 
 type certListResult struct {
@@ -673,9 +669,9 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 	}
 
 	type taskInfo struct {
-		Ret     string
-		State   string
-		RetryAt *time.Time
+		Ret      string
+		State    string
+		RetryAt  *time.Time
 		ErrTimes int
 	}
 	tasksMap := make(map[int64]taskInfo)
@@ -1023,8 +1019,10 @@ func isIPDomain(domain string) bool {
 
 func hasWildcardDomain(domains []string) bool {
 	for _, domain := range domains {
-		if strings.HasPrefix(strings.TrimSpace(domain), "*.") {
-			return true
+		for _, item := range splitCertDomains(domain) {
+			if strings.HasPrefix(strings.TrimSpace(item), "*.") {
+				return true
+			}
 		}
 	}
 	return false

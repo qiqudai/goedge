@@ -1,0 +1,1 @@
+async function o(t){if(!window.crypto||!window.crypto.subtle)throw new Error("secure context required");const r=new TextEncoder().encode(t),e=await window.crypto.subtle.digest("SHA-256",r);return Array.from(new Uint8Array(e)).map(n=>n.toString(16).padStart(2,"0")).join("")}export{o as s};

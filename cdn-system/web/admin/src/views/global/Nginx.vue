@@ -43,6 +43,22 @@
         <el-form-item label="开启 Gzip">
             <el-switch v-model="config.nginx.gzip" @change="saveConfig" />
         </el-form-item>
+        <el-form-item label="可缓存状态码">
+             <el-input v-model="config.nginx.cache_valid_statuses" placeholder="200 302" style="width: 280px;" @blur="saveConfig" />
+             <div class="tip">仅这些回源状态码允许写入缓存，其他状态码将强制不缓存（空格或逗号分隔）</div>
+        </el-form-item>
+        <el-form-item label="404缓存探测开关">
+            <el-switch v-model="config.nginx.cache_404_revalidate_enable" @change="saveConfig" />
+        </el-form-item>
+        <el-form-item label="404探测触发时长">
+             <el-input-number v-model="config.nginx.cache_404_revalidate_after" :min="1" @blur="saveConfig" /> <span class="unit">秒</span>
+        </el-form-item>
+        <el-form-item label="同键探测间隔">
+             <el-input-number v-model="config.nginx.cache_404_probe_interval" :min="1" @blur="saveConfig" /> <span class="unit">秒</span>
+        </el-form-item>
+        <el-form-item label="探测超时">
+             <el-input-number v-model="config.nginx.cache_404_probe_timeout_ms" :min="200" :step="100" @blur="saveConfig" /> <span class="unit">毫秒</span>
+        </el-form-item>
         <el-form-item label="自定义配置片段（HTTP 块）">
             <el-input type="textarea" v-model="config.nginx.custom_snippet" :rows="5" placeholder="# 自定义 Nginx 指令..." @blur="saveConfig" />
         </el-form-item>
@@ -71,6 +87,11 @@ function defaultForm() {
       log_directory: '',
       keepalive_timeout: 60,
       gzip: true,
+      cache_valid_statuses: '200 302',
+      cache_404_revalidate_enable: true,
+      cache_404_revalidate_after: 5,
+      cache_404_probe_interval: 3,
+      cache_404_probe_timeout_ms: 1200,
       custom_snippet: ''
     }
   }
@@ -139,6 +160,11 @@ function mergeFormFromRaw(raw) {
       log_directory: raw.logs_dir || '',
       keepalive_timeout: parseKeepaliveTimeout(http.keepalive_timeout, 60),
       gzip: parseBool(http.gzip, true),
+      cache_valid_statuses: (http.proxy_cache_valid_statuses || http.cache_valid_statuses || '200 302'),
+      cache_404_revalidate_enable: parseBool(http.cache_404_revalidate_enable, true),
+      cache_404_revalidate_after: Number(http.cache_404_revalidate_after || 5),
+      cache_404_probe_interval: Number(http.cache_404_probe_interval || 3),
+      cache_404_probe_timeout_ms: Number(http.cache_404_probe_timeout_ms || 1200),
       custom_snippet: http.custom_snippet || ''
     }
   }
@@ -219,6 +245,11 @@ const saveConfig = async (event) => {
   updated.logs_dir = config.value.nginx.log_directory
   updated.http.keepalive_timeout = formatKeepaliveTimeout(config.value.nginx.keepalive_timeout)
   updated.http.gzip = config.value.nginx.gzip ? 'on' : 'off'
+  updated.http.proxy_cache_valid_statuses = String(config.value.nginx.cache_valid_statuses || '200 302').trim()
+  updated.http.cache_404_revalidate_enable = !!config.value.nginx.cache_404_revalidate_enable
+  updated.http.cache_404_revalidate_after = Number(config.value.nginx.cache_404_revalidate_after || 5)
+  updated.http.cache_404_probe_interval = Number(config.value.nginx.cache_404_probe_interval || 3)
+  updated.http.cache_404_probe_timeout_ms = Number(config.value.nginx.cache_404_probe_timeout_ms || 1200)
   updated.http.custom_snippet = config.value.nginx.custom_snippet || ''
 
   const payload = {

@@ -19,6 +19,7 @@
             @monitor-logs="handleMonitorLogs"
             @go-monitor="handleGoMonitor"
             @status-change="handleStatusChange"
+            @anti-blocking-change="handleAntiBlockingChange"
             @row-action="handleRowAction"
           />
         </el-tab-pane>
@@ -76,13 +77,14 @@ const currentNodeId = ref(0)
 let installPollingTimer = null
 
 const applyNodeStatus = (row) => {
+  const antiBlocking = row.anti_blocking !== false
   if (!row.enable) {
-    return { ...row, status_text: '\u7981\u7528', status_class: 'disabled' }
+    return { ...row, anti_blocking: antiBlocking, status_text: '\u7981\u7528', status_class: 'disabled' }
   }
   if (row.online) {
-    return { ...row, status_text: '\u5728\u7ebf', status_class: 'online' }
+    return { ...row, anti_blocking: antiBlocking, status_text: '\u5728\u7ebf', status_class: 'online' }
   }
-  return { ...row, status_text: '\u79bb\u7ebf', status_class: 'offline' }
+  return { ...row, anti_blocking: antiBlocking, status_text: '\u79bb\u7ebf', status_class: 'offline' }
 }
 
 const setNodeStatus = (row) => {
@@ -173,6 +175,17 @@ const handleStatusChange = async (row) => {
     row.enable = !targetEnable
     setNodeStatus(row)
     ElMessage.error('\u72b6\u6001\u66f4\u65b0\u5931\u8d25')
+  }
+}
+
+const handleAntiBlockingChange = async (row) => {
+  const targetEnable = row.anti_blocking
+  try {
+    await request.put(`/nodes/${row.id}/anti_blocking`, { enable: row.anti_blocking })
+    ElMessage.success('防屏蔽状态更新成功，已下发到节点')
+  } catch (err) {
+    row.anti_blocking = !targetEnable
+    ElMessage.error('防屏蔽状态更新失败')
   }
 }
 

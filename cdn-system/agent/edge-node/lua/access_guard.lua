@@ -849,6 +849,23 @@ local function lookup_domain_conf()
         if domain then
             return domain
         end
+        local matched = nil
+        local matched_len = 0
+        for pattern, conf in pairs(config.domain_map) do
+            if type(pattern) == "string" and string.sub(pattern, 1, 2) == "*." then
+                local suffix = string.sub(pattern, 2)
+                if suffix and suffix ~= "" and string.sub(host, -string.len(suffix)) == suffix then
+                    local plen = string.len(pattern)
+                    if plen > matched_len then
+                        matched = conf
+                        matched_len = plen
+                    end
+                end
+            end
+        end
+        if matched then
+            return matched
+        end
     end
     if config.waf and config.waf.block_unbound_domain then
         return nil
@@ -973,7 +990,7 @@ if domain_conf then
     local backend_target = select_backend_target(domain_conf, client_ip)
     if not backend_target or backend_target == "" then
         ngx.log(ngx.ERR, "Upstream not found: ", domain_conf.upstream_key or "")
-        ngx.exit(502)
+        return ngx.exit(ngx.HTTP_BAD_GATEWAY)
     end
     ngx.var.backend_target = backend_target
 
