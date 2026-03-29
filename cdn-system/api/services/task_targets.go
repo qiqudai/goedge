@@ -15,13 +15,13 @@ const (
 )
 
 type TaskTarget struct {
-	State   string `json:"state"`
-	Tries   int    `json:"tries"`
-	RetryAt int64  `json:"retry_at"`
-	Ret     string `json:"ret,omitempty"`
-	Progress int   `json:"progress,omitempty"`
+	State    string `json:"state"`
+	Tries    int    `json:"tries"`
+	RetryAt  int64  `json:"retry_at"`
+	Ret      string `json:"ret,omitempty"`
+	Progress int    `json:"progress,omitempty"`
 	Message  string `json:"message,omitempty"`
-	LastAt  int64  `json:"last_at,omitempty"`
+	LastAt   int64  `json:"last_at,omitempty"`
 }
 
 type TaskTargets struct {

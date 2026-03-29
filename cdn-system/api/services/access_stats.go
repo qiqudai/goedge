@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,14 +73,20 @@ func BuildBucketSeries(rng StatsRange, buckets []AccessBucket) BucketSeries {
 	if rng.Start.IsZero() || rng.End.IsZero() || rng.End.Before(rng.Start) || rng.Bucket <= 0 {
 		return series
 	}
-	bucketMap := make(map[time.Time]AccessBucket, len(buckets))
+	bucketSeconds := int64(rng.Bucket.Seconds())
+	if bucketSeconds <= 0 {
+		bucketSeconds = 60
+	}
+	bucketMap := make(map[int64]AccessBucket, len(buckets))
 	for _, bucket := range buckets {
-		bucketMap[AlignToBucket(bucket.Bucket, rng.Bucket)] = bucket
+		key := bucket.Bucket.Unix() / bucketSeconds
+		bucketMap[key] = bucket
 	}
 	start := AlignToBucket(rng.Start, rng.Bucket)
 	end := AlignToBucket(rng.End, rng.Bucket)
 	for cur := start; !cur.After(end); cur = cur.Add(rng.Bucket) {
-		entry, ok := bucketMap[cur]
+		key := cur.Unix() / bucketSeconds
+		entry, ok := bucketMap[key]
 		if !ok {
 			entry = AccessBucket{Bucket: cur}
 		}
@@ -99,7 +106,9 @@ func QueryAccessBuckets(start, end time.Time, bucket time.Duration, hostFilter H
 	if start.IsZero() || end.IsZero() || end.Before(start) || bucket <= 0 {
 		return []AccessBucket{}, nil
 	}
-	if !db.ClickHouseEnabled() {
+	start, end = adjustAccessLogQueryRange(start, end)
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []AccessBucket{}, nil
 	}
 	bucketExpr := bucketExpression(bucket)
@@ -112,7 +121,7 @@ func QueryAccessBuckets(start, end time.Time, bucket time.Duration, hostFilter H
 	whereSQL := strings.Join(conditions, " AND ")
 	query := fmt.Sprintf(`SELECT %s AS bucket,
 		count() AS requests,
-		sum(bytes) AS bytes,
+		sum(bytes) AS out_bytes,
 		countIf(upstream_cache_status = 'HIT') AS hit_count,
 		sumIf(bytes, upstream_cache_status != 'HIT') AS origin_bytes,
 		countIf(status >= 400 AND status < 500) AS status_4xx,
@@ -121,7 +130,7 @@ func QueryAccessBuckets(start, end time.Time, bucket time.Duration, hostFilter H
 		FROM node_access_logs WHERE %s
 		GROUP BY bucket ORDER BY bucket`, bucketExpr, blockedStatusCondition(), whereSQL)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryAccessBucketsHTTP(httpCfg, query, args...)
 	}
 	rows, err := db.CK.Query(query, args...)
@@ -156,7 +165,9 @@ func QueryAccessTotals(start, end time.Time, hostFilter HostFilter) (AccessTotal
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return AccessTotals{}, nil
 	}
-	if !db.ClickHouseEnabled() {
+	start, end = adjustAccessLogQueryRange(start, end)
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return AccessTotals{}, nil
 	}
 	conditions := []string{"ts >= ? AND ts <= ?"}
@@ -171,7 +182,7 @@ func QueryAccessTotals(start, end time.Time, hostFilter HostFilter) (AccessTotal
 		uniqExactIf(remote_addr, %s) AS blocked_ips
 		FROM node_access_logs WHERE %s`, blockedStatusCondition(), whereSQL)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryAccessTotalsHTTP(httpCfg, query, args...)
 	}
 	var totals AccessTotals
@@ -212,29 +223,53 @@ func queryAccessBucketsHTTP(cfg *httpCKConfig, query string, args ...interface{}
 		if line == "" {
 			continue
 		}
-		var row accessBucketRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		if row.Bucket == "" {
+		bucketRaw := strings.TrimSpace(toStringAny(raw["bucket"]))
+		if bucketRaw == "" {
 			continue
 		}
-		bucketTime, err := time.ParseInLocation(statsTimeLayout, row.Bucket, time.Local)
+		bucketTime, err := parseCKTimeString(bucketRaw)
 		if err != nil {
 			continue
 		}
 		list = append(list, AccessBucket{
 			Bucket:      bucketTime,
-			Requests:    row.Requests,
-			Bytes:       row.Bytes,
-			HitCount:    row.HitCount,
-			OriginBytes: row.OriginBytes,
-			Status4xx:   row.Status4xx,
-			Status5xx:   row.Status5xx,
-			BlockedIPs:  row.BlockedIPs,
+			Requests:    toUint64Any(raw["requests"]),
+			Bytes:       pickUint64Any(raw, "out_bytes", "bytes"),
+			HitCount:    toUint64Any(raw["hit_count"]),
+			OriginBytes: toUint64Any(raw["origin_bytes"]),
+			Status4xx:   toUint64Any(raw["status_4xx"]),
+			Status5xx:   toUint64Any(raw["status_5xx"]),
+			BlockedIPs:  toUint64Any(raw["blocked_ips"]),
 		})
 	}
 	return list, nil
+}
+
+func parseCKTimeString(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("empty time")
+	}
+	layouts := []string{
+		statsTimeLayout,
+		"2006-01-02 15:04:05.000",
+		"2006-01-02 15:04:05.000000",
+		time.RFC3339,
+		time.RFC3339Nano,
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+			return t, nil
+		}
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.In(time.Local), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported time format: %s", raw)
 }
 
 func queryAccessTotalsHTTP(cfg *httpCKConfig, query string, args ...interface{}) (AccessTotals, error) {
@@ -251,16 +286,88 @@ func queryAccessTotalsHTTP(cfg *httpCKConfig, query string, args ...interface{})
 		if line == "" {
 			continue
 		}
-		var row accessTotalsRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		totals.Requests = row.Requests
-		totals.Bytes = row.Bytes
-		totals.BlockedIPs = row.BlockedIPs
+		totals.Requests = toUint64Any(raw["requests"])
+		totals.Bytes = toUint64Any(raw["bytes"])
+		totals.BlockedIPs = toUint64Any(raw["blocked_ips"])
 		break
 	}
 	return totals, nil
+}
+
+func toStringAny(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
+
+func toUint64Any(v interface{}) uint64 {
+	switch t := v.(type) {
+	case uint64:
+		return t
+	case int64:
+		if t < 0 {
+			return 0
+		}
+		return uint64(t)
+	case int:
+		if t < 0 {
+			return 0
+		}
+		return uint64(t)
+	case float64:
+		if t < 0 {
+			return 0
+		}
+		return uint64(t)
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			if i < 0 {
+				return 0
+			}
+			return uint64(i)
+		}
+		if f, err := strconv.ParseFloat(t.String(), 64); err == nil {
+			if f < 0 {
+				return 0
+			}
+			return uint64(f)
+		}
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0
+		}
+		if i, err := strconv.ParseUint(s, 10, 64); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			if f < 0 {
+				return 0
+			}
+			return uint64(f)
+		}
+	}
+	return 0
+}
+
+func pickUint64Any(m map[string]interface{}, keys ...string) uint64 {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			return toUint64Any(v)
+		}
+	}
+	return 0
 }
 
 func interpolateQuery(query string, args ...interface{}) string {
@@ -268,7 +375,8 @@ func interpolateQuery(query string, args ...interface{}) string {
 		replacement := ""
 		switch v := arg.(type) {
 		case time.Time:
-			replacement = fmt.Sprintf("toDateTime('%s')", formatTime(v))
+			// Use epoch seconds to avoid timezone drift between API host and ClickHouse server.
+			replacement = fmt.Sprintf("toDateTime(%d)", v.Unix())
 		case string:
 			replacement = quoteClickHouseString(v)
 		case int:

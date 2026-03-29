@@ -192,25 +192,6 @@ func QueryBlockedStats(start, end time.Time, hostFilter HostFilter, limit, offse
 	return list, total, nil
 }
 
-type blockedCurrentRow struct {
-	Host      string `json:"host"`
-	IP        string `json:"remote_addr"`
-	BlockTime string `json:"block_time"`
-	Status    int    `json:"status"`
-}
-
-type blockedHistoryRow struct {
-	Time   string `json:"ts"`
-	Host   string `json:"host"`
-	IP     string `json:"remote_addr"`
-	Status int    `json:"status"`
-}
-
-type blockedStatRow struct {
-	Host  string `json:"host"`
-	Count uint64 `json:"cnt"`
-}
-
 func queryBlockedCurrentHTTP(cfg *httpCKConfig, countSQL, querySQL string, args []interface{}, limit, offset int) ([]BlockedCurrentRow, uint64, error) {
 	countSQL = interpolateQuery(countSQL, args...)
 	countSQL = countSQL + "\nFORMAT JSONEachRow"
@@ -248,18 +229,22 @@ func queryBlockedCurrentHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 		if line == "" {
 			continue
 		}
-		var row blockedCurrentRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		blockTime, err := time.ParseInLocation(statsTimeLayout, row.BlockTime, time.Local)
+		blockRaw := strings.TrimSpace(toStringAny(raw["block_time"]))
+		if blockRaw == "" {
+			continue
+		}
+		blockTime, err := parseCKTimeString(blockRaw)
 		if err != nil {
 			continue
 		}
 		list = append(list, BlockedCurrentRow{
-			Host:      strings.TrimSpace(row.Host),
-			IP:        strings.TrimSpace(row.IP),
-			Status:    row.Status,
+			Host:      strings.TrimSpace(toStringAny(raw["host"])),
+			IP:        strings.TrimSpace(toStringAny(raw["remote_addr"])),
+			Status:    int(toInt64(raw["status"])),
 			BlockTime: blockTime,
 		})
 	}
@@ -303,18 +288,22 @@ func queryBlockedHistoryHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 		if line == "" {
 			continue
 		}
-		var row blockedHistoryRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		blockTime, err := time.ParseInLocation(statsTimeLayout, row.Time, time.Local)
+		blockRaw := strings.TrimSpace(toStringAny(raw["ts"]))
+		if blockRaw == "" {
+			continue
+		}
+		blockTime, err := parseCKTimeString(blockRaw)
 		if err != nil {
 			continue
 		}
 		list = append(list, BlockedHistoryRow{
-			Host:      strings.TrimSpace(row.Host),
-			IP:        strings.TrimSpace(row.IP),
-			Status:    row.Status,
+			Host:      strings.TrimSpace(toStringAny(raw["host"])),
+			IP:        strings.TrimSpace(toStringAny(raw["remote_addr"])),
+			Status:    int(toInt64(raw["status"])),
 			BlockTime: blockTime,
 		})
 	}
@@ -358,11 +347,14 @@ func queryBlockedStatsHTTP(cfg *httpCKConfig, countSQL, querySQL string, args []
 		if line == "" {
 			continue
 		}
-		var row blockedStatRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		list = append(list, BlockedStatRow{Host: strings.TrimSpace(row.Host), Count: row.Count})
+		list = append(list, BlockedStatRow{
+			Host:  strings.TrimSpace(toStringAny(raw["host"])),
+			Count: toUint64Any(raw["cnt"]),
+		})
 	}
 	return list, total, nil
 }

@@ -66,9 +66,13 @@ func (c *ForwardMonitorController) Traffic(ctx *gin.Context) {
 	}
 	factor := resolveForwardTrafficFactor()
 
-	bucketMap := make(map[time.Time]uint64, len(buckets))
+	stepSeconds := int64(step.Seconds())
+	if stepSeconds <= 0 {
+		stepSeconds = 60
+	}
+	bucketMap := make(map[int64]uint64, len(buckets))
 	for _, bucket := range buckets {
-		key := bucket.Bucket.Truncate(step)
+		key := bucket.Bucket.Unix() / stepSeconds
 		bucketMap[key] = bucket.TotalBytes
 	}
 
@@ -78,7 +82,7 @@ func (c *ForwardMonitorController) Traffic(ctx *gin.Context) {
 
 	cur := start
 	for !cur.After(end) {
-		totalBytes := bucketMap[cur]
+		totalBytes := bucketMap[cur.Unix()/stepSeconds]
 		if factor != 1 {
 			totalBytes = uint64(float64(totalBytes) * factor)
 		}

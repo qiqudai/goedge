@@ -143,18 +143,6 @@ func queryForwardPortRanking(start, end time.Time, limit int, allowedPorts []int
 	return list, nil
 }
 
-type forwardBucketRow struct {
-	Bucket     string `json:"bucket"`
-	TotalBytes uint64 `json:"total_bytes"`
-}
-
-type forwardRankRow struct {
-	ServerPort uint16 `json:"server_port"`
-	Protocol   string `json:"protocol"`
-	Count      uint64 `json:"connections"`
-	TotalBytes uint64 `json:"total_bytes"`
-}
-
 func queryForwardTrafficBucketsHTTP(cfg *httpCKConfig, start, end time.Time, bucketMinutes int, port int, protocol string, allowedPorts []int) ([]ForwardTrafficBucket, error) {
 	startStr := formatTime(start)
 	endStr := formatTime(end)
@@ -190,20 +178,21 @@ func queryForwardTrafficBucketsHTTP(cfg *httpCKConfig, start, end time.Time, buc
 		if line == "" {
 			continue
 		}
-		var row forwardBucketRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		if row.Bucket == "" {
+		bucketRaw := strings.TrimSpace(toStringAny(raw["bucket"]))
+		if bucketRaw == "" {
 			continue
 		}
-		bucket, err := time.ParseInLocation("2006-01-02 15:04:05", row.Bucket, time.Local)
+		bucket, err := parseCKTimeString(bucketRaw)
 		if err != nil {
 			continue
 		}
 		buckets = append(buckets, ForwardTrafficBucket{
 			Bucket:     bucket,
-			TotalBytes: row.TotalBytes,
+			TotalBytes: toUint64Any(raw["total_bytes"]),
 		})
 	}
 	return buckets, nil
@@ -241,15 +230,15 @@ func queryForwardPortRankingHTTP(cfg *httpCKConfig, start, end time.Time, limit 
 		if line == "" {
 			continue
 		}
-		var row forwardRankRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
 		list = append(list, ForwardPortRank{
-			Port:        int(row.ServerPort),
-			Protocol:    row.Protocol,
-			Connections: row.Count,
-			TotalBytes:  row.TotalBytes,
+			Port:        int(toInt64(raw["server_port"])),
+			Protocol:    strings.TrimSpace(toStringAny(raw["protocol"])),
+			Connections: toUint64Any(raw["connections"]),
+			TotalBytes:  toUint64Any(raw["total_bytes"]),
 		})
 	}
 	return list, nil
@@ -261,19 +250,20 @@ func queryClickHouseHTTP(cfg *httpCKConfig, query string) ([]byte, error) {
 	}
 	params := url.Values{}
 	params.Set("query", query)
+	params.Set("output_format_json_quote_64bit_integers", "0")
 	if cfg.database != "" {
 		params.Set("database", cfg.database)
 	}
 	endpoint := cfg.baseURL + "/?" + params.Encode()
 
-	req, err := http.NewRequest("POST", endpoint, nil)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 	if cfg.user != "" {
 		req.SetBasicAuth(cfg.user, cfg.pass)
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -284,7 +274,14 @@ func queryClickHouseHTTP(cfg *httpCKConfig, query string) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("clickhouse http status %s", resp.Status)
+		detail := strings.TrimSpace(string(body))
+		if len(detail) > 512 {
+			detail = detail[:512]
+		}
+		if detail == "" {
+			return nil, fmt.Errorf("clickhouse http status %s", resp.Status)
+		}
+		return nil, fmt.Errorf("clickhouse http status %s: %s", resp.Status, detail)
 	}
 	return body, nil
 }

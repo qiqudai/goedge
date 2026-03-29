@@ -71,7 +71,7 @@ func (s *NodeService) GetUserNodes(userID int64) ([]int64, error) {
 	// 3. Find Nodes (Active)
 	var nodes []models.Node
 	query := db.DB.Where("enable = ?", true)
-	
+
 	conds := db.DB.Where("1=0") // Start with False
 	if len(regionIDs) > 0 {
 		conds = conds.Or("region_id IN ?", regionIDs)

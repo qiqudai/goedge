@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -146,6 +147,7 @@ func shipAccessLogs() {
 	if len(lines) == 0 {
 		return
 	}
+	lines = normalizeLogTimesToUTC(lines)
 
 	newOffset, _ := file.Seek(0, io.SeekCurrent)
 	if err := sendAccessLogs(lines); err != nil {
@@ -195,6 +197,7 @@ func shipStreamLogs() {
 	if len(lines) == 0 {
 		return
 	}
+	lines = normalizeLogTimesToUTC(lines)
 
 	newOffset, _ := file.Seek(0, io.SeekCurrent)
 	if err := sendStreamLogs(lines); err != nil {
@@ -269,4 +272,64 @@ func getStreamLogPaths() (string, string) {
 	}
 	_ = os.MkdirAll(logsDir, 0755)
 	return filepath.Join(logsDir, "stream_access.json"), filepath.Join(logsDir, "stream_access.offset")
+}
+
+func normalizeLogTimesToUTC(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, normalizeLogLineTimeToUTC(line))
+	}
+	return out
+}
+
+func normalizeLogLineTimeToUTC(line string) string {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(line), &payload); err != nil {
+		return line
+	}
+	raw, ok := payload["time_iso8601"]
+	if !ok {
+		return line
+	}
+	rawTime, ok := raw.(string)
+	if !ok {
+		return line
+	}
+	rawTime = strings.TrimSpace(rawTime)
+	if rawTime == "" {
+		return line
+	}
+	parsed, err := parseISO8601Time(rawTime)
+	if err != nil {
+		return line
+	}
+	payload["time_iso8601"] = parsed.UTC().Format(time.RFC3339)
+	buf, err := json.Marshal(payload)
+	if err != nil {
+		return line
+	}
+	return string(buf)
+}
+
+func parseISO8601Time(value string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05-0700",
+		"2006-01-02 15:04:05-0700",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, os.ErrInvalid
 }

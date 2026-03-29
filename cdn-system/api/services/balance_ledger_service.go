@@ -79,4 +79,3 @@ func AdjustUserBalanceWithLedger(tx *gorm.DB, in BalanceAdjustInput) (*BalanceAd
 
 	return &BalanceAdjustResult{Before: before, After: after}, nil
 }
-

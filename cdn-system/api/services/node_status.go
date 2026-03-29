@@ -21,6 +21,7 @@ var nodeStatusStore = struct {
 }
 
 var lastMissingCheck time.Time
+
 const missingCheckInterval = 30 * time.Second
 
 func MarkNodeOnline(nodeID int64, at time.Time) {

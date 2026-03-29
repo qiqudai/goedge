@@ -35,7 +35,7 @@ func (ctr *SiteDefaultController) List(c *gin.Context) {
 			scopeName = "global"
 		}
 		var items []models.ConfigItem
-		
+
 		if err := db.DB.Where("type = ? AND scope_name = ? AND scope_id = ?", "site_default_config", scopeName, scopeID).
 			Order("name asc").Find(&items).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
@@ -222,12 +222,12 @@ func (ctr *SiteDefaultController) Create(c *gin.Context) {
 			default:
 				// Fallback generic
 				// Or use fmt.Sprintf("%v", v)
-				// For map/slice, maybe JSON stringify? 
+				// For map/slice, maybe JSON stringify?
 				// The frontend usually sends stringified JSON for proxy_cache.
 				// But let's be safe.
 				val = fmt.Sprintf("%v", v)
 			}
-			
+
 			// Perform Upsert for this item
 			var item models.ConfigItem
 			query := db.DB.Where("name = ? AND type = ? AND scope_id = ?", name, "site_default_config", scopeID)
@@ -378,11 +378,11 @@ func (ctr *SiteDefaultController) Update(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"value":     req.Value,
-		"enable":    true,
-		"update_at": time.Now(),
+		"value":      req.Value,
+		"enable":     true,
+		"update_at":  time.Now(),
 		"scope_name": scopeName,
-		"scope_id": scopeID,
+		"scope_id":   scopeID,
 	}
 	query := db.DB.Model(&models.ConfigItem{}).
 		Where("name = ? AND type = ? AND scope_id = ?", name, "site_default_config", lookupScopeID)

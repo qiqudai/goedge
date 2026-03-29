@@ -180,14 +180,14 @@ func buildInstallConfig(node *models.Node, apiBase string) (*NodeInstallConfig, 
 
 func buildAgentJSON(cfg *NodeInstallConfig) ([]byte, error) {
 	payload := map[string]interface{}{
-		"api":                cfg.APIBase,
-		"token":              cfg.NodeToken,
-		"node_id":            fmt.Sprintf("%d", cfg.NodeID),
-		"geneva_enable":      false,
-		"geneva_window_size": 4,
-		"reset_resources":    true,
-		"bootstrap_sync":     true,
-		"bootstrap_start":    true,
+		"api":                   cfg.APIBase,
+		"token":                 cfg.NodeToken,
+		"node_id":               fmt.Sprintf("%d", cfg.NodeID),
+		"geneva_enable":         false,
+		"geneva_window_size":    4,
+		"reset_resources":       true,
+		"bootstrap_sync":        true,
+		"bootstrap_start":       true,
 		"auto_disable_firewall": true,
 	}
 	return json.MarshalIndent(payload, "", "  ")

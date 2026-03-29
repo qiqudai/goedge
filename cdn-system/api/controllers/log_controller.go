@@ -263,7 +263,7 @@ func (ctr *LogController) ListMailLogs(c *gin.Context) {
 
 	// Use 'message' table as Mail Log source
 	query := db.DB.Table("message")
-	
+
 	keyword := c.Query("keyword")
 	if keyword != "" {
 		like := "%" + keyword + "%"
@@ -313,7 +313,7 @@ func (ctr *LogController) ListMailLogs(c *gin.Context) {
 		if m.EmailIsSent || m.PhoneIsSent {
 			status = 1
 		}
-		
+
 		list = append(list, MailLogRow{
 			ID:        m.ID,
 			UserID:    m.Receive,
@@ -547,24 +547,24 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	startRaw := c.Query("start_time")
 	endRaw := c.Query("end_time")
 	var start, end time.Time
-	
+
 	// Support Unix Timestamp (Seconds)
 	if startStats, err := strconv.ParseInt(startRaw, 10, 64); err == nil && startStats > 0 {
 		start = time.Unix(startStats, 0)
 	} else if startRaw != "" {
 		start, _ = time.Parse(layout, startRaw)
 	}
-	
+
 	if endStats, err := strconv.ParseInt(endRaw, 10, 64); err == nil && endStats > 0 {
 		end = time.Unix(endStats, 0)
 	} else if endRaw != "" {
 		end, _ = time.Parse(layout, endRaw)
 	}
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		return start, end
 	}
-	
+
 	// Fallback to original logic if needed, but redundant now
 	return start, end
 }

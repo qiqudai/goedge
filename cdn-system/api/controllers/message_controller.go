@@ -1,4 +1,4 @@
-﻿package controllers
+package controllers
 
 import (
 	"cdn-api/db"

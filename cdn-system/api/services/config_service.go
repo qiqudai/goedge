@@ -35,12 +35,12 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	}
 
 	payload := &models.EdgeConfig{
-		Version:   0,
-		NodeID:    strconv.FormatInt(node.ID, 10),
-		NodeLevel: node.Level,
+		Version:      0,
+		NodeID:       strconv.FormatInt(node.ID, 10),
+		NodeLevel:    node.Level,
 		AntiBlocking: true,
-		Domains:   make([]models.EdgeDomain, 0),
-		Upstreams: make([]models.EdgeUpstream, 0),
+		Domains:      make([]models.EdgeDomain, 0),
+		Upstreams:    make([]models.EdgeUpstream, 0),
 	}
 	if val, err := GetNodeConfigValue(node.ID, "anti_blocking"); err == nil && strings.TrimSpace(val) != "" {
 		payload.AntiBlocking = ParseBoolFlag(val)

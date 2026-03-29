@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/services"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -171,6 +172,7 @@ func (c *StatController) ListBasic(ctx *gin.Context) {
 	statsRange := resolveStatsRangeFromRequest(ctx)
 	buckets, err := services.QueryAccessBuckets(statsRange.Start, statsRange.End, statsRange.Bucket, hostFilter)
 	if err != nil {
+		log.Printf("[stats] basic query failed: %v", err)
 		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "bandwidth": []float64{}, "traffic": []float64{}, "qps": []float64{}}})
 		return
 	}
@@ -207,6 +209,7 @@ func (c *StatController) ListQuality(ctx *gin.Context) {
 	statsRange := resolveStatsRangeFromRequest(ctx)
 	buckets, err := services.QueryAccessBuckets(statsRange.Start, statsRange.End, statsRange.Bucket, hostFilter)
 	if err != nil {
+		log.Printf("[stats] quality query failed: %v", err)
 		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "hit_rate": []float64{}, "status_4xx": []float64{}, "status_5xx": []float64{}}})
 		return
 	}
@@ -242,6 +245,7 @@ func (c *StatController) ListOrigin(ctx *gin.Context) {
 	statsRange := resolveStatsRangeFromRequest(ctx)
 	buckets, err := services.QueryAccessBuckets(statsRange.Start, statsRange.End, statsRange.Bucket, hostFilter)
 	if err != nil {
+		log.Printf("[stats] origin query failed: %v", err)
 		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "origin_bandwidth": []float64{}, "origin_traffic": []float64{}}})
 		return
 	}

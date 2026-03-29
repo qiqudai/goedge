@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,10 +15,10 @@ import (
 
 // RankItem aggregates request/traffic metrics for rankings.
 type RankItem struct {
-	Item          string
-	RequestCount  uint64
-	OutBytes      uint64
-	OriginBytes   uint64
+	Item         string
+	RequestCount uint64
+	OutBytes     uint64
+	OriginBytes  uint64
 }
 
 // LatencyRankItem describes latency ranking.
@@ -43,7 +44,9 @@ func QueryAccessRanking(rankType string, start, end time.Time, hostFilter HostFi
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return []RankItem{}, nil
 	}
-	if !db.ClickHouseEnabled() {
+	start, end = adjustAccessLogQueryRange(start, end)
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []RankItem{}, nil
 	}
 	if limit <= 0 {
@@ -75,7 +78,7 @@ func QueryAccessRanking(rankType string, start, end time.Time, hostFilter HostFi
 		ORDER BY request_count DESC
 		LIMIT %d`, spec.ItemExpr, whereSQL, spec.GroupBy, limit)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryAccessRankingHTTP(httpCfg, query, args...)
 	}
 	rows, err := db.CK.Query(query, args...)
@@ -108,7 +111,8 @@ func QueryRegionRanking(regionType string, start, end time.Time, hostFilter Host
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return []RankItem{}, nil
 	}
-	if !db.ClickHouseEnabled() {
+	start, end = adjustAccessLogQueryRange(start, end)
+	if !db.ClickHouseEnabled() && buildHTTPConfig() == nil {
 		return []RankItem{}, nil
 	}
 	conditions := []string{"ts >= ? AND ts <= ?"}
@@ -167,7 +171,9 @@ func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword st
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return []LatencyRankItem{}
 	}
-	if !db.ClickHouseEnabled() {
+	start, end = adjustAccessLogQueryRange(start, end)
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []LatencyRankItem{}
 	}
 	if limit <= 0 {
@@ -194,7 +200,7 @@ func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword st
 		ORDER BY avg_time DESC
 		LIMIT %d`, whereSQL, limit)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryLatencyRankingHTTP(httpCfg, query, args...)
 	}
 	rows, err := db.CK.Query(query, args...)
@@ -265,13 +271,6 @@ func resolveRegionForIP(ip, regionType string, cache map[string]string) string {
 	return region
 }
 
-type rankingRow struct {
-	Item         string `json:"item"`
-	RequestCount uint64 `json:"request_count"`
-	OutBytes     uint64 `json:"out_traffic"`
-	OriginBytes  uint64 `json:"origin_traffic"`
-}
-
 func queryAccessRankingHTTP(cfg *httpCKConfig, query string, args ...interface{}) ([]RankItem, error) {
 	query = interpolateQuery(query, args...)
 	query = query + "\nFORMAT JSONEachRow"
@@ -286,19 +285,19 @@ func queryAccessRankingHTTP(cfg *httpCKConfig, query string, args ...interface{}
 		if line == "" {
 			continue
 		}
-		var row rankingRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		item := strings.TrimSpace(row.Item)
+		item := strings.TrimSpace(toStringAny(raw["item"]))
 		if item == "" {
 			item = "-"
 		}
 		list = append(list, RankItem{
 			Item:         item,
-			RequestCount: row.RequestCount,
-			OutBytes:     row.OutBytes,
-			OriginBytes:  row.OriginBytes,
+			RequestCount: toUint64Any(raw["request_count"]),
+			OutBytes:     toUint64Any(raw["out_traffic"]),
+			OriginBytes:  toUint64Any(raw["origin_traffic"]),
 		})
 	}
 	return list, nil
@@ -330,13 +329,6 @@ func queryAccessIPAggregates(query string, args ...interface{}) ([]RankItem, err
 	return list, nil
 }
 
-type ipAggregateRow struct {
-	IP           string `json:"ip"`
-	RequestCount uint64 `json:"request_count"`
-	OutBytes     uint64 `json:"out_traffic"`
-	OriginBytes  uint64 `json:"origin_traffic"`
-}
-
 func queryAccessIPAggregatesHTTP(cfg *httpCKConfig, query string, args ...interface{}) ([]RankItem, error) {
 	query = interpolateQuery(query, args...)
 	query = query + "\nFORMAT JSONEachRow"
@@ -351,28 +343,18 @@ func queryAccessIPAggregatesHTTP(cfg *httpCKConfig, query string, args ...interf
 		if line == "" {
 			continue
 		}
-		var row ipAggregateRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
 		list = append(list, RankItem{
-			Item:         strings.TrimSpace(row.IP),
-			RequestCount: row.RequestCount,
-			OutBytes:     row.OutBytes,
-			OriginBytes:  row.OriginBytes,
+			Item:         strings.TrimSpace(toStringAny(raw["ip"])),
+			RequestCount: toUint64Any(raw["request_count"]),
+			OutBytes:     toUint64Any(raw["out_traffic"]),
+			OriginBytes:  toUint64Any(raw["origin_traffic"]),
 		})
 	}
 	return list, nil
-}
-
-type latencyRow struct {
-	Host         string  `json:"host"`
-	URI          string  `json:"uri"`
-	RequestCount uint64  `json:"request_count"`
-	AvgTime      float64 `json:"avg_time"`
-	MaxTime      float64 `json:"max_time"`
-	MinTime      float64 `json:"min_time"`
-	P95Time      float64 `json:"p95_time"`
 }
 
 func queryLatencyRankingHTTP(cfg *httpCKConfig, query string, args ...interface{}) []LatencyRankItem {
@@ -390,24 +372,54 @@ func queryLatencyRankingHTTP(cfg *httpCKConfig, query string, args ...interface{
 		if line == "" {
 			continue
 		}
-		var row latencyRow
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		item := strings.TrimSpace(row.Host)
-		if row.URI != "" {
-			item = item + row.URI
+		host := strings.TrimSpace(toStringAny(raw["host"]))
+		uri := strings.TrimSpace(toStringAny(raw["uri"]))
+		item := host
+		if uri != "" {
+			item = item + uri
 		}
 		list = append(list, LatencyRankItem{
 			Rank:         rank,
 			Item:         item,
-			RequestCount: int(row.RequestCount),
-			AvgTime:      RoundFloat(row.AvgTime, 3),
-			MaxTime:      RoundFloat(row.MaxTime, 3),
-			MinTime:      RoundFloat(row.MinTime, 3),
-			P95Time:      RoundFloat(row.P95Time, 3),
+			RequestCount: int(toUint64Any(raw["request_count"])),
+			AvgTime:      RoundFloat(toFloat64Any(raw["avg_time"]), 3),
+			MaxTime:      RoundFloat(toFloat64Any(raw["max_time"]), 3),
+			MinTime:      RoundFloat(toFloat64Any(raw["min_time"]), 3),
+			P95Time:      RoundFloat(toFloat64Any(raw["p95_time"]), 3),
 		})
 		rank++
 	}
 	return list
+}
+
+func toFloat64Any(v interface{}) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case uint64:
+		return float64(t)
+	case json.Number:
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return f
+		}
+	}
+	return 0
 }

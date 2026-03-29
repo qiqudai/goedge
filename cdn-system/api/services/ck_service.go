@@ -50,14 +50,17 @@ type rawStreamLog struct {
 }
 
 func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
-	if !db.ClickHouseEnabled() || len(lines) == 0 {
-		if !db.ClickHouseEnabled() {
-			log.Printf("[CK] Access logs skipped: ClickHouse disabled")
-		}
+	if len(lines) == 0 {
 		return 0
 	}
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
+		log.Printf("[CK] Access logs skipped: ClickHouse unavailable (native/http)")
+		return 0
+	}
+
+	if httpCfg != nil {
 		rows := make([]map[string]interface{}, 0, len(lines))
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
@@ -147,14 +150,17 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 }
 
 func InsertStreamLogs(nodeID, nodeIP string, lines []string) int {
-	if !db.ClickHouseEnabled() || len(lines) == 0 {
-		if !db.ClickHouseEnabled() {
-			log.Printf("[CK] Stream logs skipped: ClickHouse disabled")
-		}
+	if len(lines) == 0 {
 		return 0
 	}
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
+		log.Printf("[CK] Stream logs skipped: ClickHouse unavailable (native/http)")
+		return 0
+	}
+
+	if httpCfg != nil {
 		rows := make([]map[string]interface{}, 0, len(lines))
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
@@ -244,17 +250,20 @@ func InsertStreamLogs(nodeID, nodeIP string, lines []string) int {
 }
 
 func InsertMetrics(nodeID, nodeIP string, content string) int {
-	if !db.ClickHouseEnabled() || strings.TrimSpace(content) == "" {
-		if !db.ClickHouseEnabled() {
-			log.Printf("[CK] Metrics skipped: ClickHouse disabled")
-		}
+	if strings.TrimSpace(content) == "" {
 		return 0
 	}
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
+		log.Printf("[CK] Metrics skipped: ClickHouse unavailable (native/http)")
+		return 0
+	}
+
+	if httpCfg != nil {
 		scanner := bufio.NewScanner(strings.NewReader(content))
 		rows := make([]map[string]interface{}, 0, 100)
-		now := formatTime(time.Now())
+		now := formatTime(time.Now().UTC())
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" || strings.HasPrefix(line, "#") {
@@ -286,7 +295,7 @@ func InsertMetrics(nodeID, nodeIP string, content string) int {
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	inserted := 0
-	now := time.Now()
+	now := time.Now().UTC()
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -306,16 +315,19 @@ func InsertMetrics(nodeID, nodeIP string, content string) int {
 }
 
 func InsertEventLogs(nodeID, nodeIP, eventType string, payloads []string) int {
-	if !db.ClickHouseEnabled() || len(payloads) == 0 {
-		if !db.ClickHouseEnabled() {
-			log.Printf("[CK] Events skipped: ClickHouse disabled")
-		}
+	if len(payloads) == 0 {
 		return 0
 	}
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
+		log.Printf("[CK] Events skipped: ClickHouse unavailable (native/http)")
+		return 0
+	}
+
+	if httpCfg != nil {
 		rows := make([]map[string]interface{}, 0, len(payloads))
-		now := formatTime(time.Now())
+		now := formatTime(time.Now().UTC())
 		for _, payload := range payloads {
 			payload = strings.TrimSpace(payload)
 			if payload == "" {
@@ -340,7 +352,7 @@ func InsertEventLogs(nodeID, nodeIP, eventType string, payloads []string) int {
 	}
 	defer stmt.Close()
 
-	now := time.Now()
+	now := time.Now().UTC()
 	inserted := 0
 	for _, payload := range payloads {
 		payload = strings.TrimSpace(payload)
@@ -367,22 +379,22 @@ func parseRequest(request string) (string, string) {
 func parseISOTime(value string) time.Time {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return time.Now()
+		return time.Now().UTC()
 	}
 	if ts, err := time.Parse(time.RFC3339, value); err == nil {
-		return ts
+		return ts.UTC()
 	}
 	if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
-		return ts
+		return ts.UTC()
 	}
-	return time.Now()
+	return time.Now().UTC()
 }
 
 func formatTime(value time.Time) string {
 	if value.IsZero() {
-		value = time.Now()
+		value = time.Now().UTC()
 	}
-	return value.Format("2006-01-02 15:04:05")
+	return value.UTC().Format("2006-01-02 15:04:05")
 }
 
 func parseFloatFirst(value string) float64 {
@@ -504,7 +516,7 @@ func insertHTTPRows(cfg *httpCKConfig, table string, rows []map[string]interface
 	if cfg.user != "" {
 		req.SetBasicAuth(cfg.user, cfg.pass)
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("[CK] HTTP insert failed: %v", err)

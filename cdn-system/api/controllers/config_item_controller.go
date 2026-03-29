@@ -41,12 +41,12 @@ func (ctrl *ConfigItemController) List(c *gin.Context) {
 		query = query.Where("type = ?", cfgType)
 	}
 	/*
-	if scopeName == "global" {
-		query = query.Where("scope_name IN ? OR scope_name IS NULL", []string{"global", "system", ""})
-	} else if scopeName != "" {
-		query = query.Where("scope_name = ?", scopeName)
-	}
-	query = query.Where("scope_id = ?", scopeID)
+		if scopeName == "global" {
+			query = query.Where("scope_name IN ? OR scope_name IS NULL", []string{"global", "system", ""})
+		} else if scopeName != "" {
+			query = query.Where("scope_name = ?", scopeName)
+		}
+		query = query.Where("scope_id = ?", scopeID)
 	*/
 	if err := query.Find(&items).Error; err != nil {
 		fmt.Printf("[DEBUG] List Config Error: %v\n", err)
@@ -59,10 +59,10 @@ func (ctrl *ConfigItemController) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"list": items,
-		"debug_type": cfgType,
-		"debug_scope_name": scopeName, 
-		"count": len(items),
+		"list":             items,
+		"debug_type":       cfgType,
+		"debug_scope_name": scopeName,
+		"count":            len(items),
 	})
 }
 
@@ -166,7 +166,7 @@ func upsertConfigItems(req configItemUpsertRequest) error {
 			existing.Value = item.Value
 			existing.Enable = enable
 			existing.UpdatedAt = time.Now()
-			
+
 			// Fix: Use explicit Update because 'config' table might not have primary key 'id' for GORM Save()
 			updates := map[string]interface{}{
 				"value":     item.Value,

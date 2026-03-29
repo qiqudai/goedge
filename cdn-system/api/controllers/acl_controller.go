@@ -162,13 +162,13 @@ func (ctr *ACLController) Create(c *gin.Context) {
 			return
 		}
 	}
-	
+
 	var req aclPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
 		return
 	}
-	
+
 	if !isUserRequest(c) && req.UserID > 0 {
 		uid = req.UserID
 	}
@@ -180,14 +180,14 @@ func (ctr *ACLController) Create(c *gin.Context) {
 	if req.DefaultAction == "" {
 		req.DefaultAction = "allow"
 	}
-	
+
 	dataObj := ACLData{
 		Rules:              req.Rules,
 		DefaultDenyStatus:  req.DefaultDenyStatus,
 		DefaultRedirectURL: req.DefaultRedirectURL,
 	}
 	b, _ := json.Marshal(dataObj)
-	
+
 	item := models.ACL{
 		UserID:        uid,
 		Name:          req.Name,
@@ -214,7 +214,7 @@ func (ctr *ACLController) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
 		return
 	}
-	
+
 	var item models.ACL
 	if err := db.DB.Where("id = ?", id).First(&item).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": T("acl not found")})
@@ -232,7 +232,7 @@ func (ctr *ACLController) Update(c *gin.Context) {
 			return
 		}
 	}
-	
+
 	var req aclPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
@@ -241,18 +241,18 @@ func (ctr *ACLController) Update(c *gin.Context) {
 	if !isUserRequest(c) && req.UserID > 0 {
 		item.UserID = req.UserID
 	}
-	
+
 	if req.DefaultAction == "" {
 		req.DefaultAction = "allow"
 	}
-	
+
 	dataObj := ACLData{
 		Rules:              req.Rules,
 		DefaultDenyStatus:  req.DefaultDenyStatus,
 		DefaultRedirectURL: req.DefaultRedirectURL,
 	}
 	b, _ := json.Marshal(dataObj)
-	
+
 	item.Name = req.Name
 	item.Description = req.Description
 	item.DefaultAction = req.DefaultAction
@@ -311,7 +311,7 @@ func parseACLData(raw string) ([]ACLRule, int, string) {
 	if err := json.Unmarshal([]byte(raw), &data); err == nil {
 		return data.Rules, data.DefaultDenyStatus, data.DefaultRedirectURL
 	}
-	
+
 	// Legacy or simple list fallback
 	var items []ACLRule
 	if err := json.Unmarshal([]byte(raw), &items); err == nil {

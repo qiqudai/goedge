@@ -44,7 +44,7 @@ func processPendingTasks() {
 		// Prevent concurrent processing of same task if multiple workers (though we have 1 here)
 		// Update state individually
 		db.DB.Model(&models.Task{}).Where("id = ?", task.ID).Update("state", "running")
-		
+
 		go func(t models.Task) {
 			handleDNSTask(t)
 		}(task)
@@ -87,25 +87,25 @@ func handleDNSTask(task models.Task) {
 }
 
 type PlatformCNAMEData struct {
-	SiteID    int64  `json:"site_id"`
-	Zone      string `json:"zone"`
-	Type      string `json:"record_type"`
-	Name      string `json:"name"`
-	FQDN      string `json:"fqdn"`
-	Value     string `json:"value"`
-	TTL       int    `json:"ttl"`
+	SiteID int64  `json:"site_id"`
+	Zone   string `json:"zone"`
+	Type   string `json:"record_type"`
+	Name   string `json:"name"`
+	FQDN   string `json:"fqdn"`
+	Value  string `json:"value"`
+	TTL    int    `json:"ttl"`
 }
 
 type UserCNAMEData struct {
-	UID       int64  `json:"uid"`
-	SiteID    int64  `json:"site_id"`
-	DNSAPIID  int64  `json:"dnsapi_id"`
-	Zone      string `json:"zone"`
-	Type      string `json:"record_type"`
-	Name      string `json:"name"`
-	FQDN      string `json:"fqdn"`
-	Value     string `json:"value"`
-	TTL       int    `json:"ttl"`
+	UID      int64  `json:"uid"`
+	SiteID   int64  `json:"site_id"`
+	DNSAPIID int64  `json:"dnsapi_id"`
+	Zone     string `json:"zone"`
+	Type     string `json:"record_type"`
+	Name     string `json:"name"`
+	FQDN     string `json:"fqdn"`
+	Value    string `json:"value"`
+	TTL      int    `json:"ttl"`
 }
 
 func handlePlatformCNAME(task models.Task) (string, error) {
@@ -115,7 +115,7 @@ func handlePlatformCNAME(task models.Task) (string, error) {
 	}
 
 	// 1. Find Platform DNS API
-	// Strategy: Find admin (uid=0) DNSAPI. 
+	// Strategy: Find admin (uid=0) DNSAPI.
 	// If multiple, ideally check sys config, but defaulting to first valid one.
 	var api models.DNSAPI
 	if err := db.DB.Where("uid = 0").First(&api).Error; err != nil {
@@ -195,7 +195,7 @@ func upsertDNSRecord(api models.DNSAPI, zone, rType, name, value string, ttl int
 		if existing.Value == value {
 			// Identical, No-op
 			log.Printf("[DNS Worker] Record exists and identical: %s %s -> %s", name, rType, value)
-			// Need ID? 
+			// Need ID?
 			// If existing struct doesn't have ID, we can't return it.
 			// The DNSRecord struct in provider.go DOES NOT have ID field.
 			// This is a limitation of current interface.
@@ -210,7 +210,7 @@ func upsertDNSRecord(api models.DNSAPI, zone, rType, name, value string, ttl int
 			// Wait, the request explicitly asks for "record_id".
 			// I should add ID to DNSRecord struct in `provider.go`.
 			// Since I am already modifying `provider.go`, I should add `ID string` to `DNSRecord`.
-			return "EXISTING", nil 
+			return "EXISTING", nil
 		}
 
 		// Different value, update (Delete + Add)
@@ -230,11 +230,11 @@ func upsertDNSRecord(api models.DNSAPI, zone, rType, name, value string, ttl int
 	if err := provider.AddRecord(zone, newRecord); err != nil {
 		return "", fmt.Errorf("add record failed: %v", err)
 	}
-	
+
 	// Try to get ID if possible?
 	// Can't get ID from AddRecord (it returns error only).
 	// So we can't fully satisfy "return record_id" requirement without deeper interface changes.
-	// But I will assume returning "" is acceptable if interface doesn't support it, 
+	// But I will assume returning "" is acceptable if interface doesn't support it,
 	// OR I can re-fetch to get ID?
 	// Re-fetching is expensive but accurate.
 	// Let's re-fetch if we really need ID.
@@ -244,11 +244,11 @@ func upsertDNSRecord(api models.DNSAPI, zone, rType, name, value string, ttl int
 
 func handleTaskError(task models.Task, err error) {
 	log.Printf("[DNS Worker] Task failed id=%d: %v", task.ID, err)
-	
+
 	updates := map[string]interface{}{
 		"ret": fmt.Sprintf("%v", err),
 	}
-	
+
 	// Exponential Backoff
 	// 2s, 5s, 15s, 60s, 300s
 	delays := []int{2, 5, 15, 60, 300}
@@ -261,6 +261,6 @@ func handleTaskError(task models.Task, err error) {
 		updates["err_times"] = task.ErrTimes + 1
 		updates["end_at"] = time.Now()
 	}
-	
+
 	db.DB.Model(&models.Task{}).Where("id = ?", task.ID).Updates(updates)
 }

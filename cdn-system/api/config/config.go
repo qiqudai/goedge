@@ -10,10 +10,10 @@ import (
 )
 
 var App = &AppConfig{
-	Port:      "8080",
-	DBDSN:     "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
-	Debug:     false,
-	AgentToken: "",
+	Port:              "8080",
+	DBDSN:             "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
+	Debug:             false,
+	AgentToken:        "",
 	ClickHouseEnabled: false,
 	ClickHouseDSN:     "",
 	AcmeEmail:         "",
@@ -23,10 +23,10 @@ var App = &AppConfig{
 }
 
 type AppConfig struct {
-	Port       string `yaml:"port"`
-	DBDSN      string `yaml:"db_dsn"`
-	Debug      bool   `yaml:"debug"`
-	AgentToken string `yaml:"agent_token"`
+	Port              string `yaml:"port"`
+	DBDSN             string `yaml:"db_dsn"`
+	Debug             bool   `yaml:"debug"`
+	AgentToken        string `yaml:"agent_token"`
 	ClickHouseEnabled bool   `yaml:"clickhouse_enabled"`
 	ClickHouseDSN     string `yaml:"clickhouse_dsn"`
 	AcmeEmail         string `yaml:"acme_email"`
@@ -36,10 +36,11 @@ type AppConfig struct {
 }
 
 var (
-	configFile = flag.String("config", "config.yaml", "Path to configuration file")
-	port       = flag.String("port", "", "Server port")
-	dbDSN      = flag.String("db", "", "Database DSN (e.g. root:pass@tcp(127.0.0.1:3306)/dbname)")
-	debugFlag  = flag.Bool("debug", false, "Enable debug logging")
+	configFile         = flag.String("config", "config.yaml", "Path to configuration file")
+	port               = flag.String("port", "", "Server port")
+	dbDSN              = flag.String("db", "", "Database DSN (e.g. root:pass@tcp(127.0.0.1:3306)/dbname)")
+	debugFlag          = flag.Bool("debug", false, "Enable debug logging")
+	resolvedConfigPath = "config.yaml"
 )
 
 func Load() {
@@ -48,12 +49,14 @@ func Load() {
 		flag.Parse()
 	}
 
-	// 2. Load from Config File (if exists)
-	if data, err := os.ReadFile(*configFile); err == nil {
+	// 2. Resolve config path and load (if exists)
+	path := resolveConfigPath(*configFile)
+	resolvedConfigPath = path
+	if data, err := os.ReadFile(path); err == nil {
 		if err := yaml.Unmarshal(data, App); err != nil {
-			log.Printf("[Warn] Failed to parse %s: %v", *configFile, err)
+			log.Printf("[Warn] Failed to parse %s: %v", path, err)
 		} else {
-			log.Printf("[Info] Loaded config from %s", *configFile)
+			log.Printf("[Info] Loaded config from %s", path)
 		}
 	}
 
@@ -70,12 +73,37 @@ func Load() {
 }
 
 func ConfigPath() string {
-	if configFile == nil || *configFile == "" {
-		return "config.yaml"
+	if resolvedConfigPath != "" {
+		return resolvedConfigPath
 	}
-	return *configFile
+	if configFile != nil && *configFile != "" {
+		return *configFile
+	}
+	return "config.yaml"
 }
 
 func ConfigDir() string {
 	return filepath.Dir(ConfigPath())
+}
+
+func resolveConfigPath(raw string) string {
+	raw = filepath.Clean(raw)
+	if raw == "" {
+		raw = "config.yaml"
+	}
+	if filepath.IsAbs(raw) {
+		return raw
+	}
+	if _, err := os.Stat(raw); err == nil {
+		return raw
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return raw
+	}
+	exePath := filepath.Join(filepath.Dir(exe), raw)
+	if _, err := os.Stat(exePath); err == nil {
+		return exePath
+	}
+	return raw
 }
