@@ -15,14 +15,9 @@ func writeMainConfig(cfg *edgeNginxConfig) error {
 	b.WriteString("worker_processes " + resolveWorkerProcesses(cfg) + ";\n")
 	b.WriteString(fmt.Sprintf("worker_rlimit_nofile %d;\n", resolveWorkerRlimitNofile(cfg, workerConnections)))
 	b.WriteString("worker_shutdown_timeout " + resolveWorkerShutdownTimeout(cfg) + ";\n")
-	logsDir := ""
+	logsDir := resolveNginxLogsDirForConfig("")
 	if cfg != nil {
-		logsDir = strings.TrimSpace(cfg.LogsDir)
-	}
-	if logsDir == "" {
-		logsDir = filepath.ToSlash(filepath.Join(rootDir, "logs"))
-	} else {
-		logsDir = strings.TrimRight(logsDir, "/")
+		logsDir = resolveNginxLogsDirForConfig(cfg.LogsDir)
 	}
 	b.WriteString("error_log " + logsDir + "/error.log warn;\n")
 	pidPath := filepath.ToSlash(filepath.Join(rootDir, "logs", "nginx.pid"))

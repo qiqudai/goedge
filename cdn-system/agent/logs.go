@@ -238,38 +238,24 @@ func saveOffset(path string, offset int64) {
 	_ = os.WriteFile(path, []byte(strconv.FormatInt(offset, 10)), 0644)
 }
 
-func getAccessLogPaths() (string, string) {
-	rootDir := runtimeRoot()
-	logsDir := filepath.Join(rootDir, "logs")
+func currentNginxLogsDir() string {
 	localConfigMu.RLock()
 	nginx := LocalNginxConfig
 	localConfigMu.RUnlock()
-	if nginx != nil {
-		if dir := strings.TrimSpace(nginx.LogsDir); dir != "" {
-			logsDir = dir
-			if !filepath.IsAbs(logsDir) {
-				logsDir = filepath.Join(rootDir, logsDir)
-			}
-		}
+	if nginx == nil {
+		return resolveNginxLogsDir("")
 	}
+	return resolveNginxLogsDir(nginx.LogsDir)
+}
+
+func getAccessLogPaths() (string, string) {
+	logsDir := currentNginxLogsDir()
 	_ = os.MkdirAll(logsDir, 0755)
 	return filepath.Join(logsDir, "access.json"), filepath.Join(logsDir, "access.offset")
 }
 
 func getStreamLogPaths() (string, string) {
-	rootDir := runtimeRoot()
-	logsDir := filepath.Join(rootDir, "logs")
-	localConfigMu.RLock()
-	nginx := LocalNginxConfig
-	localConfigMu.RUnlock()
-	if nginx != nil {
-		if dir := strings.TrimSpace(nginx.LogsDir); dir != "" {
-			logsDir = dir
-			if !filepath.IsAbs(logsDir) {
-				logsDir = filepath.Join(rootDir, logsDir)
-			}
-		}
-	}
+	logsDir := currentNginxLogsDir()
 	_ = os.MkdirAll(logsDir, 0755)
 	return filepath.Join(logsDir, "stream_access.json"), filepath.Join(logsDir, "stream_access.offset")
 }

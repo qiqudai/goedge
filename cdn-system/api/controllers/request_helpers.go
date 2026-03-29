@@ -7,6 +7,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func resolveAgentNodeValue(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if v, ok := c.Get("nodeID"); ok {
+		if s, ok := v.(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
+				return s
+			}
+		}
+	}
+	return strings.TrimSpace(c.Query("node_id"))
+}
+
+func applyAgentNodeIdentity(c *gin.Context, nodeID *string, nodeIP *string) {
+	if nodeID != nil && strings.TrimSpace(*nodeID) == "" {
+		*nodeID = resolveAgentNodeValue(c)
+	}
+	if nodeIP != nil && strings.TrimSpace(*nodeIP) == "" {
+		*nodeIP = resolveClientIP(c)
+	}
+}
+
 func resolveClientIP(c *gin.Context) string {
 	if c == nil {
 		return ""

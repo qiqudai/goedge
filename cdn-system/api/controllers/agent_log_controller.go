@@ -21,16 +21,7 @@ func (ctr *AgentLogController) AccessLogs(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid request")})
 		return
 	}
-	if req.NodeID == "" {
-		if v, ok := c.Get("nodeID"); ok {
-			if s, ok := v.(string); ok {
-				req.NodeID = s
-			}
-		}
-	}
-	if req.NodeIP == "" {
-		req.NodeIP = resolveClientIP(c)
-	}
+	applyAgentNodeIdentity(c, &req.NodeID, &req.NodeIP)
 	inserted := services.InsertAccessLogs(req.NodeID, req.NodeIP, req.Lines)
 	log.Printf("[CK] Access logs inserted: %d", inserted)
 	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
@@ -46,16 +37,7 @@ func (ctr *AgentLogController) Metrics(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid request")})
 		return
 	}
-	if req.NodeID == "" {
-		if v, ok := c.Get("nodeID"); ok {
-			if s, ok := v.(string); ok {
-				req.NodeID = s
-			}
-		}
-	}
-	if req.NodeIP == "" {
-		req.NodeIP = resolveClientIP(c)
-	}
+	applyAgentNodeIdentity(c, &req.NodeID, &req.NodeIP)
 	inserted := services.InsertMetrics(req.NodeID, req.NodeIP, req.Content)
 	log.Printf("[CK] Metrics inserted: %d", inserted)
 	c.JSON(http.StatusOK, gin.H{"status": T("status.ok")})
@@ -72,16 +54,7 @@ func (ctr *AgentLogController) Events(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid request")})
 		return
 	}
-	if req.NodeID == "" {
-		if v, ok := c.Get("nodeID"); ok {
-			if s, ok := v.(string); ok {
-				req.NodeID = s
-			}
-		}
-	}
-	if req.NodeIP == "" {
-		req.NodeIP = resolveClientIP(c)
-	}
+	applyAgentNodeIdentity(c, &req.NodeID, &req.NodeIP)
 	if req.Type == "" {
 		req.Type = "event"
 	}

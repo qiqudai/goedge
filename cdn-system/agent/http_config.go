@@ -1220,15 +1220,11 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
 			b.WriteString("resolver_timeout " + v + ";\n")
 		}
 	}
-	logs := ""
+	logs := resolveNginxLogsDirForConfig("")
 	if cfg != nil {
-		logs = strings.TrimSpace(cfg.LogsDir)
-	}
-	if logs == "" {
-		logs = filepath.ToSlash(filepath.Join(rootDir, "logs"))
+		logs = resolveNginxLogsDirForConfig(cfg.LogsDir)
 	}
 	if logs != "" {
-		logs = strings.TrimRight(logs, "/")
 		if err := fsutil.EnsureDir(filepath.FromSlash(logs)); err != nil {
 			log.Printf("[Warn] Ensure log dir failed: %s: %v", logs, err)
 		}

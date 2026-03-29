@@ -87,16 +87,7 @@ func resolveHeartbeatNodeID(c *gin.Context, payloadID string) int64 {
 }
 
 func (ctr *AgentController) GetConfig(c *gin.Context) {
-	var nodeID string
-	// Prioritize Authenticated Node ID
-	if v, ok := c.Get("nodeID"); ok {
-		if s, ok := v.(string); ok {
-			nodeID = s
-		}
-	}
-	if nodeID == "" {
-		nodeID = strings.TrimSpace(c.Query("node_id"))
-	}
+	nodeID := resolveAgentNodeValue(c)
 	if nodeID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("node_id is required")})
 		return
@@ -272,14 +263,7 @@ func (ctr *AgentController) SyncNodeStatus(c *gin.Context) {
 }
 
 func resolveAgentNodeID(c *gin.Context) int64 {
-	if v, ok := c.Get("nodeID"); ok {
-		if s, ok := v.(string); ok {
-			if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
-				return id
-			}
-		}
-	}
-	nodeID := strings.TrimSpace(c.Query("node_id"))
+	nodeID := resolveAgentNodeValue(c)
 	if nodeID == "" {
 		return 0
 	}
@@ -294,15 +278,7 @@ func resolveAgentNodeID(c *gin.Context) int64 {
 }
 
 func (ctr *AgentController) GetTasks(c *gin.Context) {
-	nodeID := ""
-	if v, ok := c.Get("nodeID"); ok {
-		if s, ok := v.(string); ok {
-			nodeID = s
-		}
-	}
-	if nodeID == "" {
-		nodeID = c.Query("node_id")
-	}
+	nodeID := resolveAgentNodeValue(c)
 
 	var tasks []models.Task
 	if err := db.DB.Where("enable = ? AND state IN ? AND (retry_at IS NULL OR retry_at <= ?)", true, []string{"waiting", "running"}, time.Now()).
@@ -376,15 +352,7 @@ func (ctr *AgentController) FinishTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
 		return
 	}
-	nodeID := ""
-	if v, ok := c.Get("nodeID"); ok {
-		if s, ok := v.(string); ok {
-			nodeID = s
-		}
-	}
-	if nodeID == "" {
-		nodeID = strings.TrimSpace(c.Query("node_id"))
-	}
+	nodeID := resolveAgentNodeValue(c)
 	var req struct {
 		State string `json:"state"`
 		Ret   string `json:"ret"`
