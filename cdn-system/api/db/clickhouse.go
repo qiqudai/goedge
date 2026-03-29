@@ -88,6 +88,7 @@ func clickHouseTableStmts() []string {
 			node_id String,
 			node_ip String,
 			remote_addr String,
+			site_name String,
 			host String,
 			method String,
 			uri String,
@@ -106,6 +107,7 @@ func clickHouseTableStmts() []string {
 		) ENGINE = MergeTree
 		PARTITION BY toDate(ts)
 		ORDER BY (host, node_id, ts)`,
+		`ALTER TABLE node_access_logs ADD COLUMN IF NOT EXISTS site_name String AFTER remote_addr`,
 		`CREATE TABLE IF NOT EXISTS node_stream_logs (
 			ts DateTime,
 			node_id String,

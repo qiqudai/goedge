@@ -58,6 +58,7 @@ func QueryAccessRanking(rankType string, start, end time.Time, hostFilter HostFi
 	}
 	conditions := []string{"ts >= ? AND ts <= ?"}
 	args := []interface{}{start, end}
+	conditions = append(conditions, AccessLogRealSiteTrafficCondition())
 	if clause, clauseArgs := hostFilter.SQLCondition(); clause != "" {
 		conditions = append(conditions, clause)
 		args = append(args, clauseArgs...)
@@ -117,6 +118,7 @@ func QueryRegionRanking(regionType string, start, end time.Time, hostFilter Host
 	}
 	conditions := []string{"ts >= ? AND ts <= ?"}
 	args := []interface{}{start, end}
+	conditions = append(conditions, AccessLogRealSiteTrafficCondition())
 	if clause, clauseArgs := hostFilter.SQLCondition(); clause != "" {
 		conditions = append(conditions, clause)
 		args = append(args, clauseArgs...)
@@ -181,24 +183,25 @@ func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword st
 	}
 	conditions := []string{"ts >= ? AND ts <= ? AND request_time > 0"}
 	args := []interface{}{start, end}
+	conditions = append(conditions, AccessLogRealSiteTrafficCondition())
 	if clause, clauseArgs := hostFilter.SQLCondition(); clause != "" {
 		conditions = append(conditions, clause)
 		args = append(args, clauseArgs...)
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
-		conditions = append(conditions, "(host LIKE ? OR uri LIKE ?)")
+		conditions = append(conditions, "("+AccessLogSiteExpr()+" LIKE ? OR uri LIKE ?)")
 		args = append(args, "%"+keyword+"%", "%"+keyword+"%")
 	}
 	whereSQL := strings.Join(conditions, " AND ")
-	query := fmt.Sprintf(`SELECT host, uri, count() AS request_count,
+	query := fmt.Sprintf(`SELECT %s AS item_host, uri, count() AS request_count,
 		avg(request_time) AS avg_time,
 		max(request_time) AS max_time,
 		min(request_time) AS min_time,
 		quantile(0.95)(request_time) AS p95_time
 		FROM node_access_logs WHERE %s
-		GROUP BY host, uri
+		GROUP BY item_host, uri
 		ORDER BY avg_time DESC
-		LIMIT %d`, whereSQL, limit)
+		LIMIT %d`, AccessLogSiteExpr(), whereSQL, limit)
 
 	if httpCfg != nil {
 		return queryLatencyRankingHTTP(httpCfg, query, args...)
@@ -238,9 +241,9 @@ func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword st
 func rankingSpecForType(rankType string) (rankingSpec, bool) {
 	switch rankType {
 	case "domain":
-		return rankingSpec{ItemExpr: "host", GroupBy: "host", KeywordCond: "host LIKE ?", KeywordArgs: 1}, true
+		return rankingSpec{ItemExpr: AccessLogSiteExpr(), GroupBy: AccessLogSiteExpr(), KeywordCond: AccessLogSiteExpr() + " LIKE ?", KeywordArgs: 1}, true
 	case "url":
-		return rankingSpec{ItemExpr: "concat(host, uri)", GroupBy: "host, uri", KeywordCond: "(host LIKE ? OR uri LIKE ?)", KeywordArgs: 2}, true
+		return rankingSpec{ItemExpr: "concat(" + AccessLogSiteExpr() + ", uri)", GroupBy: AccessLogSiteExpr() + ", uri", KeywordCond: "(" + AccessLogSiteExpr() + " LIKE ? OR uri LIKE ?)", KeywordArgs: 2}, true
 	case "ip":
 		return rankingSpec{ItemExpr: "remote_addr", GroupBy: "remote_addr", KeywordCond: "remote_addr LIKE ?", KeywordArgs: 1}, true
 	case "referer":
@@ -376,7 +379,10 @@ func queryLatencyRankingHTTP(cfg *httpCKConfig, query string, args ...interface{
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		host := strings.TrimSpace(toStringAny(raw["host"]))
+		host := strings.TrimSpace(toStringAny(raw["item_host"]))
+		if host == "" {
+			host = strings.TrimSpace(toStringAny(raw["host"]))
+		}
 		uri := strings.TrimSpace(toStringAny(raw["uri"]))
 		item := host
 		if uri != "" {

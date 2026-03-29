@@ -365,6 +365,7 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 
 	conditions := []string{"1=1"}
 	args := make([]interface{}, 0)
+	siteExpr := services.AccessLogSiteExpr()
 
 	if isUser {
 		if cond, condArgs := hostFilter.SQLCondition(); cond != "" {
@@ -375,10 +376,10 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 
 	if domain := strings.TrimSpace(c.Query("domain")); domain != "" {
 		if strings.TrimSpace(c.Query("domain_mode")) == "fuzzy" {
-			conditions = append(conditions, "host LIKE ?")
+			conditions = append(conditions, siteExpr+" LIKE ?")
 			args = append(args, "%"+domain+"%")
 		} else {
-			conditions = append(conditions, "host = ?")
+			conditions = append(conditions, siteExpr+" = ?")
 			args = append(args, domain)
 		}
 	}
@@ -426,7 +427,7 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		args = append(args, nodeIP)
 	}
 	if port := strings.TrimSpace(c.Query("port")); port != "" {
-		conditions = append(conditions, "host LIKE ?")
+		conditions = append(conditions, siteExpr+" LIKE ?")
 		args = append(args, "%:"+port)
 	}
 	if scheme := strings.TrimSpace(c.Query("scheme")); scheme != "" {
@@ -454,7 +455,7 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		args = append(args, sslCipher)
 	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		conditions = append(conditions, "(host LIKE ? OR uri LIKE ? OR remote_addr LIKE ?)")
+		conditions = append(conditions, "("+siteExpr+" LIKE ? OR uri LIKE ? OR remote_addr LIKE ?)")
 		args = append(args, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
@@ -472,10 +473,10 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		return
 	}
 
-	querySQL := fmt.Sprintf(`SELECT ts, node_id, node_ip, remote_addr, host, method, uri, status, bytes,
+	querySQL := fmt.Sprintf(`SELECT ts, node_id, node_ip, remote_addr, %s AS host, method, uri, status, bytes,
 		request_time, upstream_addr, upstream_response_time, upstream_cache_status, http_referer, http_user_agent,
 		scheme, ssl_protocol, ssl_cipher
-		FROM node_access_logs WHERE %s ORDER BY ts DESC LIMIT ? OFFSET ?`, whereSQL)
+		FROM node_access_logs WHERE %s ORDER BY ts DESC LIMIT ? OFFSET ?`, siteExpr, whereSQL)
 	args = append(args, pageSize, (page-1)*pageSize)
 
 	rows, err := db.CK.Query(querySQL, args...)
