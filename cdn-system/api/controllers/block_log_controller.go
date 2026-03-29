@@ -161,8 +161,7 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 }
 
 func parseBlockPage(ctx *gin.Context, defaultSize int) (int, int) {
-	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("pageSize", strconv.Itoa(defaultSize)))
+	page, pageSize := parsePageParams(ctx, defaultSize)
 	if page < 1 {
 		page = 1
 	}

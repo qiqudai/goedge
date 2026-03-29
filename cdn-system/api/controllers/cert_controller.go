@@ -621,8 +621,7 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 		}
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	page, pageSize := parsePageParams(c, 10)
 	if page < 1 {
 		page = 1
 	}

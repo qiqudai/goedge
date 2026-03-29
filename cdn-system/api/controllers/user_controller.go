@@ -25,8 +25,7 @@ func (ctr *UserController) ListUsers(c *gin.Context) {
 	if err := db.Ensure(); err != nil {
 		db.Init()
 	}
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	keyword := c.Query("keyword")
 
 	if page < 1 {

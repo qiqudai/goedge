@@ -80,8 +80,7 @@ func normalizeMessageTitle(title, msgType string) string {
 // AdminList
 // GET /api/v1/admin/messages
 func (ctr *MessageController) AdminList(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}
@@ -146,8 +145,7 @@ func (ctr *MessageController) UserList(c *gin.Context) {
 	userIDAny, _ := c.Get("userID")
 	userID, _ := userIDAny.(int64)
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}

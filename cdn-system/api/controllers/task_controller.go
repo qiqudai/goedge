@@ -208,8 +208,7 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 
 // List returns tasks list
 func (c *TaskController) List(ctx *gin.Context) {
-	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("pageSize", "10"))
+	page, pageSize := parsePageParams(ctx, 10)
 	if page < 1 {
 		page = 1
 	}

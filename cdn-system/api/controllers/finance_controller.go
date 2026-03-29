@@ -380,8 +380,7 @@ func summarizeOrderMore(raw string) string {
 }
 
 func parsePagination(c *gin.Context) (int, int) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}

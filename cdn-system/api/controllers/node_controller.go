@@ -166,8 +166,7 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 	regionIDStr := strings.TrimSpace(c.Query("region_id"))
 	status := strings.TrimSpace(c.Query("status"))
 	nodeTypeStr := strings.TrimSpace(c.Query("node_type"))
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 
 	if page < 1 {
 		page = 1
@@ -367,8 +366,7 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}

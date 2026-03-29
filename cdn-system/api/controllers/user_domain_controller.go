@@ -18,8 +18,7 @@ type UserDomainController struct{}
 // GET /api/v1/user/domains
 func (ctr *UserDomainController) ListDomains(c *gin.Context) {
 	userID, _ := c.Get("userID")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	keyword := c.Query("keyword")
 
 	if page < 1 {
@@ -59,8 +58,7 @@ func (ctr *UserDomainController) ListDomains(c *gin.Context) {
 // AdminListDomains
 // GET /api/v1/admin/domains
 func (ctr *UserDomainController) AdminListDomains(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	keyword := c.Query("keyword")
 
 	if page < 1 {

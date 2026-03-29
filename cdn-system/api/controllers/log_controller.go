@@ -63,8 +63,7 @@ type AccessLogRow struct {
 // ListLoginLogs
 // GET /api/v1/admin/logs/login
 func (ctr *LogController) ListLoginLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}
@@ -110,8 +109,7 @@ func (ctr *LogController) ListLoginLogs(c *gin.Context) {
 // ListOpLogs
 // GET /api/v1/admin/logs/operation
 func (ctr *LogController) ListOpLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}
@@ -157,8 +155,7 @@ func (ctr *LogController) ListOpLogs(c *gin.Context) {
 // ListBackupLogs
 // GET /api/v1/admin/logs/backup
 func (ctr *LogController) ListBackupLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}
@@ -252,8 +249,7 @@ func normalizeBackupState(keyword string) string {
 // ListMailLogs
 // GET /api/v1/admin/logs/mail
 func (ctr *LogController) ListMailLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}
@@ -343,8 +339,7 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}
@@ -575,8 +570,7 @@ func (ctr *LogController) ListOpLogsUser(c *gin.Context) {
 	userIDAny, _ := c.Get("userID")
 	userID, _ := userIDAny.(int64)
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}

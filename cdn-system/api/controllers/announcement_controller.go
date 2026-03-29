@@ -28,8 +28,7 @@ const announcementType = "announcement"
 // List
 // GET /api/v1/admin/announcements
 func (ctr *AnnouncementController) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	page, pageSize := parsePageParams(c, 20)
 	if page < 1 {
 		page = 1
 	}

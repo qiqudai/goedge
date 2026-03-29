@@ -14,8 +14,7 @@ import (
 type SiteGroupController struct{}
 
 func (ctr *SiteGroupController) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	page, pageSize := parsePageParams(c, 10)
 	keyword := c.Query("keyword")
 	userIDStr := strings.TrimSpace(c.Query("user_id"))
 	userID := int64(0)
