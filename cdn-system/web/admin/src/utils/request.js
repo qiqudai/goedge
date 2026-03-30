@@ -46,6 +46,28 @@ const AUTH_INVALID_MESSAGES = new Set([
 ])
 let isRedirectingToLogin = false
 
+const parseJwtPayload = token => {
+  if (!token || typeof token !== 'string') return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+    const json = atob(padded)
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+const isTokenExpired = token => {
+  const payload = parseJwtPayload(token)
+  const exp = Number(payload?.exp)
+  if (!exp || Number.isNaN(exp)) return false
+  const now = Math.floor(Date.now() / 1000)
+  return exp <= now
+}
+
 const isAuthInvalidResponse = payload => {
   const code = Number(payload?.code)
   if (AUTH_INVALID_CODES.has(code)) {
@@ -110,6 +132,10 @@ service.interceptors.request.use(
     // Inject Token if exists
     const token = localStorage.getItem('admin_token')
     if (token) {
+      if (isTokenExpired(token)) {
+        redirectToLogin('登录已过期，请重新登录')
+        return Promise.reject(new Error('Token expired'))
+      }
       config.headers['Authorization'] = 'Bearer ' + token
     }
     return config

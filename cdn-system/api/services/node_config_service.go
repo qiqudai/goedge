@@ -21,7 +21,7 @@ func UpsertNodeConfigItem(nodeID int64, name string, value string) error {
 			"enable":    true,
 			"update_at": time.Now(),
 		}
-		return db.DB.Model(&item).Updates(updates).Error
+		return query.Model(&models.ConfigItem{}).Updates(updates).Error
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
