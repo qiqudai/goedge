@@ -20,10 +20,6 @@ var nodeStatusStore = struct {
 	offline: map[int64]bool{},
 }
 
-var lastMissingCheck time.Time
-
-const missingCheckInterval = 30 * time.Second
-
 func MarkNodeOnline(nodeID int64, at time.Time) {
 	if nodeID <= 0 {
 		return
@@ -59,40 +55,47 @@ func IsNodeOnline(nodeID int64, ttl time.Duration) bool {
 func EvaluateNodeHealth(interval time.Duration, maxFails int) []int64 {
 	now := time.Now()
 	toOffline := make([]int64, 0)
+	if db.DB == nil {
+		return toOffline
+	}
+
+	var enabledIDs []int64
+	if err := db.DB.Model(&models.Node{}).
+		Where("pid = 0 AND enable = ?", true).
+		Pluck("id", &enabledIDs).Error; err != nil {
+		return toOffline
+	}
+
+	successIDs := make([]int64, 0, len(enabledIDs))
+	failedIDs := make([]int64, 0, len(enabledIDs))
+
 	nodeStatusStore.mu.Lock()
-	for nodeID, last := range nodeStatusStore.last {
-		if now.Sub(last) <= interval {
+	for _, nodeID := range enabledIDs {
+		last, ok := nodeStatusStore.last[nodeID]
+		onlineNow := ok && now.Sub(last) <= interval
+		if onlineNow {
 			nodeStatusStore.fail[nodeID] = 0
 			nodeStatusStore.offline[nodeID] = false
+			successIDs = append(successIDs, nodeID)
 			continue
 		}
+
 		nodeStatusStore.fail[nodeID]++
+		failedIDs = append(failedIDs, nodeID)
 		if nodeStatusStore.fail[nodeID] >= maxFails && !nodeStatusStore.offline[nodeID] {
 			nodeStatusStore.offline[nodeID] = true
 			toOffline = append(toOffline, nodeID)
 		}
 	}
 	nodeStatusStore.mu.Unlock()
-	if db.DB != nil && (lastMissingCheck.IsZero() || now.Sub(lastMissingCheck) >= missingCheckInterval) {
-		lastMissingCheck = now
-		var ids []int64
-		if err := db.DB.Model(&models.Node{}).
-			Where("pid = 0 AND enable = ?", true).
-			Pluck("id", &ids).Error; err == nil {
-			nodeStatusStore.mu.Lock()
-			for _, nodeID := range ids {
-				if _, ok := nodeStatusStore.last[nodeID]; ok {
-					continue
-				}
-				if nodeStatusStore.offline[nodeID] {
-					continue
-				}
-				nodeStatusStore.offline[nodeID] = true
-				toOffline = append(toOffline, nodeID)
-			}
-			nodeStatusStore.mu.Unlock()
-		}
+
+	if len(successIDs) > 0 {
+		WriteNodeMonitorLogs(successIDs, "heartbeat", true, map[int64]string{})
 	}
+	if len(failedIDs) > 0 {
+		WriteNodeMonitorLogs(failedIDs, "heartbeat", false, map[int64]string{})
+	}
+
 	return toOffline
 }
 

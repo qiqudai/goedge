@@ -586,7 +586,6 @@ func (c *AgentWSController) handleHeartbeat(nodeID int64, conn *websocket.Conn, 
 	}
 	if nodeID != 0 {
 		services.MarkNodeOnline(nodeID, time.Now())
-		services.WriteNodeMonitorLog(nodeID, "heartbeat", true, "")
 		if err := upsertHeartbeatReportedConfig(nodeID, hb.ReportedConfig); err != nil {
 			log.Printf("[WS] Persist reported_config failed for node %d: %v", nodeID, err)
 		}

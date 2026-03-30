@@ -375,6 +375,16 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 	}
 
 	logType := strings.TrimSpace(c.DefaultQuery("type", "availability"))
+	switch logType {
+	case "", "availability":
+		logType = "heartbeat"
+	case "availability_switch":
+		logType = "switch"
+	case "bandwidth":
+		logType = "bandwidth"
+	case "bandwidth_switch":
+		logType = "bandwidth_switch"
+	}
 	timeRange := c.QueryArray("timeRange[]")
 	if len(timeRange) == 0 {
 		timeRange = c.QueryArray("timeRange")
@@ -409,7 +419,7 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 		baseQuery = baseQuery.Where("create_at BETWEEN ? AND ?", startAt, endAt)
 	}
 
-	grouped := baseQuery.Select("event_id", "create_at").Group("event_id, create_at")
+	grouped := baseQuery.Select("event_id").Group("event_id")
 	var total int64
 	if err := db.DB.Table("(?) as logs", grouped).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
@@ -423,9 +433,9 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 	}
 	var list []logSummary
 	if err := baseQuery.
-		Select("create_at as checked_at, SUM(CASE WHEN success = '1' THEN 0 ELSE 1 END) as fail_count, COUNT(*) as total_count").
-		Group("event_id, create_at").
-		Order("create_at desc").
+		Select("FROM_UNIXTIME(CAST(event_id AS UNSIGNED) * 30) as checked_at, SUM(CASE WHEN success = '1' THEN 0 ELSE 1 END) as fail_count, COUNT(*) as total_count").
+		Group("event_id").
+		Order("CAST(event_id AS UNSIGNED) desc").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Scan(&list).Error; err != nil {

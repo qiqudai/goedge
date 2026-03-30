@@ -72,6 +72,9 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			if err := json.Unmarshal([]byte(line), &raw); err != nil {
 				continue
 			}
+			if isInternalMetricsAccess(raw) {
+				continue
+			}
 			method, uri := parseRequest(raw.Request)
 			ts := formatTime(parseISOTime(raw.TimeISO8601))
 			upstreamRT := parseFloatFirst(raw.UpstreamResponseTime)
@@ -119,6 +122,9 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
+		if isInternalMetricsAccess(raw) {
+			continue
+		}
 		method, uri := parseRequest(raw.Request)
 		ts := parseISOTime(raw.TimeISO8601)
 		upstreamRT := parseFloatFirst(raw.UpstreamResponseTime)
@@ -150,6 +156,19 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 		inserted++
 	}
 	return inserted
+}
+
+func isInternalMetricsAccess(raw rawAccessLog) bool {
+	host := strings.TrimSpace(strings.ToLower(raw.Host))
+	site := strings.TrimSpace(strings.ToLower(raw.SiteName))
+	if !(host == "127.0.0.1" || host == "localhost" || strings.HasPrefix(site, "localhost:9100")) {
+		return false
+	}
+	_, uri := parseRequest(raw.Request)
+	if uri == "" {
+		return false
+	}
+	return strings.HasPrefix(uri, "/metrics")
 }
 
 func InsertStreamLogs(nodeID, nodeIP string, lines []string) int {

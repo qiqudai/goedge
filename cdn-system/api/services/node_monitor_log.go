@@ -24,7 +24,7 @@ func WriteNodeMonitorLogs(nodeIDs []int64, logType string, success bool, ipMap m
 		logType = "heartbeat"
 	}
 	now := time.Now()
-	eventID := strconv.FormatInt(now.Unix(), 10)
+	eventID := strconv.FormatInt(now.Unix()/30, 10)
 	successValue := "0"
 	if success {
 		successValue = "1"

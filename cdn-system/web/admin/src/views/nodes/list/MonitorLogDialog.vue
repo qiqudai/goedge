@@ -4,6 +4,9 @@
       <el-form-item label="日志查看">
         <el-select v-model="query.type" style="width: 200px;">
           <el-option label="可用性监控日志" value="availability" />
+          <el-option label="可用性切换日志" value="availability_switch" />
+          <el-option label="带宽监控日志" value="bandwidth" />
+          <el-option label="带宽切换日志" value="bandwidth_switch" />
         </el-select>
       </el-form-item>
       <el-form-item label="时间段">
@@ -17,6 +20,11 @@
           clearable
           style="width: 260px;"
         />
+      </el-form-item>
+      <el-form-item label="监控组">
+        <el-select v-model="query.group" style="width: 200px;">
+          <el-option label="所有监控组" value="all" />
+        </el-select>
       </el-form-item>
     </el-form>
     <AppTable
@@ -52,19 +60,40 @@ const visible = ref(false)
 const list = ref([])
 const total = ref(0)
 const loading = ref(false)
-const query = reactive({ type: 'availability', timeRange: [], page: 1, pageSize: 10 })
+const query = reactive({ type: 'availability', group: 'all', timeRange: [], page: 1, pageSize: 10 })
 
 watch(() => props.modelValue, (val) => {
   visible.value = val
   if (val && props.nodeId) fetchData()
 })
 watch(visible, (val) => emit('update:modelValue', val))
+watch(() => query.type, () => {
+  query.page = 1
+  if (visible.value) fetchData()
+})
+watch(() => query.group, () => {
+  query.page = 1
+  if (visible.value) fetchData()
+})
+watch(() => query.timeRange, () => {
+  query.page = 1
+  if (visible.value) fetchData()
+}, { deep: true })
 
 const fetchData = async () => {
-    loading.value = true
+  loading.value = true
+  try {
     const { data } = await request.get(`/nodes/${props.nodeId}/monitor_logs`, { params: query })
     list.value = data.list || []
     total.value = data.total || 0
+  } finally {
     loading.value = false
+  }
 }
 </script>
+
+<style scoped>
+.monitor-form :deep(.el-form-item__label) {
+  color: var(--el-text-color-regular);
+}
+</style>

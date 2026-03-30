@@ -89,13 +89,13 @@ func main() {
 	routers.Setup(r)
 
 	go func() {
-		ticker := time.NewTicker(3 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		for range ticker.C {
 			enabled, maxFails := services.ResolveNodeHealthConfig()
 			if !enabled {
 				continue
 			}
-			offlineIDs := services.EvaluateNodeHealth(3*time.Second, maxFails)
+			offlineIDs := services.EvaluateNodeHealth(5*time.Second, maxFails)
 			for _, nodeID := range offlineIDs {
 				services.HandleNodeOffline(nodeID)
 			}

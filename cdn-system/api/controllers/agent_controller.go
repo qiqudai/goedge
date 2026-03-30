@@ -36,7 +36,6 @@ func (ctr *AgentController) Heartbeat(c *gin.Context) {
 	nodeID := resolveHeartbeatNodeID(c, payload.NodeID)
 	if nodeID != 0 {
 		services.MarkNodeOnline(nodeID, time.Now())
-		services.WriteNodeMonitorLog(nodeID, "heartbeat", true, c.ClientIP())
 	}
 	syncAction := ""
 	if nodeID != 0 {
