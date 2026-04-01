@@ -1,0 +1,246 @@
+@inherits LayoutComponentBase
+@using Cnn.Api.Contracts
+@using global::System.Timers
+@inject ClientSession Session
+@inject LocalStorageService Storage
+@inject SystemInfoClient SystemInfoClient
+@inject ApiClient Api
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+<PageTitle>@_pageTitle</PageTitle>
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            @if (!string.IsNullOrWhiteSpace(_systemInfo?.LogoFile))
+            {
+                <img src="@_systemInfo!.LogoFile" alt="logo" />
+            }
+            else
+            {
+                <span>@(_systemInfo?.SysName ?? "CDN Admin")</span>
+            }
+        </div>
+        <NavMenu />
+    </aside>
+    <div class="app-main">
+        <header class="app-header">
+            <div class="header-title">@_consoleTitle</div>
+            <div class="header-actions">
+                @if (!Session.IsAdmin)
+                {
+                    <button type="button" class="message-badge" @onclick="GoMessages">
+                        <span class="badge-icon">🔔</span>
+                        @if (_unreadCount > 0)
+                        {
+                            <span class="badge-count">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
+                        }
+                    </button>
+                }
+                <button type="button" class="theme-toggle" @onclick="ToggleTheme">
+                    <span>@(_isDark ? "🌙" : "☀️")</span>
+                </button>
+                <div class="user-menu">
+                    <button type="button" class="user-trigger" @onclick="ToggleUserMenu">👤</button>
+                    @if (_showUserMenu)
+                    {
+                        <div class="user-dropdown">
+                            @if (Session.IsAdmin)
+                            {
+                                <button type="button" @onclick="GoSystemConfig">系统设置</button>
+                            }
+                            else
+                            {
+                                <button type="button" @onclick="GoProfile">个人中心</button>
+                            }
+                            <button type="button" class="danger" @onclick="Logout">退出登录</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </header>
+        <main class="app-content">
+            @Body
+        </main>
+        @if (_showFooter)
+        {
+            <footer class="app-footer">
+                <div class="footer-links">
+                    @foreach (var link in _footerLinks)
+                    {
+                        <a href="@link.Url" target="_blank" rel="noopener">@link.Label</a>
+                    }
+                </div>
+                <div class="footer-copy">@_systemInfo?.FooterCopyright</div>
+            </footer>
+        }
+    </div>
+</div>
+
+@code {
+    private SystemInfoDto? _systemInfo;
+    private string _pageTitle = "CDN Admin";
+    private string _consoleTitle = "管理后台";
+    private bool _isDark;
+    private bool _showUserMenu;
+    private int _unreadCount;
+    private Timer? _pollTimer;
+    private List<(string Label, string Url)> _footerLinks = new();
+    private bool _showFooter;
+    private bool _clientBootstrapped;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSystemInfoAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _clientBootstrapped)
+        {
+            return;
+        }
+
+        _clientBootstrapped = true;
+        await EnsureSessionAsync();
+        await LoadSystemInfoAsync();
+        await ApplyThemeAsync();
+        StartPolling();
+        StateHasChanged();
+    }
+
+    private async Task EnsureSessionAsync()
+    {
+        if (Session.Initialized)
+        {
+            return;
+        }
+
+        var token = await Storage.GetItemAsync("admin_token");
+        var role = await Storage.GetItemAsync("role");
+        var username = await Storage.GetItemAsync("username");
+        Session.Set(token, role, username);
+        Session.MarkInitialized();
+
+        if (!Session.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+        }
+    }
+
+    private async Task LoadSystemInfoAsync()
+    {
+        _systemInfo = await SystemInfoClient.GetAsync();
+        _pageTitle = Session.IsAdmin
+            ? (_systemInfo.AdminConsoleTitle ?? _systemInfo.SysName ?? "管理后台")
+            : (_systemInfo.UserConsoleTitle ?? _systemInfo.SysName ?? "控制台");
+        _consoleTitle = _pageTitle;
+        BuildFooterLinks();
+        StateHasChanged();
+    }
+
+    private void BuildFooterLinks()
+    {
+        _footerLinks = new List<(string Label, string Url)>();
+        var raw = _systemInfo?.FooterLink ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            foreach (var line in raw.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = line.Split('|', 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0)
+                {
+                    continue;
+                }
+
+                var label = parts[0].Trim();
+                var url = parts.Length > 1 ? parts[1].Trim() : label;
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    _footerLinks.Add((string.IsNullOrWhiteSpace(label) ? url : label, url));
+                }
+            }
+        }
+
+        _showFooter = _footerLinks.Count > 0 || !string.IsNullOrWhiteSpace(_systemInfo?.FooterCopyright);
+    }
+
+    private async Task ApplyThemeAsync()
+    {
+        var theme = await Storage.GetItemAsync("theme");
+        _isDark = string.Equals(theme, "dark", StringComparison.OrdinalIgnoreCase);
+        await Js.InvokeVoidAsync("cnn.theme.set", _isDark ? "dark" : "light");
+    }
+
+    private async Task ToggleTheme()
+    {
+        _isDark = !_isDark;
+        await Storage.SetItemAsync("theme", _isDark ? "dark" : "light");
+        await Js.InvokeVoidAsync("cnn.theme.set", _isDark ? "dark" : "light");
+    }
+
+    private async Task PollUnreadAsync()
+    {
+        if (Session.IsAdmin)
+        {
+            return;
+        }
+
+        var response = await Api.GetAsync<MessageUnreadResult>("messages/unread", ApiScope.User);
+        if (response?.Data == null)
+        {
+            return;
+        }
+
+        _unreadCount = (int)response.Data.Count;
+        StateHasChanged();
+    }
+
+    private void StartPolling()
+    {
+        if (Session.IsAdmin)
+        {
+            return;
+        }
+
+        _pollTimer?.Stop();
+        _pollTimer?.Dispose();
+        _pollTimer = new Timer(30000);
+        _pollTimer.Elapsed += (_, _) => InvokeAsync(PollUnreadAsync);
+        _pollTimer.Start();
+        _ = PollUnreadAsync();
+    }
+
+    private void ToggleUserMenu()
+    {
+        _showUserMenu = !_showUserMenu;
+    }
+
+    private void GoSystemConfig()
+    {
+        _showUserMenu = false;
+        Navigation.NavigateTo("/system/config");
+    }
+
+    private void GoProfile()
+    {
+        _showUserMenu = false;
+        Navigation.NavigateTo("/account/profile");
+    }
+
+    private void GoMessages()
+    {
+        Navigation.NavigateTo("/account/messages");
+    }
+
+    private async Task Logout()
+    {
+        _showUserMenu = false;
+        Session.Clear();
+        await Storage.RemoveItemAsync("admin_token");
+        await Storage.RemoveItemAsync("role");
+        await Storage.RemoveItemAsync("username");
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}
