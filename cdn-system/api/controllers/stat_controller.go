@@ -2,17 +2,13 @@ package controllers
 
 import (
 	"cdn-api/services"
-	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
-
 type StatController struct{}
 
 // ListRanking Retrieves data ranking
@@ -73,26 +69,6 @@ func (c *StatController) ListRanking(ctx *gin.Context) {
 type usagePoint struct {
 	Time  string  `json:"time"`
 	Value float64 `json:"value"`
-}
-
-func generateUsageSeries(start time.Time, count int, step time.Duration, labelFormat string, base float64, variance float64) ([]string, []float64, []usagePoint) {
-	times := make([]string, 0, count)
-	values := make([]float64, 0, count)
-	points := make([]usagePoint, 0, count)
-
-	for i := 0; i < count; i++ {
-		timestamp := start.Add(time.Duration(i) * step)
-		label := timestamp.Format(labelFormat)
-		val := base + (rand.Float64()-0.5)*variance
-		if val < 0 {
-			val = 0
-		}
-		val = float64(int(val*100)) / 100
-		times = append(times, label)
-		values = append(values, val)
-		points = append(points, usagePoint{Time: label, Value: val})
-	}
-	return times, values, points
 }
 
 // ListUsage Retrieves usage series for plans
@@ -270,136 +246,55 @@ func (c *StatController) ListOrigin(ctx *gin.Context) {
 // ListNodeTraffic Retrieves node traffic statistics
 // GET /api/v1/admin/stats/node_traffic
 func (c *StatController) ListNodeTraffic(ctx *gin.Context) {
-	window := ctx.DefaultQuery("window", "30d")
-	// nodeID := ctx.Query("node_id")
-	// excludeNIC := ctx.Query("exclude_nic")
-	// startTime := ctx.Query("start_time")
-	// endTime := ctx.Query("end_time")
-
-	// Determine points based on window
-	count := 30
-	labelFormat := "2006-01-02"
-
-	switch window {
-	case "1d":
-		count = 24
-		labelFormat = "15:00"
-	case "7d":
-		count = 7
-		labelFormat = "2006-01-02"
-	case "30d":
-		count = 30
-		labelFormat = "2006-01-02"
-	case "custom":
-		count = 12 // Arbitrary for custom range
-		labelFormat = "2006-01-02"
+	statsRange := resolveStatsRangeFromRequest(ctx)
+	hostFilter := resolveHostFilter(ctx)
+	buckets, err := services.QueryAccessBuckets(statsRange.Start, statsRange.End, statsRange.Bucket, hostFilter)
+	if err != nil {
+		log.Printf("[stats] node_traffic query failed: %v", err)
+		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"x_axis": []string{}, "in_traffic": []float64{}, "out_traffic": []float64{}}})
+		return
 	}
-
-	times := make([]string, count)
-	inTraffic := make([]float64, count)
-	outTraffic := make([]float64, count)
-
-	now := time.Now()
-
-	for i := 0; i < count; i++ {
-		var t time.Time
-		if window == "1d" {
-			t = now.Add(time.Duration(i-count) * time.Hour)
-		} else {
-			t = now.AddDate(0, 0, i-count)
-		}
-		times[i] = t.Format(labelFormat)
-
-		inTraffic[i] = float64(rand.Intn(1000)) / 10.0  // 0-100 MB
-		outTraffic[i] = float64(rand.Intn(2000)) / 10.0 // 0-200 MB
+	series := services.BuildBucketSeries(statsRange, buckets)
+	outTraffic := make([]float64, 0, len(series.Bytes))
+	originTraffic := make([]float64, 0, len(series.OriginBytes))
+	for i := range series.Bytes {
+		outTraffic = append(outTraffic, services.RoundFloat(services.BytesToMB(series.Bytes[i]), 2))
+		originTraffic = append(originTraffic, services.RoundFloat(services.BytesToMB(series.OriginBytes[i]), 2))
 	}
-
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"x_axis":      times,
-			"in_traffic":  inTraffic,
+			"x_axis":      series.XAxis,
+			"in_traffic":  originTraffic,
 			"out_traffic": outTraffic,
 		},
 	})
 }
 
-// ListNodeRanking retrieves a node ranking list by metric/time window.
-// GET /api/v1/admin/stats/node_ranking?metric=bandwidth|connection|load|disk&window=1m|5m|30m|1h
+// ListNodeRanking retrieves a node ranking list by traffic.
+// GET /api/v1/admin/stats/node_ranking
 func (c *StatController) ListNodeRanking(ctx *gin.Context) {
-	metric := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("metric", "bandwidth")))
-	window := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("window", "1m")))
+	statsRange := resolveStatsRangeFromRequest(ctx)
+	hostFilter := resolveHostFilter(ctx)
+	limit := 20
 
 	type nodeRankItem struct {
-		Rank int    `json:"rank"`
-		Node string `json:"node"`
-		NIC  string `json:"nic"`
-		Out  string `json:"out"`
-		In   string `json:"in"`
+		Rank       int    `json:"rank"`
+		Node       string `json:"node"`
+		OutTraffic string `json:"out"`
+		Requests   int    `json:"request_count"`
 	}
 
-	baseOut := 120.0
-	baseIn := 30.0
-	switch metric {
-	case "connection":
-		baseOut = 8000
-		baseIn = 3000
-	case "load":
-		baseOut = 2.5
-		baseIn = 1.2
-	case "disk":
-		baseOut = 65
-		baseIn = 45
-	}
-
-	var unit string
-	switch metric {
-	case "connection":
-		unit = " conn"
-	case "load":
-		unit = ""
-	case "disk":
-		unit = "%"
-	default:
-		unit = " Mbps"
-	}
-
-	_ = window // reserved for future: weighting based on window
-
-	nics := []string{"eth0", "ens3", "enp1s0", "bond0"}
-	list := make([]nodeRankItem, 0, 10)
-	for i := 1; i <= 10; i++ {
-		out := baseOut + (rand.Float64()-0.5)*baseOut*0.4
-		in := baseIn + (rand.Float64()-0.5)*baseIn*0.4
-		if out < 0 {
-			out = 0
-		}
-		if in < 0 {
-			in = 0
-		}
-		node := fmt.Sprintf("node-%d", i)
-		nic := nics[i%len(nics)]
-		format := func(v float64) string {
-			switch metric {
-			case "connection":
-				return strconv.Itoa(int(v)) + unit
-			case "disk":
-				return strconv.Itoa(int(v)) + unit
-			case "load":
-				return fmt.Sprintf("%.2f", v)
-			default:
-				return fmt.Sprintf("%.1f", v) + unit
-			}
-		}
+	source, _ := services.QueryNodeTrafficRanking(statsRange.Start, statsRange.End, hostFilter, limit)
+	list := make([]nodeRankItem, 0, len(source))
+	for i, item := range source {
 		list = append(list, nodeRankItem{
-			Rank: i,
-			Node: node,
-			NIC:  nic,
-			Out:  format(out),
-			In:   format(in),
+			Rank:       i + 1,
+			Node:       item.Item,
+			OutTraffic: services.FormatBytes(item.OutBytes),
+			Requests:   int(item.RequestCount),
 		})
 	}
-
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -408,102 +303,31 @@ func (c *StatController) ListNodeRanking(ctx *gin.Context) {
 	})
 }
 
-// ListNodeMetrics retrieves time-series points for a metric.
-// GET /api/v1/admin/stats/node_metrics?metric=bandwidth|connection|load|disk&window=1h|6h|12h|custom&start_time=YYYY-MM-DD HH:mm:ss&end_time=YYYY-MM-DD HH:mm:ss
+// ListNodeMetrics retrieves time-series bandwidth points from access logs.
+// GET /api/v1/admin/stats/node_metrics
 func (c *StatController) ListNodeMetrics(ctx *gin.Context) {
-	metric := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("metric", "bandwidth")))
-	window := strings.ToLower(strings.TrimSpace(ctx.DefaultQuery("window", "1h")))
-	startRaw := strings.TrimSpace(ctx.Query("start_time"))
-	endRaw := strings.TrimSpace(ctx.Query("end_time"))
+	statsRange := resolveStatsRangeFromRequest(ctx)
+	hostFilter := resolveHostFilter(ctx)
 
 	type metricPoint struct {
 		Time  string  `json:"time"`
 		Value float64 `json:"value"`
 	}
 
-	now := time.Now()
-	start := now.Add(-1 * time.Hour)
-	end := now
-	count := 12
-	step := 5 * time.Minute
-	labelFormat := "15:04"
-
-	switch window {
-	case "6h":
-		start = now.Add(-6 * time.Hour)
-		count = 36
-		step = 10 * time.Minute
-		labelFormat = "15:04"
-	case "12h":
-		start = now.Add(-12 * time.Hour)
-		count = 72
-		step = 10 * time.Minute
-		labelFormat = "01-02 15:04"
-	case "custom":
-		layout := "2006-01-02 15:04:05"
-		loc := now.Location()
-		startParsed, err1 := time.ParseInLocation(layout, startRaw, loc)
-		endParsed, err2 := time.ParseInLocation(layout, endRaw, loc)
-		if err1 != nil || err2 != nil || endParsed.Before(startParsed) {
-			ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []metricPoint{}}})
-			return
-		}
-		start = startParsed
-		end = endParsed
-		total := end.Sub(start)
-		if total <= 0 {
-			ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []metricPoint{}}})
-			return
-		}
-		// Aim for ~60 points, cap to keep payload reasonable.
-		count = 60
-		if total < 60*time.Minute {
-			count = int(total / time.Minute)
-			if count < 10 {
-				count = 10
-			}
-		}
-		if count > 200 {
-			count = 200
-		}
-		step = total / time.Duration(count)
-		labelFormat = "2006-01-02 15:04"
-	default:
-		// 1h
+	buckets, err := services.QueryAccessBuckets(statsRange.Start, statsRange.End, statsRange.Bucket, hostFilter)
+	if err != nil {
+		log.Printf("[stats] node_metrics query failed: %v", err)
+		ctx.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []metricPoint{}}})
+		return
 	}
-
-	base := 100.0
-	variance := 30.0
-	switch metric {
-	case "connection":
-		base = 8000
-		variance = 3000
-	case "load":
-		base = 2.0
-		variance = 1.2
-	case "disk":
-		base = 60
-		variance = 20
-	}
-
-	points := make([]metricPoint, 0, count)
-	cur := start
-	for i := 0; i < count && !cur.After(end); i++ {
-		val := base + (rand.Float64()-0.5)*variance
-		if val < 0 {
-			val = 0
-		}
-		if metric == "disk" && val > 100 {
-			val = 100
-		}
-		val = float64(int(val*100)) / 100
+	series := services.BuildBucketSeries(statsRange, buckets)
+	points := make([]metricPoint, 0, len(series.Bytes))
+	for i, b := range series.Bytes {
 		points = append(points, metricPoint{
-			Time:  cur.Format(labelFormat),
-			Value: val,
+			Time:  series.XAxis[i],
+			Value: services.RoundFloat(services.BytesToMbps(b, statsRange.Bucket), 2),
 		})
-		cur = cur.Add(step)
 	}
-
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{

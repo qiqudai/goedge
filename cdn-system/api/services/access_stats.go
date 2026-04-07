@@ -59,13 +59,13 @@ func blockedStatusCondition() string {
 
 func bucketExpression(bucket time.Duration) string {
 	if bucket >= 24*time.Hour {
-		return "toStartOfDay(ts)"
+		return "toStartOfDay(ts, 'UTC')"
 	}
 	seconds := int(bucket.Seconds())
 	if seconds <= 0 {
 		seconds = 60
 	}
-	return fmt.Sprintf("toStartOfInterval(ts, INTERVAL %d SECOND)", seconds)
+	return fmt.Sprintf("toStartOfInterval(ts, INTERVAL %d SECOND, 'UTC')", seconds)
 }
 
 func BuildBucketSeries(rng StatsRange, buckets []AccessBucket) BucketSeries {
@@ -407,8 +407,10 @@ func interpolateQuery(query string, args ...interface{}) string {
 		replacement := ""
 		switch v := arg.(type) {
 		case time.Time:
-			// Use epoch seconds to avoid timezone drift between API host and ClickHouse server.
-			replacement = fmt.Sprintf("toDateTime(%d)", v.Unix())
+			// Use epoch seconds with explicit UTC timezone so the query range matches
+			// the UTC wall-clock strings stored in the ts column, regardless of the
+			// ClickHouse server's local timezone setting.
+			replacement = fmt.Sprintf("toDateTime(%d, 'UTC')", v.Unix())
 		case string:
 			replacement = quoteClickHouseString(v)
 		case int:

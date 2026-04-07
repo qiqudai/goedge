@@ -238,6 +238,60 @@ func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword st
 	return list
 }
 
+func QueryNodeTrafficRanking(start, end time.Time, hostFilter HostFilter, limit int) ([]RankItem, error) {
+	if start.IsZero() || end.IsZero() || end.Before(start) {
+		return []RankItem{}, nil
+	}
+	start, end = adjustAccessLogQueryRange(start, end)
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
+		return []RankItem{}, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	conditions := []string{"ts >= ? AND ts <= ?"}
+	args := []interface{}{start, end}
+	conditions = append(conditions, AccessLogRealSiteTrafficCondition())
+	if clause, clauseArgs := hostFilter.SQLCondition(); clause != "" {
+		conditions = append(conditions, clause)
+		args = append(args, clauseArgs...)
+	}
+	whereSQL := strings.Join(conditions, " AND ")
+	query := fmt.Sprintf(`SELECT node_id AS item,
+		count() AS request_count,
+		sum(bytes) AS out_traffic,
+		sumIf(bytes, upstream_cache_status != 'HIT') AS origin_traffic
+		FROM node_access_logs WHERE %s
+		GROUP BY node_id
+		ORDER BY out_traffic DESC
+		LIMIT %d`, whereSQL, limit)
+
+	if httpCfg != nil {
+		return queryAccessRankingHTTP(httpCfg, query, args...)
+	}
+	rows, err := db.CK.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := make([]RankItem, 0)
+	for rows.Next() {
+		var item string
+		var reqCount, outBytes, originBytes uint64
+		if err := rows.Scan(&item, &reqCount, &outBytes, &originBytes); err != nil {
+			continue
+		}
+		list = append(list, RankItem{
+			Item:         strings.TrimSpace(item),
+			RequestCount: reqCount,
+			OutBytes:     outBytes,
+			OriginBytes:  originBytes,
+		})
+	}
+	return list, nil
+}
+
 func rankingSpecForType(rankType string) (rankingSpec, bool) {
 	switch rankType {
 	case "domain":

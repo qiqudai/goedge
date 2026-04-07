@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -416,7 +417,9 @@ func formatTime(value time.Time) string {
 	if value.IsZero() {
 		value = time.Now().UTC()
 	}
-	return value.UTC().Format("2006-01-02 15:04:05")
+	// Return Unix timestamp as integer string so ClickHouse stores it as UTC
+	// regardless of the server's local timezone setting.
+	return fmt.Sprintf("%d", value.UTC().Unix())
 }
 
 func parseFloatFirst(value string) float64 {

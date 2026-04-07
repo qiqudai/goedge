@@ -114,8 +114,8 @@ func cleanupClickHouseByDays(table string, days int) {
 	if days <= 0 || !db.ClickHouseEnabled() {
 		return
 	}
-	cutoff := formatTime(time.Now().AddDate(0, 0, -days))
-	query := fmt.Sprintf("ALTER TABLE %s DELETE WHERE ts < toDateTime('%s')", table, cutoff)
+	cutoffUnix := time.Now().AddDate(0, 0, -days).UTC().Unix()
+	query := fmt.Sprintf("ALTER TABLE %s DELETE WHERE ts < toDateTime(%d, 'UTC')", table, cutoffUnix)
 	if _, err := db.CK.Exec(query); err != nil {
 		log.Printf("[Cleanup] ClickHouse %s failed: %v", table, err)
 	}
