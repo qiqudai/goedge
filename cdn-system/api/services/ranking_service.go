@@ -228,10 +228,10 @@ func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword st
 			Rank:         rank,
 			Item:         item,
 			RequestCount: int(reqCount),
-			AvgTime:      RoundFloat(avgTime, 3),
-			MaxTime:      RoundFloat(maxTime, 3),
-			MinTime:      RoundFloat(minTime, 3),
-			P95Time:      RoundFloat(p95Time, 3),
+			AvgTime:      RoundFloat(avgTime*1000, 2),
+			MaxTime:      RoundFloat(maxTime*1000, 2),
+			MinTime:      RoundFloat(minTime*1000, 2),
+			P95Time:      RoundFloat(p95Time*1000, 2),
 		})
 		rank++
 	}
@@ -392,10 +392,10 @@ func queryLatencyRankingHTTP(cfg *httpCKConfig, query string, args ...interface{
 			Rank:         rank,
 			Item:         item,
 			RequestCount: int(toUint64Any(raw["request_count"])),
-			AvgTime:      RoundFloat(toFloat64Any(raw["avg_time"]), 3),
-			MaxTime:      RoundFloat(toFloat64Any(raw["max_time"]), 3),
-			MinTime:      RoundFloat(toFloat64Any(raw["min_time"]), 3),
-			P95Time:      RoundFloat(toFloat64Any(raw["p95_time"]), 3),
+			AvgTime:      RoundFloat(toFloat64Any(raw["avg_time"])*1000, 2),
+			MaxTime:      RoundFloat(toFloat64Any(raw["max_time"])*1000, 2),
+			MinTime:      RoundFloat(toFloat64Any(raw["min_time"])*1000, 2),
+			P95Time:      RoundFloat(toFloat64Any(raw["p95_time"])*1000, 2),
 		})
 		rank++
 	}

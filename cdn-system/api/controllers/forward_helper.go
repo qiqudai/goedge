@@ -3,7 +3,10 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +94,12 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []i
 
 func createForwardWithGroup(forward *models.Forward, groupIDs []int64) error {
 	return db.DB.Transaction(func(tx *gorm.DB) error {
+		if conflict, err := findForwardListenConflict(tx, forward.ListenPorts, 0); err != nil {
+			return err
+		} else if conflict != "" {
+			return fmt.Errorf("forward listen ip+port already exists: %s", conflict)
+		}
+
 		dbTx := tx
 		if forward.RegionID == 0 {
 			dbTx = dbTx.Omit("RegionID")
@@ -119,6 +128,125 @@ func createForwardWithGroup(forward *models.Forward, groupIDs []int64) error {
 		}
 		return nil
 	})
+}
+
+func normalizeForwardListenEndpoint(value string) (string, int, bool) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return "", 0, false
+	}
+	if idx := strings.Index(raw, "://"); idx != -1 {
+		raw = strings.TrimSpace(raw[idx+3:])
+	}
+
+	host := "*"
+	portStr := raw
+	if strings.HasPrefix(raw, ":") {
+		portStr = strings.TrimSpace(raw[1:])
+	} else if strings.Count(raw, ":") == 0 {
+		portStr = raw
+	} else {
+		h, p, err := net.SplitHostPort(raw)
+		if err != nil {
+			idx := strings.LastIndex(raw, ":")
+			if idx <= 0 || idx == len(raw)-1 {
+				return "", 0, false
+			}
+			h = raw[:idx]
+			p = raw[idx+1:]
+		}
+		host = strings.TrimSpace(strings.Trim(h, "[]"))
+		portStr = strings.TrimSpace(p)
+	}
+
+	port, ok := parsePort(portStr)
+	if !ok {
+		return "", 0, false
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || host == "*" || host == "0.0.0.0" || host == "::" {
+		host = "*"
+	}
+	return host, port, true
+}
+
+func decodeForwardListenRaw(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var listens []string
+	if strings.HasPrefix(raw, "[") {
+		if err := json.Unmarshal([]byte(raw), &listens); err == nil {
+			return listens
+		}
+	}
+	return splitFields(raw)
+}
+
+func forwardListenConflict(hostA string, portA int, hostB string, portB int) bool {
+	if portA != portB {
+		return false
+	}
+	if hostA == "*" || hostB == "*" {
+		return true
+	}
+	return hostA == hostB
+}
+
+func findForwardListenConflict(tx *gorm.DB, listenPorts []string, excludeForwardID int64) (string, error) {
+	type endpoint struct {
+		Host string
+		Port int
+		Raw  string
+	}
+	targets := make([]endpoint, 0, len(listenPorts))
+	for _, item := range listenPorts {
+		host, port, ok := normalizeForwardListenEndpoint(item)
+		if !ok {
+			continue
+		}
+		targets = append(targets, endpoint{Host: host, Port: port, Raw: strings.TrimSpace(item)})
+	}
+	if len(targets) == 0 {
+		return "", errors.New("listen_ports is required")
+	}
+
+	for i := 0; i < len(targets); i++ {
+		for j := i + 1; j < len(targets); j++ {
+			if forwardListenConflict(targets[i].Host, targets[i].Port, targets[j].Host, targets[j].Port) {
+				return fmt.Sprintf("%s / %s", targets[i].Raw, targets[j].Raw), nil
+			}
+		}
+	}
+
+	query := tx.Model(&models.Forward{}).Select("id, listen")
+	if excludeForwardID > 0 {
+		query = query.Where("id <> ?", excludeForwardID)
+	}
+	type forwardListenRow struct {
+		ID             int64  `gorm:"column:id"`
+		ListenPortsRaw string `gorm:"column:listen"`
+	}
+	var rows []forwardListenRow
+	if err := query.Find(&rows).Error; err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		existingListens := decodeForwardListenRaw(row.ListenPortsRaw)
+		for _, existing := range existingListens {
+			existingHost, existingPort, ok := normalizeForwardListenEndpoint(existing)
+			if !ok {
+				continue
+			}
+			for _, target := range targets {
+				if forwardListenConflict(target.Host, target.Port, existingHost, existingPort) {
+					return fmt.Sprintf("%s (conflict with %s)", target.Raw, strings.TrimSpace(existing)), nil
+				}
+			}
+		}
+	}
+	return "", nil
 }
 
 func resolveForwardRegionID(nodeGroupID int64) int64 {

@@ -103,6 +103,14 @@ func BuildBucketSeries(rng StatsRange, buckets []AccessBucket) BucketSeries {
 }
 
 func QueryAccessBuckets(start, end time.Time, bucket time.Duration, hostFilter HostFilter) ([]AccessBucket, error) {
+	return queryAccessBucketsWithExtraCondition(start, end, bucket, hostFilter, "")
+}
+
+func QueryAccessBucketsRealTraffic(start, end time.Time, bucket time.Duration, hostFilter HostFilter) ([]AccessBucket, error) {
+	return queryAccessBucketsWithExtraCondition(start, end, bucket, hostFilter, AccessLogRealSiteTrafficCondition())
+}
+
+func queryAccessBucketsWithExtraCondition(start, end time.Time, bucket time.Duration, hostFilter HostFilter, extraCondition string) ([]AccessBucket, error) {
 	if start.IsZero() || end.IsZero() || end.Before(start) || bucket <= 0 {
 		return []AccessBucket{}, nil
 	}
@@ -114,6 +122,10 @@ func QueryAccessBuckets(start, end time.Time, bucket time.Duration, hostFilter H
 	bucketExpr := bucketExpression(bucket)
 	conditions := []string{"ts >= ? AND ts <= ?"}
 	args := []interface{}{start, end}
+	extraCondition = strings.TrimSpace(extraCondition)
+	if extraCondition != "" {
+		conditions = append(conditions, extraCondition)
+	}
 	if clause, clauseArgs := hostFilter.SQLCondition(); clause != "" {
 		conditions = append(conditions, clause)
 		args = append(args, clauseArgs...)
@@ -162,6 +174,14 @@ func QueryAccessBuckets(start, end time.Time, bucket time.Duration, hostFilter H
 }
 
 func QueryAccessTotals(start, end time.Time, hostFilter HostFilter) (AccessTotals, error) {
+	return queryAccessTotalsWithExtraCondition(start, end, hostFilter, "")
+}
+
+func QueryAccessTotalsRealTraffic(start, end time.Time, hostFilter HostFilter) (AccessTotals, error) {
+	return queryAccessTotalsWithExtraCondition(start, end, hostFilter, AccessLogRealSiteTrafficCondition())
+}
+
+func queryAccessTotalsWithExtraCondition(start, end time.Time, hostFilter HostFilter, extraCondition string) (AccessTotals, error) {
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return AccessTotals{}, nil
 	}
@@ -172,6 +192,10 @@ func QueryAccessTotals(start, end time.Time, hostFilter HostFilter) (AccessTotal
 	}
 	conditions := []string{"ts >= ? AND ts <= ?"}
 	args := []interface{}{start, end}
+	extraCondition = strings.TrimSpace(extraCondition)
+	if extraCondition != "" {
+		conditions = append(conditions, extraCondition)
+	}
 	if clause, clauseArgs := hostFilter.SQLCondition(); clause != "" {
 		conditions = append(conditions, clause)
 		args = append(args, clauseArgs...)
@@ -254,19 +278,27 @@ func parseCKTimeString(raw string) (time.Time, error) {
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("empty time")
 	}
-	layouts := []string{
+	// ClickHouse HTTP responses in this project carry UTC wall-clock strings
+	// (without timezone suffix) after UTC migration. Parse those layouts in UTC
+	// first so bucket alignment remains correct across API host timezones.
+	naiveLayouts := []string{
 		statsTimeLayout,
 		"2006-01-02 15:04:05.000",
 		"2006-01-02 15:04:05.000000",
+	}
+	for _, layout := range naiveLayouts {
+		if t, err := time.ParseInLocation(layout, raw, time.UTC); err == nil {
+			return t, nil
+		}
+	}
+
+	offsetLayouts := []string{
 		time.RFC3339,
 		time.RFC3339Nano,
 	}
-	for _, layout := range layouts {
-		if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return t, nil
-		}
+	for _, layout := range offsetLayouts {
 		if t, err := time.Parse(layout, raw); err == nil {
-			return t.In(time.Local), nil
+			return t, nil
 		}
 	}
 	return time.Time{}, fmt.Errorf("unsupported time format: %s", raw)

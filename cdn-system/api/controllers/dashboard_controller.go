@@ -153,34 +153,59 @@ func loadLastLogin(userID int64) (string, string) {
 }
 
 func buildOverviewStats(rng services.StatsRange, hostFilter services.HostFilter) gin.H {
-	totals, err := services.QueryAccessTotals(rng.Start, rng.End, hostFilter)
+	totals, err := services.QueryAccessTotalsRealTraffic(rng.Start, rng.End, hostFilter)
 	if err != nil {
 		return emptyOverviewStats()
 	}
-	buckets, err := services.QueryAccessBuckets(rng.Start, rng.End, rng.Bucket, hostFilter)
+
+	peakRange := rng
+	peakRange.Bucket = resolveOverviewPeakBucket(rng)
+	peakBuckets, err := services.QueryAccessBucketsRealTraffic(peakRange.Start, peakRange.End, peakRange.Bucket, hostFilter)
 	if err != nil {
-		buckets = []services.AccessBucket{}
+		peakBuckets = []services.AccessBucket{}
 	}
-	series := services.BuildBucketSeries(rng, buckets)
+	peakSeries := services.BuildBucketSeries(peakRange, peakBuckets)
 	peakMbps := 0.0
-	if rng.Bucket > 0 {
-		for _, bytes := range series.Bytes {
-			val := services.BytesToMbps(bytes, rng.Bucket)
+	if peakRange.Bucket > 0 {
+		for _, bytes := range peakSeries.Bytes {
+			val := services.BytesToMbps(bytes, peakRange.Bucket)
 			if val > peakMbps {
 				peakMbps = val
 			}
 		}
 	}
+	nodePeakText := "-"
+	if nodePeakMbps, err := services.QueryNodeBandwidthPeakMbps(rng.Start, rng.End); err == nil {
+		nodePeakText = services.FormatBandwidth(nodePeakMbps)
+	}
 	return gin.H{
-		"bandwidth_peak": services.FormatBandwidth(services.RoundFloat(peakMbps, 2)),
-		"requests":       services.FormatCount(totals.Requests),
-		"traffic":        services.FormatBytes(totals.Bytes),
-		"blocked_ips":    services.FormatCount(totals.BlockedIPs),
+		"bandwidth_peak":      services.FormatBandwidth(services.RoundFloat(peakMbps, 2)),
+		"node_bandwidth_peak": nodePeakText,
+		"requests":            services.FormatCount(totals.Requests),
+		"traffic":             services.FormatBytes(totals.Bytes),
+		"blocked_ips":         services.FormatCount(totals.BlockedIPs),
 	}
 }
 
+func resolveOverviewPeakBucket(rng services.StatsRange) time.Duration {
+	total := rng.End.Sub(rng.Start)
+	if total <= 0 {
+		return rng.Bucket
+	}
+	if total <= 48*time.Hour {
+		return time.Minute
+	}
+	if total <= 14*24*time.Hour {
+		return 5 * time.Minute
+	}
+	if total <= 45*24*time.Hour {
+		return time.Hour
+	}
+	return rng.Bucket
+}
+
 func buildChartStats(rng services.StatsRange, hostFilter services.HostFilter) gin.H {
-	buckets, err := services.QueryAccessBuckets(rng.Start, rng.End, rng.Bucket, hostFilter)
+	buckets, err := services.QueryAccessBucketsRealTraffic(rng.Start, rng.End, rng.Bucket, hostFilter)
 	if err != nil {
 		return emptyChartStats()
 	}
@@ -206,10 +231,11 @@ func buildChartStats(rng services.StatsRange, hostFilter services.HostFilter) gi
 
 func emptyOverviewStats() gin.H {
 	return gin.H{
-		"bandwidth_peak": "-",
-		"requests":       "0",
-		"traffic":        "0 B",
-		"blocked_ips":    "0",
+		"bandwidth_peak":      "-",
+		"node_bandwidth_peak": "-",
+		"requests":            "0",
+		"traffic":             "0 B",
+		"blocked_ips":         "0",
 	}
 }
 
@@ -506,9 +532,13 @@ func loadSystemStatus() (gin.H, gin.H) {
 		}
 	}
 
+	ckHealth := services.CheckClickHouseHealth()
 	systemStatus := gin.H{
 		"master":       true,
-		"elastic":      db.ClickHouseEnabled(),
+		"ck":           ckHealth.OK,
+		"ck_tips":      ckHealth.Errors,
+		"ck_db":        ckHealth.Database,
+		"ck_missing":   ckHealth.MissingTable,
 		"agent":        totalNodes > 0 && onlineNodes == totalNodes,
 		"agent_total":  totalNodes,
 		"agent_online": onlineNodes,

@@ -419,7 +419,8 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 		baseQuery = baseQuery.Where("create_at BETWEEN ? AND ?", startAt, endAt)
 	}
 
-	grouped := baseQuery.Select("event_id").Group("event_id")
+	bucketExpr := "FLOOR(UNIX_TIMESTAMP(create_at) / 30)"
+	grouped := baseQuery.Select(bucketExpr + " as bucket").Group("bucket")
 	var total int64
 	if err := db.DB.Table("(?) as logs", grouped).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
@@ -427,15 +428,15 @@ func (ctr *NodeController) ListMonitorLogs(c *gin.Context) {
 	}
 
 	type logSummary struct {
-		CheckedAt  time.Time `json:"checked_at"`
-		FailCount  int64     `json:"fail_count"`
-		TotalCount int64     `json:"total_count"`
+		CheckedAt  string `json:"checked_at"`
+		FailCount  int64  `json:"fail_count"`
+		TotalCount int64  `json:"total_count"`
 	}
 	var list []logSummary
 	if err := baseQuery.
-		Select("FROM_UNIXTIME(CAST(event_id AS UNSIGNED) * 30) as checked_at, SUM(CASE WHEN success = '1' THEN 0 ELSE 1 END) as fail_count, COUNT(*) as total_count").
-		Group("event_id").
-		Order("CAST(event_id AS UNSIGNED) desc").
+		Select("DATE_FORMAT(FROM_UNIXTIME(" + bucketExpr + " * 30), '%Y-%m-%d %H:%i:%s') as checked_at, SUM(CASE WHEN success = '1' THEN 0 ELSE 1 END) as fail_count, COUNT(*) as total_count").
+		Group("bucket").
+		Order("bucket desc").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Scan(&list).Error; err != nil {

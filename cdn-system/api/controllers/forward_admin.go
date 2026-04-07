@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -156,6 +157,12 @@ func (ctrl *ForwardController) AdminUpdate(c *gin.Context) {
 	forward.UpdatedAt = time.Now()
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if conflict, err := findForwardListenConflict(tx, forward.ListenPorts, forward.ID); err != nil {
+			return err
+		} else if conflict != "" {
+			return fmt.Errorf("forward listen ip+port already exists: %s", conflict)
+		}
+
 		dbTx := tx
 		if forward.RegionID == 0 {
 			dbTx = dbTx.Omit("RegionID")

@@ -388,11 +388,16 @@ func (c *AgentWSController) handleTaskAck(nodeID int64, ack TaskAckMsg) {
 }
 
 func buildAckRet(ack TaskAckMsg) string {
-	if strings.TrimSpace(ack.Error) != "" {
-		return strings.TrimSpace(ack.Error)
+	errText := strings.TrimSpace(ack.Error)
+	retText := strings.TrimSpace(ack.Ret)
+	if errText != "" && retText != "" {
+		return errText + "\n" + retText
 	}
-	if strings.TrimSpace(ack.Ret) != "" {
-		return strings.TrimSpace(ack.Ret)
+	if errText != "" {
+		return errText
+	}
+	if retText != "" {
+		return retText
 	}
 	if len(ack.Applied) > 0 {
 		return string(ack.Applied)

@@ -40,7 +40,7 @@ func processTask(id int64, taskType string, data string, report TaskProgressRepo
 	case "preheat":
 		return "", preheatURLs(splitLines(data))
 	case "issue_cert":
-		return "", issueCertTask(id, data)
+		return issueCertTask(id, data)
 	case "config_sync":
 		if strings.TrimSpace(data) == "" {
 			return "", nil
@@ -69,43 +69,109 @@ type issueCertTaskPayload struct {
 	Items    []issueCertItem `json:"items"`
 }
 
-func issueCertTask(taskID int64, raw string) error {
+func issueCertTask(taskID int64, raw string) (string, error) {
 	var payload issueCertTaskPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return fmt.Errorf("invalid issue cert task payload")
+		return "", fmt.Errorf("invalid issue cert task payload")
 	}
 	if len(payload.Items) == 0 {
-		return fmt.Errorf("no cert items")
+		return "", fmt.Errorf("no cert items")
 	}
 	webroot := filepath.Join(runtimeRoot(), "cert", "acme")
-	accountKey := filepath.Join(webroot, "account_"+strings.ToLower(payload.CA)+".key")
-	tokenStore := newAPITokenStore()
-	issuer := acme.NewIssuer(acme.IssueOptions{
-		Email:          payload.Email,
-		CADirURL:       payload.CADirURL,
-		Webroot:        webroot,
-		AccountKeyPath: accountKey,
-		Timeout:        3 * time.Minute,
-		TokenStore:     tokenStore,
-	})
+	fallbackCAs := buildIssueCAFallbackList(payload.CA)
+	logLines := make([]string, 0, 16)
 
 	for _, item := range payload.Items {
 		if len(item.Domains) == 0 || item.CertID == 0 {
 			continue
 		}
-		result, err := issuer.Issue(item.Domains)
-		if err != nil {
-			if acme.IsRegisterRateLimited(err) {
-				_ = sendCertIssued(taskID, 0, "", "", true, 0)
-				return fmt.Errorf("RATE_LIMITED: %s", err.Error())
+		var lastErr error
+		ok := false
+		for idx, ca := range fallbackCAs {
+			accountKey := filepath.Join(webroot, "account_"+ca+".key")
+			caDir := resolveIssueCADirURL(ca, normalizeIssueCAName(payload.CA), payload.CADirURL)
+			tokenStore := newAPITokenStore()
+			issuer := acme.NewIssuer(acme.IssueOptions{
+				Email:          payload.Email,
+				CADirURL:       caDir,
+				Webroot:        webroot,
+				AccountKeyPath: accountKey,
+				Timeout:        3 * time.Minute,
+				TokenStore:     tokenStore,
+			})
+
+			result, err := issuer.Issue(item.Domains)
+			if err != nil {
+				lastErr = err
+				logLines = append(logLines, fmt.Sprintf("cert=%d ca=%s failed: %s", item.CertID, ca, err.Error()))
+				if idx+1 < len(fallbackCAs) {
+					logLines = append(logLines, fmt.Sprintf("cert=%d switch_ca: %s -> %s", item.CertID, ca, fallbackCAs[idx+1]))
+				}
+				continue
 			}
-			return err
+			if err := reportIssuedCert(taskID, item.CertID, result.CertPEM, result.KeyPEM); err != nil {
+				lastErr = err
+				logLines = append(logLines, fmt.Sprintf("cert=%d ca=%s issue ok but report failed: %s", item.CertID, ca, err.Error()))
+				break
+			}
+			if ca == normalizeIssueCAName(payload.CA) {
+				logLines = append(logLines, fmt.Sprintf("cert=%d issued by ca=%s", item.CertID, ca))
+			} else {
+				logLines = append(logLines, fmt.Sprintf("cert=%d issued by fallback ca=%s (primary=%s)", item.CertID, ca, normalizeIssueCAName(payload.CA)))
+			}
+			ok = true
+			break
 		}
-		if err := reportIssuedCert(taskID, item.CertID, result.CertPEM, result.KeyPEM); err != nil {
-			return err
+		if !ok {
+			ret := strings.Join(logLines, "\n")
+			if lastErr == nil {
+				lastErr = fmt.Errorf("unknown issue error")
+			}
+			return ret, fmt.Errorf("cert %d issue failed after fallback: %w", item.CertID, lastErr)
 		}
 	}
-	return nil
+	return strings.Join(logLines, "\n"), nil
+}
+
+func normalizeIssueCAName(ca string) string {
+	v := strings.ToLower(strings.TrimSpace(ca))
+	switch v {
+	case "", "lets", "let's encrypt", "lets encrypt":
+		return "letsencrypt"
+	case "letsencrypt", "zerossl", "google", "buypass":
+		return v
+	default:
+		return "letsencrypt"
+	}
+}
+
+func buildIssueCAFallbackList(primary string) []string {
+	all := []string{"letsencrypt", "zerossl", "google", "buypass"}
+	first := normalizeIssueCAName(primary)
+	out := make([]string, 0, len(all))
+	out = append(out, first)
+	for _, ca := range all {
+		if ca != first {
+			out = append(out, ca)
+		}
+	}
+	return out
+}
+
+func resolveIssueCADirURL(ca string, primary string, primaryDirURL string) string {
+	if ca == primary && strings.TrimSpace(primaryDirURL) != "" {
+		return strings.TrimSpace(primaryDirURL)
+	}
+	switch ca {
+	case "zerossl":
+		return "https://acme.zerossl.com/v2/DV90"
+	case "buypass":
+		return "https://api.buypass.com/acme/directory"
+	case "google":
+		return "https://dv.acme-v02.api.pki.goog/directory"
+	default:
+		return "https://acme-v02.api.letsencrypt.org/directory"
+	}
 }
 
 func reportIssuedCert(taskID int64, certID int64, certPEM string, keyPEM string) error {

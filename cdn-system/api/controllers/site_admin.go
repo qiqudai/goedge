@@ -496,6 +496,13 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 		return
 	}
+	if conflictDomain, err := findSiteDomainConflict(db.DB, allDomains, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to validate domain uniqueness")})
+		return
+	} else if conflictDomain != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("%s: %s", T(i18n.T("site.domain_exists")), conflictDomain)})
+		return
+	}
 
 	for _, item := range batchItems {
 		for _, domain := range item.Domains {
@@ -1098,7 +1105,7 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			Type:        certType,
 			Domain:      strings.Join(site.Domains, ","),
 			DNSAPI:      normalizeDNSAPIValue(dnsapi),
-			AutoRenew:   true,
+			AutoRenew:   false,
 			Enable:      true,
 			State:       "waiting",
 			CreateAt:    time.Now(),

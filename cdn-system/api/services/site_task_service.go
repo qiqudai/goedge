@@ -4,6 +4,7 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -117,6 +118,12 @@ func processSiteCreateTask(task *models.Task) {
 	// For now, I'll inline the DB creation logic here.
 
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		if conflictDomain, err := findTaskSiteDomainConflict(tx, site.Domains, 0); err != nil {
+			return err
+		} else if conflictDomain != "" {
+			return fmt.Errorf("domain already exists: %s", conflictDomain)
+		}
+
 		dbTx := tx
 		omitColumns := siteMissingColumnsForTask(tx)
 		if len(omitColumns) > 0 {
@@ -214,6 +221,64 @@ func buildSiteCnameForTask(hostname, cnameDomain string) string {
 		return ""
 	}
 	return hostname + "." + cnameDomain
+}
+
+func normalizeTaskSiteDomain(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimSuffix(value, ".")
+	return value
+}
+
+func decodeTaskSiteDomainRaw(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var domains []string
+	if strings.HasPrefix(raw, "[") {
+		if err := json.Unmarshal([]byte(raw), &domains); err == nil {
+			return domains
+		}
+	}
+	return splitFields(raw)
+}
+
+func findTaskSiteDomainConflict(tx *gorm.DB, domains []string, excludeSiteID int64) (string, error) {
+	targetSet := make(map[string]struct{}, len(domains))
+	for _, domain := range domains {
+		key := normalizeTaskSiteDomain(domain)
+		if key == "" {
+			continue
+		}
+		if _, exists := targetSet[key]; exists {
+			return key, nil
+		}
+		targetSet[key] = struct{}{}
+	}
+	if len(targetSet) == 0 {
+		return "", nil
+	}
+
+	query := tx.Model(&models.Site{}).Select("id, domain")
+	if excludeSiteID > 0 {
+		query = query.Where("id <> ?", excludeSiteID)
+	}
+	type siteDomainRow struct {
+		ID        int64  `gorm:"column:id"`
+		DomainRaw string `gorm:"column:domain"`
+	}
+	var rows []siteDomainRow
+	if err := query.Find(&rows).Error; err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		for _, existing := range decodeTaskSiteDomainRaw(row.DomainRaw) {
+			if _, exists := targetSet[normalizeTaskSiteDomain(existing)]; exists {
+				return normalizeTaskSiteDomain(existing), nil
+			}
+		}
+	}
+	return "", nil
 }
 
 func siteMissingColumnsForTask(tx *gorm.DB) []string {

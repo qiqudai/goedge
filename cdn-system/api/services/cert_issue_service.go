@@ -95,6 +95,10 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 		log.Printf("[CertIssue] cert not found cert_id=%d err=%v", certID, err)
 		return
 	}
+	if isManualUploadCert(cert.Type) {
+		log.Printf("[CertIssue] skip manual-upload cert cert_id=%d", certID)
+		return
+	}
 
 	// 2. Create Task with payload data
 	payload, payloadErr := buildIssuePayload(cert)
@@ -132,6 +136,11 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 	for {
 		if err := db.DB.First(&cert, certID).Error; err != nil {
 			failTask(&task, "Cert not found")
+			return
+		}
+		if isManualUploadCert(cert.Type) {
+			markIssueTaskStoppedByManual(task.ID)
+			log.Printf("[CertIssue] stop task=%d cert_id=%d because cert switched to upload", task.ID, certID)
 			return
 		}
 		if !started {
@@ -190,6 +199,25 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 	}
 }
 
+func isManualUploadCert(certType string) bool {
+	return strings.EqualFold(strings.TrimSpace(certType), "upload")
+}
+
+func markIssueTaskStoppedByManual(taskID int64) {
+	if taskID == 0 {
+		return
+	}
+	_ = db.DB.Model(&models.Task{}).
+		Where("id = ? AND type = ?", taskID, "issue_cert").
+		Updates(map[string]interface{}{
+			"enable":   false,
+			"state":    "fail",
+			"retry_at": nil,
+			"ret":      "manual upload overrides auto-issue",
+			"end_at":   time.Now(),
+		}).Error
+}
+
 func failTask(task *models.Task, reason string) {
 	db.DB.Model(task).Updates(map[string]interface{}{
 		"state":  "fail",
@@ -211,21 +239,41 @@ func issueCertLocal(cert models.Cert) error {
 	if len(domains) == 0 {
 		return errors.New("cert domain is empty")
 	}
-	var issuer *acme.Issuer
+	candidates := buildIssueCAFallbackList(cert.Type)
+	attemptLogs := make([]string, 0, len(candidates))
+	var provider acme.ChallengeProvider
+	var providerErr error
 	if requiresDNSChallenge(cert) {
-		provider, err := BuildDNSChallengeProvider(cert)
-		if err != nil {
-			return err
+		provider, providerErr = BuildDNSChallengeProvider(cert)
+		if providerErr != nil {
+			return providerErr
 		}
-		issuer = NewDNS01Issuer(cert.Type, provider)
-	} else {
-		issuer = NewHTTP01Issuer(cert.Type)
 	}
-	result, err := issuer.Issue(domains)
-	if err != nil {
-		return err
+
+	for idx, ca := range candidates {
+		var issuer *acme.Issuer
+		if provider != nil {
+			issuer = NewDNS01Issuer(ca, provider)
+		} else {
+			issuer = NewHTTP01Issuer(ca)
+		}
+
+		result, err := issuer.Issue(domains)
+		if err != nil {
+			attemptLogs = append(attemptLogs, fmt.Sprintf("ca=%s failed: %s", ca, err.Error()))
+			if idx+1 < len(candidates) {
+				attemptLogs = append(attemptLogs, fmt.Sprintf("switch_ca: %s -> %s", ca, candidates[idx+1]))
+			}
+			continue
+		}
+
+		if ca != normalizeIssueCA(cert.Type) {
+			log.Printf("[CertIssue] cert_id=%d switched ca %s -> %s", cert.ID, normalizeIssueCA(cert.Type), ca)
+		}
+		return UpdateIssuedCert(int64(cert.ID), result.CertPEM, result.KeyPEM, result.NotBefore, result.NotAfter, 0)
 	}
-	return UpdateIssuedCert(int64(cert.ID), result.CertPEM, result.KeyPEM, result.NotBefore, result.NotAfter, 0)
+
+	return errors.New(strings.Join(attemptLogs, " | "))
 }
 
 func splitCertDomains(raw string) []string {
@@ -306,10 +354,7 @@ func buildIssuePayload(cert models.Cert) (IssueCertTaskPayload, error) {
 	if len(domains) == 0 {
 		return IssueCertTaskPayload{}, errors.New("cert domain is empty")
 	}
-	ca := strings.ToLower(strings.TrimSpace(cert.Type))
-	if ca == "" {
-		ca = "letsencrypt"
-	}
+	ca := normalizeIssueCA(cert.Type)
 	return IssueCertTaskPayload{
 		CA:       ca,
 		CADirURL: BuildCADirURL(ca),
@@ -346,9 +391,7 @@ func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
 			continue
 		}
 		ca := strings.ToLower(strings.TrimSpace(cert.Type))
-		if ca == "" {
-			ca = "letsencrypt"
-		}
+		ca = normalizeIssueCA(ca)
 		payload := IssueCertTaskPayload{
 			CA:       ca,
 			CADirURL: BuildCADirURL(ca),
@@ -384,10 +427,7 @@ func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
 func groupCertsByCA(certs []models.Cert) map[string][]IssueCertItem {
 	result := map[string][]IssueCertItem{}
 	for _, cert := range certs {
-		ca := strings.ToLower(strings.TrimSpace(cert.Type))
-		if ca == "" {
-			ca = "letsencrypt"
-		}
+		ca := normalizeIssueCA(cert.Type)
 		item := IssueCertItem{
 			CertID:  int64(cert.ID),
 			Domains: splitCertDomains(cert.Domain),
@@ -398,6 +438,30 @@ func groupCertsByCA(certs []models.Cert) map[string][]IssueCertItem {
 		result[ca] = append(result[ca], item)
 	}
 	return result
+}
+
+func normalizeIssueCA(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "lets", "let's encrypt", "lets encrypt":
+		return "letsencrypt"
+	case "letsencrypt", "zerossl", "google", "buypass":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "letsencrypt"
+	}
+}
+
+func buildIssueCAFallbackList(primary string) []string {
+	all := []string{"letsencrypt", "zerossl", "google", "buypass"}
+	first := normalizeIssueCA(primary)
+	out := make([]string, 0, len(all))
+	out = append(out, first)
+	for _, ca := range all {
+		if ca != first {
+			out = append(out, ca)
+		}
+	}
+	return out
 }
 
 func createIssueTask(batchID int64, nodeID int64, name string, payload IssueCertTaskPayload) (models.Task, error) {

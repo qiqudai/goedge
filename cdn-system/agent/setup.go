@@ -4,14 +4,22 @@ import (
 	"archive/zip"
 	"bytes"
 	fsutil "cdn-common/io"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func initEnvironment() {
@@ -207,22 +215,48 @@ func restoreDirWithOptions(embedPath, localPath string, overwrite bool) {
 }
 
 func generateFallbackCert(certDir string) {
-	// Minimal Self-Signed PEM/KEY for Nginx to start
 	pemPath := filepath.Join(certDir, "fallback.pem")
-	// keyPath := filepath.Join(certDir, "fallback.key")
+	keyPath := filepath.Join(certDir, "fallback.key")
 
 	if _, err := os.Stat(pemPath); err == nil {
-		return // Exists
+		return // already exists
 	}
 
-	// Note: In a real agent we should use 'crypto/x509' to generate valid certs
-	// For now, we write empty files? No, Nginx will fail start.
-	// Since we don't have crypto code handy in this snippet, we assume
-	// the user eventually provides them or we accept Nginx failure if SSL on.
-	// BUT, strict mode requires them.
-	// Providing a dummy placeholder that is NOT valid might crash Nginx if it tries to load.
-	// Best specificiation: User MUST put fallback.pem/key in assets/cert if using SSL.
-	// Here we just ensure directory exists.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Printf("[Warn] Failed to generate fallback cert key: %v", err)
+		return
+	}
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "fallback"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		log.Printf("[Warn] Failed to generate fallback cert: %v", err)
+		return
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		log.Printf("[Warn] Failed to marshal fallback key: %v", err)
+		return
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	if err := os.WriteFile(pemPath, certPEM, 0644); err != nil {
+		log.Printf("[Warn] Failed to write fallback cert: %v", err)
+		return
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+		log.Printf("[Warn] Failed to write fallback key: %v", err)
+		return
+	}
+	log.Printf("[Info] Generated fallback self-signed cert at %s", pemPath)
 }
 
 func restoreFile(embedPath, localPath string, overwrite bool) {

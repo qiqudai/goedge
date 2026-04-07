@@ -48,6 +48,10 @@ func (ctrl *CertController) Upload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 		return
 	}
+	// Manual uploaded certificates can not auto renew by ACME.
+	certModel.AutoRenew = false
+	certModel.State = "ready"
+	certModel.Ret = ""
 
 	if err := db.DB.Omit("task_id", "issue_task_id").Create(certModel).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to save certificate")})
@@ -92,19 +96,23 @@ func (ctrl *CertController) Update(c *gin.Context) {
 	certModel.UpdateAt = time.Now()
 
 	updates := map[string]interface{}{
-		"name":       certModel.Name,
-		"des":        certModel.Description,
-		"type":       certModel.Type,
-		"domain":     certModel.Domain,
-		"dnsapi":     certModel.DNSAPI,
-		"auto_renew": certModel.AutoRenew,
-		"update_at":  certModel.UpdateAt,
+		"name":      certModel.Name,
+		"des":       certModel.Description,
+		"type":      certModel.Type,
+		"domain":    certModel.Domain,
+		"dnsapi":    certModel.DNSAPI,
+		"update_at": certModel.UpdateAt,
 	}
 
 	certProvided := strings.TrimSpace(certModel.Cert) != "" || strings.TrimSpace(certModel.Key) != ""
 	if certModel.Type == "upload" && certProvided {
 		updates["cert"] = certModel.Cert
 		updates["key"] = certModel.Key
+		updates["auto_renew"] = false
+		updates["state"] = "ready"
+		updates["ret"] = ""
+		updates["issue_task_id"] = nil
+		updates["task_id"] = nil
 		if certModel.StartTime != nil || certModel.ExpireTime != nil {
 			updates["start_time"] = certModel.StartTime
 			updates["expire_time"] = certModel.ExpireTime
@@ -129,6 +137,20 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		uid := parseUserID(mustGet(c, "userID"))
 		query = query.Where("uid = ?", uid)
 	}
+	var existing models.Cert
+	if err := query.Select("id", "issue_task_id", "task_id", "state", "type").First(&existing).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found or permission denied")})
+		return
+	}
+	targetState := strings.TrimSpace(existing.State)
+	targetType := certModel.Type
+	if targetType == "" {
+		targetType = existing.Type
+	}
+	if certModel.Type == "upload" && certProvided {
+		targetState = "ready"
+	}
+	updates["auto_renew"] = certModel.AutoRenew && certAutoRenewEligible(targetType, targetState)
 
 	result := query.Updates(updates)
 	if result.Error != nil {
@@ -140,6 +162,9 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		// We can't distinguish easily without prior query, but generic error is fine or 404
 		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found or permission denied")})
 		return
+	}
+	if certModel.Type == "upload" && certProvided {
+		stopIssueTasksByID(existing.IssueTaskID, existing.TaskID)
 	}
 
 	services.BumpConfigVersion("cert", []int64{int64(id)})
@@ -195,7 +220,9 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 			return
 		}
 	case "auto_renew_enable":
-		if err := db.DB.Model(&models.Cert{}).Where("id IN ?", req.IDs).Update("auto_renew", true).Error; err != nil {
+		if err := db.DB.Model(&models.Cert{}).
+			Where("id IN ? AND type <> ? AND (state = ? OR state = ?)", req.IDs, "upload", "ready", "success").
+			Update("auto_renew", true).Error; err != nil {
 			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": i18n.T("cert.action_failed")})
 			return
 		}
@@ -299,7 +326,7 @@ func (ctrl *CertController) BatchCreate(c *gin.Context) {
 				Type:       typeName,
 				Domain:     domain,
 				DNSAPI:     dnsapiPtr,
-				AutoRenew:  req.AutoRenew,
+				AutoRenew:  false,
 				Enable:     true,
 				CreateAt:   now,
 				UpdateAt:   now,
@@ -372,7 +399,7 @@ func (ctrl *CertController) WildcardCreate(c *gin.Context) {
 		Type:       typeName,
 		Domain:     domain,
 		DNSAPI:     normalizeDNSAPIValue(req.DNSAPI),
-		AutoRenew:  req.AutoRenew,
+		AutoRenew:  false,
 		Enable:     true,
 		CreateAt:   now,
 		UpdateAt:   now,
@@ -721,7 +748,7 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 			Key:         keyValue,
 			StartTime:   cert.StartTime,
 			ExpireTime:  cert.ExpireTime,
-			AutoRenew:   cert.AutoRenew,
+			AutoRenew:   cert.AutoRenew && certAutoRenewEligible(cert.Type, cert.State),
 			CreateAt:    cert.CreateAt,
 			UpdateAt:    cert.UpdateAt,
 			Enable:      cert.Enable,
@@ -927,6 +954,8 @@ func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error
 		if certModel.Name == "" {
 			certModel.Name = defaultCertName(domains[0])
 		}
+		// Manual uploaded certificates should never auto renew.
+		certModel.AutoRenew = false
 	} else {
 		if certModel.Domain == "" {
 			return nil, errors.New("domain is required")
@@ -937,6 +966,33 @@ func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error
 	}
 
 	return certModel, nil
+}
+
+func stopIssueTasksByID(taskIDs ...int64) {
+	unique := make([]int64, 0, len(taskIDs))
+	seen := map[int64]struct{}{}
+	for _, id := range taskIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return
+	}
+	_ = db.DB.Model(&models.Task{}).
+		Where("id IN ? AND type = ?", unique, "issue_cert").
+		Updates(map[string]interface{}{
+			"enable":   false,
+			"state":    "fail",
+			"retry_at": nil,
+			"ret":      "manual upload overrides auto-issue",
+			"end_at":   time.Now(),
+		}).Error
 }
 
 func parseCert(certPEM string) ([]string, time.Time, time.Time, error) {
@@ -1049,6 +1105,18 @@ func normalizeCertType(value string) string {
 		return "google"
 	}
 	return value
+}
+
+func certAutoRenewEligible(certType string, state string) bool {
+	if strings.EqualFold(strings.TrimSpace(certType), "upload") {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "ready", "success":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeDNSAPIValue(val int) *int {

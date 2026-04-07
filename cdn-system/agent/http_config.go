@@ -818,9 +818,10 @@ func normalizeRuleLocation(rule string) string {
 }
 
 func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *edgeCacheConfig, rule *edgeCacheRule) {
-	writeProxyBase(b)
+	customHeaderSet := buildCustomHeaderNameSet(domain.Headers)
+	writeProxyBase(b, customHeaderSet)
 	writeProxyLogVars(b)
-	writeProxyProtocol(b, domain)
+	writeProxyProtocol(b, domain, customHeaderSet)
 	writeProxyTimeouts(b, domain)
 	writeProxyBuffering(b, domain)
 	writeProxyRanges(b, domain, rule)
@@ -833,16 +834,20 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	applyCacheDirectives(b, cacheCfg, rule)
 }
 
-func writeProxyBase(b *strings.Builder) {
+func writeProxyBase(b *strings.Builder, customHeaderSet map[string]struct{}) {
 	b.WriteString("        limit_req zone=cc_limit burst=20 nodelay;\n")
 	b.WriteString("        limit_conn addr_conn 50;\n")
 	b.WriteString("        set $backend_target \"\";\n")
 	b.WriteString("        access_by_lua_file lua/access_guard.lua;\n")
 	b.WriteString("        header_filter_by_lua_file lua/response_headers.lua;\n")
-	b.WriteString("        proxy_set_header Host $host;\n")
-	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
-	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-	b.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Host", "$host")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Real-IP", "$remote_addr")
+	// Use $remote_addr instead of $proxy_add_x_forwarded_for to avoid sending
+	// duplicate X-Forwarded-For headers to the origin. $proxy_add_x_forwarded_for
+	// appends to any existing X-Forwarded-For header from the client, which causes
+	// strict origins like AWS S3 to reject the request with "duplicate headers".
+	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-For", "$remote_addr")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Proto", "$scheme")
 }
 
 func writeProxyLogVars(b *strings.Builder) {
@@ -854,24 +859,51 @@ func writeProxyLogVars(b *strings.Builder) {
 	b.WriteString("        set $cache_ttl 0;\n")
 }
 
-func writeProxyProtocol(b *strings.Builder, domain edgeDomain) {
+func writeProxyProtocol(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
 	if domain.EnableWebsocket {
 		b.WriteString("        proxy_http_version 1.1;\n")
-		b.WriteString("        proxy_set_header Upgrade $http_upgrade;\n")
-		b.WriteString("        proxy_set_header Connection $connection_upgrade;\n")
+		writeProxyHeaderIfMissing(b, customHeaderSet, "Upgrade", "$http_upgrade")
+		writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "$connection_upgrade")
 		return
 	}
 	if version := sanitizeProxyHTTPVersion(domain.ProxyHTTPVersion); version != "" {
 		b.WriteString("        proxy_http_version " + version + ";\n")
 		if version == "1.1" && domain.UpstreamKeepalive {
-			b.WriteString("        proxy_set_header Connection \"\";\n")
+			writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "\"\"")
 		}
 		return
 	}
 	if domain.UpstreamKeepalive {
 		b.WriteString("        proxy_http_version 1.1;\n")
-		b.WriteString("        proxy_set_header Connection \"\";\n")
+		writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "\"\"")
 	}
+}
+
+func buildCustomHeaderNameSet(headers map[string]string) map[string]struct{} {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(headers))
+	for key := range headers {
+		name := sanitizeHeaderName(key)
+		if name == "" {
+			continue
+		}
+		out[strings.ToLower(name)] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func writeProxyHeaderIfMissing(b *strings.Builder, customHeaderSet map[string]struct{}, name, value string) {
+	if len(customHeaderSet) > 0 {
+		if _, exists := customHeaderSet[strings.ToLower(name)]; exists {
+			return
+		}
+	}
+	b.WriteString("        proxy_set_header " + name + " " + value + ";\n")
 }
 
 func writeProxyTimeouts(b *strings.Builder, domain edgeDomain) {

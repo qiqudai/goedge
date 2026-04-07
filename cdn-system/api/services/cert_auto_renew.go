@@ -45,8 +45,8 @@ func runCertAutoRenew() {
 	due := now.Add(certAutoRenewAdvance)
 
 	var certs []models.Cert
-	if err := db.DB.Where("enable = ? AND auto_renew = ? AND type <> ? AND expire_time IS NOT NULL AND expire_time <= ?",
-		true, true, "upload", due).
+	if err := db.DB.Where("enable = ? AND auto_renew = ? AND type <> ? AND (state = ? OR state = ?) AND expire_time IS NOT NULL AND expire_time <= ?",
+		true, true, "upload", "ready", "success", due).
 		Find(&certs).Error; err != nil {
 		log.Printf("[CertAutoRenew] load certs failed: %v", err)
 		return

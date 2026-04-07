@@ -42,8 +42,14 @@ func FormatBytes(bytes uint64) string {
 }
 
 func FormatBandwidth(mbps float64) string {
+	if mbps <= 0 {
+		return "0 Mbps"
+	}
 	if mbps >= 1000 {
 		return fmt.Sprintf("%.2f Gbps", mbps/1000)
+	}
+	if mbps < 1 {
+		return fmt.Sprintf("%.2f Kbps", mbps*1000)
 	}
 	return fmt.Sprintf("%.2f Mbps", mbps)
 }

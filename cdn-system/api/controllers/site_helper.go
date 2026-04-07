@@ -359,13 +359,13 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 
 func createSiteWithGroup(site *models.Site, groupIDs []int64) error {
 	return db.DB.Transaction(func(tx *gorm.DB) error {
-		var count int64
 		if len(site.Domains) == 0 {
 			return errors.New("domain is required")
 		}
-		tx.Model(&models.Site{}).Where("domain LIKE ?", "%"+site.Domains[0]+"%").Count(&count)
-		if count > 0 {
-			return errors.New(i18n.T("site.domain_exists"))
+		if conflictDomain, err := findSiteDomainConflict(tx, site.Domains, 0); err != nil {
+			return err
+		} else if conflictDomain != "" {
+			return fmt.Errorf("%s: %s", i18n.T("site.domain_exists"), conflictDomain)
 		}
 		omitColumns := siteMissingColumns(tx)
 		dbTx := tx
@@ -410,6 +410,64 @@ func createSiteWithGroup(site *models.Site, groupIDs []int64) error {
 		}
 		return nil
 	})
+}
+
+func normalizeSiteDomain(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimSuffix(value, ".")
+	return value
+}
+
+func decodeSiteDomainRaw(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var domains []string
+	if strings.HasPrefix(raw, "[") {
+		if err := json.Unmarshal([]byte(raw), &domains); err == nil {
+			return domains
+		}
+	}
+	return splitFields(raw)
+}
+
+func findSiteDomainConflict(tx *gorm.DB, domains []string, excludeSiteID int64) (string, error) {
+	targetSet := make(map[string]struct{}, len(domains))
+	for _, domain := range domains {
+		key := normalizeSiteDomain(domain)
+		if key == "" {
+			continue
+		}
+		if _, exists := targetSet[key]; exists {
+			return key, nil
+		}
+		targetSet[key] = struct{}{}
+	}
+	if len(targetSet) == 0 {
+		return "", errors.New("domain is required")
+	}
+
+	query := tx.Model(&models.Site{}).Select("id, domain")
+	if excludeSiteID > 0 {
+		query = query.Where("id <> ?", excludeSiteID)
+	}
+	type siteDomainRow struct {
+		ID        int64  `gorm:"column:id"`
+		DomainRaw string `gorm:"column:domain"`
+	}
+	var rows []siteDomainRow
+	if err := query.Find(&rows).Error; err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		for _, existing := range decodeSiteDomainRaw(row.DomainRaw) {
+			if _, exists := targetSet[normalizeSiteDomain(existing)]; exists {
+				return normalizeSiteDomain(existing), nil
+			}
+		}
+	}
+	return "", nil
 }
 
 func applyDefaultsIfSettingsMissing(site *models.Site, groupID int64, siteType string) {
