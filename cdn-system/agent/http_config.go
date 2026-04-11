@@ -854,6 +854,7 @@ func writeProxyLogVars(b *strings.Builder) {
 	b.WriteString("        set $cdn_req_headers \"\";\n")
 	b.WriteString("        set $cdn_resp_headers \"\";\n")
 	b.WriteString("        set $cdn_req_body \"\";\n")
+	b.WriteString("        set $cdn_realtime_send $cdn_realtime_send_default;\n")
 	b.WriteString("        set $cdn_cache_key \"\";\n")
 	b.WriteString("        set $cache_bypass 0;\n")
 	b.WriteString("        set $cache_ttl 0;\n")
@@ -1132,6 +1133,13 @@ func applyCacheDirectives(b *strings.Builder, cacheCfg *edgeCacheConfig, rule *e
 		b.WriteString("        proxy_cache_bypass 1;\n")
 		return
 	}
+	// When explicit cache rules are configured, unmatched requests should not
+	// fall back to caching everything in the default location.
+	if rule == nil && len(cacheCfg.Rules) > 0 {
+		b.WriteString("        proxy_no_cache 1;\n")
+		b.WriteString("        proxy_cache_bypass 1;\n")
+		return
+	}
 	enabled := true
 	if rule != nil && rule.Enable != nil && !*rule.Enable {
 		enabled = false
@@ -1260,7 +1268,9 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
 		if err := fsutil.EnsureDir(filepath.FromSlash(logs)); err != nil {
 			log.Printf("[Warn] Ensure log dir failed: %s: %v", logs, err)
 		}
-		b.WriteString("access_log " + logs + "/access.json json_analytics if=$cdn_realtime_send;\n")
+		// Stats/log shipping must not depend on per-site realtime_send, otherwise
+		// valid site traffic disappears from rankings and charts when that flag is off.
+		b.WriteString("access_log " + logs + "/access.json json_analytics if=$cdn_stats_log;\n")
 	}
 	return ioutil.WriteFile(confPath, []byte(b.String()), 0644)
 }

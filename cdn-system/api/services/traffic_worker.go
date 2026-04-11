@@ -15,7 +15,6 @@ import (
 
 const (
 	trafficWorkerInterval = 10 * time.Minute
-	trafficHostChunkSize  = 200
 )
 
 // StartUserPackageTrafficWorker checks traffic usage and applies traffic_limit.
@@ -75,22 +74,24 @@ func checkUserPackageTraffic() {
 		return
 	}
 
-	domainMap := make(map[int64]map[string]struct{}, len(packageIDs))
+	filterMap := make(map[int64]HostFilter, len(packageIDs))
 	for _, site := range sites {
 		if len(site.Domains) == 0 {
 			continue
 		}
-		set := domainMap[site.UserPackageID]
-		if set == nil {
-			set = make(map[string]struct{})
-			domainMap[site.UserPackageID] = set
-		}
 		for _, domain := range site.Domains {
-			domain = strings.ToLower(strings.TrimSpace(domain))
-			if domain == "" {
+			exact, wildcard := splitHostPattern(domain)
+			if exact == "" && wildcard == "" {
 				continue
 			}
-			set[domain] = struct{}{}
+			filter := filterMap[site.UserPackageID]
+			if exact != "" && !containsString(filter.Exact, exact) {
+				filter.Exact = append(filter.Exact, exact)
+			}
+			if wildcard != "" && !containsString(filter.Wildcards, wildcard) {
+				filter.Wildcards = append(filter.Wildcards, wildcard)
+			}
+			filterMap[site.UserPackageID] = filter
 		}
 	}
 
@@ -98,20 +99,16 @@ func checkUserPackageTraffic() {
 		if !pkg.EndAt.IsZero() && pkg.EndAt.Before(now) {
 			continue
 		}
-		hostSet := domainMap[pkg.ID]
-		if len(hostSet) == 0 {
+		hostFilter := filterMap[pkg.ID]
+		if hostFilter.Empty() {
 			continue
-		}
-		hosts := make([]string, 0, len(hostSet))
-		for host := range hostSet {
-			hosts = append(hosts, host)
 		}
 
 		startAt := pkg.StartAt
 		if startAt.IsZero() || startAt.After(now) {
 			startAt = now.Add(-24 * time.Hour)
 		}
-		usedBytes, err := sumTrafficBytesByHosts(hosts, startAt, now, httpCfg)
+		usedBytes, err := sumTrafficBytesByFilter(hostFilter, startAt, now, httpCfg)
 		if err != nil {
 			log.Printf("[Traffic] Package %d query failed: %v", pkg.ID, err)
 			continue
@@ -144,93 +141,90 @@ func checkUserPackageTraffic() {
 	}
 }
 
-func sumTrafficBytesByHosts(hosts []string, start, end time.Time, httpCfg *httpCKConfig) (uint64, error) {
-	if len(hosts) == 0 {
+func sumTrafficBytesByFilter(hostFilter HostFilter, start, end time.Time, httpCfg *httpCKConfig) (uint64, error) {
+	if hostFilter.Empty() {
 		return 0, nil
 	}
 	if httpCfg != nil {
-		return sumTrafficBytesByHostsHTTP(httpCfg, hosts, start, end)
+		return sumTrafficBytesByFilterHTTP(httpCfg, hostFilter, start, end)
 	}
-	var total uint64
-	for i := 0; i < len(hosts); i += trafficHostChunkSize {
-		endIdx := i + trafficHostChunkSize
-		if endIdx > len(hosts) {
-			endIdx = len(hosts)
-		}
-		chunk := hosts[i:endIdx]
-		placeholders := make([]string, 0, len(chunk))
-		args := make([]interface{}, 0, 2+len(chunk))
-		args = append(args, start, end)
-		for _, host := range chunk {
-			placeholders = append(placeholders, "?")
-			args = append(args, host)
-		}
-		query := fmt.Sprintf("SELECT sum(bytes) FROM node_access_logs WHERE ts >= ? AND ts <= ? AND host IN (%s)", strings.Join(placeholders, ","))
-		var sum uint64
-		if err := db.CK.QueryRow(query, args...).Scan(&sum); err != nil {
-			return total, err
-		}
-		total += sum
+	condition, condArgs := hostFilter.SQLConditionForExpr(AccessLogSiteExpr())
+	if condition == "" {
+		return 0, nil
 	}
-	return total, nil
+	args := make([]interface{}, 0, 2+len(condArgs))
+	args = append(args, start, end)
+	args = append(args, condArgs...)
+	query := fmt.Sprintf(
+		"SELECT sum(bytes) FROM node_access_logs WHERE ts >= ? AND ts <= ? AND %s AND %s",
+		AccessLogRealSiteTrafficCondition(),
+		condition,
+	)
+	var sum uint64
+	if err := db.CK.QueryRow(query, args...).Scan(&sum); err != nil {
+		return 0, err
+	}
+	return sum, nil
 }
 
-func sumTrafficBytesByHostsHTTP(cfg *httpCKConfig, hosts []string, start, end time.Time) (uint64, error) {
-	if cfg == nil || len(hosts) == 0 {
+func sumTrafficBytesByFilterHTTP(cfg *httpCKConfig, hostFilter HostFilter, start, end time.Time) (uint64, error) {
+	if cfg == nil || hostFilter.Empty() {
 		return 0, nil
 	}
 	startStr := formatTime(start)
 	endStr := formatTime(end)
-	var total uint64
-	for i := 0; i < len(hosts); i += trafficHostChunkSize {
-		endIdx := i + trafficHostChunkSize
-		if endIdx > len(hosts) {
-			endIdx = len(hosts)
-		}
-		chunk := hosts[i:endIdx]
-		quoted := make([]string, 0, len(chunk))
-		for _, host := range chunk {
-			quoted = append(quoted, quoteClickHouseString(host))
-		}
-		query := fmt.Sprintf("SELECT sum(bytes) FROM node_access_logs WHERE ts >= toDateTime('%s') AND ts <= toDateTime('%s') AND host IN (%s)", startStr, endStr, strings.Join(quoted, ","))
-		params := url.Values{}
-		params.Set("query", query)
-		if cfg.database != "" {
-			params.Set("database", cfg.database)
-		}
-		endpoint := cfg.baseURL + "/?" + params.Encode()
-
-		req, err := http.NewRequest("POST", endpoint, nil)
-		if err != nil {
-			return total, err
-		}
-		if cfg.user != "" {
-			req.SetBasicAuth(cfg.user, cfg.pass)
-		}
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return total, err
-		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return total, err
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return total, fmt.Errorf("http status %s", resp.Status)
-		}
-		raw := strings.TrimSpace(string(body))
-		if raw == "" {
-			continue
-		}
-		sum, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return total, err
-		}
-		total += sum
+	condition := hostFilter.HTTPConditionForExpr(AccessLogSiteExpr())
+	if condition == "" {
+		return 0, nil
 	}
-	return total, nil
+	query := fmt.Sprintf(
+		"SELECT sum(bytes) FROM node_access_logs WHERE ts >= toDateTime('%s') AND ts <= toDateTime('%s') AND %s AND %s",
+		startStr,
+		endStr,
+		AccessLogRealSiteTrafficCondition(),
+		condition,
+	)
+	params := url.Values{}
+	params.Set("query", query)
+	if cfg.database != "" {
+		params.Set("database", cfg.database)
+	}
+	endpoint := cfg.baseURL + "/?" + params.Encode()
+
+	req, err := http.NewRequest("POST", endpoint, nil)
+	if err != nil {
+		return 0, err
+	}
+	if cfg.user != "" {
+		req.SetBasicAuth(cfg.user, cfg.pass)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("http status %s", resp.Status)
+	}
+	raw := strings.TrimSpace(string(body))
+	if raw == "" {
+		return 0, nil
+	}
+	return strconv.ParseUint(raw, 10, 64)
+}
+
+func containsString(list []string, target string) bool {
+	for _, item := range list {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func applyTrafficLimit(packageID int64) ([]int64, error) {

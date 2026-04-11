@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,21 +125,47 @@ func QueryRegionRanking(regionType string, start, end time.Time, hostFilter Host
 		args = append(args, clauseArgs...)
 	}
 	whereSQL := strings.Join(conditions, " AND ")
-	query := fmt.Sprintf(`SELECT remote_addr AS ip,
-		count() AS request_count,
-		sum(bytes) AS out_traffic,
-		sumIf(bytes, upstream_cache_status != 'HIT') AS origin_traffic
-		FROM node_access_logs WHERE %s
-		GROUP BY ip`, whereSQL)
-
-	items, err := queryAccessIPAggregates(query, args...)
+	items, err := queryRegionIPAggregates(whereSQL, args, limit)
 	if err != nil {
 		return nil, err
 	}
+	return buildRegionRankingFromIP(items, regionType, keyword, limit, LookupIPRegion), nil
+}
+
+func queryRegionIPAggregates(whereSQL string, args []interface{}, limit int) ([]RankItem, error) {
+	ipSampleLimit := resolveRegionIPSampleLimit(limit)
+	expressions := []string{"remote_addr", "client_ip", "realip_remote_addr"}
+	var lastErr error
+	for _, ipExpr := range expressions {
+		query := fmt.Sprintf(`SELECT %s AS ip,
+			count() AS request_count,
+			sum(bytes) AS out_traffic,
+			sumIf(bytes, upstream_cache_status != 'HIT') AS origin_traffic
+			FROM node_access_logs WHERE %s
+			GROUP BY ip
+			ORDER BY request_count DESC
+			LIMIT %d`, ipExpr, whereSQL, ipSampleLimit)
+		items, err := queryAccessIPAggregates(query, args...)
+		if err == nil {
+			return items, nil
+		}
+		lastErr = err
+		if !isUnknownIdentifierError(err) {
+			// Non-column errors usually won't be fixed by switching expressions.
+			return nil, err
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return []RankItem{}, nil
+}
+
+func buildRegionRankingFromIP(items []RankItem, regionType, keyword string, limit int, lookup func(string) (string, string)) []RankItem {
 	regionMap := make(map[string]*RankItem)
 	cache := make(map[string]string)
 	for _, row := range items {
-		region := resolveRegionForIP(row.Item, regionType, cache)
+		region := resolveRegionForIPWithLookup(row.Item, regionType, cache, lookup)
 		if region == "" {
 			region = "-"
 		}
@@ -166,7 +193,34 @@ func QueryRegionRanking(regionType string, start, end time.Time, hostFilter Host
 	if limit > 0 && len(list) > limit {
 		list = list[:limit]
 	}
-	return list, nil
+	return list
+}
+
+func resolveRegionIPSampleLimit(limit int) int {
+	// Keep region ranking fast/stable under high-cardinality IP data.
+	// 5k works well for top lists while avoiding full result scans to app side.
+	base := 5000
+	if limit <= 0 {
+		return base
+	}
+	candidate := limit * 300
+	if candidate < base {
+		candidate = base
+	}
+	if candidate > 50000 {
+		candidate = 50000
+	}
+	return candidate
+}
+
+func isUnknownIdentifierError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unknown identifier") ||
+		strings.Contains(msg, "code: 47") ||
+		strings.Contains(msg, "missing columns")
 }
 
 func QueryLatencyRanking(start, end time.Time, hostFilter HostFilter, keyword string, limit int) []LatencyRankItem {
@@ -301,20 +355,27 @@ func rankingSpecForType(rankType string) (rankingSpec, bool) {
 	case "ip":
 		return rankingSpec{ItemExpr: "remote_addr", GroupBy: "remote_addr", KeywordCond: "remote_addr LIKE ?", KeywordArgs: 1}, true
 	case "referer":
-		return rankingSpec{ItemExpr: "http_referer", GroupBy: "http_referer", KeywordCond: "http_referer LIKE ?", KeywordArgs: 1, NormalizeNil: true}, true
+		return rankingSpec{ItemExpr: AccessLogRefererExpr(), GroupBy: AccessLogRefererExpr(), KeywordCond: AccessLogRefererExpr() + " LIKE ?", KeywordArgs: 1, NormalizeNil: true}, true
 	default:
 		return rankingSpec{}, false
 	}
 }
 
 func resolveRegionForIP(ip, regionType string, cache map[string]string) string {
+	return resolveRegionForIPWithLookup(ip, regionType, cache, LookupIPRegion)
+}
+
+func resolveRegionForIPWithLookup(ip, regionType string, cache map[string]string, lookup func(string) (string, string)) string {
 	if ip == "" {
 		return ""
 	}
 	if cached, ok := cache[ip+"|"+regionType]; ok {
 		return cached
 	}
-	country, province := LookupIPRegion(ip)
+	if lookup == nil {
+		lookup = LookupIPRegion
+	}
+	country, province := lookup(ip)
 	region := ""
 	if regionType == "country" {
 		region = country
@@ -366,6 +427,7 @@ func queryAccessIPAggregates(query string, args ...interface{}) ([]RankItem, err
 	}
 	rows, err := db.CK.Query(query, args...)
 	if err != nil {
+		log.Printf("[ranking] region ip aggregate query failed: %v", err)
 		return nil, err
 	}
 	defer rows.Close()

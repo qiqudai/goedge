@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
 type StatController struct{}
 
 // ListRanking Retrieves data ranking
@@ -16,7 +17,17 @@ type StatController struct{}
 func (c *StatController) ListRanking(ctx *gin.Context) {
 	rankType := ctx.DefaultQuery("type", "domain")
 	keyword := strings.TrimSpace(ctx.Query("keyword"))
-	limit := services.ResolveResRankSize()
+	maxSize := services.ResolveResRankSize()
+	page, pageSize := parsePageParams(ctx, 20)
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > maxSize {
+		pageSize = maxSize
+	}
 
 	type RankItem struct {
 		Rank          int    `json:"rank"`
@@ -30,11 +41,20 @@ func (c *StatController) ListRanking(ctx *gin.Context) {
 	statsRange := resolveStatsRangeFromRequest(ctx)
 
 	if rankType == "latency" {
-		latencyList := services.QueryLatencyRanking(statsRange.Start, statsRange.End, hostFilter, keyword, limit)
+		latencyList := services.QueryLatencyRanking(statsRange.Start, statsRange.End, hostFilter, keyword, maxSize)
+		total := len(latencyList)
+		start, end := paginateBounds(page, pageSize, total)
+		paged := latencyList[start:end]
+		for i := range paged {
+			paged[i].Rank = start + i + 1
+		}
 		ctx.JSON(http.StatusOK, gin.H{
 			"code": 0,
 			"data": gin.H{
-				"list": latencyList,
+				"list":     paged,
+				"total":    total,
+				"page":     page,
+				"pageSize": pageSize,
 			},
 		})
 		return
@@ -43,14 +63,27 @@ func (c *StatController) ListRanking(ctx *gin.Context) {
 	var source []services.RankItem
 	switch rankType {
 	case "country", "province":
-		source, _ = services.QueryRegionRanking(rankType, statsRange.Start, statsRange.End, hostFilter, keyword, limit)
+		var err error
+		source, err = services.QueryRegionRanking(rankType, statsRange.Start, statsRange.End, hostFilter, keyword, maxSize)
+		if err != nil {
+			log.Printf("[stats] region ranking query failed: type=%s err=%v", rankType, err)
+			source = []services.RankItem{}
+		}
 	default:
-		source, _ = services.QueryAccessRanking(rankType, statsRange.Start, statsRange.End, hostFilter, keyword, limit)
+		var err error
+		source, err = services.QueryAccessRanking(rankType, statsRange.Start, statsRange.End, hostFilter, keyword, maxSize)
+		if err != nil {
+			log.Printf("[stats] access ranking query failed: type=%s err=%v", rankType, err)
+			source = []services.RankItem{}
+		}
 	}
-	list := make([]RankItem, 0, len(source))
-	for i, item := range source {
+	total := len(source)
+	start, end := paginateBounds(page, pageSize, total)
+	pagedSource := source[start:end]
+	list := make([]RankItem, 0, len(pagedSource))
+	for i, item := range pagedSource {
 		list = append(list, RankItem{
-			Rank:          i + 1,
+			Rank:          start + i + 1,
 			Item:          item.Item,
 			RequestCount:  int(item.RequestCount),
 			OutTraffic:    services.FormatBytes(item.OutBytes),
@@ -61,9 +94,27 @@ func (c *StatController) ListRanking(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"list": list,
+			"list":     list,
+			"total":    total,
+			"page":     page,
+			"pageSize": pageSize,
 		},
 	})
+}
+
+func paginateBounds(page, pageSize, total int) (int, int) {
+	if total <= 0 || pageSize <= 0 {
+		return 0, 0
+	}
+	start := (page - 1) * pageSize
+	if start >= total {
+		return total, total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return start, end
 }
 
 type usagePoint struct {
@@ -364,12 +415,12 @@ func resolveCustomRangeParams(ctx *gin.Context) (string, string) {
 }
 
 func resolveHostFilter(ctx *gin.Context) services.HostFilter {
-	if !isUserRequest(ctx) {
-		return services.HostFilter{}
-	}
-	userID := parseUserID(mustGet(ctx, "userID"))
-	if userID == 0 {
-		return services.HostFilter{}
+	userID := int64(0)
+	if isUserRequest(ctx) {
+		userID = parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 {
+			return services.HostFilter{}
+		}
 	}
 	filter, err := services.LoadHostFilter(userID)
 	if err != nil {

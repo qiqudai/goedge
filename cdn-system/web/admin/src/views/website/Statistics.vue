@@ -38,7 +38,7 @@
       <!-- 数据排行 -->
       <el-tab-pane label="数据排行" name="ranking">
         <div class="filter-container">
-           <el-radio-group v-model="rankingType" style="margin-bottom: 20px;" @change="fetchRankingList">
+           <el-radio-group v-model="rankingType" style="margin-bottom: 20px;" @change="handleRankingTypeChange">
              <el-radio-button value="domain">域名排行</el-radio-button>
              <el-radio-button value="url">热门URL</el-radio-button>
              <el-radio-button value="latency">耗时排行</el-radio-button>
@@ -49,14 +49,25 @@
            </el-radio-group>
 
            <div style="margin-bottom: 20px;">
-                <el-radio-group v-model="timeRange" size="small" @change="fetchRankingList" style="margin-right: 10px;">
+                <el-radio-group v-model="timeRange" size="small" @change="handleTimeRangeChange" style="margin-right: 10px;">
                     <el-radio-button value="10min">10分钟实时</el-radio-button>
                     <el-radio-button value="30min">30分钟</el-radio-button>
                     <el-radio-button value="1h">1小时</el-radio-button>
-                    <el-radio-button value="custom">Custom</el-radio-button>
+                    <el-radio-button value="custom">自定义</el-radio-button>
                 </el-radio-group>
-                <el-input v-model="rankingKeyword" :placeholder="searchPlaceholder" style="width: 200px;" class="filter-item" @keyup.enter="fetchRankingList" />
-                <el-button class="filter-item" type="primary" :icon="Search" @click="fetchRankingList" style="margin-left: 10px;">刷新</el-button>
+                <el-date-picker
+                  v-if="timeRange === 'custom'"
+                  v-model="customTimeRange"
+                  type="datetimerange"
+                  value-format="YYYY-MM-DD HH:mm:ss"
+                  start-placeholder="开始时间"
+                  end-placeholder="结束时间"
+                  range-separator="至"
+                  style="width: 380px; margin-right: 10px;"
+                  @change="handleCustomRangeChange"
+                />
+                <el-input v-model="rankingKeyword" :placeholder="searchPlaceholder" style="width: 200px;" class="filter-item" @keyup.enter="handleRankingSearch" />
+                <el-button class="filter-item" type="primary" :icon="Search" @click="handleRankingSearch" style="margin-left: 10px;">刷新</el-button>
            </div>
         </div>
 
@@ -72,28 +83,38 @@
         <el-table-column v-if="!isLatency" prop="request_count" label="请求次数" sortable />
         <el-table-column v-if="!isLatency" prop="out_traffic" label="出站流量" sortable />
         <el-table-column v-if="!isLatency" prop="origin_traffic" label="回源流量" sortable />
-        <el-table-column v-if="isLatency" prop="avg_time" label="平均耗时(s)" sortable>
+        <el-table-column v-if="isLatency" prop="avg_time" label="平均耗时(ms)" sortable>
           <template #default="scope">
-            <span class="latency-chip latency-avg">{{ formatSeconds(scope.row.avg_time) }}</span>
+            <span class="latency-chip latency-avg">{{ formatMilliseconds(scope.row.avg_time) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="isLatency" prop="max_time" label="最大耗时(s)" sortable>
+        <el-table-column v-if="isLatency" prop="max_time" label="最大耗时(ms)" sortable>
           <template #default="scope">
-            <span class="latency-chip latency-max">{{ formatSeconds(scope.row.max_time) }}</span>
+            <span class="latency-chip latency-max">{{ formatMilliseconds(scope.row.max_time) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="isLatency" prop="min_time" label="最小耗时(s)" sortable>
+        <el-table-column v-if="isLatency" prop="min_time" label="最小耗时(ms)" sortable>
           <template #default="scope">
-            <span class="latency-chip latency-min">{{ formatSeconds(scope.row.min_time) }}</span>
+            <span class="latency-chip latency-min">{{ formatMilliseconds(scope.row.min_time) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="isLatency" prop="p95_time" label="P95耗时(s)" sortable>
+        <el-table-column v-if="isLatency" prop="p95_time" label="P95耗时(ms)" sortable>
           <template #default="scope">
-            {{ formatSeconds(scope.row.p95_time) }}
+            {{ formatMilliseconds(scope.row.p95_time) }}
           </template>
         </el-table-column>
         <el-table-column v-if="isLatency" prop="request_count" label="请求次数" sortable />
       </el-table>
+      <div class="pagination-container">
+        <AppPagination
+          v-model:current-page="rankingPager.page"
+          v-model:page-size="rankingPager.pageSize"
+          :total="rankingPager.total"
+          persist-key="website-ranking"
+          @current-change="fetchRankingList"
+          @size-change="handleRankingPageSizeChange"
+        />
+      </div>
       </el-tab-pane>
 
     </el-tabs>
@@ -103,8 +124,10 @@
 <script setup>
 import { ref, onMounted, computed, reactive, watch, nextTick } from 'vue'
 import { Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import * as echarts from 'echarts'
+import AppPagination from '@/components/AppPagination.vue'
 
 const activeTab = ref('basic') // Default changed to basic to show charts first
 const loading = ref(false)
@@ -125,6 +148,12 @@ const rankingType = ref('domain')
 const timeRange = ref('10min')
 const rankingKeyword = ref('')
 const rankingList = ref([])
+const customTimeRange = ref([])
+const rankingPager = reactive({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
 
 const itemLabel = computed(() => {
     const map = {
@@ -154,32 +183,85 @@ const searchPlaceholder = computed(() => {
 
 const isLatency = computed(() => rankingType.value === 'latency')
 
-const formatSeconds = (value) => {
+const formatMilliseconds = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
   }
-  return Number(value).toFixed(3)
+  return Number(value).toFixed(2)
 }
 
 
 const fetchRankingList = async () => {
+  if (timeRange.value === 'custom') {
+    const validCustomRange = Array.isArray(customTimeRange.value)
+      && customTimeRange.value.length === 2
+      && customTimeRange.value[0]
+      && customTimeRange.value[1]
+    if (!validCustomRange) {
+      ElMessage.warning('请选择完整的自定义时间范围')
+      return
+    }
+  }
   loading.value = true
   try {
+    const params = {
+      type: rankingType.value,
+      time_range: timeRange.value,
+      keyword: rankingKeyword.value,
+      page: rankingPager.page,
+      pageSize: rankingPager.pageSize
+    }
+    if (timeRange.value === 'custom' && Array.isArray(customTimeRange.value) && customTimeRange.value.length === 2) {
+      params.start_time = customTimeRange.value[0]
+      params.end_time = customTimeRange.value[1]
+    }
     const res = await request.get('/stats/ranking', {
-      params: { 
-        type: rankingType.value,
-        time_range: timeRange.value,
-        keyword: rankingKeyword.value
-      }
+      params
     })
     if (res.code === 0 || res.code === 200) {
-        rankingList.value = res.data.list
+        rankingList.value = res.data.list || []
+        rankingPager.total = Number(res.data.total) || 0
+        rankingPager.page = Number(res.data.page) || rankingPager.page
+        rankingPager.pageSize = Number(res.data.pageSize) || rankingPager.pageSize
     }
   } catch (error) {
     console.error(error)
   } finally {
     loading.value = false
   }
+}
+
+const resetRankingPage = () => {
+  rankingPager.page = 1
+}
+
+const handleRankingTypeChange = () => {
+  resetRankingPage()
+  fetchRankingList()
+}
+
+const handleRankingSearch = () => {
+  resetRankingPage()
+  fetchRankingList()
+}
+
+const handleCustomRangeChange = (val) => {
+  if (timeRange.value !== 'custom') return
+  if (Array.isArray(val) && val.length === 2 && val[0] && val[1]) {
+    resetRankingPage()
+    fetchRankingList()
+  }
+}
+
+const handleTimeRangeChange = (val) => {
+  if (val === 'custom') return
+  resetRankingPage()
+  fetchRankingList()
+}
+
+const handleRankingPageSizeChange = () => {
+  rankingPager.page = 1
+  fetchRankingList()
 }
 
 // --- Chart Data Fetching & Rendering ---
@@ -271,6 +353,11 @@ onMounted(() => {
 .chart {
     width: 100%;
     height: 350px;
+}
+.pagination-container {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 .latency-chip {
   --latency-text: #1f2937;

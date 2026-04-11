@@ -98,6 +98,10 @@ func (f HostFilter) Empty() bool {
 }
 
 func (f HostFilter) SQLCondition() (string, []interface{}) {
+	return f.SQLConditionForExpr(AccessLogSiteExpr())
+}
+
+func (f HostFilter) SQLConditionForExpr(expr string) (string, []interface{}) {
 	conditions := make([]string, 0)
 	args := make([]interface{}, 0)
 	if len(f.Exact) > 0 {
@@ -106,10 +110,10 @@ func (f HostFilter) SQLCondition() (string, []interface{}) {
 			placeholders = append(placeholders, "?")
 			args = append(args, host)
 		}
-		conditions = append(conditions, "host IN ("+strings.Join(placeholders, ",")+")")
+		conditions = append(conditions, expr+" IN ("+strings.Join(placeholders, ",")+")")
 	}
 	for _, suffix := range f.Wildcards {
-		conditions = append(conditions, "host LIKE ?")
+		conditions = append(conditions, expr+" LIKE ?")
 		args = append(args, "%"+suffix)
 	}
 	if len(conditions) == 0 {
@@ -119,16 +123,20 @@ func (f HostFilter) SQLCondition() (string, []interface{}) {
 }
 
 func (f HostFilter) HTTPCondition() string {
+	return f.HTTPConditionForExpr(AccessLogSiteExpr())
+}
+
+func (f HostFilter) HTTPConditionForExpr(expr string) string {
 	conditions := make([]string, 0)
 	if len(f.Exact) > 0 {
 		quoted := make([]string, 0, len(f.Exact))
 		for _, host := range f.Exact {
 			quoted = append(quoted, quoteClickHouseString(host))
 		}
-		conditions = append(conditions, "host IN ("+strings.Join(quoted, ",")+")")
+		conditions = append(conditions, expr+" IN ("+strings.Join(quoted, ",")+")")
 	}
 	for _, suffix := range f.Wildcards {
-		conditions = append(conditions, "host LIKE "+quoteClickHouseString("%"+suffix))
+		conditions = append(conditions, expr+" LIKE "+quoteClickHouseString("%"+suffix))
 	}
 	if len(conditions) == 0 {
 		return ""
