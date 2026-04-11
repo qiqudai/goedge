@@ -71,8 +71,12 @@
           </template>
           <div class="overview-grid">
             <div class="overview-item">
-              <div class="overview-title">带宽峰值</div>
+              <div class="overview-title">业务带宽峰值</div>
               <div class="overview-value">{{ overview.bandwidth_peak || '-' }}</div>
+            </div>
+            <div v-if="isAdmin" class="overview-item">
+              <div class="overview-title">节点带宽峰值</div>
+              <div class="overview-value">{{ overview.node_bandwidth_peak || '-' }}</div>
             </div>
             <div class="overview-item">
               <div class="overview-title">请求数</div>
@@ -167,9 +171,12 @@
                 </span>
               </div>
               <div class="status-row">
-                <span>Elasticsearch</span>
+                <span>CK</span>
                 <span class="status-right">
-                  <span class="status-dot" :class="statusDot(systemStatus.elastic)"></span>
+                  <el-tooltip v-if="ckErrorTip" :content="ckErrorTip" placement="top">
+                    <span class="status-dot" :class="statusDot(ckStatus)"></span>
+                  </el-tooltip>
+                  <span v-else class="status-dot" :class="statusDot(ckStatus)"></span>
                 </span>
               </div>
               <div class="status-row">
@@ -318,6 +325,15 @@ const normalizeTopList = list => {
 }
 
 const topRows = computed(() => normalizeTopList(topLists.value[topTab.value]))
+const ckStatus = computed(() => {
+  if (typeof systemStatus.value?.ck === 'boolean') return systemStatus.value.ck
+  return systemStatus.value?.elastic
+})
+const ckErrorTip = computed(() => {
+  const tips = Array.isArray(systemStatus.value?.ck_tips) ? systemStatus.value.ck_tips : []
+  const clean = tips.map(item => String(item || '').trim()).filter(Boolean)
+  return clean.join('；')
+})
 
 const initChart = () => {
   const chartDom = document.getElementById('trendChart')
@@ -423,6 +439,7 @@ const fetchData = async () => {
     const stats = data.stats || {}
     overview.value = {
       bandwidth_peak: stats.bandwidth_peak || stats.bandwidth || '-',
+      node_bandwidth_peak: stats.node_bandwidth_peak || '-',
       requests: stats.requests || '-',
       traffic: stats.traffic || '-',
       blocked_ips: stats.blocked_ips || '-'
@@ -534,7 +551,7 @@ onMounted(() => {
 }
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 20px;
 }
 .overview-item {

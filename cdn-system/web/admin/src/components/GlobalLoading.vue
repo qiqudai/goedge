@@ -97,7 +97,7 @@ onUnmounted(() => {
 <style scoped>
 .global-loading-overlay {
   position: fixed;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--app-loading-overlay-bg, rgba(255, 255, 255, 0.7));
   backdrop-filter: blur(8px);
   z-index: 99999;
   display: flex;
@@ -115,7 +115,7 @@ onUnmounted(() => {
 
 .loading-text {
   font-size: 16px;
-  color: #409eff;
+  color: var(--app-loading-text-color, #409eff);
   font-weight: 500;
   letter-spacing: 1px;
 }
@@ -141,7 +141,7 @@ onUnmounted(() => {
   display: block;
   width: 25%;
   height: 25%;
-  background-color: #409eff;
+  background-color: var(--app-loading-dot-color, #409eff);
   border-radius: 100%;
   animation: dotBefore 2s infinite ease-in-out both;
 }
@@ -178,14 +178,14 @@ onUnmounted(() => {
 }
 
 :global(:root[data-theme="dark"] .global-loading-overlay) {
-  background: rgba(23, 26, 32, 0.8);
+  background: var(--app-loading-overlay-bg, rgba(23, 26, 32, 0.8));
 }
 
 :global(:root[data-theme="dark"] .global-loading-overlay .loading-text) {
-  color: #8ab5ff;
+  color: var(--app-loading-text-color, #8ab5ff);
 }
 
 :global(:root[data-theme="dark"] .global-loading-overlay .dot::before) {
-  background-color: #8ab5ff;
+  background-color: var(--app-loading-dot-color, #8ab5ff);
 }
 </style>

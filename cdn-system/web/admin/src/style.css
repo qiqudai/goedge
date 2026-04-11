@@ -56,6 +56,10 @@
   --el-disabled-bg-color: #f5f7fa;
   --el-disabled-text-color: #a8abb2;
   --el-disabled-border-color: #e4e7ed;
+  --app-loading-overlay-bg: rgba(255, 255, 255, 0.7);
+  --app-loading-text-color: #409eff;
+  --app-loading-dot-color: #409eff;
+  --app-loading-spinner-color: #409eff;
 }
 
 :root[data-theme="dark"] {
@@ -106,6 +110,18 @@
   --el-disabled-bg-color: #242830;
   --el-disabled-text-color: #7a8291;
   --el-disabled-border-color: #343841;
+  --app-loading-overlay-bg: rgba(23, 26, 32, 0.8);
+  --app-loading-text-color: #8ab5ff;
+  --app-loading-dot-color: #8ab5ff;
+  --app-loading-spinner-color: #8ab5ff;
+}
+
+.app-dialog-loading-mask .el-loading-spinner .path {
+  stroke: var(--app-loading-spinner-color);
+}
+
+.app-dialog-loading-mask .el-loading-spinner .el-loading-text {
+  color: var(--app-loading-text-color);
 }
 
 body {

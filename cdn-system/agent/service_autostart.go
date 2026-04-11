@@ -35,17 +35,28 @@ func maybeConfigureAutostart(configPath string) {
 		exePath = abs
 	}
 
+	exeDir := filepath.Dir(exePath)
+
 	cfgPath := strings.TrimSpace(configPath)
 	if cfgPath == "" {
-		cfgPath = filepath.Join(filepath.Dir(exePath), "agent.json")
+		cfgPath = filepath.Join(exeDir, "agent.json")
+	}
+	// If cfgPath is relative, resolve it relative to the exe directory, not cwd.
+	if !filepath.IsAbs(cfgPath) {
+		cfgPath = filepath.Join(exeDir, cfgPath)
 	}
 	if abs, err := filepath.Abs(cfgPath); err == nil {
 		cfgPath = abs
 	}
 
 	workDir := strings.TrimSpace(WorkDir)
-	if workDir == "" {
-		workDir = filepath.Dir(exePath)
+	// "." means "current directory at launch time" which is unreliable inside systemd.
+	// Always anchor WorkingDirectory to the directory containing the binary.
+	if workDir == "" || workDir == "." {
+		workDir = exeDir
+	}
+	if !filepath.IsAbs(workDir) {
+		workDir = filepath.Join(exeDir, workDir)
 	}
 	if abs, err := filepath.Abs(workDir); err == nil {
 		workDir = abs

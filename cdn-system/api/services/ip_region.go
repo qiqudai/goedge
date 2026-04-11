@@ -24,6 +24,7 @@ func loadIPSearcher() (*xdb.Searcher, error) {
 			searcher, err := xdb.NewWithFileOnly(xdb.IPv4, path)
 			if err == nil && searcher != nil {
 				ipSearcher = searcher
+				ipSearcherErr = nil
 				return
 			}
 			ipSearcherErr = err
@@ -59,8 +60,8 @@ func LookupIPRegion(ip string) (string, string) {
 	if len(parts) > 0 {
 		country = cleanRegion(parts[0])
 	}
-	if len(parts) > 2 {
-		province = cleanRegion(parts[2])
+	if len(parts) > 1 {
+		province = cleanRegion(parts[1])
 	}
 	return country, province
 }

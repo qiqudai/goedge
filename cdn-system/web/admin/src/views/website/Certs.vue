@@ -117,11 +117,11 @@
       <el-table-column label="失败原因" min-width="150" show-overflow-tooltip>
          <template #default="{ row }">
                                 <span
-                                  v-if="row.state === 'fail' && (row.ret || row.issue_task_ret)"
+                                  v-if="displayState(row) === 'fail' && issueFailReason(row)"
                                   class="error-text"
-                                  @click="showError(row.ret || row.issue_task_ret)"
+                                  @click="showError(issueFailReason(row))"
                                 >
-                                   {{ row.ret || row.issue_task_ret }}
+                                   {{ issueFailReason(row) }}
                                 </span>
             <span v-else>-</span>
          </template>
@@ -408,6 +408,31 @@ const handleDownload = row => {
     link.click()
     window.URL.revokeObjectURL(url)
   })
+}
+
+const issueFailReason = (row) => {
+  if (!row) return ''
+  const direct = String(row.ret || '').trim()
+  if (direct) return direct
+
+  const raw = String(row.issue_task_ret || '').trim()
+  if (!raw) return ''
+  if (!raw.startsWith('[')) return raw
+
+  try {
+    const logs = JSON.parse(raw)
+    if (!Array.isArray(logs) || logs.length === 0) return raw
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+      const item = logs[i] || {}
+      if (item.state === 'fail' && item.message) {
+        return String(item.message)
+      }
+    }
+    const last = logs[logs.length - 1] || {}
+    return String(last.message || raw)
+  } catch (_) {
+    return raw
+  }
 }
 
 const handleDownloadBatch = () => {

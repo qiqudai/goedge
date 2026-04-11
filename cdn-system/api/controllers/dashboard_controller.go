@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -252,6 +253,7 @@ func emptyChartStats() gin.H {
 func queryRanking(rankType string, rng services.StatsRange, hostFilter services.HostFilter, limit int) []services.RankItem {
 	list, err := services.QueryAccessRanking(rankType, rng.Start, rng.End, hostFilter, "", limit)
 	if err != nil {
+		log.Printf("[dashboard] ranking query failed: type=%s err=%v", rankType, err)
 		return []services.RankItem{}
 	}
 	return list
@@ -260,6 +262,7 @@ func queryRanking(rankType string, rng services.StatsRange, hostFilter services.
 func queryRegionRanking(regionType string, rng services.StatsRange, hostFilter services.HostFilter, limit int) []services.RankItem {
 	list, err := services.QueryRegionRanking(regionType, rng.Start, rng.End, hostFilter, "", limit)
 	if err != nil {
+		log.Printf("[dashboard] region ranking query failed: type=%s err=%v", regionType, err)
 		return []services.RankItem{}
 	}
 	return list

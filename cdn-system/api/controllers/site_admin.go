@@ -966,9 +966,30 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 	case "clear_cache":
 		// Create a cache clear task that will be pulled by all agents.
 		now := time.Now()
+		var sites []models.Site
+		if err := db.DB.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
+		domainSet := make(map[string]struct{})
+		domains := make([]string, 0, len(sites))
+		for _, site := range sites {
+			for _, domain := range site.Domains {
+				trimmed := strings.TrimSpace(domain)
+				if trimmed == "" {
+					continue
+				}
+				if _, exists := domainSet[trimmed]; exists {
+					continue
+				}
+				domainSet[trimmed] = struct{}{}
+				domains = append(domains, trimmed)
+			}
+		}
 		payload := map[string]interface{}{
 			"action":   "clear_cache",
 			"site_ids": req.IDs,
+			"domains":  domains,
 		}
 		raw, _ := json.Marshal(payload)
 		metaRaw := ""

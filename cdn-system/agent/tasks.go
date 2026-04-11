@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"cdn-common/acme"
 	"cdn-common/i18n"
 	"crypto/md5"
@@ -35,7 +36,14 @@ func processTask(id int64, taskType string, data string, report TaskProgressRepo
 	case "refresh_dir":
 		return "", purgeDirs(splitLines(data))
 	case "clear_cache":
-		cacheDir := filepath.Join(runtimeRoot(), "cache")
+		var payload cacheClearPayload
+		if raw := strings.TrimSpace(data); raw != "" {
+			_ = json.Unmarshal([]byte(raw), &payload)
+		}
+		if len(payload.Domains) > 0 {
+			return "", purgeDomains(payload.Domains)
+		}
+		cacheDir := resolveCacheDir()
 		return "", clearCacheDir(cacheDir)
 	case "preheat":
 		return "", preheatURLs(splitLines(data))
@@ -203,8 +211,33 @@ func purgeDirs(urls []string) error {
 	if len(urls) == 0 {
 		return nil
 	}
-	cacheDir := filepath.Join(runtimeRoot(), "cache")
-	return clearCacheDir(cacheDir)
+	targets := make([]cacheDirTarget, 0, len(urls))
+	for _, raw := range urls {
+		target, ok := parseCacheDirTarget(raw)
+		if !ok {
+			continue
+		}
+		targets = append(targets, target)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	cacheDir := resolveCacheDir()
+	return purgeCacheEntriesByMatch(cacheDir, func(cacheKey string) bool {
+		host, path := splitCacheKeyHostPath(cacheKey)
+		if host == "" {
+			return false
+		}
+		for _, target := range targets {
+			if host != target.host {
+				continue
+			}
+			if target.pathPrefix == "/" || strings.HasPrefix(path, target.pathPrefix) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func purgeURL(raw string) error {
@@ -212,30 +245,61 @@ func purgeURL(raw string) error {
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("invalid url: %s", raw)
 	}
-	host := u.Hostname()
-	uri := u.EscapedPath()
-	if uri == "" {
-		uri = "/"
+	cacheDir := resolveCacheDir()
+	keys := buildPurgeCacheKeys(u)
+	var lastErr error
+	for _, cacheKey := range keys {
+		sum := md5.Sum([]byte(cacheKey))
+		hash := fmt.Sprintf("%x", sum)
+		if len(hash) < 3 {
+			continue
+		}
+		path := filepath.Join(cacheDir, hash[0:1], hash[1:3], hash)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			lastErr = err
+		}
 	}
-	args := u.RawQuery
-	cacheKey := host + uri
-	if args != "" {
-		cacheKey = cacheKey + "?" + args
+	return lastErr
+}
+
+type cacheClearPayload struct {
+	Action  string   `json:"action"`
+	SiteIDs []int64  `json:"site_ids"`
+	Domains []string `json:"domains"`
+}
+
+type cacheDirTarget struct {
+	host       string
+	pathPrefix string
+}
+
+func parseCacheDirTarget(raw string) (cacheDirTarget, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return cacheDirTarget{}, false
 	}
-	sum := md5.Sum([]byte(cacheKey))
-	hash := fmt.Sprintf("%x", sum)
-	cacheDir := filepath.Join(runtimeRoot(), "cache")
-	if len(hash) < 3 {
-		return nil
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return cacheDirTarget{}, false
 	}
-	path := filepath.Join(cacheDir, hash[0:1], hash[1:3], hash)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
+	pathPrefix := u.EscapedPath()
+	if pathPrefix == "" {
+		pathPrefix = "/"
 	}
-	return nil
+	if !strings.HasPrefix(pathPrefix, "/") {
+		pathPrefix = "/" + pathPrefix
+	}
+	if !strings.HasSuffix(pathPrefix, "/") {
+		pathPrefix += "/"
+	}
+	return cacheDirTarget{host: host, pathPrefix: pathPrefix}, true
 }
 
 func clearCacheDir(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil
+	}
 	entries, err := ioutil.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -250,6 +314,152 @@ func clearCacheDir(dir string) error {
 		}
 	}
 	return nil
+}
+
+func buildPurgeCacheKeys(u *url.URL) []string {
+	if u == nil {
+		return nil
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return nil
+	}
+	escapedPath := strings.TrimSpace(u.EscapedPath())
+	if escapedPath == "" {
+		escapedPath = "/"
+	}
+	decodedPath := strings.TrimSpace(u.Path)
+	if decodedPath == "" {
+		decodedPath = escapedPath
+	}
+	rawQuery := strings.TrimSpace(u.RawQuery)
+	normalizedQuery := ""
+	if values, err := url.ParseQuery(rawQuery); err == nil {
+		normalizedQuery = values.Encode()
+	}
+
+	addUnique := func(out *[]string, seen map[string]struct{}, key string) {
+		if strings.TrimSpace(key) == "" {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		*out = append(*out, key)
+	}
+
+	seen := make(map[string]struct{}, 8)
+	out := make([]string, 0, 8)
+	addUnique(&out, seen, host+escapedPath)
+	addUnique(&out, seen, host+decodedPath)
+	if rawQuery != "" {
+		addUnique(&out, seen, host+escapedPath+"?"+rawQuery)
+		addUnique(&out, seen, host+decodedPath+"?"+rawQuery)
+	}
+	if normalizedQuery != "" && normalizedQuery != rawQuery {
+		addUnique(&out, seen, host+escapedPath+"?"+normalizedQuery)
+		addUnique(&out, seen, host+decodedPath+"?"+normalizedQuery)
+	}
+	return out
+}
+
+func purgeDomains(domains []string) error {
+	if len(domains) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(domains))
+	for _, domain := range domains {
+		trimmed := strings.ToLower(strings.TrimSpace(domain))
+		if trimmed == "" {
+			continue
+		}
+		set[trimmed] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	cacheDir := resolveCacheDir()
+	return purgeCacheEntriesByMatch(cacheDir, func(cacheKey string) bool {
+		host, _ := splitCacheKeyHostPath(cacheKey)
+		if host == "" {
+			return false
+		}
+		_, ok := set[host]
+		return ok
+	})
+}
+
+func purgeCacheEntriesByMatch(cacheDir string, matcher func(cacheKey string) bool) error {
+	cacheDir = strings.TrimSpace(cacheDir)
+	if cacheDir == "" || matcher == nil {
+		return nil
+	}
+	var lastErr error
+	_ = filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			lastErr = err
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		cacheKey, ok := readCacheKey(path)
+		if !ok {
+			return nil
+		}
+		if !matcher(cacheKey) {
+			return nil
+		}
+		if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
+			lastErr = rmErr
+		}
+		return nil
+	})
+	return lastErr
+}
+
+func readCacheKey(path string) (string, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer file.Close()
+
+	// nginx cache header keeps `KEY: ...` in the metadata header region.
+	reader := bufio.NewReader(file)
+	for i := 0; i < 64; i++ {
+		line, readErr := reader.ReadString('\n')
+		if len(line) > 0 {
+			if idx := strings.Index(line, "KEY: "); idx >= 0 {
+				key := strings.TrimSpace(line[idx+5:])
+				if key != "" {
+					return key, true
+				}
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+	return "", false
+}
+
+func splitCacheKeyHostPath(cacheKey string) (string, string) {
+	cacheKey = strings.TrimSpace(cacheKey)
+	if cacheKey == "" {
+		return "", ""
+	}
+	idx := strings.IndexAny(cacheKey, "/?")
+	if idx <= 0 {
+		return strings.ToLower(cacheKey), "/"
+	}
+	host := strings.ToLower(strings.TrimSpace(cacheKey[:idx]))
+	path := cacheKey[idx:]
+	if strings.HasPrefix(path, "?") {
+		path = "/" + path
+	}
+	return host, path
 }
 
 func preheatURLs(urls []string) error {

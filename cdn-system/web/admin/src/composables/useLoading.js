@@ -42,7 +42,8 @@ export function useLoading() {
         dialogService = ElLoading.service({
           target: dialogEl,
           text,
-          background: 'rgba(255, 255, 255, 0.7)',
+          background: 'var(--app-loading-overlay-bg, rgba(255, 255, 255, 0.7))',
+          customClass: 'app-dialog-loading-mask',
           lock: false
         })
       }
