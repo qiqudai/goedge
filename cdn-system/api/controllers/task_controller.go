@@ -412,6 +412,7 @@ func normalizePurgeURLs(urls []string, adminMode bool, userID int64) ([]string, 
 		if err != nil || parsed.Host == "" {
 			return nil, errors.New(i18n.T("task.url_invalid_format"))
 		}
+		normalizePurgeURLPath(parsed)
 		host := parsed.Hostname()
 		if host == "" {
 			return nil, errors.New(i18n.T("task.url_invalid_format"))
@@ -440,10 +441,20 @@ func normalizePurgeURLs(urls []string, adminMode bool, userID int64) ([]string, 
 		if !isKnownDomain(knownDomains, host, port) {
 			return nil, fmt.Errorf(i18n.T("task.domain_not_found"), host)
 		}
-		out = append(out, raw)
+		out = append(out, parsed.String())
 	}
 	return out, nil
 }
+
+func normalizePurgeURLPath(parsed *url.URL) {
+	if parsed == nil {
+		return
+	}
+	if parsed.Path == "" && parsed.RawPath == "" {
+		parsed.Path = "/"
+	}
+}
+
 func isPurgeType(val string) bool {
 	switch val {
 	case "refresh_url", "refresh_dir", "preheat":
