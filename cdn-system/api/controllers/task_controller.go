@@ -566,8 +566,9 @@ func consumePurgeQuota(userID int64, taskType string, count int) error {
 }
 
 type knownDomainSet struct {
-	Exact map[string]struct{}
-	Host  map[string]struct{}
+	Exact     map[string]struct{}
+	Host      map[string]struct{}
+	Wildcards []string
 }
 
 func loadSiteDomains(adminMode bool, userID int64) (*knownDomainSet, error) {
@@ -581,6 +582,8 @@ func loadSiteDomains(adminMode bool, userID int64) (*knownDomainSet, error) {
 	}
 	exact := map[string]struct{}{}
 	hostOnly := map[string]struct{}{}
+	wildcards := make([]string, 0)
+	wildcardSet := map[string]struct{}{}
 	for _, site := range sites {
 		for _, domain := range site.Domains {
 			domain = strings.TrimSpace(domain)
@@ -588,12 +591,19 @@ func loadSiteDomains(adminMode bool, userID int64) (*knownDomainSet, error) {
 				continue
 			}
 			exact[domain] = struct{}{}
+			if _, wildcard := splitKnownDomainPattern(domain); wildcard != "" {
+				if _, exists := wildcardSet[wildcard]; !exists {
+					wildcardSet[wildcard] = struct{}{}
+					wildcards = append(wildcards, wildcard)
+				}
+				continue
+			}
 			if h := splitDomainHost(domain); h != "" {
 				hostOnly[h] = struct{}{}
 			}
 		}
 	}
-	return &knownDomainSet{Exact: exact, Host: hostOnly}, nil
+	return &knownDomainSet{Exact: exact, Host: hostOnly, Wildcards: wildcards}, nil
 }
 
 func splitDomainHost(domain string) string {
@@ -608,10 +618,28 @@ func splitDomainHost(domain string) string {
 	return domain
 }
 
+func splitKnownDomainPattern(domain string) (string, string) {
+	host := strings.TrimSpace(strings.ToLower(splitDomainHost(domain)))
+	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(host, "*.") {
+		suffix := strings.TrimSpace(strings.TrimPrefix(host, "*."))
+		if suffix == "" {
+			return "", ""
+		}
+		return "", suffix
+	}
+	return host, ""
+}
+
 func isKnownDomain(known *knownDomainSet, host, port string) bool {
 	if known == nil {
 		return false
 	}
+	host = strings.TrimSpace(strings.ToLower(host))
+	host = strings.TrimSuffix(host, ".")
 	if port != "" {
 		if _, ok := known.Exact[host+":"+port]; ok {
 			return true
@@ -622,6 +650,11 @@ func isKnownDomain(known *knownDomainSet, host, port string) bool {
 	}
 	if _, ok := known.Host[host]; ok {
 		return true
+	}
+	for _, suffix := range known.Wildcards {
+		if matchesWildcardHost(host, suffix) {
+			return true
+		}
 	}
 	return false
 }
@@ -639,6 +672,15 @@ func matchWildcardDomains(known *knownDomainSet, suffix string) []string {
 		}
 	}
 	return result
+}
+
+func matchesWildcardHost(host string, suffix string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	suffix = strings.TrimSpace(strings.ToLower(suffix))
+	if host == "" || suffix == "" || host == suffix {
+		return false
+	}
+	return strings.HasSuffix(host, "."+suffix)
 }
 
 func exceedsLimit(limit int, used int, add int) bool {

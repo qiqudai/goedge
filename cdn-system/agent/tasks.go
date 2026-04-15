@@ -369,14 +369,28 @@ func purgeDomains(domains []string) error {
 		return nil
 	}
 	set := make(map[string]struct{}, len(domains))
+	wildcards := make([]string, 0)
+	wildcardSet := make(map[string]struct{}, len(domains))
 	for _, domain := range domains {
 		trimmed := strings.ToLower(strings.TrimSpace(domain))
 		if trimmed == "" {
 			continue
 		}
+		if strings.HasPrefix(trimmed, "*.") {
+			suffix := strings.TrimSpace(strings.TrimPrefix(trimmed, "*."))
+			if suffix == "" {
+				continue
+			}
+			if _, exists := wildcardSet[suffix]; exists {
+				continue
+			}
+			wildcardSet[suffix] = struct{}{}
+			wildcards = append(wildcards, suffix)
+			continue
+		}
 		set[trimmed] = struct{}{}
 	}
-	if len(set) == 0 {
+	if len(set) == 0 && len(wildcards) == 0 {
 		return nil
 	}
 	cacheDir := resolveCacheDir()
@@ -385,9 +399,25 @@ func purgeDomains(domains []string) error {
 		if host == "" {
 			return false
 		}
-		_, ok := set[host]
-		return ok
+		if _, ok := set[host]; ok {
+			return true
+		}
+		for _, suffix := range wildcards {
+			if matchesWildcardCacheHost(host, suffix) {
+				return true
+			}
+		}
+		return false
 	})
+}
+
+func matchesWildcardCacheHost(host string, suffix string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	suffix = strings.TrimSpace(strings.ToLower(suffix))
+	if host == "" || suffix == "" || host == suffix {
+		return false
+	}
+	return strings.HasSuffix(host, "."+suffix)
 }
 
 func purgeCacheEntriesByMatch(cacheDir string, matcher func(cacheKey string) bool) error {
