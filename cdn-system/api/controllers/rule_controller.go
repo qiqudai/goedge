@@ -573,6 +573,42 @@ func (c *RuleController) GetMatcher(ctx *gin.Context) {
 	})
 }
 
+// DeleteMatcher Deletes a matcher
+// DELETE /api/v1/admin/rules/cc/matchers/:id
+func (c *RuleController) DeleteMatcher(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
+
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
+		return
+	}
+
+	var matcher models.CCMatch
+	if err := db.DB.Where("id = ?", id).First(&matcher).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": T("matcher not found")})
+		return
+	}
+
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || matcher.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+	}
+
+	if err := db.DB.Delete(&matcher).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete matcher")})
+		return
+	}
+
+	services.BumpConfigVersion("cc_match", []int64{id})
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
 // ListFilters Lists available filters
 // GET /api/v1/admin/rules/cc/filters
 func (c *RuleController) ListFilters(ctx *gin.Context) {
