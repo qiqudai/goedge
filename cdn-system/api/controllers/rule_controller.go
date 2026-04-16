@@ -300,6 +300,42 @@ func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
 	})
 }
 
+// DeleteCCRuleGroup Deletes a rule group
+// DELETE /api/v1/admin/rules/cc/groups/:id
+func (c *RuleController) DeleteCCRuleGroup(ctx *gin.Context) {
+	if !ensureCustomCCRuleAllowed(ctx) {
+		return
+	}
+
+	id, _ := strconv.ParseInt(ctx.Param("id"), 10, 64)
+	if id == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": T("invalid id")})
+		return
+	}
+
+	var rule models.CCRule
+	if err := db.DB.Where("id = ?", id).First(&rule).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": T("rule group not found")})
+		return
+	}
+
+	if isUserRequest(ctx) {
+		userID := parseUserID(mustGet(ctx, "userID"))
+		if userID == 0 || rule.UserID != userID {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+			return
+		}
+	}
+
+	if err := db.DB.Delete(&rule).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete rule group")})
+		return
+	}
+
+	services.BumpConfigVersion("cc_rule", []int64{id})
+	ctx.JSON(http.StatusOK, gin.H{"code": 0})
+}
+
 // ListMatchers Lists available matchers
 // GET /api/v1/admin/rules/cc/matchers
 func (c *RuleController) ListMatchers(ctx *gin.Context) {
