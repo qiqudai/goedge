@@ -18,6 +18,8 @@ type opLogContent struct {
 	Query       string `json:"query"`
 	Status      int    `json:"status"`
 	ContentSize int64  `json:"content_size"`
+	URL         string `json:"url,omitempty"`
+	TaskType    string `json:"task_type,omitempty"`
 }
 
 // OperationLog writes op_log for mutating admin requests.
@@ -58,6 +60,16 @@ func OperationLog() gin.HandlerFunc {
 			Query:       c.Request.URL.RawQuery,
 			Status:      c.Writer.Status(),
 			ContentSize: c.Request.ContentLength,
+		}
+		if urlVal, ok := c.Get("op_log_url"); ok {
+			if urlStr, ok := urlVal.(string); ok {
+				content.URL = strings.TrimSpace(urlStr)
+			}
+		}
+		if taskTypeVal, ok := c.Get("op_log_task_type"); ok {
+			if taskType, ok := taskTypeVal.(string); ok {
+				content.TaskType = strings.TrimSpace(taskType)
+			}
 		}
 		payload, _ := json.Marshal(content)
 

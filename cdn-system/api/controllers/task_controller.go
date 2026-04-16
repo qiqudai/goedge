@@ -75,6 +75,7 @@ func (c *TaskController) Create(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"code": 1, "msg": T(err.Error())})
 		return
 	}
+	recordPurgeOpLog(ctx, input.Type, urls)
 
 	if err := consumePurgeQuota(userID, input.Type, len(urls)); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": T(err.Error())})
@@ -180,6 +181,7 @@ func (c *TaskController) Resubmit(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"code": 1, "msg": T(err.Error())})
 		return
 	}
+	recordPurgeOpLog(ctx, task.Type, urls)
 	if err := consumePurgeQuota(userID, task.Type, len(urls)); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": T(err.Error())})
 		return
@@ -396,6 +398,21 @@ func splitTaskLines(input string) []string {
 		}
 	}
 	return out
+}
+
+func recordPurgeOpLog(ctx *gin.Context, taskType string, urls []string) {
+	if ctx == nil {
+		return
+	}
+	taskType = strings.TrimSpace(taskType)
+	if taskType == "" {
+		return
+	}
+	if len(urls) == 0 {
+		return
+	}
+	ctx.Set("op_log_url", strings.Join(urls, "\n"))
+	ctx.Set("op_log_task_type", taskType)
 }
 
 func normalizePurgeURLs(urls []string, adminMode bool, userID int64) ([]string, error) {
