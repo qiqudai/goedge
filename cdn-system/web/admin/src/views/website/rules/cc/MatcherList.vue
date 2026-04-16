@@ -29,17 +29,19 @@
     <el-table-column prop="created_at" label="创建时间" width="160">
       <template #default="{row}">{{ formatTime(row.created_at) }}</template>
     </el-table-column>
-    <el-table-column label="操作" width="120" align="center">
+    <el-table-column label="操作" width="140" align="center">
       <template #default="{row}">
-        <el-button type="primary" link size="small" @click="handleEdit(row)">管理</el-button>
-        <el-dropdown trigger="click" @command="(cmd) => handleCommand(cmd, row)">
-          <el-button type="primary" link size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div class="action-cell">
+          <el-button type="primary" link size="small" @click="handleEdit(row)">管理</el-button>
+          <el-dropdown trigger="click" @command="(cmd) => handleCommand(cmd, row)">
+            <el-button type="primary" link size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </template>
     </el-table-column>
   </AppTable>
@@ -300,6 +302,13 @@ onMounted(() => {
 }
 .text-success { color: #67C23A; }
 .text-danger { color: #F56C6C; }
+.action-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
 .form-helper {
   font-size: 12px;
   color: #909399;
