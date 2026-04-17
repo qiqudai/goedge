@@ -46,7 +46,10 @@
   <el-table-column prop="site_id" label="网站ID" width="100" align="center" />
       <el-table-column label="域名" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
-          <span>{{ row.domain }}</span>
+          <div>{{ row.domain }}</div>
+          <div v-if="row.resolveResult?.wildcard_tested && row.resolveResult?.tested_domain" class="resolve-subline">
+            泛解析测试: {{ row.resolveResult.tested_domain }}
+          </div>
           <el-icon class="copy-icon" @click.stop="copyText(row.domain)"><CopyDocument /></el-icon>
           <el-tooltip content="打开网站" placement="top">
             <el-icon class="open-icon" @click.stop="openSite(row)"><Connection /></el-icon>
@@ -63,18 +66,24 @@
     <template #default="{ row }">
       <el-tag v-if="row.resolveStatus === 'checking'" type="warning" size="small">检测中</el-tag>
       <el-tag v-else-if="row.resolveStatus === 'success'" type="success" size="small">正常</el-tag>
+      <el-tag v-else-if="row.resolveStatus === 'partial'" type="warning" size="small">可访问</el-tag>
       <el-tag v-else-if="row.resolveStatus === 'failed'" type="danger" size="small">异常</el-tag>
       <el-popover v-else-if="row.resolveResult" trigger="hover" placement="top" :width="200">
          <template #default>
             <div style="font-size:12px">
-               <div v-if="row.resolveResult.cname">CNAME: {{ row.resolveResult.cname }}</div>
+               <div v-if="row.resolveResult.tested_domain">检测域名: {{ row.resolveResult.tested_domain }}</div>
+               <div v-if="row.resolveResult.cname_chain?.length">CNAME链: {{ row.resolveResult.cname_chain.join(' -> ') }}</div>
+               <div v-else-if="row.resolveResult.cname">CNAME: {{ row.resolveResult.cname }}</div>
                <div v-if="row.resolveResult.ips">IP: {{ row.resolveResult.ips.join(', ') }}</div>
+               <div v-if="row.resolveResult.http_ok">HTTP: {{ row.resolveResult.http_status }} {{ row.resolveResult.http_url }}</div>
+               <div v-else-if="row.resolveResult.http_error">HTTP: {{ row.resolveResult.http_error }}</div>
+               <div v-if="row.resolveResult.cname_matches_expected">结果: 命中预期CNAME</div>
                <div v-if="row.resolveResult.error" style="color:red">{{ row.resolveResult.error }}</div>
             </div>
          </template>
          <template #reference>
             <el-tag :type="row.resolveStatus === 'success' ? 'success' : 'danger'" size="small">
-               {{ row.resolveStatus === 'success' ? '正常' : (row.resolveStatus === 'failed' ? '异常' : '未检测') }}
+               {{ row.resolveStatus === 'success' ? '正常' : (row.resolveStatus === 'partial' ? '可访问' : (row.resolveStatus === 'failed' ? '异常' : '未检测')) }}
             </el-tag>
          </template>
       </el-popover>
@@ -110,6 +119,7 @@ const total = ref(0)
 const listLoading = ref(false)
 const resolving = ref(false)
 let resolveRunId = 0
+const RESOLVE_CONCURRENCY = 16
 
 const listQuery = reactive({
 page: 1,
@@ -146,6 +156,37 @@ const openSite = (row) => {
 
 const normalizeCname = value => {
 return (value || '').trim().replace(/\.$/, '').toLowerCase()
+}
+
+const resolvePayload = (response) => response?.data || response || {}
+
+const resolveStatusFromPayload = (payload, expectedCname) => {
+  const normalizedExpected = normalizeCname(expectedCname)
+  const matched = !!payload?.cname_matches_expected
+  const dnsOk = !!payload?.dns_ok
+  const httpOk = !!payload?.http_ok
+  if (matched) return 'success'
+  if (!normalizedExpected || normalizedExpected === '-') {
+    if (dnsOk || httpOk) return 'success'
+    return 'failed'
+  }
+  if (dnsOk || httpOk) return 'partial'
+  return 'failed'
+}
+
+const runWithConcurrency = async (items, limit, worker) => {
+  if (!Array.isArray(items) || items.length === 0) return
+  const concurrency = Math.max(1, Math.min(limit || 1, items.length))
+  let index = 0
+  const runners = Array.from({ length: concurrency }, async () => {
+    while (index < items.length) {
+      const currentIndex = index
+      index += 1
+      // eslint-disable-next-line no-await-in-loop
+      await worker(items[currentIndex], currentIndex)
+    }
+  })
+  await Promise.all(runners)
 }
 
 const fetchList = (autoResolve = false) => {
@@ -191,48 +232,26 @@ resolving.value = true
 resolveRunId += 1
 const currentId = resolveRunId
 
-// Create a queue or run in parallel batches
-const batchSize = 5
-for (let i = 0; i < rows.length; i += batchSize) {
- if (currentId !== resolveRunId) break
- const chunk = rows.slice(i, i + batchSize)
- await Promise.all(chunk.map(async row => {
+await runWithConcurrency(rows, RESOLVE_CONCURRENCY, async (row) => {
+    if (currentId !== resolveRunId) return
     if (!row.domain || row.domain === '-') {
         row.resolveStatus = 'default'
         return
     }
     row.resolveStatus = 'checking'
     try {
-        const res = await request.get('/sites/resolve', { params: { domain: row.domain }, skipLoading: true })
-        row.resolveResult = res // { domain, cname, ips }
-        
-        const resolvedCname = normalizeCname(res.cname)
-        const expectedCname = normalizeCname(row.cname)
-        
-        // Check if CNAME matches OR if resolved IPs match expected (if we knew them)
-        // For now, strict CNAME match if expected CNAME is present
-        if (expectedCname && expectedCname !== '-') {
-            if (resolvedCname === expectedCname) {
-                row.resolveStatus = 'success'
-            } else {
-                // Maybe the resolved CNAME is a sub-cname? 
-                // Or maybe it resolved to IP directly?
-                // If we have IPs but no CNAME match, it's 'failed' strictly for CNAME setup, 
-                // but functionally it might be working if A record is set. 
-                // We mark failed for "Resolution Detection" if it doesn't match CNAME config.
-                row.resolveStatus = 'failed'
-            }
-        } else {
-            // No expected CNAME, but valid DNS response?
-            if (res.ips && res.ips.length > 0) row.resolveStatus = 'success'
-            else row.resolveStatus = 'failed'
-        }
+        const response = await request.get('/sites/resolve', {
+          params: { domain: row.domain, expected_cname: row.cname },
+          skipLoading: true
+        })
+        const res = resolvePayload(response)
+        row.resolveResult = res
+        row.resolveStatus = resolveStatusFromPayload(res, row.cname)
     } catch (e) {
         row.resolveStatus = 'failed'
         row.resolveResult = { error: '查询失败' }
     }
- }))
-}
+ })
 resolving.value = false
 }
 
@@ -278,4 +297,5 @@ fetchList(true)
 .copy-icon:hover { color: #409eff; }
 .open-icon { margin-left: 5px; cursor: pointer; color: #909399; vertical-align: middle; }
 .open-icon:hover { color: #409eff; }
+.resolve-subline { color: #909399; font-size: 12px; margin-top: 2px; }
 </style>

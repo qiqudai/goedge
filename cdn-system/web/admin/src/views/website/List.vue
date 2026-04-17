@@ -137,6 +137,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+import { buildPageSizeKey, loadPageSize } from '@/utils/pagination'
 
 import SiteTable from './list/SiteTable.vue'
 import SiteEditDialog from './list/SiteEditDialog.vue'
@@ -150,18 +151,22 @@ import TaskMonitorDialog from '@/components/TaskMonitorDialog.vue'
 const router = useRouter()
 const isAdmin = ref(localStorage.getItem('role') === 'admin')
 const activeTab = ref('list')
+const siteListPersistKey = 'website-site-list'
 
 // Site List State
 const siteList = ref([])
 const totalSites = ref(0)
 const listLoading = ref(false)
 const selectedSites = ref([])
-const siteQuery = reactive({ page: 1, pageSize: 10, keyword: '', searchField: 'all' })
+const siteQuery = reactive({
+  page: 1,
+  pageSize: loadPageSize(buildPageSizeKey('/website/list', siteListPersistKey), 10),
+  keyword: '',
+  searchField: 'all'
+})
 
 const siteEditVisible = ref(false)
 const siteEditData = ref(null)
-const createDisabled = ref(false)
-const createDisabledTip = ref('')
 
 const batchEditVisible = ref(false)
 const batchEditMode = ref('')
@@ -187,7 +192,6 @@ const advQuery = reactive({ status: '' })
 const handleTabChange = (name) => {
   if (name === 'list') {
     fetchSites()
-    loadDomainUsage()
   }
 }
 
@@ -213,10 +217,6 @@ const handleManage = (row) => {
 
 const handleSiteAction = async (type, data) => {
   if (type === 'create') {
-    if (createDisabled.value) {
-      ElMessage.error(createDisabledTip.value || '域名数量超限，无法添加')
-      return
-    }
     siteEditData.value = null
     siteEditVisible.value = true
     return
@@ -304,25 +304,7 @@ const applyAdvancedSearch = () => {
 
 onMounted(() => {
   fetchSites()
-  loadDomainUsage()
 })
-
-const loadDomainUsage = async () => {
-  if (isAdmin.value) return
-  try {
-    const pkgRes = await request.get('/user_packages', { params: { pageSize: 1000 } })
-    const list = pkgRes.data?.list || pkgRes.list || []
-    if (!list.length) return
-    const pkgId = list[0].id
-    const usageRes = await request.get('/domain_usage', { params: { user_package_id: pkgId } })
-    const usage = usageRes.data || usageRes
-    createDisabled.value = !!usage.exceeded
-    createDisabledTip.value = usage.message || ''
-  } catch (e) {
-    createDisabled.value = false
-    createDisabledTip.value = ''
-  }
-}
 
 const handleTaskCompleted = (t) => {
   if (!t) return
@@ -374,6 +356,40 @@ const normalizeCname = (value) => {
   return (value || '').trim().replace(/\.$/, '').toLowerCase()
 }
 
+const resolveDnsPayload = (response) => {
+  return response?.data || response || {}
+}
+
+const resolveCheckStatus = (payload, expectedCname) => {
+  const normalizedExpected = normalizeCname(expectedCname)
+  if (payload?.cname_matches_expected) return { ok: true, error: '' }
+  if (!normalizedExpected || normalizedExpected === '-') {
+    if (payload?.dns_ok || payload?.http_ok) return { ok: true, error: '' }
+    return { ok: false, error: payload?.dns_error || payload?.http_error || '未解析到有效记录' }
+  }
+  if (payload?.dns_ok || payload?.http_ok) {
+    return { ok: true, error: payload?.dns_ok ? 'DNS已生效，CNAME链与预期不完全一致' : '' }
+  }
+  return { ok: false, error: payload?.dns_error || payload?.http_error || '解析未生效' }
+}
+
+const RESOLVE_CHECK_CONCURRENCY = 16
+
+const runWithConcurrency = async (items, limit, worker) => {
+  if (!Array.isArray(items) || items.length === 0) return
+  const concurrency = Math.max(1, Math.min(limit || 1, items.length))
+  let index = 0
+  const runners = Array.from({ length: concurrency }, async () => {
+    while (index < items.length) {
+      const currentIndex = index
+      index += 1
+      // eslint-disable-next-line no-await-in-loop
+      await worker(items[currentIndex], currentIndex)
+    }
+  })
+  await Promise.all(runners)
+}
+
 const extractPrimaryDomain = (row) => {
   const display = row?.domain_display || row?.domainDisplay
   if (display && typeof display === 'string') {
@@ -403,11 +419,7 @@ const handleBatchEditSuccess = async (payload) => {
   resolveCheckResults.value = []
 
   const results = []
-  const batchSize = 5
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const chunk = rows.slice(i, i + batchSize)
-    // eslint-disable-next-line no-await-in-loop
-    await Promise.all(chunk.map(async (row) => {
+  await runWithConcurrency(rows, RESOLVE_CHECK_CONCURRENCY, async (row) => {
       const domain = extractPrimaryDomain(row)
       const expectedCname = row.cname || row.cname_hostname || '-'
       if (!domain) {
@@ -415,23 +427,29 @@ const handleBatchEditSuccess = async (payload) => {
         return
       }
       try {
-        const res = await request.get('/sites/resolve', { params: { domain }, skipLoading: true })
-        const resolvedCname = res?.cname || ''
+        const response = await request.get('/sites/resolve', {
+          params: { domain, expected_cname: expectedCname },
+          skipLoading: true
+        })
+        const res = resolveDnsPayload(response)
+        const resolvedCname = Array.isArray(res?.cname_chain) && res.cname_chain.length > 0
+          ? res.cname_chain.join(' -> ')
+          : (res?.cname || '')
         const ips = Array.isArray(res?.ips) ? res.ips.join(', ') : ''
-        const ok = normalizeCname(resolvedCname) === normalizeCname(expectedCname)
+        const status = resolveCheckStatus(res, expectedCname)
         results.push({
-          domain,
+          domain: res?.tested_domain || domain,
           expectedCname,
           resolvedCname: resolvedCname || '-',
           ips,
-          ok,
-          error: ok ? '' : 'CNAME不匹配'
+          ok: status.ok,
+          error: status.error,
+          originalDomain: domain
         })
       } catch (e) {
         results.push({ domain, expectedCname, resolvedCname: '-', ips: '', ok: false, error: '查询失败' })
       }
-    }))
-  }
+    })
 
   resolveCheckResults.value = results
   resolveCheckLoading.value = false

@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import axios from 'axios'
 import { API_BASE } from '@/utils/request'
+import { resolveAssetUrl } from '@/utils/assetUrl'
 
 const systemInfo = reactive({
   sys_name: '',
@@ -36,9 +37,9 @@ const applySystemInfo = (info) => {
   systemInfo.admin_console_title = next.admin_console_title || ''
   systemInfo.footer_link = next.footer_link || ''
   systemInfo.footer_copyright = next.footer_copyright || ''
-  systemInfo.favicon_file = next.favicon_file || ''
-  systemInfo.logo_file = next.logo_file || ''
-  systemInfo.login_ad_file = next.login_ad_file || ''
+  systemInfo.favicon_file = resolveAssetUrl(next.favicon_file)
+  systemInfo.logo_file = resolveAssetUrl(next.logo_file)
+  systemInfo.login_ad_file = resolveAssetUrl(next.login_ad_file)
   systemInfo.enable_email_login = Boolean(next.enable_email_login)
   systemInfo.enable_sms_login = Boolean(next.enable_sms_login)
   systemInfo.allow_register = Boolean(next.allow_register)

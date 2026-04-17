@@ -6,6 +6,8 @@ import (
 	"cdn-api/services"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,25 +31,28 @@ type configItemUpsertRequest struct {
 }
 
 func (ctrl *ConfigItemController) List(c *gin.Context) {
-	cfgType := c.Query("type")
-	scopeName := c.DefaultQuery("scope_name", "global")
-	// scopeID, _ := strconv.ParseInt(c.DefaultQuery("scope_id", "0"), 10, 64)
+	cfgType := strings.TrimSpace(c.Query("type"))
+	scopeName := strings.TrimSpace(c.DefaultQuery("scope_name", "global"))
+	scopeIDStr := strings.TrimSpace(c.DefaultQuery("scope_id", "0"))
+	scopeID, err := strconv.ParseInt(scopeIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("scope_id is invalid")})
+		return
+	}
 
-	fmt.Printf("[DEBUG] List Config: type='%s', scope='%s'\n", cfgType, scopeName)
+	fmt.Printf("[DEBUG] List Config: type='%s', scope='%s', scope_id=%d\n", cfgType, scopeName, scopeID)
 
 	var items []models.ConfigItem
 	query := db.DB.Model(&models.ConfigItem{})
 	if cfgType != "" {
 		query = query.Where("type = ?", cfgType)
 	}
-	/*
-		if scopeName == "global" {
-			query = query.Where("scope_name IN ? OR scope_name IS NULL", []string{"global", "system", ""})
-		} else if scopeName != "" {
-			query = query.Where("scope_name = ?", scopeName)
-		}
-		query = query.Where("scope_id = ?", scopeID)
-	*/
+	if scopeName == "global" {
+		query = query.Where("(scope_name = ? OR scope_name IS NULL OR scope_name = '')", "global")
+	} else if scopeName != "" {
+		query = query.Where("scope_name = ?", scopeName)
+	}
+	query = query.Where("scope_id = ?", scopeID)
 	if err := query.Find(&items).Error; err != nil {
 		fmt.Printf("[DEBUG] List Config Error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load config")})
@@ -62,6 +67,7 @@ func (ctrl *ConfigItemController) List(c *gin.Context) {
 		"list":             items,
 		"debug_type":       cfgType,
 		"debug_scope_name": scopeName,
+		"debug_scope_id":   scopeID,
 		"count":            len(items),
 	})
 }
@@ -81,6 +87,9 @@ func (ctrl *ConfigItemController) Upsert(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Save failed")})
 		return
+	}
+	if strings.EqualFold(req.Type, "system") {
+		services.InvalidateSystemConfigCache()
 	}
 	services.BumpConfigVersion("config_item", []int64{})
 
@@ -127,6 +136,9 @@ func (ctrl *ConfigItemController) UpsertUser(c *gin.Context) {
 	if err := upsertConfigItems(req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Save failed")})
 		return
+	}
+	if strings.EqualFold(req.Type, "system") {
+		services.InvalidateSystemConfigCache()
 	}
 	services.BumpConfigVersion("config_item", []int64{uid})
 

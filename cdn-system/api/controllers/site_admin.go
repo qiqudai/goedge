@@ -5,12 +5,14 @@ import (
 	"cdn-api/models"
 	"cdn-api/services"
 	"cdn-common/i18n"
+	"context"
 	"crypto/rand"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/miekg/dns"
 	"gorm.io/gorm"
 )
 
@@ -1401,15 +1404,377 @@ func (ctrl *SiteController) AdminResolve(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("domain is required")})
 		return
 	}
+	expectedCNAME := strings.TrimSpace(c.Query("expected_cname"))
 
-	cname, _ := net.LookupCNAME(domain)
-	hosts, _ := net.LookupHost(domain)
+	testedDomain, wildcardTested := buildResolveTestDomain(domain)
+	cnameChain, ips, dnsErr, httpOK, httpURL, httpStatus, httpErr := resolveDomainReport(testedDomain)
+	finalCNAME := ""
+	if len(cnameChain) > 0 {
+		finalCNAME = cnameChain[len(cnameChain)-1]
+	}
+	matchedExpected := cnameMatchesExpected(expectedCNAME, testedDomain, cnameChain)
 
 	c.JSON(http.StatusOK, gin.H{
-		"domain": domain,
-		"cname":  strings.TrimSuffix(cname, "."),
-		"ips":    hosts,
+		"domain":                 domain,
+		"tested_domain":          testedDomain,
+		"wildcard_tested":        wildcardTested,
+		"cname":                  finalCNAME,
+		"cname_chain":            cnameChain,
+		"ips":                    ips,
+		"dns_ok":                 len(cnameChain) > 0 || len(ips) > 0,
+		"dns_error":              resolveErrText(dnsErr),
+		"http_ok":                httpOK,
+		"http_url":               httpURL,
+		"http_status":            httpStatus,
+		"http_error":             resolveErrText(httpErr),
+		"expected_cname":         expectedCNAME,
+		"cname_matches_expected": matchedExpected,
 	})
+}
+
+func resolveDomainReport(host string) ([]string, []string, error, bool, string, int, error) {
+	type dnsResult struct {
+		cnameChain []string
+		ips        []string
+		err        error
+	}
+	type httpResult struct {
+		ok     bool
+		url    string
+		status int
+		err    error
+	}
+
+	dnsCh := make(chan dnsResult, 1)
+	httpCh := make(chan httpResult, 1)
+
+	go func() {
+		cnameChain, ips, err := lookupDNSReport(host)
+		dnsCh <- dnsResult{cnameChain: cnameChain, ips: ips, err: err}
+	}()
+	go func() {
+		ok, url, status, err := probeHTTPReachability(host)
+		httpCh <- httpResult{ok: ok, url: url, status: status, err: err}
+	}()
+
+	dnsRes := <-dnsCh
+	httpRes := <-httpCh
+	return dnsRes.cnameChain, dnsRes.ips, dnsRes.err, httpRes.ok, httpRes.url, httpRes.status, httpRes.err
+}
+
+func buildResolveTestDomain(domain string) (string, bool) {
+	domain = normalizeResolveHost(domain)
+	if !strings.HasPrefix(domain, "*.") {
+		return domain, false
+	}
+	root := strings.TrimSpace(strings.TrimPrefix(domain, "*."))
+	if root == "" {
+		return domain, false
+	}
+	return randomResolveLabel(8) + "." + root, true
+}
+
+func randomResolveLabel(size int) string {
+	if size <= 0 {
+		size = 8
+	}
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return "resolvecheck"
+	}
+	for i := range buf {
+		buf[i] = alphabet[int(buf[i])%len(alphabet)]
+	}
+	return string(buf)
+}
+
+func normalizeResolveHost(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.TrimPrefix(value, "http://")
+	value = strings.TrimPrefix(value, "https://")
+	if idx := strings.Index(value, "/"); idx >= 0 {
+		value = value[:idx]
+	}
+	if idx := strings.Index(value, "?"); idx >= 0 {
+		value = value[:idx]
+	}
+	if idx := strings.Index(value, "#"); idx >= 0 {
+		value = value[:idx]
+	}
+	value = strings.TrimSuffix(value, ".")
+	return value
+}
+
+func appendUniqueResolveValue(values []string, value string) []string {
+	value = normalizeResolveHost(value)
+	if value == "" {
+		return values
+	}
+	for _, item := range values {
+		if normalizeResolveHost(item) == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func systemResolverAddrs() []string {
+	cfg, err := dns.ClientConfigFromFile("/etc/resolv.conf")
+	if err != nil || cfg == nil || len(cfg.Servers) == 0 {
+		return []string{"127.0.0.1:53"}
+	}
+	addrs := make([]string, 0, len(cfg.Servers))
+	for _, server := range cfg.Servers {
+		server = strings.TrimSpace(server)
+		if server == "" {
+			continue
+		}
+		addrs = append(addrs, net.JoinHostPort(server, cfg.Port))
+	}
+	if len(addrs) == 0 {
+		return []string{"127.0.0.1:53"}
+	}
+	return addrs
+}
+
+func queryDNS(host string, qType uint16) ([]dns.RR, error) {
+	fqdn := dns.Fqdn(host)
+	client := &dns.Client{Timeout: 3 * time.Second}
+	msg := &dns.Msg{}
+	msg.SetQuestion(fqdn, qType)
+	msg.RecursionDesired = true
+
+	var lastErr error
+	for _, resolver := range systemResolverAddrs() {
+		resp, _, err := client.Exchange(msg, resolver)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp == nil {
+			lastErr = errors.New("empty dns response")
+			continue
+		}
+		if resp.Rcode != dns.RcodeSuccess && resp.Rcode != dns.RcodeNameError {
+			lastErr = fmt.Errorf("dns rcode %s", dns.RcodeToString[resp.Rcode])
+			continue
+		}
+		answers := make([]dns.RR, 0, len(resp.Answer)+len(resp.Extra))
+		answers = append(answers, resp.Answer...)
+		answers = append(answers, resp.Extra...)
+		return answers, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("dns lookup failed")
+	}
+	return nil, lastErr
+}
+
+func lookupDNSReport(host string) ([]string, []string, error) {
+	host = normalizeResolveHost(host)
+	if host == "" {
+		return nil, nil, errors.New("empty host")
+	}
+
+	cnameChain := make([]string, 0, 4)
+	visited := map[string]struct{}{}
+	current := host
+	for i := 0; i < 8; i++ {
+		normalizedCurrent := normalizeResolveHost(current)
+		if normalizedCurrent == "" {
+			break
+		}
+		if _, ok := visited[normalizedCurrent]; ok {
+			break
+		}
+		visited[normalizedCurrent] = struct{}{}
+
+		answers, err := queryDNS(normalizedCurrent, dns.TypeCNAME)
+		if err != nil {
+			if len(cnameChain) == 0 {
+				break
+			}
+			break
+		}
+
+		next := ""
+		for _, answer := range answers {
+			if record, ok := answer.(*dns.CNAME); ok {
+				next = normalizeResolveHost(record.Target)
+				break
+			}
+		}
+		if next == "" {
+			break
+		}
+		cnameChain = appendUniqueResolveValue(cnameChain, next)
+		current = next
+	}
+
+	type ipLookupResult struct {
+		ips []string
+		err error
+	}
+	hostLookupCh := make(chan ipLookupResult, 1)
+	aLookupCh := make(chan ipLookupResult, 1)
+	aaaaLookupCh := make(chan ipLookupResult, 1)
+
+	go func() {
+		ips := make([]string, 0, 4)
+		hosts, err := net.LookupHost(host)
+		if err == nil {
+			for _, item := range hosts {
+				item = strings.TrimSpace(item)
+				if item == "" {
+					continue
+				}
+				ips = appendUniqueResolveValue(ips, item)
+			}
+		}
+		hostLookupCh <- ipLookupResult{ips: ips, err: err}
+	}()
+	go func() {
+		ips := make([]string, 0, 4)
+		answers, err := queryDNS(host, dns.TypeA)
+		for _, answer := range answers {
+			if record, ok := answer.(*dns.A); ok {
+				ips = appendUniqueResolveValue(ips, record.A.String())
+			}
+		}
+		aLookupCh <- ipLookupResult{ips: ips, err: err}
+	}()
+	go func() {
+		ips := make([]string, 0, 4)
+		answers, err := queryDNS(host, dns.TypeAAAA)
+		for _, answer := range answers {
+			if record, ok := answer.(*dns.AAAA); ok {
+				ips = appendUniqueResolveValue(ips, record.AAAA.String())
+			}
+		}
+		aaaaLookupCh <- ipLookupResult{ips: ips, err: err}
+	}()
+
+	ips := make([]string, 0, 8)
+	var lookupErr error
+	for _, result := range []ipLookupResult{<-hostLookupCh, <-aLookupCh, <-aaaaLookupCh} {
+		for _, item := range result.ips {
+			ips = appendUniqueResolveValue(ips, item)
+		}
+		if result.err != nil && lookupErr == nil {
+			lookupErr = result.err
+		}
+	}
+
+	if len(cnameChain) == 0 && len(ips) == 0 && lookupErr != nil {
+		return nil, nil, lookupErr
+	}
+	return cnameChain, ips, nil
+}
+
+func cnameMatchesExpected(expected, testedDomain string, cnameChain []string) bool {
+	expected = normalizeResolveHost(expected)
+	if expected == "" || expected == "-" {
+		return false
+	}
+	testedDomain = normalizeResolveHost(testedDomain)
+	if testedDomain == expected {
+		return true
+	}
+	for _, item := range cnameChain {
+		item = normalizeResolveHost(item)
+		if item == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func probeHTTPReachability(host string) (bool, string, int, error) {
+	host = normalizeResolveHost(host)
+	if host == "" {
+		return false, "", 0, errors.New("empty host")
+	}
+
+	type probeResult struct {
+		ok     bool
+		url    string
+		status int
+		err    error
+	}
+	schemes := []string{"https", "http"}
+	resultCh := make(chan probeResult, len(schemes))
+	for _, scheme := range schemes {
+		go func(scheme string) {
+			resultCh <- probeHTTPScheme(host, scheme)
+		}(scheme)
+	}
+
+	results := make([]probeResult, 0, len(schemes))
+	for range schemes {
+		results = append(results, <-resultCh)
+	}
+	for _, preferred := range schemes {
+		for _, result := range results {
+			if result.ok && strings.HasPrefix(result.url, preferred+"://") {
+				return true, result.url, result.status, nil
+			}
+		}
+	}
+	for _, result := range results {
+		if result.err != nil {
+			return false, "", 0, result.err
+		}
+	}
+	return false, "", 0, errors.New("http probe failed")
+}
+
+func probeHTTPScheme(host, scheme string) (result struct {
+	ok     bool
+	url    string
+	status int
+	err    error
+}) {
+	client := &http.Client{
+		Timeout: 4 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	url := scheme + "://" + host
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		result.err = err
+		return
+	}
+	req.Header.Set("User-Agent", "cdn-system-resolve-check/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		result.err = err
+		return
+	}
+	defer resp.Body.Close()
+	_, _ = io.CopyN(io.Discard, resp.Body, 1024)
+	if resp.StatusCode <= 0 {
+		result.err = fmt.Errorf("unexpected status %d", resp.StatusCode)
+		return
+	}
+	result.ok = true
+	result.url = url
+	result.status = resp.StatusCode
+	return
+}
+
+func resolveErrText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func computeSiteCnameHostname(site models.Site, pkg models.UserPackage, overrideMode, overrideDomain *string) string {

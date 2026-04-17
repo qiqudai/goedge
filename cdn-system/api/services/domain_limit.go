@@ -33,7 +33,7 @@ func GetDomainUsage(userID, userPackageID int64) (DomainUsage, error) {
 	usage.DomainLimit = totalLimit
 	usage.MainDomainLimit = mainLimit
 
-	domainSet, mainSet, err := loadUserDomainSets(userID)
+	domainSet, mainSet, err := loadUserDomainSets(userID, userPackageID)
 	if err != nil {
 		return usage, err
 	}
@@ -63,7 +63,7 @@ func CheckDomainLimit(userID, userPackageID int64, newDomains []string) error {
 		return nil
 	}
 
-	domainSet, mainSet, err := loadUserDomainSets(userID)
+	domainSet, mainSet, err := loadUserDomainSets(userID, userPackageID)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func CheckDomainLimitForUpdate(userID, userPackageID, siteID int64, newDomains [
 		return nil
 	}
 
-	domainSet, mainSet, err := loadUserDomainSetsExceptSite(userID, siteID)
+	domainSet, mainSet, err := loadUserDomainSetsExceptSite(userID, userPackageID, siteID)
 	if err != nil {
 		return err
 	}
@@ -129,12 +129,12 @@ func loadDomainLimits(userPackageID int64) (int, int, error) {
 	return totalLimit, mainLimit, nil
 }
 
-func loadUserDomainSets(userID int64) (map[string]struct{}, map[string]struct{}, error) {
+func loadUserDomainSets(userID, userPackageID int64) (map[string]struct{}, map[string]struct{}, error) {
 	domainSet := map[string]struct{}{}
 	mainSet := map[string]struct{}{}
 
 	var sites []models.Site
-	if err := db.DB.Where("uid = ?", userID).Find(&sites).Error; err != nil {
+	if err := db.DB.Where("uid = ? AND user_package = ?", userID, userPackageID).Find(&sites).Error; err != nil {
 		return nil, nil, err
 	}
 	for _, site := range sites {
@@ -143,12 +143,12 @@ func loadUserDomainSets(userID int64) (map[string]struct{}, map[string]struct{},
 	return domainSet, mainSet, nil
 }
 
-func loadUserDomainSetsExceptSite(userID, excludeSiteID int64) (map[string]struct{}, map[string]struct{}, error) {
+func loadUserDomainSetsExceptSite(userID, userPackageID, excludeSiteID int64) (map[string]struct{}, map[string]struct{}, error) {
 	domainSet := map[string]struct{}{}
 	mainSet := map[string]struct{}{}
 
 	var sites []models.Site
-	if err := db.DB.Where("uid = ? AND id <> ?", userID, excludeSiteID).Find(&sites).Error; err != nil {
+	if err := db.DB.Where("uid = ? AND user_package = ? AND id <> ?", userID, userPackageID, excludeSiteID).Find(&sites).Error; err != nil {
 		return nil, nil, err
 	}
 	for _, site := range sites {

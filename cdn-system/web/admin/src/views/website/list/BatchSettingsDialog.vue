@@ -1563,7 +1563,7 @@ const loadCerts = async () => {
   if (loading.certs) return
   loading.certs = true
   try {
-    const res = await request.get('/certs')
+    const res = await request.get('/certs', { params: { pageSize: 1000 } })
     certList.value = res.data?.list || res.list || []
   } catch (e) {
     console.error(e)

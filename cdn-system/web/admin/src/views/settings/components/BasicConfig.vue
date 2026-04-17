@@ -76,10 +76,11 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
-import request from '@/utils/request'
+import request, { API_BASE } from '@/utils/request'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
+import { resolveAssetUrl, toStoredAssetUrl } from '@/utils/assetUrl'
 
 const props = defineProps({
   configItems: {
@@ -90,7 +91,7 @@ const props = defineProps({
 
 const emit = defineEmits(['saved'])
 
-const uploadUrl = '/api/v1/admin/upload/image'
+const uploadUrl = `${API_BASE}/api/v1/admin/upload/image`
 const uploadHeaders = {
     Authorization: 'Bearer ' + localStorage.getItem('admin_token')
 }
@@ -107,9 +108,28 @@ const systemInfo = ref({
 })
 const bindMasterHost = ref('')
 
+const applyDisplayUrls = (info) => ({
+  ...info,
+  favicon_file: resolveAssetUrl(info?.favicon_file),
+  logo_file: resolveAssetUrl(info?.logo_file),
+  login_ad_file: resolveAssetUrl(info?.login_ad_file)
+})
+
+const normalizeSystemInfoForSave = (info) => ({
+  ...info,
+  favicon_file: toStoredAssetUrl(info?.favicon_file),
+  logo_file: toStoredAssetUrl(info?.logo_file),
+  login_ad_file: toStoredAssetUrl(info?.login_ad_file)
+})
+
+const resolveUploadUrl = (response) => {
+  const raw = response?.data?.url || response?.url || ''
+  return resolveAssetUrl(raw)
+}
+
 const handleUploadSuccess = (res, field) => {
     if (res.code === 0 || res.code === 200) {
-        systemInfo.value[field] = res.url
+        systemInfo.value[field] = resolveUploadUrl(res)
         ElMessage.success('上传成功')
         handleSave()
     } else {
@@ -126,7 +146,7 @@ watch(() => props.configItems, (items) => {
   if (infoItem && infoItem.value) {
     try {
       const parsed = JSON.parse(infoItem.value)
-      systemInfo.value = { ...systemInfo.value, ...parsed }
+      systemInfo.value = applyDisplayUrls({ ...systemInfo.value, ...parsed })
     } catch (e) {
       console.error('Failed to parse system_info', e)
     }
@@ -153,7 +173,7 @@ const save = () => {
   
   items.push({
     name: 'system_info',
-    value: JSON.stringify({ ...fullInfo, ...systemInfo.value })
+    value: JSON.stringify({ ...fullInfo, ...normalizeSystemInfoForSave(systemInfo.value) })
   })
 
   // bind-master-host

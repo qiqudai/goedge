@@ -16,6 +16,13 @@ var systemConfigCache struct {
 	updatedAt time.Time
 }
 
+func InvalidateSystemConfigCache() {
+	systemConfigCache.mu.Lock()
+	defer systemConfigCache.mu.Unlock()
+	systemConfigCache.values = nil
+	systemConfigCache.updatedAt = time.Time{}
+}
+
 // LoadSystemConfig returns cached system config items (type=system, scope=global).
 func LoadSystemConfig() (map[string]string, error) {
 	now := time.Now()
