@@ -1,0 +1,61 @@
+﻿.country-selector {
+    border: 1px dashed #dcdfe6;
+    padding: 12px;
+    border-radius: 6px;
+    margin-top: 8px;
+    background: #fff;
+}
+
+.mode-selector {
+    margin-bottom: 20px;
+}
+
+.mode-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+}
+
+.custom-selector {
+    border-top: 1px dashed #eee;
+    padding-top: 12px;
+}
+
+.country-group {
+    margin-bottom: 16px;
+}
+
+.group-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.group-label {
+    font-weight: 600;
+}
+
+.group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+}
+
+.group-item {
+    min-width: 140px;
+}
+
+.expand-btn {
+    padding: 0;
+}
+
+.group-check {
+    margin-bottom: 0;
+}

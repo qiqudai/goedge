@@ -1,0 +1,292 @@
+@using global::System.Text.Json
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject Cnn.Api.Services.ConfigItemClient ConfigClient
+
+<div class="card config-card default-cert">
+    <div class="card-header">证书默认配置</div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <div>加载中...</div>
+        }
+        else
+        {
+            <div class="form-row">
+                <label class="form-label">默认证书类型</label>
+                <InputRadioGroup @bind-Value="_form.Provider" @bind-Value:after="QueueSaveAsync">
+                    <label class="form-check">
+                        <InputRadio class="form-check-input" Value='@("zerossl")' />
+                        <span class="form-check-label">ZeroSSL</span>
+                    </label>
+                    <label class="form-check">
+                        <InputRadio class="form-check-input" Value='@("lets")' />
+                        <span class="form-check-label">Let's Encrypt</span>
+                    </label>
+                    <label class="form-check">
+                        <InputRadio class="form-check-input" Value='@("buypass")' />
+                        <span class="form-check-label">BuyPass</span>
+                    </label>
+                    <label class="form-check">
+                        <InputRadio class="form-check-input" Value='@("google")' />
+                        <span class="form-check-label">Google CA</span>
+                    </label>
+                </InputRadioGroup>
+            </div>
+
+            <div class="form-row">
+                <label class="form-label">DNS 接口</label>
+                <select class="form-select" style="max-width: 420px;" @bind="_form.DnsApiType" @bind:after="HandleDnsTypeChange">
+                    <option value="">选择 DNS 服务商</option>
+                    @foreach (var item in _dnsTypes)
+                    {
+                        <option value="@item.Type">@item.Name</option>
+                    }
+                </select>
+                <div class="form-text">设置后，申请证书将使用此 DNS 接口。</div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_form.DnsApiType))
+            {
+                var fields = GetDnsFields(_form.DnsApiType!);
+                if (fields.Count > 0)
+                {
+                    foreach (var field in fields)
+                    {
+                        <div class="form-row">
+                            <label class="form-label">@GetFieldLabel(field)</label>
+                            <InputText class="form-control" style="max-width: 420px;" Value="@GetDnsFieldValue(field)" ValueChanged="val => OnDnsFieldChanged(field, val)" />
+                        </div>
+                    }
+                }
+            }
+        }
+
+        <div class="mt-3 d-flex align-items-center gap-2">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            @if (_saving)
+            {
+                <span class="text-muted">保存中...</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="alert @_messageClass mt-3">@_message</div>
+        }
+    </div>
+</div>
+
+@code {
+    private bool _loading;
+    private bool _saving;
+    private bool _saveQueued;
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    private readonly CertForm _form = new();
+    private readonly List<DnsApiTypeItem> _dnsTypes = new();
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static readonly Dictionary<string, string> FieldLabelMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["email"] = "Email",
+        ["api_key"] = "API Key",
+        ["access_key_id"] = "AccessKey ID",
+        ["access_key_secret"] = "AccessKey Secret",
+        ["id"] = "ID",
+        ["token"] = "Token",
+        ["api_secret"] = "API Secret",
+        ["username"] = "Username",
+        ["api_token"] = "API Token",
+        ["user"] = "User",
+        ["ip"] = "Client IP",
+        ["auth_id"] = "Auth ID",
+        ["auth_password"] = "Auth Password",
+        ["access_key"] = "Access Key",
+        ["secret_key"] = "Secret Key",
+        ["api_id"] = "API ID",
+        ["api_pass"] = "API Password",
+        ["app_id"] = "App ID",
+        ["app_secret"] = "App Secret",
+        ["secret_access_key"] = "Secret Access Key"
+    };
+
+    private static readonly Dictionary<string, string> LabelTranslations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["AccessKey ID"] = "AccessKey ID(访问密钥ID)",
+        ["AccessKey Secret"] = "AccessKey Secret(访问密钥密码)",
+        ["Access Key ID"] = "Access Key ID(访问密钥ID)",
+        ["Secret Access Key"] = "Secret Access Key(访问密钥密码)",
+        ["Access Key"] = "Access Key(访问密钥)",
+        ["Secret Key"] = "Secret Key(密钥密码)",
+        ["API ID"] = "API ID",
+        ["API Password"] = "API 密码",
+        ["API Key"] = "API 密钥",
+        ["API Secret"] = "API 密钥密码",
+        ["API Token"] = "API 令牌",
+        ["Token"] = "令牌",
+        ["Email"] = "邮箱",
+        ["Username"] = "用户名",
+        ["User"] = "用户",
+        ["Client IP"] = "客户端 IP",
+        ["App ID"] = "应用 ID",
+        ["App Secret"] = "应用密钥",
+        ["Auth ID"] = "认证 ID",
+        ["Auth Password"] = "认证密码",
+        ["SecretId"] = "SecretId(密钥ID)",
+        ["SecretKey"] = "SecretKey(密钥密码)",
+        ["ID"] = "ID"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        try
+        {
+            await Task.WhenAll(LoadTypesAsync(), LoadConfigAsync());
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadTypesAsync()
+    {
+        var response = await Api.GetAsync<DnsApiTypesResult>("dnsapi/types", ApiScope.Admin);
+        _dnsTypes.Clear();
+        if (response?.Data?.Types != null)
+        {
+            _dnsTypes.AddRange(response.Data.Types);
+        }
+    }
+
+    private async Task LoadConfigAsync()
+    {
+        var items = await ConfigClient.GetAsync("cert_default_config", "global", 0);
+        foreach (var item in items)
+        {
+            switch (item.Name)
+            {
+                case "cert_default_type":
+                    _form.Provider = item.Value ?? _form.Provider;
+                    break;
+                case "cert_default_dnsapi_type":
+                    _form.DnsApiType = item.Value ?? string.Empty;
+                    break;
+                case "cert_default_dnsapi_data":
+                    _form.DnsApiData = ParseDnsData(item.Value);
+                    break;
+            }
+        }
+    }
+
+    private async Task HandleDnsTypeChange()
+    {
+        _form.DnsApiData = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        await QueueSaveAsync();
+    }
+
+    private IReadOnlyList<string> GetDnsFields(string type)
+    {
+        var item = _dnsTypes.FirstOrDefault(t => string.Equals(t.Type, type, StringComparison.OrdinalIgnoreCase));
+        return item?.Fields?.ToList() ?? new List<string>();
+    }
+
+    private string GetFieldLabel(string field)
+    {
+        var baseLabel = FieldLabelMap.TryGetValue(field, out var label) ? label : field;
+        return LabelTranslations.TryGetValue(baseLabel, out var translated) ? translated : baseLabel;
+    }
+
+    private string GetDnsFieldValue(string field)
+    {
+        return _form.DnsApiData.TryGetValue(field, out var value) ? value : string.Empty;
+    }
+
+    private Task OnDnsFieldChanged(string field, string value)
+    {
+        _form.DnsApiData[field] = value ?? string.Empty;
+        return QueueSaveAsync();
+    }
+
+    private async Task QueueSaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        await SaveAsync();
+
+        if (_saveQueued)
+        {
+            _saveQueued = false;
+            await SaveAsync();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+
+        var payload = new List<ConfigItemPayloadDto>
+        {
+            new() { Name = "cert_default_type", Value = _form.Provider },
+            new() { Name = "cert_default_dnsapi_type", Value = _form.DnsApiType },
+            new() { Name = "cert_default_dnsapi_data", Value = JsonSerializer.Serialize(_form.DnsApiData ?? new Dictionary<string, string>(), JsonOptions) }
+        };
+
+        var ok = await ConfigClient.SaveAsync("cert_default_config", "global", 0, payload);
+        _saving = false;
+
+        SetMessage(ok, ok ? "保存成功" : "保存失败");
+    }
+
+    private static Dictionary<string, string> ParseDnsData(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(raw, JsonOptions);
+            return parsed == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void SetMessage(bool success, string message)
+    {
+        _message = message;
+        _messageClass = success ? "alert-success" : "alert-danger";
+    }
+
+    private sealed class CertForm
+    {
+        public string Provider { get; set; } = "lets";
+        public string DnsApiType { get; set; } = string.Empty;
+        public Dictionary<string, string> DnsApiData { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+}
+

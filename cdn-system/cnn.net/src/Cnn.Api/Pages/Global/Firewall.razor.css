@@ -1,0 +1,42 @@
+﻿.firewall-page .section {
+    margin-bottom: 24px;
+}
+
+.firewall-page .section-title {
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    padding-left: 10px;
+    border-left: 4px solid #1b6ec2;
+}
+
+.firewall-page .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.firewall-page .form-row .form-label {
+    min-width: 140px;
+    margin-bottom: 0;
+}
+
+.firewall-page .form-row .form-control,
+.firewall-page .form-row .form-select {
+    max-width: 280px;
+}
+
+.firewall-page .unit {
+    color: var(--muted-text);
+    font-size: 12px;
+}
+
+.firewall-page .form-check {
+    margin-bottom: 6px;
+}
+
+.firewall-page .form-text {
+    color: var(--muted-text);
+}

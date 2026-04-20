@@ -1,0 +1,22 @@
+### BEGIN INIT INFO
+# Provides:          edge-api
+# Required-Start:    $all
+# Required-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:
+# Short-Description: GoEdge API Service
+### END INIT INFO
+
+[Unit]
+Description=GoEdge API Service
+Before=shutdown.target
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5s
+ExecStart=/usr/bin/bash -c "/usr/local/goedge/edge-admin/edge-api/bin/edge-api -config /usr/local/goedge/edge-admin/edge-api/config.yaml"
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,8 @@
 @using global::System.Text.Json
 @using global::System.Text.Json.Serialization
-@using Cnn.Api.Contracts.Admin
+@using Cnn.Common.Contracts.Admin
 @inject ApiClient Api
+@inject ClientSession Session
 
 <div class="card config-card default-site">
     <div class="card-header">网站默认配置</div>
@@ -481,6 +482,8 @@
 }
 
 @code {
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
     private const string DefaultSslCiphers =
         "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:" +
         "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:" +
@@ -542,7 +545,7 @@
             ["scope_id"] = "0"
         };
 
-        var response = await Api.GetAsync<SiteDefaultListResult>("site_defaults", ApiScope.Admin, query);
+        var response = await Api.GetAsync<SiteDefaultListResult>("site_defaults", Scope, query);
         var list = response?.Data?.List ?? Array.Empty<SiteDefaultItemDto>();
         var map = list
             .Where(item => !string.IsNullOrWhiteSpace(item.Name))
@@ -599,7 +602,7 @@
 
     private async Task LoadCcRulesAsync()
     {
-        var response = await Api.GetAsync<CcListResult<CcRuleGroupListItem>>("rules/cc/groups", ApiScope.Admin);
+        var response = await Api.GetAsync<CcListResult<CcRuleGroupListItem>>("rules/cc/groups", Scope);
         var list = response?.Data?.List ?? Array.Empty<CcRuleGroupListItem>();
         if (list.Count == 0)
         {
@@ -705,7 +708,7 @@
             Data = payload
         };
 
-        var response = await Api.PostAsync<object>("site_defaults", request, ApiScope.Admin);
+        var response = await Api.PostAsync<object>("site_defaults", request, Scope);
         _saving = false;
 
         if (response != null && (response.Code == 0 || response.Code == 200))

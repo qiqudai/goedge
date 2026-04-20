@@ -1,0 +1,238 @@
+@using System.Text.Json
+@inject IJSRuntime Js
+@inject ILogger<TablePager> Logger
+
+<div class="table-pager">
+    @ChildContent
+
+    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mt-2">
+        <label class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" checked="@_pagingEnabled" @onchange="OnPagingToggleChangedAsync" />
+            <span class="form-check-label">分页</span>
+        </label>
+
+        @if (_pagingEnabled)
+        {
+            <Pager Page="_page"
+                   PageSize="_pageSize"
+                   Total="Total"
+                   PageSizes="PageSizes"
+                   PageChanged="OnPageChangedAsync"
+                   PageSizeChanged="OnPageSizeChangedAsync" />
+        }
+        else
+        {
+            <div class="small text-muted">已切换为整表查询（最多 @UnpagedLimit 条）</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string StateKey { get; set; } = string.Empty;
+    [Parameter] public long Total { get; set; }
+    [Parameter] public int DefaultPageSize { get; set; } = 20;
+    [Parameter] public int[] PageSizes { get; set; } = new[] { 10, 20, 50, 100 };
+    [Parameter] public int UnpagedLimit { get; set; } = 1000;
+    [Parameter] public bool EnablePagingByDefault { get; set; } = true;
+    [Parameter] public EventCallback<TablePageQuery> QueryChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _pagingEnabled = true;
+    private int _page = 1;
+    private int _pageSize = 20;
+    private bool _initialized;
+    private bool _isEmitting;
+    private bool _pendingEmit;
+
+    public Task SearchAsync()
+    {
+        _page = 1;
+        return EmitQueryChangedAsync();
+    }
+
+    public Task RefreshAsync()
+    {
+        return EmitQueryChangedAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await InitializeStateAsync();
+        _initialized = true;
+        await EmitQueryChangedAsync();
+    }
+
+    private async Task InitializeStateAsync()
+    {
+        _pagingEnabled = EnablePagingByDefault;
+        _page = 1;
+        _pageSize = NormalizePageSize(DefaultPageSize);
+
+        if (string.IsNullOrWhiteSpace(StateKey))
+        {
+            return;
+        }
+
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("cnn.storage.get", StateKey);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            var state = JsonSerializer.Deserialize<TablePagerState>(raw);
+            if (state == null)
+            {
+                return;
+            }
+
+            _pagingEnabled = state.PagingEnabled;
+            _page = Math.Max(1, state.Page);
+            _pageSize = NormalizePageSize(state.PageSize);
+        }
+        catch
+        {
+            // ignore storage read failures
+        }
+    }
+
+    private async Task OnPagingToggleChangedAsync(ChangeEventArgs args)
+    {
+        var enabled = args?.Value is bool value && value;
+        if (_pagingEnabled == enabled)
+        {
+            return;
+        }
+
+        _pagingEnabled = enabled;
+        _page = 1;
+        await EmitQueryChangedAsync();
+    }
+
+    private async Task OnPageChangedAsync(int page)
+    {
+        _page = Math.Max(1, page);
+        await EmitQueryChangedAsync();
+    }
+
+    private async Task OnPageSizeChangedAsync(int size)
+    {
+        _pageSize = NormalizePageSize(size);
+        _page = 1;
+        await EmitQueryChangedAsync();
+    }
+
+    private async Task EmitQueryChangedAsync()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        if (_isEmitting)
+        {
+            _pendingEmit = true;
+            return;
+        }
+
+        _isEmitting = true;
+        try
+        {
+            do
+            {
+                _pendingEmit = false;
+                await PersistStateAsync();
+                var query = BuildQuery();
+                Logger.LogInformation(
+                    "uiEvent={UiEvent} table_pager_query stateKey={StateKey} pagingEnabled={PagingEnabled} page={Page} pageSize={PageSize} total={Total}",
+                    "table_pager_query",
+                    string.IsNullOrWhiteSpace(StateKey) ? "-" : StateKey,
+                    query.PagingEnabled,
+                    query.Page,
+                    query.PageSize,
+                    Total);
+                await QueryChanged.InvokeAsync(query);
+            } while (_pendingEmit);
+        }
+        finally
+        {
+            _isEmitting = false;
+        }
+    }
+
+    private TablePageQuery BuildQuery()
+    {
+        if (_pagingEnabled)
+        {
+            return new TablePageQuery
+            {
+                PagingEnabled = true,
+                Page = Math.Max(1, _page),
+                PageSize = NormalizePageSize(_pageSize)
+            };
+        }
+
+        return new TablePageQuery
+        {
+            PagingEnabled = false,
+            Page = 1,
+            PageSize = Math.Max(1, UnpagedLimit)
+        };
+    }
+
+    private int NormalizePageSize(int size)
+    {
+        if (size <= 0)
+        {
+            size = DefaultPageSize;
+        }
+
+        if (PageSizes.Length == 0)
+        {
+            return size;
+        }
+
+        if (PageSizes.Contains(size))
+        {
+            return size;
+        }
+
+        return PageSizes[0];
+    }
+
+    private async Task PersistStateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(StateKey))
+        {
+            return;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(new TablePagerState
+            {
+                PagingEnabled = _pagingEnabled,
+                Page = _page,
+                PageSize = _pageSize
+            });
+            await Js.InvokeVoidAsync("cnn.storage.set", StateKey, payload);
+        }
+        catch
+        {
+            // ignore storage write failures
+        }
+    }
+
+    private sealed class TablePagerState
+    {
+        public bool PagingEnabled { get; set; } = true;
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 20;
+    }
+}

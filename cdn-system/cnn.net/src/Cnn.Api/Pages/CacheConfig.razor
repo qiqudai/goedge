@@ -1,0 +1,139 @@
+@page "/cache-config"
+@using global::System.Text.Json
+@using Cnn.Common.Contracts
+@inject Cnn.Api.Services.CacheApi CacheApi
+
+<h3>Cache Config</h3>
+
+<div class="mb-3">
+    <label class="form-label">Site ID</label>
+    <InputNumber class="form-control" @bind-Value="SiteId" />
+</div>
+
+<div class="mb-3">
+    <label class="form-label">Config JSON</label>
+    <InputTextArea class="form-control" @bind-Value="JsonText" rows="16" />
+</div>
+
+<div class="form-check mb-3">
+    <InputCheckbox class="form-check-input" @bind-Value="CompileAfterSave" />
+    <label class="form-check-label">Save 后自动编译并下发</label>
+</div>
+
+<div class="mb-3">
+    <button class="btn btn-primary me-2" @onclick="LoadAsync">加载</button>
+    <button class="btn btn-success me-2" @onclick="SaveAsync">保存</button>
+    <button class="btn btn-secondary me-2" @onclick="CompileAsync">仅编译下发</button>
+    <button class="btn btn-outline-secondary" @onclick="FormatJson">格式化</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert alert-info">@StatusMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(CompiledText))
+{
+    <div class="mb-3">
+        <label class="form-label">Compiled</label>
+        <InputTextArea class="form-control" value="@CompiledText" rows="10" readonly />
+    </div>
+}
+
+@code {
+    private int SiteId { get; set; } = 1;
+    private string JsonText { get; set; } = string.Empty;
+    private string? StatusMessage { get; set; }
+    private string? CompiledText { get; set; }
+    private bool CompileAfterSave { get; set; } = true;
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true
+    };
+
+    private async Task LoadAsync()
+    {
+        StatusMessage = null;
+        CompiledText = null;
+
+        var result = await CacheApi.GetAsync(SiteId);
+        if (!string.IsNullOrWhiteSpace(result.Raw))
+        {
+            JsonText = result.Raw;
+        }
+        else if (result.Config != null)
+        {
+            JsonText = JsonSerializer.Serialize(result.Config, JsonOptions);
+        }
+        else
+        {
+            JsonText = string.Empty;
+        }
+
+        StatusMessage = result.Message ?? "Loaded";
+    }
+
+    private async Task SaveAsync()
+    {
+        StatusMessage = null;
+        CompiledText = null;
+
+        CacheConfigDto? config;
+        try
+        {
+            config = JsonSerializer.Deserialize<CacheConfigDto>(JsonText, JsonOptions);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"JSON 解析失败: {ex.Message}";
+            return;
+        }
+
+        if (config == null)
+        {
+            StatusMessage = "JSON 解析失败: 空对象";
+            return;
+        }
+
+        var result = await CacheApi.SaveAsync(SiteId, config, CompileAfterSave);
+        if (result.Compiled != null)
+        {
+            CompiledText = JsonSerializer.Serialize(result.Compiled, JsonOptions);
+        }
+
+        StatusMessage = result.Message ?? "Saved";
+    }
+
+    private async Task CompileAsync()
+    {
+        StatusMessage = null;
+        CompiledText = null;
+
+        var compiled = await CacheApi.CompileAsync(SiteId);
+        if (compiled != null)
+        {
+            CompiledText = JsonSerializer.Serialize(compiled, JsonOptions);
+            StatusMessage = "Compiled";
+        }
+        else
+        {
+            StatusMessage = "Compile failed";
+        }
+    }
+
+    private void FormatJson()
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(JsonText);
+            JsonText = JsonSerializer.Serialize(doc.RootElement, JsonOptions);
+            StatusMessage = "Formatted";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"格式化失败: {ex.Message}";
+        }
+    }
+}

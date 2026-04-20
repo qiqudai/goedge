@@ -42,6 +42,28 @@ func (ctrl *ForwardDefaultController) List(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"list": items})
 		return
 	}
+	if uidStr := strings.TrimSpace(c.Query("user_id")); uidStr != "" {
+		uid, err := strconv.ParseInt(uidStr, 10, 64)
+		if err != nil || uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+			return
+		}
+		items, err := loadForwardDefaultItemsForUser(uid)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load settings")})
+			return
+		}
+		if len(items) > 0 {
+			groupMap, _ := loadForwardGroupMapForUser(uid, items)
+			for i := range items {
+				if items[i].GroupID != 0 {
+					items[i].GroupName = groupMap[items[i].GroupID]
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"list": items})
+		return
+	}
 	items, err := loadForwardDefaultItems()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load settings")})
@@ -97,6 +119,7 @@ func (ctrl *ForwardDefaultController) Create(c *gin.Context) {
 		return
 	}
 	var req struct {
+		UserID  int64       `json:"user_id"`
 		Key     string      `json:"key"`
 		Value   interface{} `json:"value"`
 		Scope   string      `json:"scope"`
@@ -104,6 +127,25 @@ func (ctrl *ForwardDefaultController) Create(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Key == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("invalid request")})
+		return
+	}
+	if req.UserID != 0 {
+		value := encodeForwardDefaultValue(req.Key, req.Value)
+		enable := true
+		upsertReq := configItemUpsertRequest{
+			Type:      "stream_default_config",
+			ScopeName: "user",
+			ScopeID:   req.UserID,
+			Items: []configItemPayload{
+				{Name: req.Key, Value: value, Enable: &enable},
+			},
+		}
+		if err := upsertConfigItems(upsertReq); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("save failed")})
+			return
+		}
+		services.BumpConfigVersion("config_item", []int64{req.UserID})
+		c.JSON(http.StatusOK, gin.H{"message": T("created")})
 		return
 	}
 	items, _ := loadForwardDefaultItems()
@@ -151,11 +193,26 @@ func (ctrl *ForwardDefaultController) Delete(c *gin.Context) {
 		return
 	}
 	var req struct {
-		ID    int64  `json:"id"`
-		IDStr string `json:"id_str"`
+		ID     int64  `json:"id"`
+		IDStr  string `json:"id_str"`
+		UserID int64  `json:"user_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("id is required")})
+		return
+	}
+	if req.UserID != 0 {
+		key := strings.TrimSpace(req.IDStr)
+		if key == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("id is required")})
+			return
+		}
+		if err := db.DB.Where("type = ? AND scope_name = ? AND scope_id = ? AND name = ?", "stream_default_config", "user", req.UserID, key).Delete(&models.ConfigItem{}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("delete failed")})
+			return
+		}
+		services.BumpConfigVersion("config_item", []int64{req.UserID})
+		c.JSON(http.StatusOK, gin.H{"message": T("deleted")})
 		return
 	}
 	id := req.ID
@@ -252,6 +309,31 @@ func loadForwardGroupMap(items []forwardDefaultItem) (map[int64]string, error) {
 	return result, nil
 }
 
+func loadForwardGroupMapForUser(userID int64, items []forwardDefaultItem) (map[int64]string, error) {
+	groupIDs := make([]int64, 0)
+	seen := map[int64]struct{}{}
+	for _, item := range items {
+		if item.GroupID != 0 {
+			if _, ok := seen[item.GroupID]; !ok {
+				seen[item.GroupID] = struct{}{}
+				groupIDs = append(groupIDs, item.GroupID)
+			}
+		}
+	}
+	result := map[int64]string{}
+	if len(groupIDs) == 0 {
+		return result, nil
+	}
+	var groups []models.ForwardGroup
+	if err := db.DB.Where("uid = ? AND id IN ?", userID, groupIDs).Find(&groups).Error; err != nil {
+		return nil, err
+	}
+	for _, g := range groups {
+		result[g.ID] = g.Name
+	}
+	return result, nil
+}
+
 func loadForwardDefaultItemsForUser(userID int64) ([]forwardDefaultItem, error) {
 	var items []models.ConfigItem
 	if err := db.DB.Where("type = ? AND scope_name = ? AND scope_id = ?", "stream_default_config", "user", userID).Find(&items).Error; err != nil {
@@ -265,8 +347,8 @@ func loadForwardDefaultItemsForUser(userID int64) ([]forwardDefaultItem, error) 
 			IDStr:   item.Name,
 			Key:     item.Name,
 			Value:   value,
-			Scope:   "global",
-			GroupID: 0,
+			Scope:   item.ScopeName,
+			GroupID: item.ScopeID,
 		})
 	}
 	return result, nil

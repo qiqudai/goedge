@@ -1,0 +1,299 @@
+﻿﻿@using global::System.Text.Json
+@using Cnn.Common.Contracts.Admin
+@inject Cnn.Api.Services.ConfigItemClient ConfigClient
+
+<div class="card config-card">
+    <div class="card-header">用户相关</div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label">Session有效时间</label>
+            <div class="input-group">
+                <InputText class="form-control" @bind-Value="_form.SessionLife" inputmode="numeric" />
+                <span class="input-group-text">秒</span>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">限制用户端登录域名</label>
+            <InputText class="form-control" @bind-Value="_form.LimitUserLoginDomain" placeholder="如 user.example.com" />
+            <div class="form-text">仅允许指定域名访问；留空不限制；绑定主控域名请在 bind-master-host 中配置。</div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">限制管理员端登录域名</label>
+            <InputText class="form-control" @bind-Value="_form.LimitAdminLoginDomain" placeholder="如 admin.example.com" />
+            <div class="form-text">仅允许指定域名访问；留空不限制；绑定主控域名请在 bind-master-host 中配置。</div>
+        </div>
+
+        <hr />
+        <h6 class="mb-3">登录方式</h6>
+        <div class="form-check form-switch mb-2">
+            <InputCheckbox class="form-check-input" @bind-Value="_form.EnableEmailLogin" />
+            <label class="form-check-label">启用邮箱登录</label>
+        </div>
+        <div class="form-check form-switch mb-3">
+            <InputCheckbox class="form-check-input" @bind-Value="_form.EnableSmsLogin" />
+            <label class="form-check-label">启用短信登录</label>
+        </div>
+
+        <hr />
+        <h6 class="mb-3">注册设置</h6>
+        <div class="form-check form-switch mb-3">
+            <InputCheckbox class="form-check-input" @bind-Value="_form.OpenRegister" />
+            <label class="form-check-label">开放注册</label>
+        </div>
+
+        <hr />
+        <h6 class="mb-3">邮件模板</h6>
+        <div class="mb-3">
+            <label class="form-label">注册成功标题</label>
+            <InputText class="form-control" @bind-Value="_form.RegisterMailTitle" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">注册成功内容</label>
+            <InputTextArea class="form-control" rows="4" @bind-Value="_form.RegisterMailContent" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">找回密码标题</label>
+            <InputText class="form-control" @bind-Value="_form.ResetPwdMailTitle" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">找回密码内容</label>
+            <InputTextArea class="form-control" rows="4" @bind-Value="_form.ResetPwdMailContent" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">邮箱验证标题</label>
+            <InputText class="form-control" @bind-Value="_form.VerifyMailTitle" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">邮箱验证内容</label>
+            <InputTextArea class="form-control" rows="4" @bind-Value="_form.VerifyMailContent" />
+        </div>
+
+        <hr />
+        <h6 class="mb-3">短信模板</h6>
+        <div class="mb-3">
+            <label class="form-label">验证码模板ID</label>
+            <InputText class="form-control" @bind-Value="_form.PhoneCaptchaTemplateId" placeholder="如: SMS_123456789" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">验证码模板内容</label>
+            <InputTextArea class="form-control" rows="3" @bind-Value="_form.PhoneCaptchaTemplate" placeholder="您的验证码是${code}，5分钟内有效。" />
+        </div>
+
+        <div class="mt-3 d-flex align-items-center gap-2">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            @if (_saving)
+            {
+                <span class="text-muted">保存中...</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="alert @_messageClass mt-3">@_message</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ConfigItemDto> Items { get; set; } = Array.Empty<ConfigItemDto>();
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private readonly UserConfigForm _form = new();
+    private bool _saving;
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    protected override void OnParametersSet()
+    {
+        if (Items.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var item in Items)
+        {
+            var value = item.Value ?? string.Empty;
+            switch (item.Name)
+            {
+                case "login_session_valid_time":
+                    _form.SessionLife = string.IsNullOrWhiteSpace(value) ? _form.SessionLife : value;
+                    break;
+                case "limit_user_login_domain":
+                    _form.LimitUserLoginDomain = NormalizeDomainValue(value);
+                    break;
+                case "limit_admin_login_domain":
+                    _form.LimitAdminLoginDomain = NormalizeDomainValue(value);
+                    break;
+                case "allow-enable-email-captcha-login":
+                    _form.EnableEmailLogin = IsTrue(value);
+                    break;
+                case "allow-enable-sms-captcha-login":
+                    _form.EnableSmsLogin = IsTrue(value);
+                    break;
+                case "allow_register":
+                    _form.OpenRegister = IsTrue(value);
+                    break;
+                case "register_success_templ":
+                    ApplyTemplate(value, t =>
+                    {
+                        _form.RegisterMailTitle = t.Title;
+                        _form.RegisterMailContent = t.Content;
+                    });
+                    break;
+                case "forget_password_templ":
+                    ApplyTemplate(value, t =>
+                    {
+                        _form.ResetPwdMailTitle = t.Title;
+                        _form.ResetPwdMailContent = t.Content;
+                    });
+                    break;
+                case "email_captcha_templ":
+                    ApplyTemplate(value, t =>
+                    {
+                        _form.VerifyMailTitle = t.Title;
+                        _form.VerifyMailContent = t.Content;
+                    });
+                    break;
+                case "phone_captcha_templ":
+                    _form.PhoneCaptchaTemplate = value;
+                    break;
+            }
+        }
+    }
+
+    private void ApplyTemplate(string value, Action<MailTemplate> setter)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        try
+        {
+            var template = JsonSerializer.Deserialize<MailTemplatePayload>(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            if (template != null)
+            {
+                setter(new MailTemplate
+                {
+                    Title = template.Title ?? string.Empty,
+                    Content = template.Data ?? string.Empty
+                });
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+
+        var payload = new List<ConfigItemPayloadDto>
+        {
+            new() { Name = "login_session_valid_time", Value = _form.SessionLife },
+            new() { Name = "limit_user_login_domain", Value = _form.LimitUserLoginDomain ?? string.Empty },
+            new() { Name = "limit_admin_login_domain", Value = _form.LimitAdminLoginDomain ?? string.Empty },
+            new() { Name = "allow-enable-email-captcha-login", Value = _form.EnableEmailLogin ? "1" : "0" },
+            new() { Name = "allow-enable-sms-captcha-login", Value = _form.EnableSmsLogin ? "1" : "0" },
+            new() { Name = "allow_register", Value = _form.OpenRegister ? "1" : "0" },
+            new()
+            {
+                Name = "register_success_templ",
+                Value = JsonSerializer.Serialize(new MailTemplatePayload
+                {
+                    Title = _form.RegisterMailTitle,
+                    Data = _form.RegisterMailContent
+                }, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            },
+            new()
+            {
+                Name = "forget_password_templ",
+                Value = JsonSerializer.Serialize(new MailTemplatePayload
+                {
+                    Title = _form.ResetPwdMailTitle,
+                    Data = _form.ResetPwdMailContent
+                }, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            },
+            new()
+            {
+                Name = "email_captcha_templ",
+                Value = JsonSerializer.Serialize(new MailTemplatePayload
+                {
+                    Title = _form.VerifyMailTitle,
+                    Data = _form.VerifyMailContent
+                }, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            },
+            new() { Name = "phone_captcha_templ", Value = _form.PhoneCaptchaTemplate ?? string.Empty }
+        };
+
+        var ok = await ConfigClient.SaveAsync("system", "global", 0, payload);
+        _saving = false;
+
+        if (ok)
+        {
+            SetMessage(true, "保存成功");
+            if (OnSaved.HasDelegate)
+            {
+                await OnSaved.InvokeAsync();
+            }
+        }
+        else
+        {
+            SetMessage(false, "保存失败");
+        }
+    }
+
+    private static bool IsTrue(string value) => value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeDomainValue(string value)
+    {
+        var raw = (value ?? string.Empty).Trim();
+        return raw is "0" or "1" or "true" or "false" ? string.Empty : raw;
+    }
+
+    private void SetMessage(bool success, string message)
+    {
+        _message = message;
+        _messageClass = success ? "alert-success" : "alert-danger";
+    }
+
+    private sealed class MailTemplate
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+
+    private sealed class MailTemplatePayload
+    {
+        public string? Title { get; set; }
+        public string? Data { get; set; }
+    }
+
+    private sealed class UserConfigForm
+    {
+        public string SessionLife { get; set; } = "86400";
+        public string LimitUserLoginDomain { get; set; } = string.Empty;
+        public string LimitAdminLoginDomain { get; set; } = string.Empty;
+        public bool EnableEmailLogin { get; set; }
+        public bool EnableSmsLogin { get; set; }
+        public bool OpenRegister { get; set; } = true;
+        public string RegisterMailTitle { get; set; } = string.Empty;
+        public string RegisterMailContent { get; set; } = string.Empty;
+        public string ResetPwdMailTitle { get; set; } = string.Empty;
+        public string ResetPwdMailContent { get; set; } = string.Empty;
+        public string VerifyMailTitle { get; set; } = string.Empty;
+        public string VerifyMailContent { get; set; } = string.Empty;
+        public string PhoneCaptchaTemplateId { get; set; } = string.Empty;
+        public string PhoneCaptchaTemplate { get; set; } = string.Empty;
+    }
+}

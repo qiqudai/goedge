@@ -5,6 +5,9 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"crypto/sha256"
+	"debug/elf"
+	"debug/macho"
+	"debug/pe"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -93,6 +96,9 @@ func upgradeAgentPackage(raw string, report TaskProgressReporter) (string, error
 	if edgeNodePath != "" {
 		if err := applyEdgeNodeUpgrade(edgeNodePath, runtimeRoot()); err != nil {
 			return "", err
+		}
+		if err := postProcessRuntimeUpgrade(runtimeRoot()); err != nil {
+			log.Printf("[Upgrade] post process runtime failed: %v", err)
 		}
 		if runtime.GOOS != "windows" {
 			if err := ensureLinuxNginxWrapper(NginxBinPath); err != nil {
@@ -217,6 +223,20 @@ func extractZip(path string, dest string) error {
 			}
 			continue
 		}
+		if isZipSymlink(f) {
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+				return err
+			}
+			linkTarget, err := readZipSymlinkTarget(f)
+			if err != nil {
+				return err
+			}
+			_ = os.Remove(targetPath)
+			if err := os.Symlink(linkTarget, targetPath); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 			return err
 		}
@@ -269,6 +289,14 @@ func extractTarGz(path string, dest string) error {
 			if err := os.MkdirAll(targetPath, 0o755); err != nil {
 				return err
 			}
+		case tar.TypeSymlink:
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+				return err
+			}
+			_ = os.Remove(targetPath)
+			if err := os.Symlink(hdr.Linkname, targetPath); err != nil {
+				return err
+			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 				return err
@@ -287,13 +315,30 @@ func extractTarGz(path string, dest string) error {
 	return nil
 }
 
+func isZipSymlink(f *zip.File) bool {
+	return f.Mode()&os.ModeSymlink != 0
+}
+
+func readZipSymlinkTarget(f *zip.File) (string, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return "", err
+	}
+	target := strings.TrimSpace(string(data))
+	if target == "" {
+		return "", fmt.Errorf("zip symlink %s has empty target", f.Name)
+	}
+	return target, nil
+}
+
 func locateUpgradeAssets(root string) (string, string) {
 	var edgeNodePath string
 	var agentPath string
-	agentName := "cdn-agent"
-	if runtime.GOOS == "windows" {
-		agentName = "cdn-agent.exe"
-	}
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -304,12 +349,23 @@ func locateUpgradeAssets(root string) (string, string) {
 			}
 			return nil
 		}
-		if agentPath == "" && d.Name() == agentName {
+		if agentPath == "" && matchesUpgradeAgentBinaryName(d.Name()) {
 			agentPath = path
 		}
 		return nil
 	})
 	return edgeNodePath, agentPath
+}
+
+func matchesUpgradeAgentBinaryName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(name, "cdn-agent.exe")
+	}
+	return name == "cdn-agent" || strings.HasPrefix(name, "cdn-agent-")
 }
 
 func applyEdgeNodeUpgrade(srcRoot string, destRoot string) error {
@@ -339,6 +395,22 @@ func applyEdgeNodeUpgrade(srcRoot string, destRoot string) error {
 		}
 		return copyFile(path, targetPath, 0)
 	})
+}
+
+func postProcessRuntimeUpgrade(destRoot string) error {
+	if strings.TrimSpace(destRoot) == "" {
+		return nil
+	}
+	confPath := filepath.Join(destRoot, "conf", "nginx.conf")
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		return err
+	}
+	patched := patchNginxConfigPaths(string(data), destRoot)
+	if patched == string(data) {
+		return nil
+	}
+	return os.WriteFile(confPath, []byte(patched), 0o644)
 }
 
 func shouldSkipUpgradePath(rel string) bool {
@@ -402,6 +474,9 @@ func fileSHA256(path string) string {
 }
 
 func replaceAgentBinary(src string) (bool, error) {
+	if err := validateAgentBinaryForCurrentPlatform(src); err != nil {
+		return false, err
+	}
 	exe, err := os.Executable()
 	if err != nil || strings.TrimSpace(exe) == "" {
 		return false, err
@@ -414,6 +489,95 @@ func replaceAgentBinary(src string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func validateAgentBinaryForCurrentPlatform(path string) error {
+	switch runtime.GOOS {
+	case "linux":
+		return validateLinuxBinary(path)
+	case "windows":
+		return validateWindowsBinary(path)
+	case "darwin":
+		return validateDarwinBinary(path)
+	default:
+		return nil
+	}
+}
+
+func validateLinuxBinary(path string) error {
+	f, err := elf.Open(path)
+	if err != nil {
+		return fmt.Errorf("invalid linux agent binary: %w", err)
+	}
+	defer f.Close()
+	expected, ok := expectedELFMachine(runtime.GOARCH)
+	if ok && f.Machine != expected {
+		return fmt.Errorf("linux agent binary arch mismatch: got=%s want=%s", f.Machine.String(), expected.String())
+	}
+	return nil
+}
+
+func expectedELFMachine(goarch string) (elf.Machine, bool) {
+	switch goarch {
+	case "amd64":
+		return elf.EM_X86_64, true
+	case "386":
+		return elf.EM_386, true
+	case "arm64":
+		return elf.EM_AARCH64, true
+	default:
+		return 0, false
+	}
+}
+
+func validateWindowsBinary(path string) error {
+	f, err := pe.Open(path)
+	if err != nil {
+		return fmt.Errorf("invalid windows agent binary: %w", err)
+	}
+	defer f.Close()
+	expected, ok := expectedPEMachine(runtime.GOARCH)
+	if ok && f.FileHeader.Machine != expected {
+		return fmt.Errorf("windows agent binary arch mismatch: got=%#x want=%#x", f.FileHeader.Machine, expected)
+	}
+	return nil
+}
+
+func expectedPEMachine(goarch string) (uint16, bool) {
+	switch goarch {
+	case "amd64":
+		return pe.IMAGE_FILE_MACHINE_AMD64, true
+	case "386":
+		return pe.IMAGE_FILE_MACHINE_I386, true
+	case "arm64":
+		return pe.IMAGE_FILE_MACHINE_ARM64, true
+	default:
+		return 0, false
+	}
+}
+
+func validateDarwinBinary(path string) error {
+	f, err := macho.Open(path)
+	if err != nil {
+		return fmt.Errorf("invalid darwin agent binary: %w", err)
+	}
+	defer f.Close()
+	expected, ok := expectedMachoCPU(runtime.GOARCH)
+	if ok && f.Cpu != expected {
+		return fmt.Errorf("darwin agent binary arch mismatch: got=%v want=%v", f.Cpu, expected)
+	}
+	return nil
+}
+
+func expectedMachoCPU(goarch string) (macho.Cpu, bool) {
+	switch goarch {
+	case "amd64":
+		return macho.CpuAmd64, true
+	case "arm64":
+		return macho.CpuArm64, true
+	default:
+		return 0, false
+	}
 }
 
 func scheduleAgentRestart(delay time.Duration) {

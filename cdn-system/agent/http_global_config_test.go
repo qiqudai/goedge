@@ -95,3 +95,26 @@ func TestWriteHTTPGlobalConfig_UsesConfiguredCacheStatusCodes(t *testing.T) {
 		t.Fatalf("configured cache status map entry missing")
 	}
 }
+
+func TestWriteHTTPGlobalConfig_DisablesQuicGSOWhenHTTP3Supported(t *testing.T) {
+	root := prepareHTTPGlobalConfigTestEnv(t)
+	prevNginxBin := NginxBinPath
+	t.Cleanup(func() {
+		NginxBinPath = prevNginxBin
+		resetHTTP3SupportCacheForTests()
+	})
+	NginxBinPath = ""
+	resetHTTP3SupportCacheForTests()
+
+	if err := writeHTTPGlobalConfig(nil, false); err != nil {
+		t.Fatalf("writeHTTPGlobalConfig failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "conf", "dynamic", "http_global.conf"))
+	if err != nil {
+		t.Fatalf("read http_global.conf failed: %v", err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "quic_gso off;") {
+		t.Fatalf("expected quic_gso off when http3 is supported")
+	}
+}

@@ -1,0 +1,24 @@
+### BEGIN INIT INFO
+# Provides:          edge-node
+# Required-Start:    $all
+# Required-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:
+# Short-Description: GoEdge Node Service
+### END INIT INFO
+
+[Unit]
+Description=GoEdge Node Service
+Before=shutdown.target
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1s
+ExecStart=/usr/bin/bash -c "/usr/local/goedge/edge-node/bin/edge-node daemon -config /usr/local/goedge/edge-node/agent.json"
+ExecStop=/usr/local/goedge/edge-node/bin/edge-node stop
+ExecReload=/usr/local/goedge/edge-node/bin/edge-node reload
+
+[Install]
+WantedBy=multi-user.target

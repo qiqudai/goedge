@@ -1,0 +1,120 @@
+@page "/plans/usage"
+@using Cnn.Common.Contracts
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">用量查询</div>
+
+    <div class="filter-bar">
+        <select class="form-select" style="max-width: 180px" @bind="_range">
+            <option value="today">今天</option>
+            <option value="yesterday">昨天</option>
+            <option value="7d">近7天</option>
+            <option value="30d">近30天</option>
+        </select>
+        <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+    </div>
+
+    @if (_loading)
+    {
+        <div>加载中...</div>
+    }
+    else if (_data == null)
+    {
+        <div class="alert alert-warning">暂无数据</div>
+    }
+    else
+    {
+        <div class="card config-card p-3">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted">总量</div>
+                    <div>@_data.Total @_data.Unit</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted">平均</div>
+                    <div>@_data.Avg @_data.Unit</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted">峰值</div>
+                    <div>@_data.Peak @_data.Unit</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3" style="height: 320px; width: 100%;" id="usageChart"></div>
+
+        <div class="table-responsive mt-3">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>数值 (@_data.Unit)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_data.List.Count == 0)
+                    {
+                        <tr><td colspan="2">暂无明细</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in _data.List)
+                        {
+                            <tr>
+                                <td>@row.Time</td>
+                                <td>@row.Value</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private string _range = "7d";
+    private bool _loading;
+    private UsageResultDto? _data;
+    private bool _chartPending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_chartPending && _data != null)
+        {
+            _chartPending = false;
+            await Js.InvokeVoidAsync("cnn.usage.renderChart",
+                "usageChart",
+                (_data.XAxis ?? Array.Empty<string>()).ToArray(),
+                (_data.Values ?? Array.Empty<double>()).ToArray(),
+                _data.Unit ?? "MB");
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?> { ["range"] = _range };
+        var response = await Api.GetAsync<UsageResultDto>("usage", ApiScope.User, query);
+        _data = response?.Data;
+        _loading = false;
+        _chartPending = _data != null;
+    }
+
+    private Task SearchAsync()
+    {
+        return LoadAsync();
+    }
+}

@@ -64,18 +64,18 @@ func main() {
 	// 2. Load from Config File
 	if fileData, err := ioutil.ReadFile(configPath); err == nil {
 		var fileConfig struct {
-			API                string `json:"api"`
-			Token              string `json:"token"`
-			NodeID             string `json:"node_id"`
-			Debug              bool   `json:"debug"`
-			WorkDir            string `json:"work_dir"`
-			ResetResources     bool   `json:"reset_resources"`
-			BootstrapSync      bool   `json:"bootstrap_sync"`
-			BootstrapStart     bool   `json:"bootstrap_start"`
-			GenevaEnable       bool   `json:"geneva_enable"`
-			GenevaWindowSize   uint16 `json:"geneva_window_size"`
-			AutoInstallService *bool  `json:"auto_install_service"`
-			AutoDisableFirewall *bool `json:"auto_disable_firewall"`
+			API                 string `json:"api"`
+			Token               string `json:"token"`
+			NodeID              string `json:"node_id"`
+			Debug               bool   `json:"debug"`
+			WorkDir             string `json:"work_dir"`
+			ResetResources      bool   `json:"reset_resources"`
+			BootstrapSync       bool   `json:"bootstrap_sync"`
+			BootstrapStart      bool   `json:"bootstrap_start"`
+			GenevaEnable        bool   `json:"geneva_enable"`
+			GenevaWindowSize    uint16 `json:"geneva_window_size"`
+			AutoInstallService  *bool  `json:"auto_install_service"`
+			AutoDisableFirewall *bool  `json:"auto_disable_firewall"`
 		}
 		if err := json.Unmarshal(fileData, &fileConfig); err == nil {
 			if fileConfig.API != "" {

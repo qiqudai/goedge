@@ -61,7 +61,7 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 			"site_id":      siteID,
 			"domain":       domain,
 			"ip":           row.IP,
-			"location":     formatBlockLocation(row.IP),
+			"location":     formatBlockLocation(row.Country, row.Province),
 			"filter":       blockFilterLabel(row.Status),
 			"block_time":   formatBlockTime(row.BlockTime),
 			"release_time": "PERMANENT",
@@ -150,7 +150,7 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 			"site_id":    siteID,
 			"domain":     domain,
 			"ip":         row.IP,
-			"location":   formatBlockLocation(row.IP),
+			"location":   formatBlockLocation(row.Country, row.Province),
 			"filter":     blockFilterLabel(row.Status),
 			"block_time": formatBlockTime(row.BlockTime),
 			"is_manual":  false,
@@ -254,8 +254,15 @@ func parseBlockSiteID(keyword string) int64 {
 	return siteID
 }
 
-func formatBlockLocation(ip string) string {
-	country, province := services.LookupIPRegion(ip)
+func formatBlockLocation(country string, province string) string {
+	country = strings.TrimSpace(country)
+	province = strings.TrimSpace(province)
+	if country == "-" {
+		country = ""
+	}
+	if province == "-" {
+		province = ""
+	}
 	if country == "" && province == "" {
 		return "-"
 	}

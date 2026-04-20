@@ -1,0 +1,2293 @@
+@page "/website/list"
+@using global::System.Text.Json
+@using Cnn.Common.Contracts
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services.Deletion
+@using Cnn.Api.Services.Tasks.Workflow
+@using Cnn.Api.Pages.Global.Defaults
+@using Microsoft.AspNetCore.Components
+@inject ApiClient Api
+@inject ClientSession Session
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <MudPaper Elevation="1" Class="config-card pa-3">
+        <MudStack Row="true" Spacing="1" Class="mb-3">
+            <MudButton Variant="@TabVariant("list")" Color="Color.Primary" OnClick="@(() => SetTab("list"))">网站列表</MudButton>
+            <MudButton Variant="@TabVariant("default")" Color="Color.Primary" OnClick="@(() => SetTab("default"))">默认设置</MudButton>
+            <MudButton Variant="@TabVariant("dns")" Color="Color.Primary" OnClick="@(() => SetTab("dns"))">DNS 接口</MudButton>
+            <MudButton Variant="@TabVariant("resolve")" Color="Color.Primary" OnClick="@(() => SetTab("resolve"))">解析检测</MudButton>
+        </MudStack>
+
+        @if (_activeTab == "list")
+        {
+            <div class="filter-bar">
+                <button class="btn btn-primary"
+                        @onclick="OpenCreateAsync"
+                        disabled="@(!_canCreateSite)"
+                        title="@(_canCreateSite ? string.Empty : (_createDisabledTip ?? "域名数量超限，无法添加网站"))">
+                    添加网站
+                </button>
+                <button class="btn btn-outline-secondary"
+                        @onclick="OpenBatchCreateAsync"
+                        disabled="@(!_canCreateSite)"
+                        title="@(_canCreateSite ? string.Empty : (_createDisabledTip ?? "域名数量超限，无法批量添加网站"))">
+                    批量添加
+                </button>
+                <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="OpenBatchEdit">批量修改</button>
+                <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="ApplyCertAsync">申请证书</button>
+                <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick='@(() => BatchActionAsync("enable"))'>启用</button>
+                <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick='@(() => BatchActionAsync("disable"))'>禁用</button>
+                <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick='@(() => BatchActionAsync("unlock"))'>解除黑名单</button>
+                <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick='@(() => BatchActionAsync("clear_cache"))'>清缓存</button>
+                <button class="btn btn-outline-danger" disabled="@(!_selectedIds.Any())" @onclick='@(() => BatchActionAsync("delete"))'>删除</button>
+                @if (Session.IsAdmin)
+                {
+                    <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="OpenBatchCnameDomainAsync">CNAME域名</button>
+                    <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="OpenBatchCnameMode">CNAME模式</button>
+                    <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="OpenBatchNodeGroup">线路分组</button>
+                }
+                <button class="btn btn-outline-secondary" @onclick="ExportAsync">导出</button>
+            </div>
+
+            @if (!Session.IsAdmin && _domainUsage != null)
+            {
+                <div class="mb-2 small @(_domainUsage.Exceeded ? "text-danger" : "text-muted")">
+                    域名数 @_domainUsage.TotalDomains / @FormatLimit(_domainUsage.DomainLimit)，主域名数 @_domainUsage.TotalMainDomains / @FormatLimit(_domainUsage.MainDomainLimit)
+                    @if (_domainUsage.Exceeded && !string.IsNullOrWhiteSpace(_createDisabledTip))
+                    {
+                        <span>，@_createDisabledTip</span>
+                    }
+                </div>
+            }
+
+            <div class="filter-bar">
+                <select class="form-select" style="max-width: 140px" @bind="_filters.SearchField">
+                    <option value="all">全部字段</option>
+                    <option value="domain">域名</option>
+                    <option value="origin">源站</option>
+                    <option value="cname">CNAME</option>
+                </select>
+                <InputText class="form-control" style="max-width: 220px" @bind-Value="_filters.Keyword" placeholder="关键字" />
+                <select class="form-select" style="max-width: 140px" @bind="_filters.Status">
+                    <option value="">全部状态</option>
+                    <option value="enabled">启用</option>
+                    <option value="disabled">禁用</option>
+                </select>
+                <select class="form-select" style="max-width: 140px" @bind="_filters.Https">
+                    <option value="">HTTPS全部</option>
+                    <option value="1">开启</option>
+                    <option value="0">关闭</option>
+                </select>
+                <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+                <button class="btn btn-link" @onclick="OpenAdvancedSearch">高级搜索</button>
+                <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                    @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+                </button>
+            </div>
+
+            @if (_showPagingDiagnostics)
+            {
+                <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+                    <div><strong>分页诊断</strong></div>
+                    <div>stateKey: <code>website:list:table</code></div>
+                    <div>pagingEnabled: <code>@(_pageQuery.PagingEnabled ? "true" : "false")</code></div>
+                    <div>page: <code>@_pageQuery.Page</code>, pageSize: <code>@_pageQuery.PageSize</code></div>
+                    <div>loaded: <code>@_items.Count</code>, total: <code>@_total</code></div>
+                </div>
+            }
+
+            <TablePager @ref="_tablePager"
+                        StateKey="website:list:table"
+                        Total="_total"
+                        DefaultPageSize="20"
+                        UnpagedLimit="1000"
+                        QueryChanged="OnPageQueryChangedAsync">
+                <ChildContent>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th style="width:50px"><input type="checkbox" class="form-check-input" checked="@AllSelected" @onchange="ToggleSelectAll" /></th>
+                                    <th>ID</th>
+                                    @if (Session.IsAdmin)
+                                    {
+                                        <th>用户</th>
+                                    }
+                                    <th>域名</th>
+                                    <th>监听端口</th>
+                                    <th>源站</th>
+                                    <th>CNAME</th>
+                                    <th>HTTPS</th>
+                                    <th>套餐</th>
+                                    <th>区域</th>
+                                    <th>线路组</th>
+                                    <th>分组</th>
+                                    <th>状态</th>
+                                    <th>时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_loading)
+                                {
+                                    <tr><td colspan="15">加载中...</td></tr>
+                                }
+                                else if (_items.Count == 0)
+                                {
+                                    <tr><td colspan="15">暂无数据</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in _items)
+                                    {
+                                        <tr>
+                                            <td><input type="checkbox" class="form-check-input" checked="@_selectedIds.Contains(item.Id)" @onchange="e => ToggleRow(item.Id, e)" /></td>
+                                            <td>@item.Id</td>
+                                            @if (Session.IsAdmin)
+                                            {
+                                                <td>@FormatUser(item)</td>
+                                            }
+                                            <td>@(item.DomainDisplay ?? item.Domains.FirstOrDefault())</td>
+                                            <td>@item.ListenPorts</td>
+                                            <td>@item.OriginDisplay</td>
+                                            <td>@item.Cname</td>
+                                            <td>@(item.Https ? "开启" : "关闭")</td>
+                                            <td>@item.UserPackageName</td>
+                                            <td>@item.RegionName</td>
+                                            <td>@item.NodeGroupName</td>
+                                            <td>@item.GroupName</td>
+                                            <td>@(item.Status ? "正常" : "停用")</td>
+                                            <td>@FormatDate(item.CreatedAt)</td>
+                                            <td class="d-flex gap-2 flex-wrap">
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEdit(item)">编辑</button>
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick='@(() => Nav.NavigateTo($"/website/manage?id={item.Id}"))'>管理</button>
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick='@(() => BatchSingleActionAsync(item.Id, item.Status ? "disable" : "enable"))'>@(item.Status ? "禁用" : "启用")</button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick='@(() => BatchSingleActionAsync(item.Id, "delete"))'>删除</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ChildContent>
+            </TablePager>
+        }
+        else if (_activeTab == "default")
+        {
+            <SiteDefaultsTab />
+        }
+        else if (_activeTab == "dns")
+        {
+            <DnsApiTab />
+        }
+        else
+        {
+            <SiteResolvePanel />
+        }
+    </MudPaper>
+</div>
+
+@if (_activeTab == "list" && _editorVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_editing.Id > 0 ? "编辑网站" : "新增网站")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    @if (Session.IsAdmin)
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">用户搜索</label>
+                            <InputText class="form-control mb-2" @bind-Value="_editorUserKeyword" placeholder="输入ID/邮箱/用户名/手机号筛选" />
+                            <label class="form-label">所属用户</label>
+                            <select class="form-select" @bind="_editing.UserId" @bind:after="OnEditUserChangedAsync">
+                                <option value="0">请选择用户</option>
+                                @foreach (var user in FilteredEditorUsers)
+                                {
+                                    <option value="@user.Id">@FormatUserOption(user)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="form-label">套餐</label>
+                        <select class="form-select" @bind="_editing.UserPackageId" @bind:after="OnEditPackageChangedAsync">
+                            <option value="0">默认</option>
+                            @foreach (var pkg in _packages)
+                            {
+                                <option value="@pkg.Id">@pkg.Name</option>
+                            }
+                        </select>
+                    </div>
+                    @if (_editorDomainUsage != null)
+                    {
+                        <div class="col-md-12">
+                            <div class="small @(_editorDomainUsage.Exceeded ? "text-danger" : "text-muted")">
+                                域名数 @_editorDomainUsage.TotalDomains / @FormatLimit(_editorDomainUsage.DomainLimit)，主域名数 @_editorDomainUsage.TotalMainDomains / @FormatLimit(_editorDomainUsage.MainDomainLimit)
+                                @if (_editorDomainUsage.Exceeded && !string.IsNullOrWhiteSpace(_editorDomainUsage.Message))
+                                {
+                                    <span>，@_editorDomainUsage.Message</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="form-label">分组</label>
+                        <select class="form-select" @bind="_editing.GroupId">
+                            <option value="0">默认</option>
+                            @foreach (var group in _groups)
+                            {
+                                <option value="@group.Id">@group.Name</option>
+                            }
+                        </select>
+                    </div>
+                    @if (_editing.Id <= 0)
+                    {
+                        <div class="col-md-4">
+                            <label class="form-label">线路分组</label>
+                            <select class="form-select" @bind="_editing.NodeGroupId">
+                                <option value="0">默认</option>
+                                @foreach (var group in _nodeGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-12">
+                        <label class="form-label">域名(每行一个)</label>
+                        <InputTextArea class="form-control" rows="4" @bind-Value="_editing.DomainsInput" />
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">源站(每行一个)</label>
+                        <InputTextArea class="form-control" rows="4" @bind-Value="_editing.BackendsInput" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">启用</label>
+                        <div class="form-check form-switch">
+                            <InputCheckbox class="form-check-input" @bind-Value="_editing.Enable" />
+                        </div>
+                    </div>
+                    <div class="col-md-12 text-center">
+                        <button class="btn btn-link text-decoration-none" @onclick='@(() => _editExpandMore = !_editExpandMore)'>
+                            更多设置 @(_editExpandMore ? "收起" : "展开")
+                        </button>
+                    </div>
+                    @if (_editExpandMore)
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">网站分组</label>
+                            @if (_groups.Count == 0)
+                            {
+                                <div class="form-text">暂无可用分组</div>
+                            }
+                            else
+                            {
+                                <div class="border rounded p-2" style="max-height: 180px; overflow-y: auto;">
+                                    @foreach (var group in _groups)
+                                    {
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="@($"site-group-{group.Id}")" checked="@_editing.GroupIds.Contains(group.Id)" @onchange="e => ToggleEditGroup(group.Id, e)" />
+                                            <label class="form-check-label" for="@($"site-group-{group.Id}")">@group.Name</label>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">DNS服务商</label>
+                            <select class="form-select" @bind="_editing.DnsProviderId">
+                                <option value="0">默认</option>
+                                @foreach (var provider in _dnsProviders)
+                                {
+                                    <option value="@provider.Id">@provider.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">加速类型</label>
+                            <select class="form-select" @bind="_editing.SiteType">
+                                <option value="website">网页加速</option>
+                                <option value="api">API加速</option>
+                                <option value="download">下载加速</option>
+                            </select>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseEditor">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_activeTab == "list" && _batchCreateVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>批量添加网站</h5>
+                <button class="btn-close" @onclick="CloseBatchCreate"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    @if (Session.IsAdmin)
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">用户搜索</label>
+                            <InputText class="form-control mb-2" @bind-Value="_batchCreateUserKeyword" placeholder="输入ID/邮箱/用户名/手机号筛选" />
+                            <label class="form-label">所属用户</label>
+                            <select class="form-select" @bind="_batchCreate.UserId" @bind:after="OnBatchCreateUserChangedAsync">
+                                <option value="0">请选择用户</option>
+                                @foreach (var user in FilteredBatchCreateUsers)
+                                {
+                                    <option value="@user.Id">@FormatUserOption(user)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="form-label">套餐</label>
+                        <select class="form-select" @bind="_batchCreate.UserPackageId" @bind:after="OnBatchCreatePackageChangedAsync">
+                            <option value="0">默认套餐</option>
+                            @foreach (var pkg in _packages)
+                            {
+                                <option value="@pkg.Id">@pkg.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">分组</label>
+                        <select class="form-select" @bind="_batchCreate.GroupId">
+                            <option value="0">默认分组</option>
+                            @foreach (var group in _groups)
+                            {
+                                <option value="@group.Id">@group.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">线路分组</label>
+                        <select class="form-select" @bind="_batchCreate.NodeGroupId">
+                            <option value="0">默认线路组</option>
+                            @foreach (var group in _nodeGroups)
+                            {
+                                <option value="@group.Id">@group.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">DNS接口</label>
+                        <select class="form-select" @bind="_batchCreate.DnsProviderId">
+                            <option value="0">默认DNS</option>
+                            @foreach (var dns in _dnsProviders)
+                            {
+                                <option value="@dns.Id">@dns.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <label class="form-check mb-0">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchCreate.IgnoreError" />
+                            <span class="form-check-label">忽略错误继续创建</span>
+                        </label>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">模式</label>
+                        <div class="d-flex gap-3">
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="batchCreateMode" value="simple" checked="@(_batchCreate.Mode == "simple")" @onchange='@(() => _batchCreate.Mode = "simple")' />
+                                <span class="form-check-label">简单模式</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="batchCreateMode" value="advanced" checked="@(_batchCreate.Mode == "advanced")" @onchange='@(() => _batchCreate.Mode = "advanced")' />
+                                <span class="form-check-label">高级模式</span>
+                            </label>
+                        </div>
+                    </div>
+                    @if (_batchCreate.Mode == "simple")
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">网站域名(每行一个)</label>
+                            <InputTextArea class="form-control" rows="4" @bind-Value="_batchCreate.SimpleDomains" placeholder="example.com&#10;www.example.com" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">源站地址(每行一个，所有域名共用)</label>
+                            <InputTextArea class="form-control" rows="4" @bind-Value="_batchCreate.SimpleBackends" placeholder="1.1.1.1&#10;1.1.1.1:8080" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">数据内容</label>
+                            <InputTextArea class="form-control"
+                                           rows="8"
+                                           @bind-Value="_batchCreate.AdvancedData"
+                                           placeholder="domain=example.com,www.example.com|ip=1.1.1.1&#10;domain=test.com|ip=2.2.2.2,3.3.3.3" />
+                            <div class="form-text">格式：`domain=域名列表|ip=源IP列表`，多条记录按行分隔。</div>
+                        </div>
+                    }
+                </div>
+
+                @if (_batchCreateResult != null)
+                {
+                    <hr />
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-semibold">任务批次：@_batchCreateResult.BatchId</div>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshBatchProgressAsync" disabled="@_batchProgressLoading">
+                            @(_batchProgressLoading ? "刷新中..." : "刷新进度")
+                        </button>
+                    </div>
+                    <div class="small text-muted mb-2">已创建任务：@_batchCreateResult.Created</div>
+                    @if (_batchProgress != null)
+                    {
+                        <div class="small mb-1">总任务：@_batchProgress.Total，成功：@_batchProgress.Success，失败：@_batchProgress.Fail，运行中：@_batchProgress.Running，待执行：@_batchProgress.Pending</div>
+                        <div class="small mb-2">完成度：@_batchProgress.Percent%</div>
+                        @if (_batchProgress.FailItems.Count > 0)
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered">
+                                    <thead>
+                                        <tr>
+                                            <th>失败域名</th>
+                                            <th>原因</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var fail in _batchProgress.FailItems)
+                                        {
+                                            <tr>
+                                                <td>@fail.Domain</td>
+                                                <td>@fail.Reason</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    }
+                }
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseBatchCreate">关闭</button>
+                <button class="btn btn-primary" @onclick="SubmitBatchCreateAsync" disabled="@_saving">提交</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_activeTab == "list" && _batchVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@BatchTitle</h5>
+                <button class="btn-close" @onclick="CloseBatch"></button>
+            </div>
+            <div class="modal-body">
+                @if (_batchMode == "settings")
+                {
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <div class="form-text">只会修改勾选项，未勾选项保持原值。</div>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.UserPackageId" />
+                            <label class="form-label mb-0">套餐设置</label>
+                        </div>
+                        <div class="col-md-8">
+                            <select class="form-select" @bind="_batchForm.UserPackageId" disabled="@(!_batchFlags.UserPackageId)">
+                                <option value="0">清空/默认</option>
+                                @foreach (var pkg in _packages)
+                                {
+                                    <option value="@pkg.Id">@pkg.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.GroupIds" />
+                            <label class="form-label mb-0">所属分组</label>
+                        </div>
+                        <div class="col-md-8">
+                            @if (_groups.Count == 0)
+                            {
+                                <div class="form-text">暂无可用分组</div>
+                            }
+                            else
+                            {
+                                <div class="border rounded p-2" style="max-height: 160px; overflow-y: auto;">
+                                    @foreach (var group in _groups)
+                                    {
+                                        <div class="form-check">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="@($"batch-site-group-{group.Id}")"
+                                                   checked="@_batchForm.GroupIds.Contains(group.Id)"
+                                                   disabled="@(!_batchFlags.GroupIds)"
+                                                   @onchange="e => ToggleBatchGroup(group.Id, e)" />
+                                            <label class="form-check-label" for="@($"batch-site-group-{group.Id}")">@group.Name</label>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.DnsProviderId" />
+                            <label class="form-label mb-0">DNS接口</label>
+                        </div>
+                        <div class="col-md-8">
+                            <select class="form-select" @bind="_batchForm.DnsProviderId" disabled="@(!_batchFlags.DnsProviderId)">
+                                <option value="0">清空/默认</option>
+                                @foreach (var dns in _dnsProviders)
+                                {
+                                    <option value="@dns.Id">@dns.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpListen" />
+                            <label class="form-label mb-0">HTTP监听端口</label>
+                        </div>
+                        <div class="col-md-8">
+                            <InputText class="form-control" @bind-Value="_batchForm.HttpListenInput" disabled="@(!_batchFlags.HttpListen)" placeholder="80 8080" />
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsListen" />
+                            <label class="form-label mb-0">HTTPS监听端口</label>
+                        </div>
+                        <div class="col-md-8">
+                            <InputText class="form-control" @bind-Value="_batchForm.HttpsListenInput" disabled="@(!_batchFlags.HttpsListen)" placeholder="443 8443" />
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpEnable" />
+                            <label class="form-label mb-0">HTTP开关</label>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpEnable" disabled="@(!_batchFlags.HttpEnable)" />
+                                <span class="form-check-label">启用 HTTP</span>
+                            </label>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsEnable" />
+                            <label class="form-label mb-0">HTTPS开关</label>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpsEnable" disabled="@(!_batchFlags.HttpsEnable)" />
+                                <span class="form-check-label">启用 HTTPS</span>
+                            </label>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsForce" />
+                            <label class="form-label mb-0">强制HTTPS</label>
+                        </div>
+                        <div class="col-md-8 d-flex gap-2 align-items-center">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpsForce" disabled="@(!_batchFlags.HttpsForce)" />
+                                <span class="form-check-label">启用跳转</span>
+                            </label>
+                            <InputText class="form-control"
+                                       style="max-width: 140px"
+                                       @bind-Value="_batchForm.HttpsForcePort"
+                                       disabled="@(!_batchFlags.HttpsForce || !_batchForm.HttpsForce)"
+                                       placeholder="443" />
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsHsts" />
+                            <label class="form-label mb-0">HSTS</label>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpsHsts" disabled="@(!_batchFlags.HttpsHsts)" />
+                                <span class="form-check-label">启用 HSTS</span>
+                            </label>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsHttp2" />
+                            <label class="form-label mb-0">HTTP/2</label>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpsHttp2" disabled="@(!_batchFlags.HttpsHttp2)" />
+                                <span class="form-check-label">启用 HTTP/2</span>
+                            </label>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsHttp3" />
+                            <label class="form-label mb-0">HTTP/3</label>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpsHttp3" disabled="@(!_batchFlags.HttpsHttp3)" />
+                                <span class="form-check-label">启用 HTTP/3</span>
+                            </label>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.HttpsOcsp" />
+                            <label class="form-label mb-0">OCSP装订</label>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-check form-switch mb-0">
+                                <InputCheckbox class="form-check-input" @bind-Value="_batchForm.HttpsOcsp" disabled="@(!_batchFlags.HttpsOcsp)" />
+                                <span class="form-check-label">启用 OCSP Stapling</span>
+                            </label>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.BackendProtocol" />
+                            <label class="form-label mb-0">回源协议</label>
+                        </div>
+                        <div class="col-md-8">
+                            <select class="form-select" @bind="_batchForm.BackendProtocol" disabled="@(!_batchFlags.BackendProtocol)">
+                                <option value="http">HTTP</option>
+                                <option value="https">HTTPS</option>
+                                <option value="follow">跟随协议</option>
+                                <option value="follow_port">跟随端口和协议</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.BalanceWay" />
+                            <label class="form-label mb-0">负载方式</label>
+                        </div>
+                        <div class="col-md-8">
+                            <select class="form-select" @bind="_batchForm.BalanceWay" disabled="@(!_batchFlags.BalanceWay)">
+                                <option value="ip_hash">IP 哈希</option>
+                                <option value="rr">轮循</option>
+                                <option value="url_hash">URL 哈希</option>
+                                <option value="least_conn">最少连接</option>
+                                <option value="random">随机</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-4 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchFlags.Backends" />
+                            <label class="form-label mb-0">源站列表</label>
+                        </div>
+                        <div class="col-md-8">
+                            <InputTextArea class="form-control"
+                                           rows="4"
+                                           @bind-Value="_batchForm.BackendsInput"
+                                           disabled="@(!_batchFlags.Backends)"
+                                           placeholder="1.1.1.1&#10;1.1.1.1:8080" />
+                            <div class="form-text">每行一个源站地址，提交时会同步更新网站源站列表。</div>
+                        </div>
+                    </div>
+                }
+                else if (_batchMode == "json")
+                {
+                    <label class="form-label">批量更新JSON</label>
+                    <InputTextArea class="form-control" rows="8" @bind-Value="_batchJson" placeholder='{"user_package_id":1,"group_id":2}' />
+                    <div class="form-text">请输入 SiteBatchUpdateRequest 字段 JSON，系统会自动注入选中的 IDs。</div>
+                }
+                else if (_batchMode == "cname-domain")
+                {
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label">CNAME域名</label>
+                            <select class="form-select" @bind="_batchCnameDomain">
+                                <option value="">请选择</option>
+                                @foreach (var item in _cnameDomains)
+                                {
+                                    <option value="@item.Domain">@(string.IsNullOrWhiteSpace(item.Note) ? item.Domain : $"{item.Domain}（{item.Note}）")</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+                else if (_batchMode == "cname-mode")
+                {
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label">CNAME生成模式</label>
+                            <select class="form-select" @bind="_batchCnameMode">
+                                <option value="custom">按网站生成</option>
+                                <option value="package">按套餐生成</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+                else if (_batchMode == "node-group")
+                {
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label">区域</label>
+                            <select class="form-select" @bind="_batchRegionId">
+                                <option value="0">不修改</option>
+                                @foreach (var region in _regions)
+                                {
+                                    <option value="@region.Id">@region.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">线路分组</label>
+                            <select class="form-select" @bind="_batchNodeGroupId">
+                                <option value="0">不修改</option>
+                                @foreach (var group in FilteredNodeGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-12 d-flex align-items-center gap-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="_batchEnableBackupGroup" />
+                            <label class="form-label mb-0">启用备用线路组</label>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">备用线路组</label>
+                            <select class="form-select" @bind="_batchBackupNodeGroupId" disabled="@(!_batchEnableBackupGroup)">
+                                <option value="0">请选择</option>
+                                @foreach (var group in _nodeGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                @if (_batchMode == "settings" || _batchMode == "json")
+                {
+                    <button class="btn btn-outline-secondary" @onclick="ToggleBatchAdvancedMode">高级JSON</button>
+                }
+                <button class="btn btn-secondary" @onclick="CloseBatch">取消</button>
+                <button class="btn btn-primary" @onclick="SubmitBatchAsync" disabled="@_saving">提交</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_activeTab == "list" && _exportVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>导出结果</h5>
+                <button class="btn-close" @onclick="CloseExport"></button>
+            </div>
+            <div class="modal-body">
+                <InputTextArea class="form-control" rows="10" value="@_exportContent" readonly />
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseExport">关闭</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_activeTab == "list" && _advancedVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel" style="max-width: 520px">
+            <div class="modal-header">
+                <h5>高级搜索</h5>
+                <button class="btn-close" @onclick="CloseAdvancedSearch"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    @if (Session.IsAdmin)
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">所属用户</label>
+                            <select class="form-select" @bind="_advancedUserId">
+                                <option value="0">全部用户</option>
+                                @foreach (var user in _users)
+                                {
+                                    <option value="@user.Id">@FormatUserOption(user)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-12">
+                        <label class="form-label">状态</label>
+                        <select class="form-select" @bind="_advancedStatus">
+                            <option value="">全部</option>
+                            <option value="enabled">正常</option>
+                            <option value="disabled">停用</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseAdvancedSearch">取消</button>
+                <button class="btn btn-primary" @onclick="ApplyAdvancedSearchAsync">搜索</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    private readonly List<SiteListItem> _items = new();
+    private readonly List<UserItemDto> _users = new();
+    private readonly List<UserPackageItemDto> _packages = new();
+    private readonly List<SiteGroupDto> _groups = new();
+    private readonly List<NodeGroupListItem> _nodeGroups = new();
+    private readonly List<DnsApiItemDto> _dnsProviders = new();
+    private readonly List<CnameDomainItem> _cnameDomains = new();
+    private readonly List<RegionListItem> _regions = new();
+    private readonly HashSet<long> _selectedIds = new();
+
+    private bool _loading;
+    private bool _saving;
+    private bool _editorVisible;
+    private bool _batchCreateVisible;
+    private bool _batchVisible;
+    private bool _exportVisible;
+    private bool _advancedVisible;
+    private bool _editExpandMore;
+    private int _total;
+    private SiteFilters _filters = new();
+    private SiteEditModel _editing = new();
+    private string _batchJson = "{}";
+    private string _exportContent = string.Empty;
+    private string _activeTab = "list";
+    private string _editorUserKeyword = string.Empty;
+    private string _batchCreateUserKeyword = string.Empty;
+    private bool _showPagingDiagnostics;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private TablePager? _tablePager;
+
+    private string _batchMode = "settings";
+    private BatchCommonForm _batchForm = new();
+    private BatchCommonFlags _batchFlags = new();
+    private string _batchCnameDomain = string.Empty;
+    private string _batchCnameMode = "custom";
+    private long _batchRegionId;
+    private long _batchNodeGroupId;
+    private long _batchBackupNodeGroupId;
+    private bool _batchEnableBackupGroup;
+
+    private DomainUsageDto? _domainUsage;
+    private bool _canCreateSite = true;
+    private string _createDisabledTip = string.Empty;
+
+    private SiteBatchCreateModel _batchCreate = new();
+    private SiteBatchCreateResult? _batchCreateResult;
+    private SiteBatchProgressResult? _batchProgress;
+    private bool _batchProgressLoading;
+    private string _advancedStatus = string.Empty;
+    private long _advancedUserId;
+    private DomainUsageDto? _editorDomainUsage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDependenciesAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        var tab = (Tab ?? string.Empty).Trim().ToLowerInvariant();
+        if (tab is "list" or "default" or "dns" or "resolve")
+        {
+            _activeTab = tab;
+        }
+    }
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private Variant TabVariant(string tab)
+    {
+        return string.Equals(_activeTab, tab, StringComparison.OrdinalIgnoreCase)
+            ? Variant.Filled
+            : Variant.Outlined;
+    }
+
+    private IEnumerable<NodeGroupListItem> FilteredNodeGroups
+        => _batchRegionId > 0
+            ? _nodeGroups.Where(group => (group.RegionId ?? 0) == _batchRegionId)
+            : _nodeGroups;
+
+    private string BatchTitle => _batchMode switch
+    {
+        "cname-domain" => "修改CNAME域名",
+        "cname-mode" => "修改CNAME生成模式",
+        "node-group" => "修改线路分组",
+        _ => "批量修改"
+    };
+
+    private IEnumerable<UserItemDto> FilteredEditorUsers => FilterUsers(_editorUserKeyword);
+
+    private IEnumerable<UserItemDto> FilteredBatchCreateUsers => FilterUsers(_batchCreateUserKeyword);
+
+    private void SetTab(string tab)
+    {
+        tab = (tab ?? "list").Trim().ToLowerInvariant();
+        if (tab is not ("list" or "default" or "dns" or "resolve"))
+        {
+            tab = "list";
+        }
+
+        _activeTab = tab;
+
+        var target = tab == "list" ? "/website/list" : $"/website/list?tab={tab}";
+        var current = new Uri(Nav.Uri);
+        var currentPath = current.AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        var currentQuery = current.Query ?? string.Empty;
+        var targetQuery = tab == "list" ? string.Empty : $"?tab={tab}";
+
+        if (currentPath != "/website/list" || !string.Equals(currentQuery, targetQuery, StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo(target, replace: true);
+        }
+    }
+
+    private Dictionary<string, string?> BuildListQuery()
+    {
+        return new Dictionary<string, string?>
+        {
+            ["page"] = _pageQuery.Page.ToString(),
+            ["pageSize"] = _pageQuery.PageSize.ToString(),
+            ["keyword"] = _filters.Keyword,
+            ["search_field"] = _filters.SearchField,
+            ["status"] = _filters.Status,
+            ["https"] = _filters.Https,
+            ["user_id"] = Session.IsAdmin && _filters.UserId > 0 ? _filters.UserId.ToString() : null
+        };
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var response = await Api.GetAsync<SiteListResult>("sites", Scope, BuildListQuery());
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            _items.AddRange(response.Data.List);
+            _total = (int)response.Data.Total;
+        }
+        else
+        {
+            _total = 0;
+        }
+        _loading = false;
+    }
+
+    private async Task LoadDependenciesAsync()
+    {
+        if (Session.IsAdmin)
+        {
+            var usersResponse = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, new Dictionary<string, string?> { ["pageSize"] = "200" });
+            _users.Clear();
+            if (usersResponse?.Data?.List != null)
+            {
+                _users.AddRange(usersResponse.Data.List.OrderBy(x => x.Name ?? string.Empty).ThenBy(x => x.Id));
+            }
+        }
+
+        await LoadSiteEditorDependenciesAsync(Session.IsAdmin ? 0 : (Session.UserId ?? 0));
+
+        if (Session.IsAdmin)
+        {
+            var nodeGroupResponse = await Api.GetAsync<NodeGroupListResult>("node-groups", Scope, new Dictionary<string, string?> { ["pageSize"] = "1000" });
+            _nodeGroups.Clear();
+            if (nodeGroupResponse?.Data?.List != null)
+            {
+                _nodeGroups.AddRange(nodeGroupResponse.Data.List);
+            }
+
+            var cnameResponse = await Api.GetAsync<CnameDomainListResult>("cname_domains", ApiScope.Admin);
+            _cnameDomains.Clear();
+            if (cnameResponse?.Data?.List != null)
+            {
+                _cnameDomains.AddRange(cnameResponse.Data.List);
+            }
+
+            var regionResponse = await Api.GetAsync<RegionListResult>("regions", ApiScope.Admin, new Dictionary<string, string?> { ["pageSize"] = "1000" });
+            _regions.Clear();
+            if (regionResponse?.Data?.List != null)
+            {
+                _regions.AddRange(regionResponse.Data.List);
+            }
+        }
+        else
+        {
+            var nodeGroupResponse = await Api.GetAsync<NodeGroupListResult>("node-groups", Scope, new Dictionary<string, string?> { ["pageSize"] = "1000" });
+            _nodeGroups.Clear();
+            if (nodeGroupResponse?.Data?.List != null)
+            {
+                _nodeGroups.AddRange(nodeGroupResponse.Data.List);
+            }
+        }
+
+        await LoadDomainUsageAsync();
+    }
+
+    private async Task LoadSiteEditorDependenciesAsync(long userId)
+    {
+        _packages.Clear();
+        _groups.Clear();
+        _dnsProviders.Clear();
+
+        if (Session.IsAdmin && userId <= 0)
+        {
+            return;
+        }
+
+        var packageResponse = await Api.GetAsync<UserPackageListResult>("user_packages", Scope, new Dictionary<string, string?> { ["pageSize"] = "1000" });
+        if (packageResponse?.Data?.List != null)
+        {
+            _packages.AddRange(Session.IsAdmin && userId > 0
+                ? packageResponse.Data.List.Where(x => x.Uid == userId)
+                : packageResponse.Data.List);
+        }
+
+        Dictionary<string, string?>? groupQuery = new Dictionary<string, string?> { ["pageSize"] = "1000" };
+        if (Session.IsAdmin && userId > 0)
+        {
+            groupQuery["user_id"] = userId.ToString();
+        }
+
+        var groupResponse = await Api.GetAsync<SiteGroupListResult>("site_groups", Scope, groupQuery);
+        if (groupResponse?.Data?.List != null)
+        {
+            _groups.AddRange(groupResponse.Data.List);
+        }
+
+        Dictionary<string, string?>? dnsQuery = null;
+        if (Session.IsAdmin && userId > 0)
+        {
+            dnsQuery = new Dictionary<string, string?>
+            {
+                ["user_id"] = userId.ToString()
+            };
+        }
+
+        var dnsResponse = await Api.GetAsync<DnsApiListResult>("dnsapi", Scope, dnsQuery);
+        if (dnsResponse?.Data?.List != null)
+        {
+            _dnsProviders.AddRange(dnsResponse.Data.List);
+        }
+    }
+
+    private async Task LoadDomainUsageAsync()
+    {
+        if (Session.IsAdmin)
+        {
+            _domainUsage = null;
+            _canCreateSite = true;
+            _createDisabledTip = string.Empty;
+            return;
+        }
+
+        long packageId = _packages.FirstOrDefault()?.Id ?? 0;
+        var query = new Dictionary<string, string?>();
+        if (packageId > 0)
+        {
+            query["user_package_id"] = packageId.ToString();
+        }
+
+        var response = await Api.GetAsync<DomainUsageDto>("domain_usage", ApiScope.User, query);
+        _domainUsage = response?.Data;
+        _canCreateSite = _domainUsage?.Exceeded != true;
+        _createDisabledTip = _domainUsage?.Message ?? string.Empty;
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadAsync();
+    }
+
+    private void OpenAdvancedSearch()
+    {
+        _advancedUserId = _filters.UserId;
+        _advancedStatus = _filters.Status;
+        _advancedVisible = true;
+    }
+
+    private void CloseAdvancedSearch()
+    {
+        _advancedVisible = false;
+    }
+
+    private async Task ApplyAdvancedSearchAsync()
+    {
+        _filters.UserId = _advancedUserId;
+        _filters.Status = _advancedStatus;
+        _advancedVisible = false;
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadAsync();
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+
+    private Task RefreshListAsync()
+    {
+        if (_tablePager != null)
+        {
+            return _tablePager.RefreshAsync();
+        }
+
+        return LoadAsync();
+    }
+
+    private async Task OpenCreateAsync()
+    {
+        if (!_canCreateSite)
+        {
+            await Js.InvokeVoidAsync("alert", string.IsNullOrWhiteSpace(_createDisabledTip) ? "域名数量超限，无法添加网站" : _createDisabledTip);
+            return;
+        }
+
+        _editing = new SiteEditModel();
+        if (!Session.IsAdmin)
+        {
+            _editing.UserId = Session.UserId ?? 0;
+        }
+        else
+        {
+            _editorUserKeyword = string.Empty;
+            var candidates = FilteredEditorUsers.ToList();
+            if (candidates.Count == 1)
+            {
+                _editing.UserId = candidates[0].Id;
+            }
+        }
+        _editExpandMore = false;
+        _editorDomainUsage = null;
+        _editorVisible = true;
+        await OnEditUserChangedAsync();
+    }
+
+    private async void OpenEdit(SiteListItem item)
+    {
+        _editing = SiteEditModel.FromItem(item);
+        _editExpandMore = _editing.GroupIds.Count > 0 || _editing.DnsProviderId > 0 || !string.Equals(_editing.SiteType, "website", StringComparison.OrdinalIgnoreCase);
+        _editorDomainUsage = null;
+        _editorVisible = true;
+        await OnEditUserChangedAsync();
+    }
+
+    private void CloseEditor()
+    {
+        _editorVisible = false;
+    }
+
+    private async Task OpenBatchCreateAsync()
+    {
+        if (!_canCreateSite)
+        {
+            await Js.InvokeVoidAsync("alert", string.IsNullOrWhiteSpace(_createDisabledTip) ? "域名数量超限，无法批量添加网站" : _createDisabledTip);
+            return;
+        }
+
+        _batchCreate = new SiteBatchCreateModel();
+        if (!Session.IsAdmin)
+        {
+            _batchCreate.UserId = Session.UserId ?? 0;
+        }
+        else
+        {
+            _batchCreateUserKeyword = string.Empty;
+            var candidates = FilteredBatchCreateUsers.ToList();
+            if (candidates.Count == 1)
+            {
+                _batchCreate.UserId = candidates[0].Id;
+            }
+        }
+        _batchCreateResult = null;
+        _batchProgress = null;
+        _batchCreateVisible = true;
+        await OnBatchCreateUserChangedAsync();
+    }
+
+    private void CloseBatchCreate()
+    {
+        _batchCreateVisible = false;
+    }
+
+    private async Task SubmitBatchCreateAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            if (Session.IsAdmin && _batchCreate.UserId <= 0)
+            {
+                await Js.InvokeVoidAsync("alert", "管理员批量添加时必须指定用户ID");
+                return;
+            }
+
+            var data = _batchCreate.Mode == "advanced"
+                ? (_batchCreate.AdvancedData ?? string.Empty).Trim()
+                : BuildSimpleBatchCreateData(_batchCreate.SimpleDomains, _batchCreate.SimpleBackends);
+
+            if (string.IsNullOrWhiteSpace(data))
+            {
+                await Js.InvokeVoidAsync("alert", "请填写批量创建数据");
+                return;
+            }
+
+            var validationError = ValidateBatchCreateData(_batchCreate.Mode, data);
+            if (!string.IsNullOrWhiteSpace(validationError))
+            {
+                await Js.InvokeVoidAsync("alert", validationError);
+                return;
+            }
+
+            var request = new SiteBatchCreateRequest
+            {
+                UserId = Session.IsAdmin ? _batchCreate.UserId : 0,
+                UserPackageId = _batchCreate.UserPackageId,
+                GroupId = _batchCreate.GroupId,
+                DnsProviderId = _batchCreate.DnsProviderId,
+                NodeGroupId = _batchCreate.NodeGroupId,
+                Data = data,
+                IgnoreError = _batchCreate.IgnoreError
+            };
+
+            var response = await Api.PostAsync<SiteBatchCreateResult>("sites/batch", request, Scope);
+            if (response == null || (response.Code != 0 && response.Code != 200) || response.Data == null)
+            {
+                await Js.InvokeVoidAsync("alert", response?.Message ?? "批量创建提交失败");
+                return;
+            }
+
+            _batchCreateResult = response.Data;
+            await RefreshBatchProgressAsync();
+            await Js.InvokeVoidAsync("alert", $"批量创建任务已提交。批次ID：{response.Data.BatchId}，任务数：{response.Data.Created}");
+            await LoadDomainUsageAsync();
+            await RefreshListAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RefreshBatchProgressAsync()
+    {
+        if (_batchCreateResult == null || string.IsNullOrWhiteSpace(_batchCreateResult.BatchId) || _batchProgressLoading)
+        {
+            return;
+        }
+
+        _batchProgressLoading = true;
+        try
+        {
+            var response = await Api.GetAsync<SiteBatchProgressResult>($"sites/batch/{_batchCreateResult.BatchId}/progress", Scope);
+            if (response?.Data != null)
+            {
+                _batchProgress = response.Data;
+            }
+        }
+        finally
+        {
+            _batchProgressLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        if (_editorDomainUsage?.Exceeded == true)
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", _editorDomainUsage.Message ?? "域名数量超过套餐限制");
+            return;
+        }
+
+        ApiResponse<object>? result;
+        if (_editing.Id > 0)
+        {
+            var request = _editing.ToUpdateRequest();
+            result = await Api.PutAsync<object>($"sites/{_editing.Id}", request, Scope);
+        }
+        else
+        {
+            if (Session.IsAdmin && _editing.UserId <= 0)
+            {
+                _saving = false;
+                await Js.InvokeVoidAsync("alert", "请选择所属用户");
+                return;
+            }
+
+            var request = _editing.ToCreateRequest();
+            result = await Api.PostAsync<object>("sites", request, Scope);
+        }
+
+        if (result?.Code != ErrorCodes.Success)
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "网站保存失败");
+            return;
+        }
+
+        _saving = false;
+        _editorVisible = false;
+        await Js.InvokeVoidAsync("alert", _editing.Id > 0 ? "网站已更新" : "网站已创建");
+        await RefreshListAsync();
+        await LoadDomainUsageAsync();
+    }
+
+    private async Task ApplyCertAsync()
+    {
+        if (!_selectedIds.Any())
+        {
+            return;
+        }
+
+        var request = new SiteApplyCertRequest { Ids = _selectedIds.ToList() };
+        var response = await Api.PostAsync<SiteApplyCertResult>("sites/apply_cert", request, Scope);
+        var created = response?.Data?.CreatedIds?.Count ?? 0;
+        var skipped = response?.Data?.Skipped?.Count ?? 0;
+        await Js.InvokeVoidAsync("alert", $"证书申请任务已提交。成功：{created}，跳过：{skipped}");
+    }
+
+    private Task BatchSingleActionAsync(long id, string action)
+    {
+        if (action == "delete")
+        {
+            return DeleteSingleSiteAsync(id);
+        }
+
+        return BatchActionAsync(action, new[] { id });
+    }
+
+    private async Task DeleteSingleSiteAsync(long id)
+    {
+        var result = await DeleteWorkflowHelper.ConfirmAndRequestAsync(
+            Api,
+            Js,
+            $"sites/{id}",
+            Scope,
+            "确认删除该网站？",
+            "网站删除任务已提交");
+        if (!result.Success)
+        {
+            if (!result.Cancelled)
+            {
+                await Js.InvokeVoidAsync("alert", result.Message);
+            }
+
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", result.Message);
+        await RefreshListAsync();
+        if (result.TaskId > 0)
+        {
+            await RefreshAfterTaskAsync();
+        }
+    }
+
+    private async Task BatchActionAsync(string action, IReadOnlyList<long>? idsOverride = null)
+    {
+        var ids = (idsOverride ?? _selectedIds.ToList()).Where(id => id > 0).Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var needConfirm = action is "delete" or "clear_cache";
+        if (needConfirm)
+        {
+            var text = action == "delete"
+                ? $"确认删除选中的 {ids.Count} 个网站？"
+                : $"确认清空选中的 {ids.Count} 个网站缓存？";
+            var ok = await Js.InvokeAsync<bool>("confirm", text);
+            if (!ok)
+            {
+                return;
+            }
+        }
+
+        var request = new SiteBatchActionRequest
+        {
+            Action = action,
+            Ids = ids
+        };
+        var response = await Api.PostAsync<SiteBatchActionResult>("sites/batch_action", request, Scope);
+        if (response == null || response.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "网站批量操作提交失败");
+            return;
+        }
+
+        var taskId = response.Data?.TaskId ?? 0;
+        if (action == "clear_cache")
+        {
+            if (taskId > 0)
+            {
+                await Js.InvokeVoidAsync("alert", $"已创建清缓存任务：{taskId}");
+            }
+            else
+            {
+                await Js.InvokeVoidAsync("alert", "清缓存任务已提交");
+            }
+        }
+        else if (taskId > 0)
+        {
+            await Js.InvokeVoidAsync("alert", $"批量{ResolveActionLabel(action)}任务已提交：{taskId}");
+        }
+
+        _selectedIds.Clear();
+        await RefreshListAsync();
+        if (taskId > 0)
+        {
+            await RefreshAfterTaskAsync();
+        }
+    }
+
+    private async Task RefreshAfterTaskAsync()
+    {
+        await Task.Delay(1200);
+        await RefreshListAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string ResolveActionLabel(string action) => action switch
+    {
+        "enable" => "启用",
+        "disable" => "禁用",
+        "delete" => "删除",
+        "unlock" => "解除黑名单",
+        "clear_cache" => "清缓存",
+        _ => action
+    };
+
+    private IEnumerable<UserItemDto> FilterUsers(string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            return _users;
+        }
+
+        var kw = keyword.Trim();
+        return _users.Where(user =>
+            user.Id.ToString().Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(user.Name) && user.Name.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(user.Email) && user.Email.Contains(kw, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(user.Phone) && user.Phone.Contains(kw, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private void OpenBatchEdit()
+    {
+        ResetBatchState();
+        _batchMode = "settings";
+        _batchVisible = true;
+    }
+
+    private async Task OpenBatchCnameDomainAsync()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        ResetBatchState();
+        _batchMode = "cname-domain";
+        _batchVisible = true;
+        if (_cnameDomains.Count == 0)
+        {
+            var cnameResponse = await Api.GetAsync<CnameDomainListResult>("cname_domains", ApiScope.Admin);
+            if (cnameResponse?.Data?.List != null)
+            {
+                _cnameDomains.Clear();
+                _cnameDomains.AddRange(cnameResponse.Data.List);
+            }
+        }
+    }
+
+    private void OpenBatchCnameMode()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        ResetBatchState();
+        _batchMode = "cname-mode";
+        _batchVisible = true;
+    }
+
+    private void OpenBatchNodeGroup()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        ResetBatchState();
+        _batchMode = "node-group";
+        _batchVisible = true;
+    }
+
+    private void ToggleBatchAdvancedMode()
+    {
+        _batchMode = _batchMode == "json" ? "settings" : "json";
+    }
+
+    private void CloseBatch()
+    {
+        _batchVisible = false;
+    }
+
+    private async Task SubmitBatchAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        if (!_selectedIds.Any())
+        {
+            return;
+        }
+
+        _saving = true;
+
+        SiteBatchUpdateRequest? request = null;
+
+        if (_batchMode == "settings")
+        {
+            request = BuildCommonBatchRequest();
+            if (request == null)
+            {
+                _saving = false;
+                await Js.InvokeVoidAsync("alert", "请先勾选至少一个修改项");
+                return;
+            }
+        }
+        else if (_batchMode == "json")
+        {
+            try
+            {
+                request = JsonSerializer.Deserialize<SiteBatchUpdateRequest>(_batchJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            }
+            catch
+            {
+                _saving = false;
+                await Js.InvokeVoidAsync("alert", "JSON格式错误");
+                return;
+            }
+
+            request ??= new SiteBatchUpdateRequest();
+        }
+        else if (_batchMode == "cname-domain")
+        {
+            if (string.IsNullOrWhiteSpace(_batchCnameDomain))
+            {
+                _saving = false;
+                await Js.InvokeVoidAsync("alert", "请选择 CNAME 域名");
+                return;
+            }
+
+            request = new SiteBatchUpdateRequest
+            {
+                CnameDomain = _batchCnameDomain.Trim()
+            };
+        }
+        else if (_batchMode == "cname-mode")
+        {
+            request = new SiteBatchUpdateRequest
+            {
+                CnameMode = string.IsNullOrWhiteSpace(_batchCnameMode) ? "custom" : _batchCnameMode.Trim()
+            };
+        }
+        else if (_batchMode == "node-group")
+        {
+            if (_batchEnableBackupGroup && _batchBackupNodeGroupId <= 0)
+            {
+                _saving = false;
+                await Js.InvokeVoidAsync("alert", "启用备用线路组时，请选择备用线路组");
+                return;
+            }
+
+            if (_batchRegionId <= 0 && _batchNodeGroupId <= 0 && !_batchEnableBackupGroup)
+            {
+                _saving = false;
+                await Js.InvokeVoidAsync("alert", "请至少选择一个线路分组修改项");
+                return;
+            }
+
+            request = new SiteBatchUpdateRequest
+            {
+                RegionId = _batchRegionId > 0 ? _batchRegionId : null,
+                NodeGroupId = _batchNodeGroupId > 0 ? _batchNodeGroupId : null,
+                BackupNodeGroupId = _batchEnableBackupGroup && _batchBackupNodeGroupId > 0 ? _batchBackupNodeGroupId : null,
+                EnableBackupGroup = _batchEnableBackupGroup ? true : null
+            };
+        }
+
+        if (request == null)
+        {
+            _saving = false;
+            return;
+        }
+
+        request.Ids = _selectedIds.ToList();
+        var result = await Api.PostAsync<object>("sites/batch_update", request, Scope);
+        _saving = false;
+        if (result?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "批量修改提交失败");
+            return;
+        }
+
+        _batchVisible = false;
+        _selectedIds.Clear();
+        await Js.InvokeVoidAsync("alert", "批量修改已提交");
+        await RefreshListAsync();
+    }
+
+    private SiteBatchUpdateRequest? BuildCommonBatchRequest()
+    {
+        var request = new SiteBatchUpdateRequest();
+        var hasAny = false;
+        Dictionary<string, object?>? settings = null;
+
+        if (_batchFlags.UserPackageId)
+        {
+            request.UserPackageId = _batchForm.UserPackageId;
+            hasAny = true;
+        }
+
+        if (_batchFlags.GroupIds)
+        {
+            request.GroupIds = _batchForm.GroupIds.Count > 0 ? _batchForm.GroupIds.ToList() : Array.Empty<long>();
+            request.GroupId = request.GroupIds.FirstOrDefault();
+            hasAny = true;
+        }
+
+        if (_batchFlags.DnsProviderId)
+        {
+            request.DnsProviderId = _batchForm.DnsProviderId;
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpListen)
+        {
+            request.HttpListen = ParseFields(_batchForm.HttpListenInput);
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsListen)
+        {
+            request.HttpsListen = ParseFields(_batchForm.HttpsListenInput);
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpEnable)
+        {
+            settings ??= new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            settings["http_enable"] = _batchForm.HttpEnable;
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsEnable)
+        {
+            settings = SetNestedSetting(settings, new[] { "https", "enable" }, _batchForm.HttpsEnable);
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsForce)
+        {
+            settings = SetNestedSetting(settings, new[] { "https", "force" }, _batchForm.HttpsForce);
+            settings = SetNestedSetting(settings, new[] { "https", "redirect_port" }, string.IsNullOrWhiteSpace(_batchForm.HttpsForcePort) ? "443" : _batchForm.HttpsForcePort.Trim());
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsHsts)
+        {
+            settings = SetNestedSetting(settings, new[] { "https", "hsts" }, _batchForm.HttpsHsts);
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsHttp2)
+        {
+            settings = SetNestedSetting(settings, new[] { "https", "http2" }, _batchForm.HttpsHttp2);
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsHttp3)
+        {
+            settings = SetNestedSetting(settings, new[] { "https", "http3" }, _batchForm.HttpsHttp3);
+            hasAny = true;
+        }
+
+        if (_batchFlags.HttpsOcsp)
+        {
+            settings = SetNestedSetting(settings, new[] { "https", "ocsp_stapling" }, _batchForm.HttpsOcsp);
+            hasAny = true;
+        }
+
+        if (_batchFlags.BackendProtocol)
+        {
+            request.BackendProtocol = string.IsNullOrWhiteSpace(_batchForm.BackendProtocol) ? null : _batchForm.BackendProtocol.Trim();
+            settings ??= new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            settings["backend_protocol"] = request.BackendProtocol;
+            hasAny = true;
+        }
+
+        if (_batchFlags.BalanceWay)
+        {
+            request.BalanceWay = string.IsNullOrWhiteSpace(_batchForm.BalanceWay) ? null : _batchForm.BalanceWay.Trim();
+            hasAny = true;
+        }
+
+        if (_batchFlags.Backends)
+        {
+            request.Backends = ParseFields(_batchForm.BackendsInput);
+            hasAny = true;
+        }
+
+        if (settings is { Count: > 0 })
+        {
+            request.Settings = settings;
+        }
+
+        return hasAny ? request : null;
+    }
+
+    private void ToggleBatchGroup(long groupId, ChangeEventArgs args)
+    {
+        if (groupId <= 0)
+        {
+            return;
+        }
+
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            if (!_batchForm.GroupIds.Contains(groupId))
+            {
+                _batchForm.GroupIds.Add(groupId);
+            }
+        }
+        else
+        {
+            _batchForm.GroupIds.Remove(groupId);
+        }
+    }
+
+    private static Dictionary<string, object?> SetNestedSetting(
+        Dictionary<string, object?>? target,
+        IReadOnlyList<string> path,
+        object? value)
+    {
+        target ??= new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (path == null || path.Count == 0)
+        {
+            return target;
+        }
+
+        Dictionary<string, object?> current = target;
+        for (var i = 0; i < path.Count - 1; i++)
+        {
+            var key = path[i];
+            if (!current.TryGetValue(key, out var nextRaw) || nextRaw is not Dictionary<string, object?> next)
+            {
+                next = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                current[key] = next;
+            }
+
+            current = next;
+        }
+
+        current[path[^1]] = value;
+        return target;
+    }
+
+    private void ResetBatchState()
+    {
+        _batchJson = "{}";
+        _batchForm = new BatchCommonForm();
+        _batchFlags = new BatchCommonFlags();
+        _batchCnameDomain = string.Empty;
+        _batchCnameMode = "custom";
+        _batchRegionId = 0;
+        _batchNodeGroupId = 0;
+        _batchBackupNodeGroupId = 0;
+        _batchEnableBackupGroup = false;
+    }
+
+    private async Task ExportAsync()
+    {
+        var response = await Api.GetAsync<SiteExportResult>("sites/export", Scope, BuildListQuery());
+        if (response?.Data != null)
+        {
+            _exportContent = response.Data.Content;
+            _exportVisible = true;
+        }
+    }
+
+    private void CloseExport()
+    {
+        _exportVisible = false;
+    }
+
+    private bool AllSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.Id));
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            foreach (var item in _items)
+            {
+                _selectedIds.Add(item.Id);
+            }
+        }
+        else
+        {
+            _selectedIds.Clear();
+        }
+    }
+
+    private void ToggleRow(long id, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            _selectedIds.Add(id);
+        }
+        else
+        {
+            _selectedIds.Remove(id);
+        }
+    }
+
+    private static string FormatUser(SiteListItem item)
+    {
+        var name = string.IsNullOrWhiteSpace(item.UserName) ? "" : item.UserName.Trim();
+        return string.IsNullOrWhiteSpace(name) ? $"ID {item.UserId}" : $"{name} ({item.UserId})";
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        if (value == null || value == DateTime.MinValue)
+        {
+            return "-";
+        }
+
+        return value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    private static string FormatLimit(int limit)
+    {
+        return limit <= 0 ? "不限" : limit.ToString();
+    }
+
+    private async Task OnEditUserChangedAsync()
+    {
+        var userId = Session.IsAdmin ? _editing.UserId : (Session.UserId ?? 0);
+        await LoadSiteEditorDependenciesAsync(userId);
+        if (_packages.All(x => x.Id != _editing.UserPackageId))
+        {
+            _editing.UserPackageId = 0;
+        }
+
+        if (_editing.UserPackageId <= 0 && _packages.Count > 0)
+        {
+            _editing.UserPackageId = _packages[0].Id;
+        }
+
+        if (_groups.All(x => x.Id != _editing.GroupId))
+        {
+            _editing.GroupId = 0;
+        }
+
+        _editing.GroupIds = _editing.GroupIds.Where(id => _groups.Any(g => g.Id == id)).Distinct().ToList();
+        if (_editing.GroupIds.Count == 0 && _editing.GroupId > 0 && _groups.Any(g => g.Id == _editing.GroupId))
+        {
+            _editing.GroupIds.Add(_editing.GroupId);
+        }
+        _editing.GroupId = _editing.GroupIds.FirstOrDefault();
+
+        await LoadEditorDomainUsageAsync();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnBatchCreateUserChangedAsync()
+    {
+        var userId = Session.IsAdmin ? _batchCreate.UserId : (Session.UserId ?? 0);
+        await LoadSiteEditorDependenciesAsync(userId);
+        if (_packages.All(x => x.Id != _batchCreate.UserPackageId))
+        {
+            _batchCreate.UserPackageId = 0;
+        }
+
+        if (_batchCreate.UserPackageId <= 0 && _packages.Count > 0)
+        {
+            _batchCreate.UserPackageId = _packages[0].Id;
+        }
+
+        if (_groups.All(x => x.Id != _batchCreate.GroupId))
+        {
+            _batchCreate.GroupId = 0;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnEditPackageChangedAsync()
+    {
+        return LoadEditorDomainUsageAsync();
+    }
+
+    private Task OnBatchCreatePackageChangedAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    private static string FormatUserOption(UserItemDto user)
+    {
+        var name = string.IsNullOrWhiteSpace(user.Name) ? $"用户 {user.Id}" : user.Name.Trim();
+        var secondary = !string.IsNullOrWhiteSpace(user.Email)
+            ? user.Email!.Trim()
+            : !string.IsNullOrWhiteSpace(user.Phone)
+                ? user.Phone!.Trim()
+                : user.Id.ToString();
+        return $"{name} ({secondary})";
+    }
+
+    private void ToggleEditGroup(long id, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            if (!_editing.GroupIds.Contains(id))
+            {
+                _editing.GroupIds.Add(id);
+            }
+        }
+        else
+        {
+            _editing.GroupIds.Remove(id);
+        }
+
+        _editing.GroupId = _editing.GroupIds.FirstOrDefault();
+    }
+
+    private async Task LoadEditorDomainUsageAsync()
+    {
+        var userId = Session.IsAdmin ? _editing.UserId : (Session.UserId ?? 0);
+        var packageId = _editing.UserPackageId;
+        if (userId <= 0 || packageId <= 0)
+        {
+            _editorDomainUsage = null;
+            return;
+        }
+
+        var query = new Dictionary<string, string?>
+        {
+            ["user_package_id"] = packageId.ToString()
+        };
+        if (Session.IsAdmin)
+        {
+            query["user_id"] = userId.ToString();
+        }
+
+        var response = await Api.GetAsync<DomainUsageDto>("domain_usage", Scope, query);
+        _editorDomainUsage = response?.Data;
+    }
+
+    private static List<string> ParseFields(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new List<string>();
+        }
+
+        return raw.Split(new[] { '\n', '\r', ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string BuildSimpleBatchCreateData(string? domainsRaw, string? backendsRaw)
+    {
+        var domains = ParseFields(domainsRaw);
+        var backends = ParseFields(backendsRaw);
+        if (domains.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var backendSegment = backends.Count > 0 ? $"|ip={string.Join(",", backends)}" : string.Empty;
+        var lines = domains.Select(domain => $"domain={domain}{backendSegment}");
+        return string.Join('\n', lines);
+    }
+
+    private static string? ValidateBatchCreateData(string mode, string data)
+    {
+        if (string.IsNullOrWhiteSpace(data))
+        {
+            return "请输入网站数据";
+        }
+
+        var lines = data.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+        if (lines.Count == 0)
+        {
+            return "请输入网站数据";
+        }
+
+        foreach (var line in lines)
+        {
+            var segments = line.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var domainSegment = segments.FirstOrDefault(segment => segment.StartsWith("domain=", StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(domainSegment))
+            {
+                return mode == "advanced" ? "高级模式每行都必须包含 domain=..." : "批量数据格式不正确";
+            }
+
+            var domains = domainSegment["domain=".Length..]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(domain => !string.IsNullOrWhiteSpace(domain))
+                .ToList();
+            if (domains.Count == 0)
+            {
+                return "每行至少需要一个有效域名";
+            }
+
+            var invalidDomain = domains.FirstOrDefault(domain => !IsValidBatchDomain(domain));
+            if (!string.IsNullOrWhiteSpace(invalidDomain))
+            {
+                return $"域名格式不正确：{invalidDomain}";
+            }
+
+            var ipSegment = segments.FirstOrDefault(segment => segment.StartsWith("ip=", StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(ipSegment) || string.IsNullOrWhiteSpace(ipSegment["ip=".Length..]))
+            {
+                return "每行都必须包含 ip=源站";
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsValidBatchDomain(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            return false;
+        }
+
+        var trimmed = domain.Trim();
+        if (global::System.Net.IPAddress.TryParse(trimmed, out _))
+        {
+            return true;
+        }
+
+        return global::System.Text.RegularExpressions.Regex.IsMatch(
+            trimmed,
+            @"^(?:\*\.)?(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$");
+    }
+
+    private sealed class SiteFilters
+    {
+        public string Keyword { get; set; } = string.Empty;
+        public string SearchField { get; set; } = "all";
+        public long UserId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string Https { get; set; } = string.Empty;
+    }
+
+    private sealed class SiteEditModel
+    {
+        public long Id { get; set; }
+        public long UserId { get; set; }
+        public long UserPackageId { get; set; }
+        public long GroupId { get; set; }
+        public List<long> GroupIds { get; set; } = new();
+        public long NodeGroupId { get; set; }
+        public long DnsProviderId { get; set; }
+        public string SiteType { get; set; } = "website";
+        public string DomainsInput { get; set; } = string.Empty;
+        public string BackendsInput { get; set; } = string.Empty;
+        public bool Enable { get; set; } = true;
+
+        public static SiteEditModel FromItem(SiteListItem item)
+        {
+            return new SiteEditModel
+            {
+                Id = item.Id,
+                UserId = item.UserId,
+                UserPackageId = item.UserPackageId,
+                GroupId = item.GroupId,
+                GroupIds = item.GroupIds?.Where(id => id > 0).Distinct().ToList() ?? new List<long>(),
+                NodeGroupId = item.NodeGroupId,
+                DnsProviderId = item.DnsProviderId,
+                SiteType = item.Settings != null && item.Settings.TryGetValue("site_type", out var val) ? val?.ToString() ?? "website" : "website",
+                DomainsInput = item.Domains.Count > 0 ? string.Join("\n", item.Domains) : string.Empty,
+                BackendsInput = item.Backends.Count > 0 ? string.Join("\n", item.Backends) : string.Empty,
+                Enable = item.Status
+            };
+        }
+
+        public SiteCreateRequest ToCreateRequest()
+        {
+            return new SiteCreateRequest
+            {
+                UserId = UserId,
+                UserPackageId = UserPackageId,
+                GroupId = GroupIds.FirstOrDefault(),
+                GroupIds = GroupIds,
+                NodeGroupId = NodeGroupId,
+                DnsProviderId = DnsProviderId,
+                SiteType = SiteType,
+                DomainsInput = DomainsInput,
+                BackendsInput = BackendsInput
+            };
+        }
+
+        public SiteUpdateRequest ToUpdateRequest()
+        {
+            var domains = SplitLines(DomainsInput);
+            var backends = SplitLines(BackendsInput);
+            var settings = new Dictionary<string, object?>
+            {
+                ["site_type"] = string.IsNullOrWhiteSpace(SiteType) ? "website" : SiteType.Trim()
+            };
+
+            return new SiteUpdateRequest
+            {
+                UserPackageId = UserPackageId > 0 ? UserPackageId : null,
+                GroupId = GroupIds.FirstOrDefault() > 0 ? GroupIds.FirstOrDefault() : null,
+                GroupIds = GroupIds.Count > 0 ? GroupIds : null,
+                DnsProviderId = DnsProviderId > 0 ? DnsProviderId : null,
+                Domains = domains.Count > 0 ? domains : null,
+                Backends = backends.Count > 0 ? backends : null,
+                Enable = Enable,
+                Settings = settings
+            };
+        }
+
+        private static List<string> SplitLines(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return new List<string>();
+            }
+
+            return raw.Split(new[] { '\n', '\r', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(item => item.Trim())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToList();
+        }
+    }
+
+    private sealed class SiteBatchCreateModel
+    {
+        public long UserId { get; set; }
+        public long UserPackageId { get; set; }
+        public long GroupId { get; set; }
+        public long DnsProviderId { get; set; }
+        public long NodeGroupId { get; set; }
+        public bool IgnoreError { get; set; }
+        public string Mode { get; set; } = "simple";
+        public string SimpleDomains { get; set; } = string.Empty;
+        public string SimpleBackends { get; set; } = string.Empty;
+        public string AdvancedData { get; set; } = string.Empty;
+    }
+
+    private sealed class BatchCommonFlags
+    {
+        public bool UserPackageId { get; set; }
+        public bool GroupIds { get; set; }
+        public bool DnsProviderId { get; set; }
+        public bool HttpListen { get; set; }
+        public bool HttpsListen { get; set; }
+        public bool HttpEnable { get; set; }
+        public bool HttpsEnable { get; set; }
+        public bool HttpsForce { get; set; }
+        public bool HttpsHsts { get; set; }
+        public bool HttpsHttp2 { get; set; }
+        public bool HttpsHttp3 { get; set; }
+        public bool HttpsOcsp { get; set; }
+        public bool BackendProtocol { get; set; }
+        public bool BalanceWay { get; set; }
+        public bool Backends { get; set; }
+    }
+
+    private sealed class BatchCommonForm
+    {
+        public long UserPackageId { get; set; }
+        public List<long> GroupIds { get; set; } = new();
+        public long DnsProviderId { get; set; }
+        public string HttpListenInput { get; set; } = string.Empty;
+        public string HttpsListenInput { get; set; } = string.Empty;
+        public bool HttpEnable { get; set; } = true;
+        public bool HttpsEnable { get; set; } = true;
+        public bool HttpsForce { get; set; }
+        public string HttpsForcePort { get; set; } = "443";
+        public bool HttpsHsts { get; set; }
+        public bool HttpsHttp2 { get; set; } = true;
+        public bool HttpsHttp3 { get; set; }
+        public bool HttpsOcsp { get; set; }
+        public string BackendProtocol { get; set; } = "http";
+        public string BalanceWay { get; set; } = "ip_hash";
+        public string BackendsInput { get; set; } = string.Empty;
+    }
+}

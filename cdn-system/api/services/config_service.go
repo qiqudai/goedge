@@ -332,10 +332,10 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 					}
 					domainConf.SSLKeyData = plainKey
 				} else {
-					// Placeholder Certificate Strategy
-					// User Requirement: Enable port 443 immediately using placeholder
-					domainConf.SSLCertPath = "/usr/local/goedge/edge/configs/placeholder.crt"
-					domainConf.SSLKeyPath = "/usr/local/goedge/edge/configs/placeholder.key"
+					// Keep cert path empty so agent can always fall back to its local fallback cert.
+					// Avoid machine-specific absolute placeholder paths in payload.
+					domainConf.SSLCertPath = ""
+					domainConf.SSLKeyPath = ""
 				}
 			}
 			payload.Domains = append(payload.Domains, domainConf)

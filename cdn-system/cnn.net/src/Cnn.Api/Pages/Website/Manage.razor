@@ -1,0 +1,1833 @@
+@page "/website/manage"
+@using global::System.Text.Json
+@using Cnn.Common.Contracts
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject ClientSession Session
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<div class="page-container site-manage">
+    <div class="manage-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+            <div class="page-title">站点管理</div>
+            @if (_site != null)
+            {
+                <div class="form-text">站点ID：@_site.Id | CNAME：@_model.Basic.Cname | 到期：@_model.Basic.ExpireTime</div>
+            }
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-secondary" @onclick="GoBack">返回</button>
+            <button class="btn btn-outline-primary" @onclick="ApplyCertAsync" disabled="@(_loading || _saving || _siteId <= 0)">申请证书</button>
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@(_loading || _saving || _siteId <= 0)">保存配置</button>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="alert alert-info">加载中...</div>
+    }
+    else if (_site == null)
+    {
+        <div class="alert alert-warning">未找到站点，可能已被删除。</div>
+    }
+    else
+    {
+        <div class="tab-bar mb-3">
+            <button class='tab-button @TabCls("basic")' @onclick='@(() => SetTab("basic"))'>基本配置</button>
+            <button class='tab-button @TabCls("origin")' @onclick='@(() => SetTab("origin"))'>回源设置</button>
+            <button class='tab-button @TabCls("https")' @onclick='@(() => SetTab("https"))'>HTTPS</button>
+            <button class='tab-button @TabCls("security")' @onclick='@(() => SetTab("security"))'>安全设置</button>
+            <button class='tab-button @TabCls("cache")' @onclick='@(() => SetTab("cache"))'>缓存设置</button>
+            <button class='tab-button @TabCls("access")' @onclick='@(() => SetTab("access"))'>访问控制</button>
+            <button class='tab-button @TabCls("advanced")' @onclick='@(() => SetTab("advanced"))'>高级设置</button>
+        </div>
+
+        @if (_activeTab == "basic")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">基础</div>
+
+                <div class="form-row">
+                    <label class="form-label">状态</label>
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" @bind-Value="_model.Basic.Status" />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">套餐</label>
+                    <select class="form-select" style="max-width:320px" @bind="_model.Basic.UserPackageId">
+                        <option value="0">默认</option>
+                        @foreach (var pkg in _packages)
+                        {
+                            <option value="@pkg.Id">@pkg.Name (ID:@pkg.Id)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">域名（每行一个）</label>
+                    <InputTextArea class="form-control" rows="5" @bind-Value="_model.Basic.Domain" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">HTTP</label>
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" @bind-Value="_model.Basic.HttpEnable" />
+                    </div>
+                    <InputText class="form-control" style="max-width:220px" @bind-Value="_model.Basic.HttpPorts" placeholder="80 8080" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">源站（地址）</label>
+                    <InputTextArea class="form-control" rows="5" @bind-Value="_originText" />
+                    <span class="form-text">支持 `ip:port` 或 `http(s)://host:port`，每行一个。</span>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">创建时间</label>
+                    <InputText class="form-control" style="max-width:320px" Value="@_model.Basic.CreatedAt" readonly />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">更新时间</label>
+                    <InputText class="form-control" style="max-width:320px" Value="@_model.Basic.UpdatedAt" readonly />
+                </div>
+            </div>
+        }
+
+        @if (_activeTab == "origin")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">回源协议与超时</div>
+                <div class="form-row">
+                    <label class="form-label">回源协议</label>
+                    <select class="form-select" style="max-width:240px" @bind="_model.Origin.Protocol">
+                        <option value="http">http</option>
+                        <option value="https">https</option>
+                        <option value="follow">follow</option>
+                        <option value="follow_port">follow_port</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Host模式</label>
+                    <select class="form-select" style="max-width:240px" @bind="_model.Origin.Host">
+                        <option value="follow">follow</option>
+                        <option value="domain">domain</option>
+                        <option value="custom">custom</option>
+                    </select>
+                    @if (_model.Origin.Host == "custom")
+                    {
+                        <InputText class="form-control" style="max-width:320px" @bind-Value="_model.Origin.HostValue" placeholder="自定义Host" />
+                    }
+                </div>
+                <div class="form-row">
+                    <label class="form-label">HTTP端口</label>
+                    <InputText class="form-control" style="max-width:160px" @bind-Value="_model.Origin.HttpPort" />
+                    <label class="form-label">HTTPS端口</label>
+                    <InputText class="form-control" style="max-width:160px" @bind-Value="_model.Origin.HttpsPort" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">响应超时(s)</label>
+                    <InputNumber class="form-control" style="max-width:160px" @bind-Value="_model.Origin.Timeout" />
+                    <label class="form-label">连接超时(s)</label>
+                    <InputNumber class="form-control" style="max-width:160px" @bind-Value="_model.Origin.ConnTimeout" />
+                </div>
+
+                <div class="divider"></div>
+                <div class="section-title">源站池</div>
+                <div class="toolbar-row">
+                    <button class="btn btn-outline-secondary" @onclick="AddOriginRow">添加源站</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>地址</th>
+                                <th style="width:120px">权重</th>
+                                <th style="width:100px">启用</th>
+                                <th style="width:80px">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_model.Origin.List.Count == 0)
+                            {
+                                <tr><td colspan="4">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < _model.Origin.List.Count; i++)
+                                {
+                                    var row = _model.Origin.List[i];
+                                    <tr>
+                                        <td><input class="form-control" value="@row.Address" @oninput="e => row.Address = GetInput(e)" /></td>
+                                        <td><input class="form-control" value="@row.Weight" @oninput="e => row.Weight = GetInput(e)" /></td>
+                                        <td>
+                                            <div class="form-check form-switch">
+                                                <InputCheckbox class="form-check-input" @bind-Value="row.Enable" />
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveOriginRow(i)">删除</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (_activeTab == "https")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">HTTPS配置</div>
+                <div class="form-row">
+                    <label class="form-label">启用HTTPS</label>
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" @bind-Value="_model.Https.Enable" />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">证书</label>
+                    <select class="form-select" style="max-width:420px" @bind="_model.Https.CertId">
+                        <option value="0">不指定</option>
+                        @foreach (var cert in _certs)
+                        {
+                            <option value="@cert.Id">@cert.Name (ID:@cert.Id, @cert.Domain)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">监听端口</label>
+                    <InputText class="form-control" style="max-width:220px" @bind-Value="_model.Https.ListenPorts" placeholder="443 8443" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">强制HTTPS</label>
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" @bind-Value="_model.Https.Force" />
+                    </div>
+                    @if (_model.Https.Force)
+                    {
+                        <InputText class="form-control" style="max-width:160px" @bind-Value="_model.Https.ForcePort" placeholder="443" />
+                    }
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">特性开关</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Https.Hsts" /> HSTS</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Https.Http2" /> HTTP2</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Https.Http3" /> HTTP3</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Https.Ocsp" /> OCSP</label>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">SSL策略</label>
+                    <select class="form-select" style="max-width:240px" @bind="_model.Https.SslPolicy">
+                        <option value="compat">compat</option>
+                        <option value="modern">modern</option>
+                        <option value="custom">custom</option>
+                    </select>
+                </div>
+
+                @if (_model.Https.SslPolicy == "custom")
+                {
+                    <div class="form-row">
+                        <label class="form-label">SSL Protocols</label>
+                        <InputTextArea class="form-control" rows="2" @bind-Value="_model.Https.SslProtocols" />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">SSL Ciphers</label>
+                        <InputTextArea class="form-control" rows="3" @bind-Value="_model.Https.SslCiphers" />
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_activeTab == "security")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">CC与安全策略</div>
+
+                <div class="form-row">
+                    <label class="form-label">默认CC规则</label>
+                    <select class="form-select" style="max-width:280px" @bind="_model.Security.CcMode">
+                        <option value="0">关闭</option>
+                        <option value="10001">宽松</option>
+                        <option value="10002">JS验证</option>
+                        <option value="10003">5秒盾</option>
+                        <option value="10004">点击验证</option>
+                        <option value="10005">滑块验证</option>
+                        <option value="10006">验证码</option>
+                        <option value="10007">旋转图片</option>
+                        <option value="10008">点击验证(简单)</option>
+                        <option value="10009">滑块验证(简单)</option>
+                        <option value="10010">临时白名单</option>
+                    </select>
+                    <select class="form-select" style="max-width:360px" @bind="_model.Security.CustomCcRuleId">
+                        <option value="0">不使用自定义规则</option>
+                        @foreach (var group in _ccGroups)
+                        {
+                            <option value="@group.Id">@group.Name (ID:@group.Id)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">爬虫策略</label>
+                    <select class="form-select" style="max-width:220px" @bind="_model.Security.CrawlerAction">
+                        <option value="none">none</option>
+                        <option value="allow">allow</option>
+                        <option value="block">block</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">黑名单超时(s)</label>
+                    <InputNumber class="form-control" style="max-width:180px" @bind-Value="_model.Security.IpBlackTimeout" />
+                    <label class="form-label">白名单超时(s)</label>
+                    <InputNumber class="form-control" style="max-width:180px" @bind-Value="_model.Security.IpWhiteTimeout" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">IP黑名单（每行一个）</label>
+                    <InputTextArea class="form-control" rows="4" @bind-Value="_model.Security.Blacklist" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">IP白名单（每行一个）</label>
+                    <InputTextArea class="form-control" rows="4" @bind-Value="_model.Security.Whitelist" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">区域拦截（国家代码）</label>
+                    <InputText class="form-control" style="max-width:420px" @bind-Value="_model.Security.RegionBlockCsv" placeholder="CN,US,JP" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">Cookie 域名策略</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Security.CookieEnable" /> 启用</label>
+                    @if (_model.Security.CookieEnable)
+                    {
+                        <InputText class="form-control" style="max-width:320px" @bind-Value="_model.Security.CookieDomain" placeholder=".example.com" />
+                    }
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">透明代理拦截</label>
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" @bind-Value="_model.Security.BlockTransparentProxy" />
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_activeTab == "cache")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">缓存规则</div>
+
+                <div class="toolbar-row">
+                    <select class="form-select" style="max-width:220px" @bind="_cachePreset">
+                        <option value="index">首页缓存</option>
+                        <option value="all">全站缓存</option>
+                        <option value="static">静态资源</option>
+                        <option value="video">视频资源</option>
+                        <option value="wordpress">WordPress</option>
+                    </select>
+                    <button class="btn btn-outline-secondary" @onclick="AddCachePreset">添加预设</button>
+                    <button class="btn btn-outline-secondary" @onclick="AddCacheRule">新增规则</button>
+                    <button class="btn btn-outline-danger" @onclick="DeleteSelectedCacheRules">删除选中</button>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th style="width:36px"></th>
+                                <th style="width:120px">类型</th>
+                                <th>值</th>
+                                <th style="width:120px">TTL</th>
+                                <th style="width:120px">单位</th>
+                                <th style="width:90px">忽略参数</th>
+                                <th style="width:90px">强制缓存</th>
+                                <th style="width:90px">切片</th>
+                                <th style="width:90px">忽略Vary</th>
+                                <th style="width:80px">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_model.Cache.Rules.Count == 0)
+                            {
+                                <tr><td colspan="10">暂无规则</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < _model.Cache.Rules.Count; i++)
+                                {
+                                    var row = _model.Cache.Rules[i];
+                                    <tr>
+                                        <td><InputCheckbox class="form-check-input" @bind-Value="row.Selected" /></td>
+                                        <td>
+                                            <select class="form-select" @bind="row.Type">
+                                                <option value="index">index</option>
+                                                <option value="all">all</option>
+                                                <option value="dir">dir</option>
+                                                <option value="suffix">suffix</option>
+                                                <option value="path">path</option>
+                                            </select>
+                                        </td>
+                                        <td><input class="form-control" value="@row.Value" @oninput="e => row.Value = GetInput(e)" /></td>
+                                        <td><InputNumber class="form-control" @bind-Value="row.Ttl" /></td>
+                                        <td>
+                                            <select class="form-select" @bind="row.TtlUnit">
+                                                <option value="s">s</option>
+                                                <option value="m">m</option>
+                                                <option value="h">h</option>
+                                                <option value="d">d</option>
+                                            </select>
+                                        </td>
+                                        <td><InputCheckbox class="form-check-input" @bind-Value="row.IgnoreQuery" /></td>
+                                        <td><InputCheckbox class="form-check-input" @bind-Value="row.ForceCache" /></td>
+                                        <td><InputCheckbox class="form-check-input" @bind-Value="row.Slice" /></td>
+                                        <td><InputCheckbox class="form-check-input" @bind-Value="row.IgnoreVary" /></td>
+                                        <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveCacheRule(i)">删</button></td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (_activeTab == "access")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">访问控制</div>
+
+                <div class="form-row">
+                    <label class="form-label">ACL规则</label>
+                    <select class="form-select" style="max-width:360px" @bind="_model.Access.Acl">
+                        <option value="">不启用</option>
+                        @foreach (var acl in _acls)
+                        {
+                            <option value="@acl.Id">@acl.Name (ID:@acl.Id)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="divider"></div>
+                <div class="section-title">防盗链</div>
+
+                <div class="form-row">
+                    <label class="form-label">启用防盗链</label>
+                    <div class="form-check form-switch"><InputCheckbox class="form-check-input" @bind-Value="_model.Access.HotlinkEnable" /></div>
+                </div>
+
+                @if (_model.Access.HotlinkEnable)
+                {
+                    <div class="form-row">
+                        <label class="form-label">作用范围</label>
+                        <select class="form-select" style="max-width:220px" @bind="_model.Access.HotlinkScope">
+                            <option value="all">all</option>
+                            <option value="path">path</option>
+                            <option value="suffix">suffix</option>
+                        </select>
+                        @if (_model.Access.HotlinkScope != "all")
+                        {
+                            <InputText class="form-control" style="max-width:320px" @bind-Value="_model.Access.HotlinkValue" placeholder="如 /images 或 jpg|png" />
+                        }
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">允许空Referer</label>
+                        <div class="form-check form-switch"><InputCheckbox class="form-check-input" @bind-Value="_model.Access.HotlinkAllowEmpty" /></div>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">额外白名单域名</label>
+                        <InputText class="form-control" style="max-width:520px" @bind-Value="_model.Access.HotlinkDomains" placeholder="a.com,b.com" />
+                    </div>
+                }
+
+                <div class="divider"></div>
+                <div class="section-title">CORS</div>
+
+                <div class="form-row">
+                    <label class="form-label">启用CORS</label>
+                    <div class="form-check form-switch"><InputCheckbox class="form-check-input" @bind-Value="_model.Access.CorsEnable" /></div>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleCors">@(_corsExpanded ? "收起" : "展开")</button>
+                </div>
+
+                @if (_model.Access.CorsEnable && _corsExpanded)
+                {
+                    <div class="form-row">
+                        <label class="form-label">Allow-Origin</label>
+                        <InputText class="form-control" @bind-Value="_model.Access.CorsAllowOrigin" />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Allow-Methods</label>
+                        <InputText class="form-control" @bind-Value="_model.Access.CorsAllowMethods" />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Allow-Headers</label>
+                        <InputText class="form-control" @bind-Value="_model.Access.CorsAllowHeaders" />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Expose-Headers</label>
+                        <InputText class="form-control" @bind-Value="_model.Access.CorsExposeHeaders" />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Allow-Credentials</label>
+                        <div class="form-check form-switch"><InputCheckbox class="form-check-input" @bind-Value="_model.Access.CorsAllowCredentials" /></div>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Max-Age</label>
+                        <InputText class="form-control" style="max-width:220px" @bind-Value="_model.Access.CorsMaxAge" />
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_activeTab == "advanced")
+        {
+            <div class="card manage-card p-3">
+                <div class="section-title">高级设置</div>
+
+                <div class="form-row">
+                    <label class="form-label">上传限制</label>
+                    <select class="form-select" style="max-width:180px" @bind="_model.Advanced.UploadLimitMode">
+                        <option value="none">none</option>
+                        <option value="custom">custom</option>
+                    </select>
+                    @if (_model.Advanced.UploadLimitMode == "custom")
+                    {
+                        <InputNumber class="form-control" style="max-width:220px" @bind-Value="_model.Advanced.UploadLimitValue" />
+                        <span class="unit">KB</span>
+                    }
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">常用开关</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.Gzip" /> Gzip</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.Websocket" /> Websocket</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.OriginCert" /> 回源证书校验</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.RealtimeIdentify" /> 实时识别</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.RealtimeSend" /> 实时上报</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.DefaultSite" /> 默认站点</label>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">搜索引擎回源</label>
+                    <div class="form-check form-switch"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.SearchEngineOrigin" /></div>
+                    @if (_model.Advanced.SearchEngineOrigin)
+                    {
+                        <InputText class="form-control" style="max-width:360px" @bind-Value="_model.Advanced.SearchEngineOriginIp" placeholder="搜索引擎回源IP" />
+                    }
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">L2配置</label>
+                    <select class="form-select" style="max-width:220px" @bind="_model.Advanced.L2Config">
+                        <option value="current">current</option>
+                        <option value="none">none</option>
+                        <option value="custom">custom</option>
+                    </select>
+                </div>
+
+                <div class="divider"></div>
+                <div class="section-title">URL重定向</div>
+                <div class="toolbar-row">
+                    <button class="btn btn-outline-secondary" @onclick="AddRedirectRule">新增重定向</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>匹配URI</th>
+                                <th>目标地址</th>
+                                <th style="width:130px">状态码</th>
+                                <th style="width:180px">条件</th>
+                                <th style="width:120px">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_model.Advanced.UrlRedirects.Count == 0)
+                            {
+                                <tr><td colspan="5">暂无规则</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < _model.Advanced.UrlRedirects.Count; i++)
+                                {
+                                    var row = _model.Advanced.UrlRedirects[i];
+                                    <tr>
+                                        <td><input class="form-control" value="@row.Match" @oninput="e => row.Match = GetInput(e)" /></td>
+                                        <td><input class="form-control" value="@row.Redirect" @oninput="e => row.Redirect = GetInput(e)" /></td>
+                                        <td>
+                                            <select class="form-select" @bind="row.Code">
+                                                <option value="301">301</option>
+                                                <option value="302">302</option>
+                                                <option value="307">307</option>
+                                                <option value="internal">internal</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRedirectConditionPanel(i)">
+                                                @(row.ConditionExpanded ? "收起条件" : "编辑条件")
+                                            </button>
+                                        </td>
+                                        <td class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRedirectConditionPanel(i)">
+                                                编辑
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRedirectRule(i)">删</button>
+                                        </td>
+                                    </tr>
+                                    @if (row.ConditionExpanded)
+                                    {
+                                        <tr>
+                                            <td colspan="5">
+                                                <div class="matcher-box">
+                                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                                        <strong>条件列表</strong>
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => AddRedirectCondition(i)">新增条件</button>
+                                                    </div>
+                                                    @if (row.Conditions.Count == 0)
+                                                    {
+                                                        <div class="form-text">暂无条件，表示总是生效。</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        @for (var c = 0; c < row.Conditions.Count; c++)
+                                                        {
+                                                            var cond = row.Conditions[c];
+                                                            <div class="matcher-add mb-2">
+                                                                <select class="form-select" style="max-width:220px" @bind="cond.Key">
+                                                                    <option value="host">host</option>
+                                                                    <option value="uri">uri</option>
+                                                                    <option value="query">query</option>
+                                                                    <option value="header">header</option>
+                                                                    <option value="method">method</option>
+                                                                </select>
+                                                                <InputText class="form-control" style="max-width:360px" @bind-Value="cond.Value" placeholder="条件值，如 /api 或 www.example.com" />
+                                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRedirectCondition(i, c)">删除</button>
+                                                            </div>
+                                                        }
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="divider"></div>
+                <div class="section-title">请求头改写</div>
+                <div class="toolbar-row">
+                    <button class="btn btn-outline-secondary" @onclick="AddReqHeader">新增请求头</button>
+                </div>
+                @RenderHeaderTable(_model.Advanced.ReqHeaders, RemoveReqHeader)
+
+                <div class="divider"></div>
+                <div class="section-title">响应头改写</div>
+                <div class="toolbar-row">
+                    <button class="btn btn-outline-secondary" @onclick="AddResHeader">新增响应头</button>
+                </div>
+                @RenderHeaderTable(_model.Advanced.ResHeaders, RemoveResHeader)
+
+                <div class="divider"></div>
+                <div class="section-title">访问日志</div>
+                <div class="form-row">
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.LogRequestHeader" /> 记录请求头</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.LogResponseHeader" /> 记录响应头</label>
+                    <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_model.Advanced.LogRequestBody" /> 记录请求体</label>
+                    <InputNumber class="form-control" style="max-width:180px" @bind-Value="_model.Advanced.LogRequestBodySizeLimit" />
+                    <span class="unit">KB</span>
+                </div>
+            </div>
+        }
+
+        <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@(_saving)">保存当前Tab配置</button>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private long _siteId;
+    private SiteDetailDto? _site;
+    private readonly ManageModel _model = new();
+    private string _activeTab = "basic";
+    private string _cachePreset = "static";
+    private bool _corsExpanded = true;
+    private string _originText = string.Empty;
+
+    private readonly List<UserPackageItemDto> _packages = new();
+    private readonly List<CertItemDto> _certs = new();
+    private readonly List<AclListItem> _acls = new();
+    private readonly List<CcRuleGroupListItem> _ccGroups = new();
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _siteId = ResolveSiteId();
+        if (_siteId <= 0)
+        {
+            _loading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private int ResolveSiteId()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("id", out var idText) && long.TryParse(idText.FirstOrDefault(), out var parsed) && parsed > 0)
+        {
+            return (int)parsed;
+        }
+
+        if (query.TryGetValue("site_id", out var siteIdText) && long.TryParse(siteIdText.FirstOrDefault(), out parsed) && parsed > 0)
+        {
+            return (int)parsed;
+        }
+
+        return 0;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var siteResponse = await Api.GetAsync<SiteDetailDto>($"sites/{_siteId}", Scope);
+            _site = siteResponse?.Data;
+            if (_site == null)
+            {
+                return;
+            }
+
+            var packageResponse = await Api.GetAsync<UserPackageListResult>("user_packages", Scope, new Dictionary<string, string?>
+            {
+                ["page"] = "1",
+                ["pageSize"] = "200"
+            });
+            _packages.Clear();
+            if (packageResponse?.Data?.List != null)
+            {
+                _packages.AddRange(packageResponse.Data.List);
+            }
+
+            var certResponse = await Api.GetAsync<CertListResult>("certs", Scope, new Dictionary<string, string?>
+            {
+                ["page"] = "1",
+                ["pageSize"] = "200"
+            });
+            _certs.Clear();
+            if (certResponse?.Data?.List != null)
+            {
+                _certs.AddRange(certResponse.Data.List);
+            }
+
+            var aclResponse = await Api.GetAsync<AclListResult>("rules/acl", Scope);
+            _acls.Clear();
+            if (aclResponse?.Data?.List != null)
+            {
+                _acls.AddRange(aclResponse.Data.List);
+            }
+
+            var ccResponse = await Api.GetAsync<CcListResult<CcRuleGroupListItem>>("rules/cc/groups", Scope);
+            _ccGroups.Clear();
+            if (ccResponse?.Data?.List != null)
+            {
+                _ccGroups.AddRange(ccResponse.Data.List);
+            }
+
+            ApplySite(_site);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ApplySite(SiteDetailDto site)
+    {
+        _model.Basic.Status = site.Status;
+        _model.Basic.UserPackageId = site.UserPackageId;
+        _model.Basic.Domain = string.Join('\n', site.Domains ?? Array.Empty<string>());
+        _model.Basic.HttpEnable = site.HttpListen != null && site.HttpListen.Count > 0;
+        _model.Basic.HttpPorts = string.Join(' ', site.HttpListen ?? Array.Empty<string>());
+        _model.Basic.Cname = site.Cname ?? string.Empty;
+        _model.Basic.ExpireTime = string.IsNullOrWhiteSpace(site.ExpireTime) ? "-" : site.ExpireTime;
+        _model.Basic.CreatedAt = site.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
+        _model.Basic.UpdatedAt = site.UpdatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
+
+        var settings = AsMap(site.Settings) ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        var origin = GetMap(settings, "origin");
+        _model.Origin.Protocol = GetString(settings, "backend_protocol", GetString(origin, "protocol", "follow"));
+        _model.Origin.Host = GetString(settings, "origin_host", GetString(origin, "host", "follow"));
+        if (_model.Origin.Host is not ("follow" or "domain" or "custom"))
+        {
+            _model.Origin.HostValue = _model.Origin.Host;
+            _model.Origin.Host = "custom";
+        }
+        _model.Origin.HttpPort = GetString(settings, "origin_http_port", GetString(origin, "httpPort", "80"));
+        _model.Origin.HttpsPort = GetString(settings, "origin_https_port", GetString(origin, "httpsPort", "443"));
+        _model.Origin.Timeout = GetInt(settings, "origin_timeout", GetInt(origin, "timeout", 60));
+        _model.Origin.ConnTimeout = GetInt(origin, "connTimeout", 10);
+        _model.Origin.List = ReadOriginList(origin, site.Backends ?? Array.Empty<string>());
+
+        _originText = string.Join('\n', _model.Origin.List.Select(v => v.Address).Where(v => !string.IsNullOrWhiteSpace(v)));
+
+        var https = GetMap(settings, "https");
+        _model.Https.Enable = GetBool(https, "enable", site.Https);
+        _model.Https.ListenPorts = string.Join(' ', site.HttpsListen ?? Array.Empty<string>());
+        _model.Https.CertId = GetLong(https, "certificate_id", site.CertId);
+        _model.Https.Force = GetBool(https, "force", GetBool(settings, "force", false));
+        _model.Https.ForcePort = GetString(https, "redirect_port", GetString(settings, "redirect_port", "443"));
+        _model.Https.Hsts = GetBool(https, "hsts", GetBool(settings, "hsts", false));
+        _model.Https.Http2 = GetBool(https, "http2", GetBool(settings, "http2", false));
+        _model.Https.Http3 = GetBool(https, "http3", GetBool(settings, "http3", false));
+        _model.Https.Ocsp = GetBool(https, "ocsp_stapling", GetBool(settings, "ocsp_stapling", false));
+        _model.Https.SslPolicy = GetString(https, "ssl_profile", GetString(settings, "ssl_profile", "compat"));
+        _model.Https.SslProtocols = GetString(https, "ssl_protocols", GetString(settings, "ssl_protocols", string.Empty));
+        _model.Https.SslCiphers = GetString(https, "ssl_ciphers", GetString(settings, "ssl_ciphers", string.Empty));
+
+        var security = GetMap(settings, "security");
+        _model.Security.CcMode = GetLong(security, "default_rule", 10002);
+        _model.Security.CustomCcRuleId = _model.Security.CcMode >= 10001 ? 0 : _model.Security.CcMode;
+        _model.Security.CrawlerAction = GetString(security, "crawlers_action", "none");
+        _model.Security.Blacklist = string.Join('\n', ReadStringList(security, "blacklist"));
+        _model.Security.Whitelist = string.Join('\n', ReadStringList(security, "whitelist"));
+        _model.Security.IpBlackTimeout = GetInt(security, "ip_black_timeout", 3600);
+        _model.Security.IpWhiteTimeout = GetInt(security, "ip_white_timeout", 21600);
+        _model.Security.RegionBlockCsv = string.Join(',', ReadStringList(security, "region_block"));
+        var cookie = GetMap(security, "cookie");
+        _model.Security.CookieEnable = GetBool(cookie, "enable", false);
+        _model.Security.CookieDomain = GetString(cookie, "domain", string.Empty);
+        _model.Security.BlockTransparentProxy = GetBool(security, "block_transparent_proxy", false);
+
+        var cache = GetMap(settings, "cache");
+        _model.Cache.Rules = ReadCacheRules(cache);
+
+        var access = GetMap(settings, "access");
+        _model.Access.Acl = GetString(access, "acl", string.Empty);
+        var hotlink = GetMap(access, "hotlink");
+        _model.Access.HotlinkEnable = GetBool(hotlink, "enable", false);
+        _model.Access.HotlinkScope = GetString(hotlink, "scope", "all");
+        _model.Access.HotlinkValue = GetString(hotlink, "value", string.Empty);
+        _model.Access.HotlinkAllowEmpty = GetBool(hotlink, "allowEmpty", false);
+        _model.Access.HotlinkDomains = string.Join(',', ReadStringList(hotlink, "domains"));
+
+        var cors = GetMap(access, "cors");
+        _model.Access.CorsEnable = GetBool(cors, "enable", false);
+        _model.Access.CorsAllowOrigin = GetString(cors, "allowOrigin", "*");
+        _model.Access.CorsAllowMethods = GetString(cors, "allowMethods", "*");
+        _model.Access.CorsAllowHeaders = GetString(cors, "allowHeaders", "*");
+        _model.Access.CorsExposeHeaders = GetString(cors, "exposeHeaders", "*");
+        _model.Access.CorsAllowCredentials = GetBool(cors, "allowCredentials", false);
+        _model.Access.CorsMaxAge = GetString(cors, "maxAge", "1728000");
+
+        var adv = GetMap(settings, "advanced");
+        var bodyLimit = GetInt(adv, "body_limit", 0);
+        _model.Advanced.UploadLimitMode = bodyLimit > 0 ? "custom" : "none";
+        _model.Advanced.UploadLimitValue = bodyLimit > 0 ? bodyLimit : 102400;
+
+        _model.Advanced.Gzip = GetBool(settings, "gzip", GetBool(adv, "gzip", false));
+        _model.Advanced.Websocket = GetBool(settings, "websocket", GetBool(adv, "websocket", false));
+        _model.Advanced.SearchEngineOrigin = GetBool(settings, "search_engine_origin", GetBool(adv, "search_engine_origin", false));
+        _model.Advanced.SearchEngineOriginIp = GetString(settings, "search_engine_origin_ip", GetString(adv, "search_engine_origin_ip", string.Empty));
+        _model.Advanced.OriginCert = GetBool(settings, "origin_cert", GetBool(adv, "origin_cert", false));
+        _model.Advanced.RealtimeIdentify = GetBool(settings, "realtime_identify", GetBool(adv, "realtime_identify", false));
+        _model.Advanced.RealtimeSend = GetBool(settings, "realtime_send", GetBool(adv, "realtime_send", false));
+        _model.Advanced.LogRequestHeader = GetBool(settings, "log_request_header", GetBool(adv, "log_request_header", false));
+        _model.Advanced.LogResponseHeader = GetBool(settings, "log_response_header", GetBool(adv, "log_response_header", false));
+        _model.Advanced.LogRequestBody = GetBool(settings, "log_request_body", GetBool(adv, "log_request_body", false));
+        _model.Advanced.LogRequestBodySizeLimit = GetInt(settings, "log_request_body_size_limit", GetInt(adv, "log_request_body_size_limit", 16));
+        _model.Advanced.DefaultSite = GetBool(settings, "default_site", GetBool(adv, "default_site", false));
+        _model.Advanced.L2Config = GetString(settings, "l2_config", GetString(adv, "l2_config", "current"));
+
+        _model.Advanced.UrlRedirects = ReadRedirectRules(adv, "url_redirects");
+        _model.Advanced.ReqHeaders = ReadHeaderRules(adv, "origin_headers");
+        _model.Advanced.ResHeaders = ReadHeaderRules(adv, "cdn_headers");
+
+        if (_model.Cache.Rules.Count == 0)
+        {
+            AddCacheRule();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_siteId <= 0 || _saving)
+        {
+            return;
+        }
+
+        var domains = SplitLines(_model.Basic.Domain);
+        if (domains.Count == 0)
+        {
+            await Js.InvokeVoidAsync("alert", "请至少填写一个域名");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            SyncOriginTextToList();
+
+            var settings = BuildSettingsPayload();
+            var request = new SiteUpdateRequest
+            {
+                Enable = _model.Basic.Status,
+                UserPackageId = _model.Basic.UserPackageId > 0 ? _model.Basic.UserPackageId : null,
+                Domains = domains,
+                HttpListen = _model.Basic.HttpEnable ? SplitTokens(_model.Basic.HttpPorts) : new List<string>(),
+                HttpsListen = _model.Https.Enable ? SplitTokens(_model.Https.ListenPorts) : new List<string>(),
+                Backends = _model.Origin.List.Where(v => v.Enable).Select(v => v.Address?.Trim() ?? string.Empty).Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                BackendProtocol = _model.Origin.Protocol,
+                Settings = settings
+            };
+
+            var response = await Api.PutAsync<SiteDetailDto>($"sites/{_siteId}", request, Scope);
+            if (response?.Code == 0)
+            {
+                await Js.InvokeVoidAsync("alert", "保存成功");
+                if (response.Data != null)
+                {
+                    _site = response.Data;
+                    ApplySite(response.Data);
+                }
+            }
+            else
+            {
+                await Js.InvokeVoidAsync("alert", response?.Message ?? "保存失败");
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private Dictionary<string, object?> BuildSettingsPayload()
+    {
+        var originList = _model.Origin.List
+            .Where(v => !string.IsNullOrWhiteSpace(v.Address))
+            .Select(v => new Dictionary<string, object?>
+            {
+                ["address"] = v.Address.Trim(),
+                ["weight"] = ParseIntSafe(v.Weight, 10),
+                ["enable"] = v.Enable
+            }).ToList();
+
+        var redirects = _model.Advanced.UrlRedirects
+            .Where(v => !string.IsNullOrWhiteSpace(v.Match) && !string.IsNullOrWhiteSpace(v.Redirect))
+            .Select(v => new Dictionary<string, object?>
+            {
+                ["match"] = v.Match.Trim(),
+                ["redirect"] = v.Redirect.Trim(),
+                ["code"] = string.IsNullOrWhiteSpace(v.Code) ? "301" : v.Code,
+                ["conditions"] = v.Conditions
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Key) && !string.IsNullOrWhiteSpace(c.Value))
+                    .Select(c => new Dictionary<string, object?>
+                    {
+                        ["key"] = c.Key.Trim(),
+                        ["value"] = c.Value.Trim()
+                    }).ToList()
+            }).ToList();
+
+        var reqHeaders = _model.Advanced.ReqHeaders
+            .Where(v => !string.IsNullOrWhiteSpace(v.Name) && !string.IsNullOrWhiteSpace(v.Value))
+            .Select(v => new Dictionary<string, object?>
+            {
+                ["name"] = v.Name.Trim(),
+                ["value"] = v.Value.Trim()
+            }).ToList();
+
+        var resHeaders = _model.Advanced.ResHeaders
+            .Where(v => !string.IsNullOrWhiteSpace(v.Name) && !string.IsNullOrWhiteSpace(v.Value))
+            .Select(v => new Dictionary<string, object?>
+            {
+                ["name"] = v.Name.Trim(),
+                ["value"] = v.Value.Trim()
+            }).ToList();
+
+        var cacheRules = _model.Cache.Rules.Select(v => new Dictionary<string, object?>
+        {
+            ["type"] = v.Type,
+            ["value"] = v.Value,
+            ["ttl"] = v.Ttl,
+            ["unit"] = v.TtlUnit,
+            ["ignore_query"] = v.IgnoreQuery,
+            ["force_cache"] = v.ForceCache,
+            ["slice"] = v.Slice,
+            ["ignore_vary"] = v.IgnoreVary,
+            ["enable"] = true
+        }).ToList();
+
+        var uploadLimit = _model.Advanced.UploadLimitMode == "custom"
+            ? Math.Max(0, _model.Advanced.UploadLimitValue)
+            : 0;
+
+        var settings = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["origin"] = new Dictionary<string, object?>
+            {
+                ["list"] = originList,
+                ["conditions"] = new List<Dictionary<string, object?>>(),
+                ["connTimeout"] = _model.Origin.ConnTimeout,
+                ["health_check"] = true,
+                ["health_host"] = string.Empty,
+                ["health_path"] = "/",
+                ["health_status"] = "200 301 302",
+                ["health_interval"] = 60
+            },
+            ["https"] = new Dictionary<string, object?>
+            {
+                ["enable"] = _model.Https.Enable,
+                ["listen_port"] = _model.Https.ListenPorts,
+                ["force"] = _model.Https.Force,
+                ["redirect_port"] = _model.Https.ForcePort,
+                ["hsts"] = _model.Https.Hsts,
+                ["http2"] = _model.Https.Http2,
+                ["http3"] = _model.Https.Http3,
+                ["ocsp_stapling"] = _model.Https.Ocsp,
+                ["ssl_profile"] = _model.Https.SslPolicy,
+                ["ssl_protocols"] = _model.Https.SslProtocols,
+                ["ssl_ciphers"] = _model.Https.SslCiphers,
+                ["ssl_prefer_server_ciphers"] = true,
+                ["certificate_id"] = _model.Https.CertId > 0 ? _model.Https.CertId : 0
+            },
+            ["cache"] = new Dictionary<string, object?>
+            {
+                ["rules"] = cacheRules
+            },
+            ["security"] = new Dictionary<string, object?>
+            {
+                ["default_rule"] = _model.Security.CustomCcRuleId > 0 ? _model.Security.CustomCcRuleId : _model.Security.CcMode,
+                ["auto_switch"] = string.Empty,
+                ["custom_rules"] = new List<Dictionary<string, object?>>(),
+                ["blacklist"] = SplitLines(_model.Security.Blacklist),
+                ["whitelist"] = SplitLines(_model.Security.Whitelist),
+                ["ip_black_timeout"] = Math.Max(0, _model.Security.IpBlackTimeout),
+                ["ip_white_timeout"] = Math.Max(0, _model.Security.IpWhiteTimeout),
+                ["crawlers_action"] = _model.Security.CrawlerAction,
+                ["block_transparent_proxy"] = _model.Security.BlockTransparentProxy,
+                ["region_block"] = SplitByComma(_model.Security.RegionBlockCsv),
+                ["cookie"] = new Dictionary<string, object?>
+                {
+                    ["enable"] = _model.Security.CookieEnable,
+                    ["domain"] = _model.Security.CookieDomain
+                }
+            },
+            ["access"] = new Dictionary<string, object?>
+            {
+                ["acl"] = _model.Access.Acl,
+                ["hotlink"] = new Dictionary<string, object?>
+                {
+                    ["enable"] = _model.Access.HotlinkEnable,
+                    ["scope"] = _model.Access.HotlinkScope,
+                    ["value"] = _model.Access.HotlinkValue,
+                    ["allowEmpty"] = _model.Access.HotlinkAllowEmpty,
+                    ["domains"] = SplitByComma(_model.Access.HotlinkDomains)
+                },
+                ["cors"] = new Dictionary<string, object?>
+                {
+                    ["enable"] = _model.Access.CorsEnable,
+                    ["allowOrigin"] = _model.Access.CorsAllowOrigin,
+                    ["allowMethods"] = _model.Access.CorsAllowMethods,
+                    ["allowHeaders"] = _model.Access.CorsAllowHeaders,
+                    ["exposeHeaders"] = _model.Access.CorsExposeHeaders,
+                    ["allowCredentials"] = _model.Access.CorsAllowCredentials,
+                    ["maxAge"] = _model.Access.CorsMaxAge
+                }
+            },
+            ["gzip"] = _model.Advanced.Gzip,
+            ["websocket"] = _model.Advanced.Websocket,
+            ["search_engine_origin"] = _model.Advanced.SearchEngineOrigin,
+            ["search_engine_origin_ip"] = _model.Advanced.SearchEngineOriginIp,
+            ["url_redirects"] = redirects,
+            ["origin_cert"] = _model.Advanced.OriginCert,
+            ["realtime_identify"] = _model.Advanced.RealtimeIdentify,
+            ["realtime_send"] = _model.Advanced.RealtimeSend,
+            ["log_request_header"] = _model.Advanced.LogRequestHeader,
+            ["log_response_header"] = _model.Advanced.LogResponseHeader,
+            ["log_request_body"] = _model.Advanced.LogRequestBody,
+            ["log_request_body_size_limit"] = _model.Advanced.LogRequestBodySizeLimit,
+            ["default_site"] = _model.Advanced.DefaultSite,
+            ["l2_config"] = _model.Advanced.L2Config,
+            ["origin_host"] = _model.Origin.Host == "custom" ? _model.Origin.HostValue : _model.Origin.Host,
+            ["origin_timeout"] = _model.Origin.Timeout,
+            ["origin_http_port"] = _model.Origin.HttpPort,
+            ["origin_https_port"] = _model.Origin.HttpsPort,
+            ["backend_protocol"] = _model.Origin.Protocol,
+            ["advanced"] = new Dictionary<string, object?>
+            {
+                ["body_limit"] = uploadLimit,
+                ["body_limit_unit"] = "kb",
+                ["url_redirects"] = redirects,
+                ["origin_headers"] = reqHeaders,
+                ["cdn_headers"] = resHeaders,
+                ["gzip"] = _model.Advanced.Gzip,
+                ["websocket"] = _model.Advanced.Websocket,
+                ["search_engine_origin"] = _model.Advanced.SearchEngineOrigin,
+                ["search_engine_origin_ip"] = _model.Advanced.SearchEngineOriginIp,
+                ["origin_cert"] = _model.Advanced.OriginCert,
+                ["realtime_identify"] = _model.Advanced.RealtimeIdentify,
+                ["realtime_send"] = _model.Advanced.RealtimeSend,
+                ["log_request_header"] = _model.Advanced.LogRequestHeader,
+                ["log_response_header"] = _model.Advanced.LogResponseHeader,
+                ["log_request_body"] = _model.Advanced.LogRequestBody,
+                ["log_request_body_size_limit"] = _model.Advanced.LogRequestBodySizeLimit,
+                ["default_site"] = _model.Advanced.DefaultSite,
+                ["l2_config"] = _model.Advanced.L2Config
+            }
+        };
+
+        return settings;
+    }
+
+    private async Task ApplyCertAsync()
+    {
+        if (_siteId <= 0 || _saving)
+        {
+            return;
+        }
+
+        var response = await Api.PostAsync<SiteApplyCertResult>("sites/apply_cert", new SiteApplyCertRequest
+        {
+            Ids = new[] { _siteId }
+        }, Scope);
+
+        if (response?.Code == 0)
+        {
+            var created = response.Data?.CreatedIds?.Count ?? 0;
+            var skipped = response.Data?.Skipped?.Count ?? 0;
+            await Js.InvokeVoidAsync("alert", $"证书申请任务已提交。创建: {created}, 跳过: {skipped}");
+        }
+        else
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "申请证书失败");
+        }
+    }
+
+    private void GoBack() => Nav.NavigateTo("/website/list");
+    private void SetTab(string tab) => _activeTab = tab;
+    private string TabCls(string tab) => _activeTab == tab ? "active" : string.Empty;
+    private void ToggleCors() => _corsExpanded = !_corsExpanded;
+
+    private void SyncOriginTextToList()
+    {
+        var lines = SplitLines(_originText);
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        var list = new List<OriginItem>();
+        foreach (var line in lines)
+        {
+            var existed = _model.Origin.List.FirstOrDefault(v => string.Equals(v.Address?.Trim(), line, StringComparison.OrdinalIgnoreCase));
+            list.Add(new OriginItem
+            {
+                Address = line,
+                Weight = existed?.Weight ?? "10",
+                Enable = existed?.Enable ?? true
+            });
+        }
+
+        _model.Origin.List = list;
+    }
+
+    private void AddOriginRow() => _model.Origin.List.Add(new OriginItem());
+    private void RemoveOriginRow(int index)
+    {
+        if (index >= 0 && index < _model.Origin.List.Count)
+        {
+            _model.Origin.List.RemoveAt(index);
+        }
+    }
+
+    private void AddCacheRule() => _model.Cache.Rules.Add(new CacheRuleItem());
+    private void RemoveCacheRule(int index)
+    {
+        if (index >= 0 && index < _model.Cache.Rules.Count)
+        {
+            _model.Cache.Rules.RemoveAt(index);
+        }
+    }
+
+    private void DeleteSelectedCacheRules()
+    {
+        _model.Cache.Rules.RemoveAll(v => v.Selected);
+        if (_model.Cache.Rules.Count == 0)
+        {
+            AddCacheRule();
+        }
+    }
+
+    private void AddCachePreset()
+    {
+        var preset = _cachePreset switch
+        {
+            "index" => new CacheRuleItem { Type = "index", Value = string.Empty, Ttl = 86400 },
+            "all" => new CacheRuleItem { Type = "all", Value = string.Empty, Ttl = 259200 },
+            "video" => new CacheRuleItem { Type = "suffix", Value = "mp4|avi|mov|webm|m3u8|ts", Ttl = 2592000 },
+            "wordpress" => new CacheRuleItem { Type = "all", Value = string.Empty, Ttl = 259200 },
+            _ => new CacheRuleItem { Type = "suffix", Value = "jpg|jpeg|png|gif|ico|css|js|svg|bmp|webp|woff|woff2", Ttl = 604800, IgnoreQuery = true }
+        };
+        _model.Cache.Rules.Add(preset);
+    }
+
+    private void AddRedirectRule() => _model.Advanced.UrlRedirects.Add(new RedirectRuleItem());
+    private void RemoveRedirectRule(int index)
+    {
+        if (index >= 0 && index < _model.Advanced.UrlRedirects.Count)
+        {
+            _model.Advanced.UrlRedirects.RemoveAt(index);
+        }
+    }
+    private void ToggleRedirectConditionPanel(int index)
+    {
+        if (index >= 0 && index < _model.Advanced.UrlRedirects.Count)
+        {
+            _model.Advanced.UrlRedirects[index].ConditionExpanded = !_model.Advanced.UrlRedirects[index].ConditionExpanded;
+        }
+    }
+
+    private void AddRedirectCondition(int redirectIndex)
+    {
+        if (redirectIndex >= 0 && redirectIndex < _model.Advanced.UrlRedirects.Count)
+        {
+            _model.Advanced.UrlRedirects[redirectIndex].Conditions.Add(new RedirectConditionItem());
+        }
+    }
+
+    private void RemoveRedirectCondition(int redirectIndex, int conditionIndex)
+    {
+        if (redirectIndex < 0 || redirectIndex >= _model.Advanced.UrlRedirects.Count)
+        {
+            return;
+        }
+
+        var list = _model.Advanced.UrlRedirects[redirectIndex].Conditions;
+        if (conditionIndex >= 0 && conditionIndex < list.Count)
+        {
+            list.RemoveAt(conditionIndex);
+        }
+    }
+
+    private void AddReqHeader() => _model.Advanced.ReqHeaders.Add(new HeaderRuleItem());
+    private void RemoveReqHeader(int index)
+    {
+        if (index >= 0 && index < _model.Advanced.ReqHeaders.Count)
+        {
+            _model.Advanced.ReqHeaders.RemoveAt(index);
+        }
+    }
+
+    private void AddResHeader() => _model.Advanced.ResHeaders.Add(new HeaderRuleItem());
+    private void RemoveResHeader(int index)
+    {
+        if (index >= 0 && index < _model.Advanced.ResHeaders.Count)
+        {
+            _model.Advanced.ResHeaders.RemoveAt(index);
+        }
+    }
+
+    private RenderFragment RenderHeaderTable(List<HeaderRuleItem> items, Action<int> onRemove) => builder =>
+    {
+        var seq = 0;
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "table-responsive");
+        builder.OpenElement(seq++, "table");
+        builder.AddAttribute(seq++, "class", "table table-sm table-striped");
+
+        builder.OpenElement(seq++, "thead");
+        builder.OpenElement(seq++, "tr");
+        builder.AddMarkupContent(seq++, "<th>Header</th><th>Value</th><th style=\"width:80px\">操作</th>");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "tbody");
+        if (items.Count == 0)
+        {
+            builder.AddMarkupContent(seq++, "<tr><td colspan=\"3\">暂无规则</td></tr>");
+        }
+        else
+        {
+            for (var i = 0; i < items.Count; i++)
+            {
+                var idx = i;
+                var row = items[i];
+                builder.OpenElement(seq++, "tr");
+
+                builder.OpenElement(seq++, "td");
+                builder.OpenElement(seq++, "input");
+                builder.AddAttribute(seq++, "class", "form-control");
+                builder.AddAttribute(seq++, "value", row.Name);
+                builder.AddAttribute(seq++, "oninput", EventCallback.Factory.Create<ChangeEventArgs>(this, e => row.Name = GetInput(e)));
+                builder.CloseElement();
+                builder.CloseElement();
+
+                builder.OpenElement(seq++, "td");
+                builder.OpenElement(seq++, "input");
+                builder.AddAttribute(seq++, "class", "form-control");
+                builder.AddAttribute(seq++, "value", row.Value);
+                builder.AddAttribute(seq++, "oninput", EventCallback.Factory.Create<ChangeEventArgs>(this, e => row.Value = GetInput(e)));
+                builder.CloseElement();
+                builder.CloseElement();
+
+                builder.OpenElement(seq++, "td");
+                builder.OpenElement(seq++, "button");
+                builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-danger");
+                builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => onRemove(idx)));
+                builder.AddContent(seq++, "删");
+                builder.CloseElement();
+                builder.CloseElement();
+
+                builder.CloseElement();
+            }
+        }
+
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private static string GetInput(ChangeEventArgs args) => args?.Value?.ToString() ?? string.Empty;
+
+    private static Dictionary<string, object?>? AsMap(object? raw)
+    {
+        if (raw is Dictionary<string, object?> dict)
+        {
+            return dict;
+        }
+
+        if (raw is JsonElement element && element.ValueKind == JsonValueKind.Object)
+        {
+            return ToMap(element);
+        }
+
+        return null;
+    }
+
+    private static Dictionary<string, object?> ToMap(JsonElement element)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in element.EnumerateObject())
+        {
+            result[prop.Name] = ConvertElement(prop.Value);
+        }
+        return result;
+    }
+
+    private static object? ConvertElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Object => ToMap(element),
+            JsonValueKind.Array => element.EnumerateArray().Select(ConvertElement).ToList(),
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.TryGetDouble(out var d) ? d : element.ToString(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+
+    private static Dictionary<string, object?> GetMap(Dictionary<string, object?>? parent, string key)
+    {
+        if (parent == null)
+        {
+            return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (!parent.TryGetValue(key, out var raw) || raw == null)
+        {
+            return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return AsMap(raw) ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string GetString(Dictionary<string, object?>? map, string key, string fallback)
+    {
+        if (map == null || !map.TryGetValue(key, out var raw) || raw == null)
+        {
+            return fallback;
+        }
+
+        return raw switch
+        {
+            string text => string.IsNullOrWhiteSpace(text) ? fallback : text,
+            JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString() ?? fallback,
+            _ => raw.ToString() ?? fallback
+        };
+    }
+
+    private static bool GetBool(Dictionary<string, object?>? map, string key, bool fallback)
+    {
+        if (map == null || !map.TryGetValue(key, out var raw) || raw == null)
+        {
+            return fallback;
+        }
+
+        if (raw is bool b)
+        {
+            return b;
+        }
+
+        if (raw is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.True) return true;
+            if (element.ValueKind == JsonValueKind.False) return false;
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                var text = element.GetString()?.Trim();
+                return text is "1" or "true" or "yes" or "on";
+            }
+        }
+
+        var value = raw.ToString()?.Trim().ToLowerInvariant();
+        return value is "1" or "true" or "yes" or "on";
+    }
+
+    private static int GetInt(Dictionary<string, object?>? map, string key, int fallback)
+    {
+        if (map == null || !map.TryGetValue(key, out var raw) || raw == null)
+        {
+            return fallback;
+        }
+
+        if (raw is int i) return i;
+        if (raw is long l) return l > int.MaxValue ? int.MaxValue : (int)l;
+        if (raw is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var n)) return n;
+            if (element.ValueKind == JsonValueKind.String && int.TryParse(element.GetString(), out var p)) return p;
+        }
+
+        return int.TryParse(raw.ToString(), out var parsed) ? parsed : fallback;
+    }
+
+    private static long GetLong(Dictionary<string, object?>? map, string key, long fallback)
+    {
+        if (map == null || !map.TryGetValue(key, out var raw) || raw == null)
+        {
+            return fallback;
+        }
+
+        if (raw is long l) return l;
+        if (raw is int i) return i;
+        if (raw is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var n)) return n;
+            if (element.ValueKind == JsonValueKind.String && long.TryParse(element.GetString(), out var p)) return p;
+        }
+
+        return long.TryParse(raw.ToString(), out var parsed) ? parsed : fallback;
+    }
+
+    private static List<string> ReadStringList(Dictionary<string, object?>? map, string key)
+    {
+        if (map == null || !map.TryGetValue(key, out var raw) || raw == null)
+        {
+            return new List<string>();
+        }
+
+        if (raw is List<object?> list)
+        {
+            return list.Select(v => v?.ToString()?.Trim() ?? string.Empty).Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        if (raw is JsonElement element && element.ValueKind == JsonValueKind.Array)
+        {
+            return element.EnumerateArray().Select(v => v.ToString().Trim()).Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        var text = raw.ToString() ?? string.Empty;
+        return SplitByComma(text);
+    }
+
+    private static List<OriginItem> ReadOriginList(Dictionary<string, object?> origin, IReadOnlyList<string> fallbackBackends)
+    {
+        var result = new List<OriginItem>();
+        if (origin.TryGetValue("list", out var raw) && raw is List<object?> list)
+        {
+            foreach (var item in list)
+            {
+                var map = AsMap(item);
+                if (map == null)
+                {
+                    continue;
+                }
+
+                var addr = GetString(map, "address", string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(addr))
+                {
+                    continue;
+                }
+
+                result.Add(new OriginItem
+                {
+                    Address = addr,
+                    Weight = GetInt(map, "weight", 10).ToString(),
+                    Enable = GetBool(map, "enable", true)
+                });
+            }
+        }
+
+        if (result.Count == 0)
+        {
+            foreach (var backend in fallbackBackends)
+            {
+                if (!string.IsNullOrWhiteSpace(backend))
+                {
+                    result.Add(new OriginItem { Address = backend.Trim(), Weight = "10", Enable = true });
+                }
+            }
+        }
+
+        if (result.Count == 0)
+        {
+            result.Add(new OriginItem());
+        }
+
+        return result;
+    }
+
+    private static List<CacheRuleItem> ReadCacheRules(Dictionary<string, object?> cache)
+    {
+        var result = new List<CacheRuleItem>();
+        if (!cache.TryGetValue("rules", out var raw) || raw == null)
+        {
+            return result;
+        }
+
+        if (raw is List<object?> list)
+        {
+            foreach (var item in list)
+            {
+                var map = AsMap(item);
+                if (map == null)
+                {
+                    continue;
+                }
+
+                result.Add(new CacheRuleItem
+                {
+                    Type = GetString(map, "type", "suffix"),
+                    Value = GetString(map, "value", string.Empty),
+                    Ttl = GetInt(map, "ttl", 3600),
+                    TtlUnit = GetString(map, "unit", "s"),
+                    IgnoreQuery = GetBool(map, "ignore_query", false),
+                    ForceCache = GetBool(map, "force_cache", false),
+                    Slice = GetBool(map, "slice", false),
+                    IgnoreVary = GetBool(map, "ignore_vary", false)
+                });
+            }
+        }
+
+        return result;
+    }
+
+    private static List<RedirectRuleItem> ReadRedirectRules(Dictionary<string, object?> adv, string key)
+    {
+        var result = new List<RedirectRuleItem>();
+        if (!adv.TryGetValue(key, out var raw) || raw == null)
+        {
+            return result;
+        }
+
+        if (raw is List<object?> list)
+        {
+            foreach (var item in list)
+            {
+                var map = AsMap(item);
+                if (map == null)
+                {
+                    continue;
+                }
+
+                result.Add(new RedirectRuleItem
+                {
+                    Match = GetString(map, "match", string.Empty),
+                    Redirect = GetString(map, "redirect", string.Empty),
+                    Code = GetString(map, "code", "301"),
+                    Conditions = ReadRedirectConditions(map)
+                });
+            }
+        }
+
+        return result;
+    }
+
+    private static List<RedirectConditionItem> ReadRedirectConditions(Dictionary<string, object?> map)
+    {
+        var result = new List<RedirectConditionItem>();
+        if (!map.TryGetValue("conditions", out var raw) || raw == null)
+        {
+            return result;
+        }
+
+        if (raw is List<object?> list)
+        {
+            foreach (var item in list)
+            {
+                var condition = AsMap(item);
+                if (condition == null)
+                {
+                    continue;
+                }
+
+                var key = GetString(condition, "key", GetString(condition, "item", string.Empty));
+                var value = GetString(condition, "value", string.Empty);
+                if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                result.Add(new RedirectConditionItem
+                {
+                    Key = key,
+                    Value = value
+                });
+            }
+        }
+
+        return result;
+    }
+
+    private static List<HeaderRuleItem> ReadHeaderRules(Dictionary<string, object?> adv, string key)
+    {
+        var result = new List<HeaderRuleItem>();
+        if (!adv.TryGetValue(key, out var raw) || raw == null)
+        {
+            return result;
+        }
+
+        if (raw is List<object?> list)
+        {
+            foreach (var item in list)
+            {
+                var map = AsMap(item);
+                if (map == null)
+                {
+                    continue;
+                }
+
+                result.Add(new HeaderRuleItem
+                {
+                    Name = GetString(map, "name", string.Empty),
+                    Value = GetString(map, "value", string.Empty)
+                });
+            }
+        }
+
+        return result;
+    }
+
+    private static List<string> SplitLines(string? raw)
+    {
+        return (raw ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(v => v.Trim())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> SplitTokens(string? raw)
+    {
+        return (raw ?? string.Empty)
+            .Split(new[] { ' ', '\t', '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(v => v.Trim())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> SplitByComma(string? raw)
+    {
+        return (raw ?? string.Empty)
+            .Split(new[] { ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(v => v.Trim())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static int ParseIntSafe(string? raw, int fallback)
+    {
+        return int.TryParse(raw?.Trim(), out var parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    private sealed class ManageModel
+    {
+        public BasicSection Basic { get; } = new();
+        public OriginSection Origin { get; } = new();
+        public HttpsSection Https { get; } = new();
+        public SecuritySection Security { get; } = new();
+        public CacheSection Cache { get; } = new();
+        public AccessSection Access { get; } = new();
+        public AdvancedSection Advanced { get; } = new();
+    }
+
+    private sealed class BasicSection
+    {
+        public bool Status { get; set; } = true;
+        public long UserPackageId { get; set; }
+        public string Domain { get; set; } = string.Empty;
+        public bool HttpEnable { get; set; } = true;
+        public string HttpPorts { get; set; } = "80";
+        public string Cname { get; set; } = string.Empty;
+        public string ExpireTime { get; set; } = "-";
+        public string CreatedAt { get; set; } = "-";
+        public string UpdatedAt { get; set; } = "-";
+    }
+
+    private sealed class OriginSection
+    {
+        public string Protocol { get; set; } = "follow";
+        public string Host { get; set; } = "follow";
+        public string HostValue { get; set; } = string.Empty;
+        public string HttpPort { get; set; } = "80";
+        public string HttpsPort { get; set; } = "443";
+        public int Timeout { get; set; } = 60;
+        public int ConnTimeout { get; set; } = 10;
+        public List<OriginItem> List { get; set; } = new();
+    }
+
+    private sealed class HttpsSection
+    {
+        public bool Enable { get; set; }
+        public long CertId { get; set; }
+        public string ListenPorts { get; set; } = "443";
+        public bool Force { get; set; }
+        public string ForcePort { get; set; } = "443";
+        public bool Hsts { get; set; }
+        public bool Http2 { get; set; }
+        public bool Http3 { get; set; }
+        public bool Ocsp { get; set; }
+        public string SslPolicy { get; set; } = "compat";
+        public string SslCiphers { get; set; } = string.Empty;
+        public string SslProtocols { get; set; } = string.Empty;
+    }
+
+    private sealed class SecuritySection
+    {
+        public long CcMode { get; set; } = 10002;
+        public long CustomCcRuleId { get; set; }
+        public string CrawlerAction { get; set; } = "none";
+        public string Blacklist { get; set; } = string.Empty;
+        public string Whitelist { get; set; } = string.Empty;
+        public int IpBlackTimeout { get; set; } = 3600;
+        public int IpWhiteTimeout { get; set; } = 21600;
+        public string RegionBlockCsv { get; set; } = string.Empty;
+        public bool CookieEnable { get; set; }
+        public string CookieDomain { get; set; } = string.Empty;
+        public bool BlockTransparentProxy { get; set; }
+    }
+
+    private sealed class CacheSection
+    {
+        public List<CacheRuleItem> Rules { get; set; } = new();
+    }
+
+    private sealed class AccessSection
+    {
+        public string Acl { get; set; } = string.Empty;
+        public bool HotlinkEnable { get; set; }
+        public string HotlinkScope { get; set; } = "all";
+        public string HotlinkValue { get; set; } = string.Empty;
+        public bool HotlinkAllowEmpty { get; set; }
+        public string HotlinkDomains { get; set; } = string.Empty;
+        public bool CorsEnable { get; set; }
+        public string CorsAllowOrigin { get; set; } = "*";
+        public string CorsAllowMethods { get; set; } = "*";
+        public string CorsAllowHeaders { get; set; } = "*";
+        public string CorsExposeHeaders { get; set; } = "*";
+        public bool CorsAllowCredentials { get; set; }
+        public string CorsMaxAge { get; set; } = "1728000";
+    }
+
+    private sealed class AdvancedSection
+    {
+        public string UploadLimitMode { get; set; } = "none";
+        public int UploadLimitValue { get; set; } = 102400;
+        public bool Gzip { get; set; }
+        public bool Websocket { get; set; }
+        public bool SearchEngineOrigin { get; set; }
+        public string SearchEngineOriginIp { get; set; } = string.Empty;
+        public List<RedirectRuleItem> UrlRedirects { get; set; } = new();
+        public List<HeaderRuleItem> ReqHeaders { get; set; } = new();
+        public List<HeaderRuleItem> ResHeaders { get; set; } = new();
+        public bool OriginCert { get; set; }
+        public bool RealtimeIdentify { get; set; }
+        public bool RealtimeSend { get; set; }
+        public bool LogRequestHeader { get; set; }
+        public bool LogResponseHeader { get; set; }
+        public bool LogRequestBody { get; set; }
+        public int LogRequestBodySizeLimit { get; set; } = 16;
+        public bool DefaultSite { get; set; }
+        public string L2Config { get; set; } = "current";
+    }
+
+    private sealed class OriginItem
+    {
+        public string Address { get; set; } = string.Empty;
+        public string Weight { get; set; } = "10";
+        public bool Enable { get; set; } = true;
+    }
+
+    private sealed class CacheRuleItem
+    {
+        public bool Selected { get; set; }
+        public string Type { get; set; } = "suffix";
+        public string Value { get; set; } = string.Empty;
+        public int Ttl { get; set; } = 3600;
+        public string TtlUnit { get; set; } = "s";
+        public bool IgnoreQuery { get; set; }
+        public bool ForceCache { get; set; }
+        public bool Slice { get; set; }
+        public bool IgnoreVary { get; set; }
+    }
+
+    private sealed class RedirectRuleItem
+    {
+        public string Match { get; set; } = string.Empty;
+        public string Redirect { get; set; } = string.Empty;
+        public string Code { get; set; } = "301";
+        public bool ConditionExpanded { get; set; }
+        public List<RedirectConditionItem> Conditions { get; set; } = new();
+    }
+
+    private sealed class RedirectConditionItem
+    {
+        public string Key { get; set; } = "host";
+        public string Value { get; set; } = string.Empty;
+    }
+
+    private sealed class HeaderRuleItem
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+}

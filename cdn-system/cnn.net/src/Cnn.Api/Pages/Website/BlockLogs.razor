@@ -1,0 +1,949 @@
+@page "/website/logs/block"
+@using global::System.Text
+@using global::System.Text.Json
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject ClientSession Session
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">拉黑日志</div>
+
+    <div class="tab-bar">
+        <button class='tab-button @(IsTab("current") ? "active" : "")' @onclick='@(() => SetTabAsync("current"))'>当前封禁</button>
+        <button class='tab-button @(IsTab("stats") ? "active" : "")' @onclick='@(() => SetTabAsync("stats"))'>统计</button>
+        <button class='tab-button @(IsTab("history") ? "active" : "")' @onclick='@(() => SetTabAsync("history"))'>历史记录</button>
+    </div>
+
+    @if (_activeTab == "current")
+    {
+        <div class="filter-bar">
+            <button class="btn btn-primary" @onclick="UnblockBatchAsync">批量解封</button>
+            <button class="btn btn-outline-secondary" @onclick="UnblockSiteAsync">解封网站</button>
+            <button class="btn btn-outline-secondary" @onclick="ExportCurrentAsync">导出当前</button>
+
+            <div class="d-flex align-items-center gap-2">
+                <select class="form-select" style="max-width: 120px" @bind="_currentFilter.Type">
+                    <option value="ip">IP</option>
+                    <option value="site_id">网站ID</option>
+                </select>
+                <InputText class="form-control" style="max-width: 220px" @bind-Value="_currentFilter.Keyword" placeholder="请输入关键词" />
+                <button class="btn btn-primary" @onclick="SearchCurrentAsync">搜索</button>
+            </div>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+
+        @if (_showPagingDiagnostics)
+        {
+            <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+                <div><strong>分页诊断</strong></div>
+                <div>stateKey: <code>website:block_logs:current:table</code></div>
+                <div>pagingEnabled: <code>@(_currentPageQuery.PagingEnabled ? "true" : "false")</code></div>
+                <div>page: <code>@_currentPageQuery.Page</code>, pageSize: <code>@_currentPageQuery.PageSize</code></div>
+                <div>loaded: <code>@_currentItems.Count</code>, total: <code>@_currentTotal</code></div>
+            </div>
+        }
+
+        <TablePager @ref="_currentTablePager"
+                    StateKey="website:block_logs:current:table"
+                    Total="_currentTotal"
+                    DefaultPageSize="10"
+                    UnpagedLimit="1000"
+                    QueryChanged="OnCurrentPageQueryChangedAsync">
+            <ChildContent>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th style="width:50px">
+                                    <input type="checkbox" class="form-check-input" checked="@CurrentAllSelected" @onchange="ToggleCurrentSelectAll" />
+                                </th>
+                                <th>网站ID</th>
+                                <th>域名</th>
+                                <th>IP</th>
+                                <th>地区</th>
+                                <th>规则</th>
+                                <th>封禁时间</th>
+                                <th>解封时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading)
+                            {
+                                <tr><td colspan="9">加载中...</td></tr>
+                            }
+                            else if (_currentItems.Count == 0)
+                            {
+                                <tr><td colspan="9">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in _currentItems)
+                                {
+                                    <tr>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input" checked="@_currentSelected.Contains(GetCurrentRowKey(item))" @onchange="e => ToggleCurrentRow(item, e)" />
+                                        </td>
+                                        <td>@item.SiteId</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Domain) ? "-" : item.Domain)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Ip) ? "-" : item.Ip)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Location) ? "-" : item.Location)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Filter) ? "-" : item.Filter)</td>
+                                        <td>@FormatTime(item.BlockTime)</td>
+                                        <td>@FormatTime(item.ReleaseTime)</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => UnblockAsync(item)">解封</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </TablePager>
+    }
+    else if (_activeTab == "stats")
+    {
+        <div class="filter-bar">
+            <span class="text-muted">排行</span>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+
+        @if (_showPagingDiagnostics)
+        {
+            <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+                <div><strong>分页诊断</strong></div>
+                <div>stateKey: <code>website:block_logs:stats:table</code></div>
+                <div>pagingEnabled: <code>@(_statsPageQuery.PagingEnabled ? "true" : "false")</code></div>
+                <div>page: <code>@_statsPageQuery.Page</code>, pageSize: <code>@_statsPageQuery.PageSize</code></div>
+                <div>loaded: <code>@_statsItems.Count</code>, total: <code>@_statsTotal</code></div>
+            </div>
+        }
+
+        <TablePager @ref="_statsTablePager"
+                    StateKey="website:block_logs:stats:table"
+                    Total="_statsTotal"
+                    DefaultPageSize="10"
+                    UnpagedLimit="1000"
+                    QueryChanged="OnStatsPageQueryChangedAsync">
+            <ChildContent>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>网站ID</th>
+                                <th>封禁次数</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading)
+                            {
+                                <tr><td colspan="2">加载中...</td></tr>
+                            }
+                            else if (_statsItems.Count == 0)
+                            {
+                                <tr><td colspan="2">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in _statsItems)
+                                {
+                                    <tr>
+                                        <td>@item.SiteId</td>
+                                        <td>@item.Count</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </TablePager>
+    }
+    else
+    {
+        <div class="filter-bar">
+            <button class="btn btn-outline-secondary" @onclick="ExportHistoryAsync">导出当前</button>
+            <select class="form-select" style="max-width: 140px" @bind="_historyFilter.Type" @bind:after="HistoryFilterChanged">
+                <option value="ip">IP</option>
+                <option value="site_id">网站ID</option>
+                <option value="time_range">时间范围</option>
+            </select>
+
+            @if (_historyFilter.Type == "time_range")
+            {
+                <input type="datetime-local" class="form-control" style="max-width: 200px" @bind="_historyFilter.StartTime" />
+                <input type="datetime-local" class="form-control" style="max-width: 200px" @bind="_historyFilter.EndTime" />
+            }
+            else
+            {
+                <InputText class="form-control" style="max-width: 220px" @bind-Value="_historyFilter.Keyword" placeholder="请输入关键词" />
+            }
+
+            <button class="btn btn-primary" @onclick="SearchHistoryAsync">搜索</button>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+
+        @if (_showPagingDiagnostics)
+        {
+            <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+                <div><strong>分页诊断</strong></div>
+                <div>stateKey: <code>website:block_logs:history:table</code></div>
+                <div>pagingEnabled: <code>@(_historyPageQuery.PagingEnabled ? "true" : "false")</code></div>
+                <div>page: <code>@_historyPageQuery.Page</code>, pageSize: <code>@_historyPageQuery.PageSize</code></div>
+                <div>loaded: <code>@_historyItems.Count</code>, total: <code>@_historyTotal</code></div>
+            </div>
+        }
+
+        <TablePager @ref="_historyTablePager"
+                    StateKey="website:block_logs:history:table"
+                    Total="_historyTotal"
+                    DefaultPageSize="10"
+                    UnpagedLimit="1000"
+                    QueryChanged="OnHistoryPageQueryChangedAsync">
+            <ChildContent>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>网站ID</th>
+                                <th>域名</th>
+                                <th>IP</th>
+                                <th>地区</th>
+                                <th>规则</th>
+                                <th>封禁时间</th>
+                                <th>解封方式</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading)
+                            {
+                                <tr><td colspan="7">加载中...</td></tr>
+                            }
+                            else if (_historyItems.Count == 0)
+                            {
+                                <tr><td colspan="7">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in _historyItems)
+                                {
+                                    <tr>
+                                        <td>@item.SiteId</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Domain) ? "-" : item.Domain)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Ip) ? "-" : item.Ip)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Location) ? "-" : item.Location)</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Filter) ? "-" : item.Filter)</td>
+                                        <td>@FormatTime(item.BlockTime)</td>
+                                        <td>@(item.IsManual ? "手动" : "自动")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </TablePager>
+    }
+</div>
+
+@code {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+    private const int ExportPageSize = 200;
+    private const int ExportMaxRows = 5000;
+
+    private string _activeTab = "current";
+    private bool _loading;
+    private bool _showPagingDiagnostics;
+
+    private readonly List<BlockCurrentItem> _currentItems = new();
+    private readonly HashSet<string> _currentSelected = new(StringComparer.OrdinalIgnoreCase);
+    private long _currentTotal;
+    private BlockPageQuery _currentQuery = new();
+    private TablePageQuery _currentPageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 10 };
+    private BlockKeywordFilter _currentFilter = new();
+
+    private readonly List<BlockStatItem> _statsItems = new();
+    private long _statsTotal;
+    private BlockPageQuery _statsQuery = new();
+    private TablePageQuery _statsPageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 10 };
+
+    private readonly List<BlockHistoryItem> _historyItems = new();
+    private long _historyTotal;
+    private BlockPageQuery _historyQuery = new();
+    private TablePageQuery _historyPageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 10 };
+    private BlockHistoryFilter _historyFilter = new();
+    private TablePager? _currentTablePager;
+    private TablePager? _statsTablePager;
+    private TablePager? _historyTablePager;
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private bool IsTab(string tab) => string.Equals(_activeTab, tab, StringComparison.OrdinalIgnoreCase);
+
+    private async Task SetTabAsync(string tab)
+    {
+        if (IsTab(tab))
+        {
+            return;
+        }
+
+        _activeTab = tab;
+        if (_activeTab == "current")
+        {
+            if (_currentTablePager != null)
+            {
+                await _currentTablePager.RefreshAsync();
+            }
+            else
+            {
+                await LoadCurrentAsync();
+            }
+        }
+        else if (_activeTab == "stats")
+        {
+            if (_statsTablePager != null)
+            {
+                await _statsTablePager.RefreshAsync();
+            }
+            else
+            {
+                await LoadStatsAsync();
+            }
+        }
+        else
+        {
+            if (_historyTablePager != null)
+            {
+                await _historyTablePager.RefreshAsync();
+            }
+            else
+            {
+                await LoadHistoryAsync();
+            }
+        }
+    }
+
+    private async Task LoadCurrentAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _currentQuery.Page.ToString(),
+            ["pageSize"] = _currentQuery.PageSize.ToString(),
+            ["type"] = _currentFilter.Type,
+            ["keyword"] = EmptyToNull(_currentFilter.Keyword)
+        };
+
+        var response = await Api.GetAsync<BlockCurrentListResult>("logs/block/current", Scope, query);
+        _currentItems.Clear();
+        if (response?.Data?.List != null)
+        {
+            _currentItems.AddRange(response.Data.List);
+            _currentTotal = response.Data.Total;
+        }
+        else
+        {
+            _currentTotal = 0;
+        }
+
+        _loading = false;
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _statsQuery.Page.ToString(),
+            ["pageSize"] = _statsQuery.PageSize.ToString()
+        };
+
+        var response = await Api.GetAsync<BlockStatListResult>("logs/block/stats", Scope, query);
+        _statsItems.Clear();
+        if (response?.Data?.List != null)
+        {
+            _statsItems.AddRange(response.Data.List);
+            _statsTotal = response.Data.Total;
+        }
+        else
+        {
+            _statsTotal = 0;
+        }
+
+        _loading = false;
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _historyQuery.Page.ToString(),
+            ["pageSize"] = _historyQuery.PageSize.ToString(),
+            ["type"] = _historyFilter.Type,
+            ["keyword"] = EmptyToNull(_historyFilter.Keyword)
+        };
+
+        if (_historyFilter.Type == "time_range")
+        {
+            if (_historyFilter.StartTime.HasValue && _historyFilter.EndTime.HasValue)
+            {
+                query["start_time"] = _historyFilter.StartTime.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                query["end_time"] = _historyFilter.EndTime.Value.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+        }
+
+        var response = await Api.GetAsync<BlockHistoryListResult>("logs/block/history", Scope, query);
+        _historyItems.Clear();
+        if (response?.Data?.List != null)
+        {
+            _historyItems.AddRange(response.Data.List);
+            _historyTotal = response.Data.Total;
+        }
+        else
+        {
+            _historyTotal = 0;
+        }
+
+        _loading = false;
+    }
+
+    private async Task UnblockBatchAsync()
+    {
+        var selected = _currentItems
+            .Where(item => _currentSelected.Contains(GetCurrentRowKey(item)))
+            .ToList();
+
+        if (selected.Count == 0)
+        {
+            await Js.InvokeVoidAsync("alert", "请选择需要解封的记录");
+            return;
+        }
+
+        var ok = await Js.InvokeAsync<bool>("confirm", $"确认解封已选中的 {selected.Count} 条记录？");
+        if (!ok)
+        {
+            return;
+        }
+
+        var updated = await ApplyUnblockAsync(selected.Select(item => new SiteIpPair(item.SiteId, item.Ip)));
+        if (updated <= 0)
+        {
+            await Js.InvokeVoidAsync("alert", "解封失败，未找到可更新的站点");
+            return;
+        }
+
+        _currentSelected.Clear();
+        await LoadCurrentAsync();
+        await Js.InvokeVoidAsync("alert", $"已解封 {updated} 个网站的策略");
+    }
+
+    private async Task UnblockSiteAsync()
+    {
+        long siteId = 0;
+        if (string.Equals(_currentFilter.Type, "site_id", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = long.TryParse(_currentFilter.Keyword, out siteId);
+        }
+
+        if (siteId <= 0)
+        {
+            var candidates = _currentItems.Select(item => item.SiteId).Where(id => id > 0).Distinct().ToList();
+            if (candidates.Count == 1)
+            {
+                siteId = candidates[0];
+            }
+        }
+
+        if (siteId <= 0)
+        {
+            await Js.InvokeVoidAsync("alert", "请先按网站ID筛选后再执行“解封网站”");
+            return;
+        }
+
+        var ok = await Js.InvokeAsync<bool>("confirm", $"确认清空网站 {siteId} 的黑名单并保留白名单？");
+        if (!ok)
+        {
+            return;
+        }
+
+        var success = await UpdateSiteSecurityListAsync(siteId, Array.Empty<string>(), clearBlacklistAll: true);
+        if (!success)
+        {
+            await Js.InvokeVoidAsync("alert", "解封网站失败");
+            return;
+        }
+
+        _currentSelected.Clear();
+        await LoadCurrentAsync();
+        await Js.InvokeVoidAsync("alert", $"网站 {siteId} 已完成解封");
+    }
+
+    private async Task ExportCurrentAsync()
+    {
+        var rows = await QueryCurrentRowsForExportAsync();
+        var csv = BuildCurrentCsv(rows);
+        var filename = $"block-current-{DateTime.Now:yyyyMMddHHmmss}.csv";
+        await Js.InvokeVoidAsync("cnn.downloadText", filename, csv, "text/csv;charset=utf-8");
+        if (rows.Count >= ExportMaxRows)
+        {
+            await Js.InvokeVoidAsync("alert", $"导出已完成（最多导出 {ExportMaxRows} 条）");
+        }
+    }
+
+    private async Task UnblockAsync(BlockCurrentItem item)
+    {
+        if (item.SiteId <= 0 || string.IsNullOrWhiteSpace(item.Ip))
+        {
+            await Js.InvokeVoidAsync("alert", "记录缺少网站ID或IP，无法解封");
+            return;
+        }
+
+        var ok = await Js.InvokeAsync<bool>("confirm", $"确认解封网站 {item.SiteId} 的 IP {item.Ip} ?");
+        if (!ok)
+        {
+            return;
+        }
+
+        var success = await UpdateSiteSecurityListAsync(item.SiteId, new[] { item.Ip! }, clearBlacklistAll: false);
+        if (!success)
+        {
+            await Js.InvokeVoidAsync("alert", "解封失败");
+            return;
+        }
+
+        _currentSelected.Remove(GetCurrentRowKey(item));
+        await LoadCurrentAsync();
+    }
+
+    private async Task ExportHistoryAsync()
+    {
+        var rows = await QueryHistoryRowsForExportAsync();
+        var csv = BuildHistoryCsv(rows);
+        var filename = $"block-history-{DateTime.Now:yyyyMMddHHmmss}.csv";
+        await Js.InvokeVoidAsync("cnn.downloadText", filename, csv, "text/csv;charset=utf-8");
+        if (rows.Count >= ExportMaxRows)
+        {
+            await Js.InvokeVoidAsync("alert", $"导出已完成（最多导出 {ExportMaxRows} 条）");
+        }
+    }
+
+    private bool CurrentAllSelected => _currentItems.Count > 0 && _currentItems.All(item => _currentSelected.Contains(GetCurrentRowKey(item)));
+
+    private void ToggleCurrentSelectAll(ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            foreach (var item in _currentItems)
+            {
+                _currentSelected.Add(GetCurrentRowKey(item));
+            }
+        }
+        else
+        {
+            _currentSelected.Clear();
+        }
+    }
+
+    private void ToggleCurrentRow(BlockCurrentItem item, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        var key = GetCurrentRowKey(item);
+        if (isChecked)
+        {
+            _currentSelected.Add(key);
+        }
+        else
+        {
+            _currentSelected.Remove(key);
+        }
+    }
+
+    private string GetCurrentRowKey(BlockCurrentItem item)
+    {
+        var siteId = item.SiteId.ToString();
+        var ip = item.Ip ?? string.Empty;
+        return $"{siteId}:{ip}";
+    }
+
+    private void HistoryFilterChanged()
+    {
+        _historyFilter.Keyword = string.Empty;
+        _historyFilter.StartTime = null;
+        _historyFilter.EndTime = null;
+    }
+
+    private async Task SearchCurrentAsync()
+    {
+        if (_currentTablePager != null)
+        {
+            await _currentTablePager.SearchAsync();
+            return;
+        }
+
+        _currentQuery.Page = 1;
+        await LoadCurrentAsync();
+    }
+
+    private Task OnCurrentPageQueryChangedAsync(TablePageQuery query)
+    {
+        _currentPageQuery = query;
+        _currentQuery.Page = query.Page;
+        _currentQuery.PageSize = query.PageSize;
+        return LoadCurrentAsync();
+    }
+
+    private Task OnStatsPageQueryChangedAsync(TablePageQuery query)
+    {
+        _statsPageQuery = query;
+        _statsQuery.Page = query.Page;
+        _statsQuery.PageSize = query.PageSize;
+        return LoadStatsAsync();
+    }
+
+    private async Task SearchHistoryAsync()
+    {
+        if (_historyTablePager != null)
+        {
+            await _historyTablePager.SearchAsync();
+            return;
+        }
+
+        _historyQuery.Page = 1;
+        await LoadHistoryAsync();
+    }
+
+    private Task OnHistoryPageQueryChangedAsync(TablePageQuery query)
+    {
+        _historyPageQuery = query;
+        _historyQuery.Page = query.Page;
+        _historyQuery.PageSize = query.PageSize;
+        return LoadHistoryAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+
+    private Dictionary<string, string?> BuildCurrentQuery(int page, int pageSize)
+    {
+        return new Dictionary<string, string?>
+        {
+            ["page"] = page.ToString(),
+            ["pageSize"] = pageSize.ToString(),
+            ["type"] = _currentFilter.Type,
+            ["keyword"] = EmptyToNull(_currentFilter.Keyword)
+        };
+    }
+
+    private Dictionary<string, string?> BuildHistoryQuery(int page, int pageSize)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = page.ToString(),
+            ["pageSize"] = pageSize.ToString(),
+            ["type"] = _historyFilter.Type,
+            ["keyword"] = EmptyToNull(_historyFilter.Keyword)
+        };
+
+        if (_historyFilter.Type == "time_range" && _historyFilter.StartTime.HasValue && _historyFilter.EndTime.HasValue)
+        {
+            query["start_time"] = _historyFilter.StartTime.Value.ToString("yyyy-MM-dd HH:mm:ss");
+            query["end_time"] = _historyFilter.EndTime.Value.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        return query;
+    }
+
+    private async Task<int> ApplyUnblockAsync(IEnumerable<SiteIpPair> pairs)
+    {
+        var grouped = pairs
+            .Where(pair => pair.SiteId > 0 && !string.IsNullOrWhiteSpace(pair.Ip))
+            .GroupBy(pair => pair.SiteId)
+            .ToList();
+
+        var updated = 0;
+        foreach (var group in grouped)
+        {
+            var ips = group.Select(item => item.Ip!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (ips.Count == 0)
+            {
+                continue;
+            }
+
+            if (await UpdateSiteSecurityListAsync(group.Key, ips, clearBlacklistAll: false))
+            {
+                updated++;
+            }
+        }
+
+        return updated;
+    }
+
+    private async Task<bool> UpdateSiteSecurityListAsync(long siteId, IReadOnlyList<string> ips, bool clearBlacklistAll)
+    {
+        if (siteId <= 0)
+        {
+            return false;
+        }
+
+        var detail = await Api.GetAsync<SiteDetailDto>($"sites/{siteId}", Scope);
+        if (detail?.Data == null)
+        {
+            return false;
+        }
+
+        var blacklist = ReadSecurityIpList(detail.Data.Settings, "blacklist");
+        var whitelist = ReadSecurityIpList(detail.Data.Settings, "whitelist");
+        if (clearBlacklistAll)
+        {
+            blacklist.Clear();
+        }
+        else
+        {
+            foreach (var ip in ips)
+            {
+                blacklist.RemoveAll(x => string.Equals(x, ip, StringComparison.OrdinalIgnoreCase));
+                if (!whitelist.Contains(ip, StringComparer.OrdinalIgnoreCase))
+                {
+                    whitelist.Add(ip);
+                }
+            }
+        }
+
+        var settings = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["security"] = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["blacklist"] = blacklist,
+                ["whitelist"] = whitelist
+            }
+        };
+
+        var response = await Api.PutAsync<SiteDetailDto>($"sites/{siteId}", new SiteUpdateRequest
+        {
+            Settings = settings
+        }, Scope);
+        return response?.Data != null;
+    }
+
+    private static List<string> ReadSecurityIpList(Dictionary<string, object?>? settings, string key)
+    {
+        if (settings == null || settings.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        try
+        {
+            var root = JsonSerializer.SerializeToElement(settings, JsonOptions);
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("security", out var security) || security.ValueKind != JsonValueKind.Object)
+            {
+                return new List<string>();
+            }
+
+            if (!security.TryGetProperty(key, out var value))
+            {
+                return new List<string>();
+            }
+
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => NormalizeIpList(new[] { value.GetString() ?? string.Empty }),
+                JsonValueKind.Array => NormalizeIpList(value.EnumerateArray().Select(static item => item.ToString())),
+                _ => new List<string>()
+            };
+        }
+        catch
+        {
+            return new List<string>();
+        }
+    }
+
+    private static List<string> NormalizeIpList(IEnumerable<string> input)
+    {
+        return input
+            .SelectMany(static raw => (raw ?? string.Empty).Split(new[] { '\r', '\n', '\t', ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            .Select(static ip => ip.Trim())
+            .Where(static ip => !string.IsNullOrWhiteSpace(ip))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<List<BlockCurrentItem>> QueryCurrentRowsForExportAsync()
+    {
+        var rows = new List<BlockCurrentItem>();
+        var page = 1;
+        while (rows.Count < ExportMaxRows)
+        {
+            var response = await Api.GetAsync<BlockCurrentListResult>("logs/block/current", Scope, BuildCurrentQuery(page, ExportPageSize));
+            var batch = response?.Data?.List?.ToList() ?? new List<BlockCurrentItem>();
+            if (batch.Count == 0)
+            {
+                break;
+            }
+
+            rows.AddRange(batch);
+            if (batch.Count < ExportPageSize)
+            {
+                break;
+            }
+
+            page++;
+        }
+
+        if (rows.Count > ExportMaxRows)
+        {
+            rows = rows.Take(ExportMaxRows).ToList();
+        }
+
+        return rows;
+    }
+
+    private async Task<List<BlockHistoryItem>> QueryHistoryRowsForExportAsync()
+    {
+        var rows = new List<BlockHistoryItem>();
+        var page = 1;
+        while (rows.Count < ExportMaxRows)
+        {
+            var response = await Api.GetAsync<BlockHistoryListResult>("logs/block/history", Scope, BuildHistoryQuery(page, ExportPageSize));
+            var batch = response?.Data?.List?.ToList() ?? new List<BlockHistoryItem>();
+            if (batch.Count == 0)
+            {
+                break;
+            }
+
+            rows.AddRange(batch);
+            if (batch.Count < ExportPageSize)
+            {
+                break;
+            }
+
+            page++;
+        }
+
+        if (rows.Count > ExportMaxRows)
+        {
+            rows = rows.Take(ExportMaxRows).ToList();
+        }
+
+        return rows;
+    }
+
+    private static string BuildCurrentCsv(IReadOnlyList<BlockCurrentItem> rows)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("site_id,domain,ip,location,filter,block_time,release_time");
+        foreach (var item in rows)
+        {
+            sb.AppendLine(string.Join(',',
+                Csv(item.SiteId.ToString()),
+                Csv(item.Domain),
+                Csv(item.Ip),
+                Csv(item.Location),
+                Csv(item.Filter),
+                Csv(FormatTime(item.BlockTime)),
+                Csv(FormatTime(item.ReleaseTime))));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildHistoryCsv(IReadOnlyList<BlockHistoryItem> rows)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("site_id,domain,ip,location,filter,block_time,unblock_type");
+        foreach (var item in rows)
+        {
+            sb.AppendLine(string.Join(',',
+                Csv(item.SiteId.ToString()),
+                Csv(item.Domain),
+                Csv(item.Ip),
+                Csv(item.Location),
+                Csv(item.Filter),
+                Csv(FormatTime(item.BlockTime)),
+                Csv(item.IsManual ? "manual" : "auto")));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string Csv(string? value)
+    {
+        var escaped = (value ?? string.Empty).Replace("\"", "\"\"");
+        return $"\"{escaped}\"";
+    }
+
+    private static string? EmptyToNull(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static string FormatTime(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "-";
+        }
+
+        if (DateTime.TryParse(value, out var parsed))
+        {
+            return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        return value;
+    }
+
+    private sealed class BlockPageQuery
+    {
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+    }
+
+    private sealed class BlockKeywordFilter
+    {
+        public string Type { get; set; } = "ip";
+        public string Keyword { get; set; } = string.Empty;
+    }
+
+    private sealed class BlockHistoryFilter
+    {
+        public string Type { get; set; } = "ip";
+        public string Keyword { get; set; } = string.Empty;
+        public DateTime? StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+    }
+
+    private sealed record SiteIpPair(long SiteId, string? Ip);
+}

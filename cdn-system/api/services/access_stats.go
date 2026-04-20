@@ -403,6 +403,41 @@ func pickUint64Any(m map[string]interface{}, keys ...string) uint64 {
 }
 
 func interpolateQuery(query string, args ...interface{}) string {
+	nextPlaceholder := func(sql string) int {
+		inSingle := false
+		inDouble := false
+		for i := 0; i < len(sql); i++ {
+			ch := sql[i]
+			switch ch {
+			case '\\':
+				if inSingle || inDouble {
+					i++
+				}
+			case '\'':
+				if !inDouble {
+					if inSingle && i+1 < len(sql) && sql[i+1] == '\'' {
+						i++
+						continue
+					}
+					inSingle = !inSingle
+				}
+			case '"':
+				if !inSingle {
+					if inDouble && i+1 < len(sql) && sql[i+1] == '"' {
+						i++
+						continue
+					}
+					inDouble = !inDouble
+				}
+			case '?':
+				if !inSingle && !inDouble {
+					return i
+				}
+			}
+		}
+		return -1
+	}
+
 	for _, arg := range args {
 		replacement := ""
 		switch v := arg.(type) {
@@ -424,7 +459,11 @@ func interpolateQuery(query string, args ...interface{}) string {
 		default:
 			replacement = fmt.Sprintf("%v", v)
 		}
-		query = strings.Replace(query, "?", replacement, 1)
+		idx := nextPlaceholder(query)
+		if idx < 0 {
+			break
+		}
+		query = query[:idx] + replacement + query[idx+1:]
 	}
 	return query
 }

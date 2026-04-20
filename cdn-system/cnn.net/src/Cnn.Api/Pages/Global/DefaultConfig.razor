@@ -1,0 +1,58 @@
+@page "/global/default"
+@using Cnn.Api.Pages.Global.Defaults
+
+<div class="page-container default-config-page">
+    <div class="page-title">全局默认配置</div>
+
+    <div class="tab-bar">
+        <button class='tab-button @(IsTopTab("global") ? "active" : "")' @onclick='@(() => SetTopTab("global"))'>全局配置</button>
+        <button class='tab-button @(IsTopTab("cache") ? "active" : "")' @onclick='@(() => SetTopTab("cache"))'>缓存配置</button>
+    </div>
+
+    @if (_topTab == "global")
+    {
+        <div class="tab-bar sub-tabs">
+            <button class='tab-button @(IsGlobalTab("site") ? "active" : "")' @onclick='@(() => SetGlobalTab("site"))'>网站</button>
+            <button class='tab-button @(IsGlobalTab("stream") ? "active" : "")' @onclick='@(() => SetGlobalTab("stream"))'>转发</button>
+            <button class='tab-button @(IsGlobalTab("cert") ? "active" : "")' @onclick='@(() => SetGlobalTab("cert"))'>证书</button>
+        </div>
+
+        <div class="tab-content">
+            @if (_globalTab == "site")
+            {
+                <DefaultSiteConfig />
+            }
+            else if (_globalTab == "stream")
+            {
+                <DefaultStreamConfig />
+            }
+            else
+            {
+                <DefaultCertConfig />
+            }
+        </div>
+    }
+    else
+    {
+        <DefaultCacheConfig />
+    }
+</div>
+
+@code {
+    private string _topTab = "global";
+    private string _globalTab = "site";
+
+    private bool IsTopTab(string tab) => string.Equals(_topTab, tab, StringComparison.OrdinalIgnoreCase);
+    private bool IsGlobalTab(string tab) => string.Equals(_globalTab, tab, StringComparison.OrdinalIgnoreCase);
+
+    private void SetTopTab(string tab)
+    {
+        _topTab = tab;
+    }
+
+    private void SetGlobalTab(string tab)
+    {
+        _globalTab = tab;
+    }
+}
+

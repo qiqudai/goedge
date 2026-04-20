@@ -9,6 +9,24 @@
 
       <div class="filter-container">
         <div class="filter-left">
+          <el-select
+            v-if="isAdmin"
+            v-model="selectedUserId"
+            placeholder="请选择用户"
+            style="width: 280px;"
+            filterable
+            clearable
+            :loading="userLoading"
+            @visible-change="handleUserDropdown"
+            @change="handleUserChange"
+          >
+            <el-option
+              v-for="u in users"
+              :key="u.id"
+              :label="`${u.name} (${u.username || u.email || u.id})`"
+              :value="u.id"
+            />
+          </el-select>
           <el-button type="primary" @click="openCreate">添加分组</el-button>
           <el-button type="danger" :disabled="!selectedRows.length" @click="batchDelete">删除分组</el-button>
         </div>
@@ -50,6 +68,24 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="480px">
       <el-form :model="form" label-width="80px" style="padding-top: 10px;">
+        <el-form-item v-if="isAdmin" label="用户" required>
+          <el-select
+            v-model="form.user_id"
+            placeholder="请选择用户"
+            style="width: 100%;"
+            filterable
+            clearable
+            :loading="userLoading"
+            @visible-change="handleUserDropdown"
+          >
+            <el-option
+              v-for="u in users"
+              :key="u.id"
+              :label="`${u.name} (${u.username || u.email || u.id})`"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="名称" required>
           <el-input v-model="form.name" placeholder="请输入分组名称" />
         </el-form-item>
@@ -71,22 +107,63 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
+const isAdmin = ref(localStorage.getItem('role') === 'admin')
 const groups = ref([])
 const loading = ref(false)
 const keyword = ref('')
 const dialogVisible = ref(false)
 const editingId = ref(0)
 const selectedRows = ref([])
+const users = ref([])
+const userLoading = ref(false)
+const selectedUserId = ref('')
 const form = reactive({
+  user_id: '',
   name: '',
   remark: ''
 })
 
 const dialogTitle = computed(() => (editingId.value ? '编辑分组' : '添加分组'))
 
+const searchUsers = async (search = '') => {
+  if (!isAdmin.value) return
+  userLoading.value = true
+  try {
+    const res = await request.get('/users', { params: { keyword: search, pageSize: 200 } })
+    users.value = (res.data?.list || res.list || []).map(item => ({
+      ...item,
+      username: item.username || item.email || item.name
+    }))
+  } finally {
+    userLoading.value = false
+  }
+}
+
+const handleUserDropdown = visible => {
+  if (visible && isAdmin.value && !users.value.length) {
+    searchUsers('')
+  }
+}
+
+const handleUserChange = userId => {
+  selectedUserId.value = userId || ''
+  groups.value = []
+  selectedRows.value = []
+  fetchGroups()
+}
+
 const fetchGroups = () => {
+  if (isAdmin.value && !selectedUserId.value) {
+    groups.value = []
+    return
+  }
   loading.value = true
-  request.get('/forward_groups', { params: { keyword: keyword.value } }).then(res => {
+  request.get('/forward_groups', {
+    params: {
+      keyword: keyword.value,
+      ...(isAdmin.value && selectedUserId.value ? { user_id: Number(selectedUserId.value) } : {})
+    }
+  }).then(res => {
     groups.value = res.data?.list || []
     loading.value = false
   }).catch(() => {
@@ -95,7 +172,12 @@ const fetchGroups = () => {
 }
 
 const openCreate = () => {
+  if (isAdmin.value && !selectedUserId.value) {
+    ElMessage.warning('请先选择用户')
+    return
+  }
   editingId.value = 0
+  form.user_id = isAdmin.value ? Number(selectedUserId.value) || '' : ''
   form.name = ''
   form.remark = ''
   dialogVisible.value = true
@@ -103,13 +185,23 @@ const openCreate = () => {
 
 const openEdit = row => {
   editingId.value = row.id
+  form.user_id = Number(row.user_id || row.uid || selectedUserId.value) || ''
   form.name = row.name || ''
   form.remark = row.remark || ''
   dialogVisible.value = true
 }
 
 const submitForm = () => {
-  const payload = { id: editingId.value, name: form.name, remark: form.remark }
+  if (isAdmin.value && !form.user_id) {
+    ElMessage.warning('请选择用户')
+    return
+  }
+  const payload = {
+    id: editingId.value,
+    user_id: isAdmin.value ? Number(form.user_id) || 0 : undefined,
+    name: form.name,
+    remark: form.remark
+  }
   if (editingId.value) {
     request.put('/forward_groups', payload).then(() => {
       ElMessage.success('更新成功')
@@ -162,7 +254,12 @@ const batchDelete = () => {
   })
 }
 
-onMounted(fetchGroups)
+onMounted(() => {
+  if (isAdmin.value) {
+    searchUsers('')
+  }
+  fetchGroups()
+})
 </script>
 
 <style scoped>
@@ -174,5 +271,4 @@ onMounted(fetchGroups)
 .filter-left { display: flex; gap: 10px; }
 .filter-right { display: flex; gap: 10px; }
 </style>
-
 

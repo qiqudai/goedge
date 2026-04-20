@@ -47,12 +47,45 @@ const configItems = ref([])
 const loading = ref(false)
 const { loadSystemInfo } = useSystemInfo()
 
+const resolveConfigItemList = (response) => {
+  if (Array.isArray(response?.data?.list)) {
+    return response.data.list
+  }
+  if (Array.isArray(response?.list)) {
+    return response.list
+  }
+  return []
+}
+
+const normalizeConfigItems = (items) => {
+  if (!Array.isArray(items)) {
+    return []
+  }
+
+  const preferredByName = new Map()
+  items.forEach((item) => {
+    if (!item?.name) {
+      return
+    }
+
+    const scopeName = String(item.scope_name || '').trim()
+    const scopeID = Number(item.scope_id || 0)
+    const score = scopeName === 'global' && scopeID === 0 ? 3 : scopeID === 0 ? 2 : 1
+    const current = preferredByName.get(item.name)
+    if (!current || score > current.score) {
+      preferredByName.set(item.name, { item, score })
+    }
+  })
+
+  return Array.from(preferredByName.values()).map(entry => entry.item)
+}
+
 const loadData = () => {
   loading.value = true
   request
-    .get('/config_items', { params: { type: 'system' } })
+    .get('/config_items', { params: { type: 'system', scope_name: 'global', scope_id: 0 } })
     .then(res => {
-      configItems.value = res.list || []
+      configItems.value = normalizeConfigItems(resolveConfigItemList(res))
     })
     .then(() => {
       if (activeTab.value === 'system') {

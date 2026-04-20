@@ -1,0 +1,68 @@
+﻿.default-site .section {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 16px;
+}
+
+.default-site .section:last-child {
+    border-bottom: none;
+}
+
+.default-site .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-left: 10px;
+    border-left: 4px solid #409eff;
+}
+
+.default-site .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.default-site .option-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+}
+
+.default-site .toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.default-site .ttl-input {
+    display: flex;
+    gap: 8px;
+    max-width: 280px;
+}
+
+.default-site .condition-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.default-site .more-settings {
+    margin-top: 12px;
+}
+
+.default-site .more-toggle {
+    font-size: 12px;
+    color: var(--muted-text);
+    cursor: pointer;
+}
+
+.default-site .config-table td,
+.default-site .config-table th {
+    vertical-align: middle;
+}
+

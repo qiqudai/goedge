@@ -417,6 +417,9 @@ func Setup(r *gin.Engine) {
 
 			userDnsapiCtr := &controllers.DNSAPIController{}
 			user.GET("/dnsapi", userDnsapiCtr.List)
+			user.POST("/dnsapi", userDnsapiCtr.Create)
+			user.PUT("/dnsapi/:id", userDnsapiCtr.Update)
+			user.DELETE("/dnsapi/:id", userDnsapiCtr.Delete)
 			user.GET("/dnsapi/types", userDnsapiCtr.Types)
 
 			userRuleCtr := &controllers.RuleController{}

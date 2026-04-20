@@ -5,6 +5,24 @@
         <el-tab-pane label="转发列表" name="list" />
         <el-tab-pane label="默认设置" name="default">
           <div class="filter-container">
+            <el-select
+              v-if="isAdmin"
+              v-model="selectedUserId"
+              placeholder="请选择用户"
+              style="width: 280px;"
+              filterable
+              clearable
+              :loading="userLoading"
+              @visible-change="handleUserDropdown"
+              @change="handleUserChange"
+            >
+              <el-option
+                v-for="u in users"
+                :key="u.id"
+                :label="`${u.name} (${u.username || u.email || u.id})`"
+                :value="u.id"
+              />
+            </el-select>
             <el-button type="primary" @click="openCreate">新增设置</el-button>
           </div>
 
@@ -46,6 +64,24 @@
 
     <el-dialog v-model="dialogVisible" title="新增设置" width="520px">
       <el-form :model="form" label-width="100px" style="padding-top: 10px;">
+        <el-form-item v-if="isAdmin" label="所属用户">
+          <el-select
+            v-model="form.user_id"
+            placeholder="请选择用户"
+            style="width: 100%;"
+            filterable
+            clearable
+            :loading="userLoading"
+            @visible-change="handleUserDropdown"
+          >
+            <el-option
+              v-for="u in users"
+              :key="u.id"
+              :label="`${u.name} (${u.username || u.email || u.id})`"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="设置项">
           <el-select v-model="form.key" placeholder="请选择" style="width: 100%;" @change="handleKeyChange">
             <el-option label="开启proxy_protocol" value="proxy_protocol" />
@@ -99,6 +135,10 @@ import request from '@/utils/request'
 
 const router = useRouter()
 const activeTopTab = ref('default')
+const isAdmin = ref(localStorage.getItem('role') === 'admin')
+const users = ref([])
+const userLoading = ref(false)
+const selectedUserId = ref('')
 
 const handleTopTab = (name) => {
   const map = {
@@ -121,16 +161,53 @@ const dialogVisible = ref(false)
 const groupOptions = ref([])
 
 const form = reactive({
+  user_id: '',
   key: 'proxy_protocol',
   value: true,
   scope: 'global',
   group_id: ''
 })
 
+const searchUsers = async (keyword = '') => {
+  if (!isAdmin.value) return
+  userLoading.value = true
+  try {
+    const res = await request.get('/users', { params: { keyword, pageSize: 200 } })
+    users.value = (res.data?.list || res.list || []).map(item => ({
+      ...item,
+      username: item.username || item.email || item.name
+    }))
+  } finally {
+    userLoading.value = false
+  }
+}
+
+const handleUserDropdown = visible => {
+  if (visible && isAdmin.value && !users.value.length) {
+    searchUsers('')
+  }
+}
+
+const handleUserChange = userId => {
+  selectedUserId.value = userId || ''
+  settings.value = []
+  groupOptions.value = []
+  fetchSettings()
+  loadGroups()
+}
+
 const fetchSettings = async () => {
+  if (isAdmin.value && !selectedUserId.value) {
+    settings.value = []
+    return
+  }
   loading.value = true
   try {
-    const res = await request.get('/forward_defaults')
+    const params = {}
+    if (isAdmin.value && selectedUserId.value) {
+      params.user_id = Number(selectedUserId.value)
+    }
+    const res = await request.get('/forward_defaults', { params })
     settings.value = res.list || []
   } finally {
     loading.value = false
@@ -138,7 +215,15 @@ const fetchSettings = async () => {
 }
 
 const loadGroups = async () => {
-  const res = await request.get('/forward_groups')
+  if (isAdmin.value && !selectedUserId.value) {
+    groupOptions.value = []
+    return
+  }
+  const params = {}
+  if (isAdmin.value && selectedUserId.value) {
+    params.user_id = Number(selectedUserId.value)
+  }
+  const res = await request.get('/forward_groups', { params })
   groupOptions.value = res.list || []
 }
 
@@ -167,12 +252,27 @@ const handleKeyChange = () => {
 }
 
 const openCreate = () => {
+  if (isAdmin.value && !selectedUserId.value) {
+    ElMessage.warning('请先选择用户')
+    return
+  }
   dialogVisible.value = true
-  Object.assign(form, { key: 'proxy_protocol', value: true, scope: 'global', group_id: '' })
+  Object.assign(form, {
+    user_id: isAdmin.value ? Number(selectedUserId.value) || '' : '',
+    key: 'proxy_protocol',
+    value: true,
+    scope: 'global',
+    group_id: ''
+  })
 }
 
 const submitForm = async () => {
+  if (isAdmin.value && !form.user_id) {
+    ElMessage.warning('请选择用户')
+    return
+  }
   const payload = {
+    user_id: isAdmin.value ? Number(form.user_id) || 0 : undefined,
     key: form.key,
     value: form.value,
     scope: form.scope,
@@ -187,6 +287,9 @@ const submitForm = async () => {
 const removeSetting = row => {
   ElMessageBox.confirm('确认删除该设置?', '提示').then(async () => {
     const payload = row.id_str ? { id_str: row.id_str } : { id: row.id }
+    if (isAdmin.value && selectedUserId.value) {
+      payload.user_id = Number(selectedUserId.value)
+    }
     await request.delete('/forward_defaults', { data: payload })
     ElMessage.success('删除成功')
     fetchSettings()
@@ -194,6 +297,9 @@ const removeSetting = row => {
 }
 
 onMounted(() => {
+  if (isAdmin.value) {
+    searchUsers('')
+  }
   fetchSettings()
   loadGroups()
 })

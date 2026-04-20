@@ -24,7 +24,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="DNS 接口" name="dns">
-          <DnsApiTab v-if="activeTab === 'dns'" />
+          <DnsApiTab v-if="activeTab === 'dns'" :is-admin="isAdmin" />
         </el-tab-pane>
 
         <el-tab-pane label="解析检测" name="resolve">

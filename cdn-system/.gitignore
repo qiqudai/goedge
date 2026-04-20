@@ -1,0 +1,14 @@
+.DS_Store
+.claude/
+
+# Local build and test outputs
+build/
+test-results/
+api/build/
+
+# Local runtime/generated data
+api/acme/
+
+# Compiled binaries
+api/api-linux-amd64
+agent/cdn-agent-linux-amd64

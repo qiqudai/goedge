@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,41 +15,61 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-// Config defines the parameters for the Geneva service
+// Config defines the parameters for the Geneva service.
+//
+// This implementation intentionally avoids global sysctl changes and MSS
+// rewriting. It only nudges early outbound TLS control packets by shrinking the
+// advertised TCP window for the first few packets on port 443.
 type Config struct {
-	QueueNum   int // NFQUEUE ID (default: 100)
-	WindowSize uint16
-	Ports      []int // Ports to intercept (e.g., [80, 443])
-	Debug      bool
+	QueueNum    int // NFQUEUE ID (default: 100)
+	WindowSize  uint16
+	PacketLimit int
+	Ports       []int // Ports to intercept (default: [443])
+	Debug       bool
 }
 
-// Service controls the Geneva logic
+// Service controls the Geneva logic.
 type Service struct {
-	config Config
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	mu     sync.Mutex // Protects running state
+	config  Config
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	mu      sync.Mutex // Protects running state and flow state
 	running bool
+	flows   map[flowKey]*flowState
 }
 
-// New creates a new Geneva service instance
+type flowKey struct {
+	srcIP   string
+	dstIP   string
+	srcPort uint16
+	dstPort uint16
+}
+
+type flowState struct {
+	modifiedPackets int
+}
+
+// New creates a new Geneva service instance.
 func New(cfg Config) *Service {
 	if cfg.QueueNum == 0 {
 		cfg.QueueNum = 100
 	}
 	if cfg.WindowSize == 0 {
-		cfg.WindowSize = 4
+		cfg.WindowSize = 512
+	}
+	if cfg.PacketLimit == 0 {
+		cfg.PacketLimit = 6
 	}
 	if len(cfg.Ports) == 0 {
-		cfg.Ports = []int{80, 443}
+		cfg.Ports = []int{443}
 	}
 	return &Service{
 		config: cfg,
+		flows:  map[flowKey]*flowState{},
 	}
 }
 
-// Start enables the firewall rules and begins packet processing.
-// It is non-blocking (runs in background).
+// Start enables the packet interception rule and begins packet processing.
 func (s *Service) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -57,12 +78,10 @@ func (s *Service) Start() error {
 		return fmt.Errorf("geneva service is already running")
 	}
 
-	// 1. Setup IPTables
-	if err := s.setupIptables(); err != nil {
-		return fmt.Errorf("failed to setup iptables: %v", err)
+	if err := s.setupNetwork(); err != nil {
+		return fmt.Errorf("failed to setup geneva interception: %v", err)
 	}
 
-	// 2. Start NFQueue
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.running = true
@@ -71,40 +90,35 @@ func (s *Service) Start() error {
 	go func() {
 		defer s.wg.Done()
 		if err := s.runNFQueue(ctx); err != nil {
-			// If runtime error occurs, we log it.
-			// Real-world code might want a channel to report errors back.
 			log.Printf("[GENEVA] Error in NFQueue loop: %v", err)
 		}
 	}()
 
-	log.Printf("[GENEVA] Service started. Queue: %d, Window: %d", s.config.QueueNum, s.config.WindowSize)
+	log.Printf("[GENEVA] Safe mode started. Queue=%d Window=%d PacketLimit=%d Ports=%v", s.config.QueueNum, s.config.WindowSize, s.config.PacketLimit, s.config.Ports)
 	return nil
 }
 
-// Stop disables the service, stopping packet processing and removing firewall rules.
+// Stop disables the service, stopping packet processing and removing rules.
 func (s *Service) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if !s.running {
-		return nil // Already stopped
+		return nil
 	}
 
 	log.Println("[GENEVA] Stopping service...")
 
-	// 1. Cancel context to stop NFQueue loop
 	if s.cancel != nil {
 		s.cancel()
 	}
-
-	// 2. Wait for goroutine to finish
 	s.wg.Wait()
 
-	// 3. Cleanup IPTables
-	if err := s.cleanupIptables(); err != nil {
-		return fmt.Errorf("failed to cleanup iptables: %v", err)
+	if err := s.cleanupNetwork(); err != nil {
+		return fmt.Errorf("failed to cleanup geneva interception: %v", err)
 	}
 
+	s.flows = map[flowKey]*flowState{}
 	s.running = false
 	log.Println("[GENEVA] Service stopped.")
 	return nil
@@ -139,12 +153,10 @@ func (s *Service) runNFQueue(ctx context.Context) error {
 
 		if verdict == nfqueue.NfDrop {
 			nfq.SetVerdict(id, nfqueue.NfDrop)
+		} else if modifiedPayload != nil {
+			nfq.SetVerdictModPacket(id, nfqueue.NfAccept, modifiedPayload)
 		} else {
-			if modifiedPayload != nil {
-				nfq.SetVerdictModPacket(id, nfqueue.NfAccept, modifiedPayload)
-			} else {
-				nfq.SetVerdict(id, nfqueue.NfAccept)
-			}
+			nfq.SetVerdict(id, nfqueue.NfAccept)
 		}
 		return 0
 	}
@@ -177,64 +189,143 @@ func (s *Service) processPacket(data []byte) ([]byte, int) {
 	}
 	tcp, _ := tcpLayer.(*layers.TCP)
 
-	// Logic: Modifying Window Size for Control/Data Packets
-	isTarget := (tcp.SYN && tcp.ACK) || (tcp.FIN && tcp.ACK) || (tcp.PSH && tcp.ACK) || (tcp.ACK && !tcp.SYN && !tcp.FIN && !tcp.RST)
-
-	if isTarget {
-		if s.config.Debug {
-			log.Printf("[GENEVA-DEBUG] Modifying: %s:%d -> %s:%d", ip.SrcIP, tcp.SrcPort, ip.DstIP, tcp.DstPort)
-		}
-
-		tcp.Window = s.config.WindowSize
-
-		if err := tcp.SetNetworkLayerForChecksum(ip); err != nil {
-			return nil, nfqueue.NfAccept
-		}
-
-		buffer := gopacket.NewSerializeBuffer()
-		opts := gopacket.SerializeOptions{ComputeChecksums: true, FixLengths: true}
-		if err := gopacket.SerializePacket(buffer, opts, packet); err != nil {
-			return nil, nfqueue.NfAccept
-		}
-
-		return buffer.Bytes(), nfqueue.NfAccept
+	if !s.shouldTargetPort(uint16(tcp.SrcPort)) {
+		return nil, nfqueue.NfAccept
 	}
 
-	return nil, nfqueue.NfAccept
-}
-
-// --- IPTables Utilities ---
-
-const (
-	iptCheck  = "iptables -C OUTPUT -p tcp -m multiport --sports %s -j NFQUEUE --queue-num %d"
-	iptInsert = "iptables -I OUTPUT -p tcp -m multiport --sports %s -j NFQUEUE --queue-num %d"
-	iptDelete = "iptables -D OUTPUT -p tcp -m multiport --sports %s -j NFQUEUE --queue-num %d"
-)
-
-func (s *Service) setupIptables() error {
-	portsStr := intSliceToString(s.config.Ports)
-	
-	// Check first
-	checkCmd := fmt.Sprintf(iptCheck, portsStr, s.config.QueueNum)
-	if err := runCmd(checkCmd); err == nil {
-		return nil // Already exists
+	key := flowKey{
+		srcIP:   ip.SrcIP.String(),
+		dstIP:   ip.DstIP.String(),
+		srcPort: uint16(tcp.SrcPort),
+		dstPort: uint16(tcp.DstPort),
 	}
 
-	insertCmd := fmt.Sprintf(iptInsert, portsStr, s.config.QueueNum)
-	return runCmd(insertCmd)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if tcp.RST || tcp.FIN {
+		delete(s.flows, key)
+		return nil, nfqueue.NfAccept
+	}
+
+	// Once the server starts sending TLS/application data, stop interference.
+	if len(tcp.Payload) > 0 {
+		delete(s.flows, key)
+		return nil, nfqueue.NfAccept
+	}
+
+	state, ok := s.flows[key]
+	if tcp.SYN && tcp.ACK {
+		state = &flowState{}
+		s.flows[key] = state
+	} else if !ok {
+		return nil, nfqueue.NfAccept
+	}
+
+	if !shouldModifyAckWindow(tcp) {
+		return nil, nfqueue.NfAccept
+	}
+	if state.modifiedPackets >= s.config.PacketLimit {
+		delete(s.flows, key)
+		return nil, nfqueue.NfAccept
+	}
+
+	if s.config.Debug {
+		log.Printf("[GENEVA-DEBUG] Adjusting early TLS ACK window: %s:%d -> %s:%d packet=%d/%d", ip.SrcIP, tcp.SrcPort, ip.DstIP, tcp.DstPort, state.modifiedPackets+1, s.config.PacketLimit)
+	}
+
+	tcp.Window = s.config.WindowSize
+	state.modifiedPackets++
+
+	if err := tcp.SetNetworkLayerForChecksum(ip); err != nil {
+		return nil, nfqueue.NfAccept
+	}
+
+	buffer := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{ComputeChecksums: true, FixLengths: true}
+	if err := gopacket.SerializePacket(buffer, opts, packet); err != nil {
+		return nil, nfqueue.NfAccept
+	}
+
+	return buffer.Bytes(), nfqueue.NfAccept
 }
 
-func (s *Service) cleanupIptables() error {
+func (s *Service) shouldTargetPort(port uint16) bool {
+	for _, allowed := range s.config.Ports {
+		if uint16(allowed) == port {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldModifyAckWindow(tcp *layers.TCP) bool {
+	if tcp == nil {
+		return false
+	}
+	if tcp.RST || tcp.FIN || tcp.PSH || tcp.URG || tcp.ECE || tcp.CWR {
+		return false
+	}
+	if tcp.SYN && tcp.ACK {
+		return true
+	}
+	return tcp.ACK && !tcp.SYN
+}
+
+func (s *Service) setupNetwork() error {
+	return s.setupNFQueueRule()
+}
+
+func (s *Service) cleanupNetwork() error {
+	return s.cleanupNFQueueRule()
+}
+
+func (s *Service) setupNFQueueRule() error {
 	portsStr := intSliceToString(s.config.Ports)
-	delCmd := fmt.Sprintf(iptDelete, portsStr, s.config.QueueNum)
-	return runCmd(delCmd)
+	rule := []string{
+		"-p", "tcp",
+		"-m", "multiport", "--sports", portsStr,
+		"-j", "NFQUEUE",
+		"--queue-num", strconv.Itoa(s.config.QueueNum),
+	}
+	return ensureIptablesRule("filter", "OUTPUT", rule)
 }
 
-func runCmd(cmdStr string) error {
-	parts := strings.Fields(cmdStr)
-	cmd := exec.Command(parts[0], parts[1:]...)
+func (s *Service) cleanupNFQueueRule() error {
+	portsStr := intSliceToString(s.config.Ports)
+	rule := []string{
+		"-p", "tcp",
+		"-m", "multiport", "--sports", portsStr,
+		"-j", "NFQUEUE",
+		"--queue-num", strconv.Itoa(s.config.QueueNum),
+	}
+	return deleteIptablesRule("filter", "OUTPUT", rule)
+}
+
+func ensureIptablesRule(table string, chain string, rule []string) error {
+	checkArgs := append([]string{"-t", table, "-C", chain}, rule...)
+	if err := runCmd("iptables", checkArgs...); err == nil {
+		return nil
+	}
+
+	insertArgs := append([]string{"-t", table, "-I", chain}, rule...)
+	return runCmd("iptables", insertArgs...)
+}
+
+func deleteIptablesRule(table string, chain string, rule []string) error {
+	checkArgs := append([]string{"-t", table, "-C", chain}, rule...)
+	if err := runCmd("iptables", checkArgs...); err != nil {
+		return nil
+	}
+
+	deleteArgs := append([]string{"-t", table, "-D", chain}, rule...)
+	return runCmd("iptables", deleteArgs...)
+}
+
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%v (out: %s)", err, string(out))
+		return fmt.Errorf("%s %s: %v (out: %s)", name, strings.Join(args, " "), err, string(out))
 	}
 	return nil
 }

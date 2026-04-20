@@ -44,3 +44,20 @@ func TestAccessLogRefererExpr_GroupsByHost(t *testing.T) {
 		t.Fatalf("expected dash fallback for empty referer, got %q", expr)
 	}
 }
+
+func TestAccessLogClientCountryExpr_UsesUploadedField(t *testing.T) {
+	expr := AccessLogClientCountryExpr()
+	if !strings.Contains(expr, "client_country") {
+		t.Fatalf("expected client_country expression, got %q", expr)
+	}
+	if strings.Contains(expr, "remote_addr") {
+		t.Fatalf("expected no IP fallback in country expression, got %q", expr)
+	}
+}
+
+func TestAccessLogClientProvinceExpr_FallsBackToCountry(t *testing.T) {
+	expr := AccessLogClientProvinceExpr()
+	if !strings.Contains(expr, "client_province") || !strings.Contains(expr, "client_country") {
+		t.Fatalf("expected province expression to use uploaded geo fields, got %q", expr)
+	}
+}

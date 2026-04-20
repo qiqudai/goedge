@@ -30,6 +30,23 @@ func AccessLogRefererExpr() string {
 	return "if(http_referer = '' OR http_referer = '-', '-', lower(if(extract(http_referer, '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]+)') != '', extract(http_referer, '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]+)'), http_referer)))"
 }
 
+// AccessLogClientCountryExpr returns the normalized display value uploaded by
+// edge nodes for client country rankings.
+func AccessLogClientCountryExpr() string {
+	return "if(trim(BOTH ' ' FROM client_country) = '' OR client_country = '-', '-', trim(BOTH ' ' FROM client_country))"
+}
+
+// AccessLogClientProvinceExpr returns the normalized display value uploaded by
+// edge nodes for client province rankings, falling back to country when the
+// source record has no province value.
+func AccessLogClientProvinceExpr() string {
+	countryExpr := AccessLogClientCountryExpr()
+	return fmt.Sprintf(
+		"if(trim(BOTH ' ' FROM client_province) = '' OR client_province = '-', %s, trim(BOTH ' ' FROM client_province))",
+		countryExpr,
+	)
+}
+
 // AccessLogRealSiteTrafficCondition filters out internal/default host noise so
 // rankings reflect actual matched site traffic instead of raw Host header junk.
 func AccessLogRealSiteTrafficCondition() string {

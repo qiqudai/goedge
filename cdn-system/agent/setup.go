@@ -47,6 +47,7 @@ func initEnvironment() {
 		restoreDir("assets/data", filepath.Join(rootDir, "data"))
 		restoreDir("assets/cert", filepath.Join(rootDir, "cert"))
 	}
+	ensureBaseRuntimeAssets(rootDir)
 
 	// 1. Unpack Binary / Runtime
 	binName := "nginx"
@@ -76,13 +77,7 @@ func initEnvironment() {
 	// 3. Patch nginx.conf
 	confFile := filepath.Join(rootDir, "conf", "nginx.conf")
 	if data, err := ioutil.ReadFile(confFile); err == nil {
-		content := string(data)
-		absCache, _ := filepath.Abs(filepath.Join(rootDir, "cache"))
-		// Dynamically resolve data dir for ip2region
-		absData, _ := filepath.Abs(filepath.Join(rootDir, "data", "ip2region.xdb"))
-		content = strings.ReplaceAll(content, "/var/cache/nginx", filepath.ToSlash(absCache))
-		// Patch ip2region path
-		content = strings.ReplaceAll(content, "/opt/cdn-agent/data/ip2region.xdb", filepath.ToSlash(absData))
+		content := patchNginxConfigPaths(string(data), rootDir)
 		ioutil.WriteFile(confFile, []byte(content), 0644)
 	}
 	ensureDynamicConf(filepath.Join(rootDir, "conf", "dynamic", "http.conf"))
@@ -117,6 +112,23 @@ func initEnvironment() {
 	loadPersistedPackages()
 
 	log.Printf("[Init] Environment Setup: Bin=%s, Config=%s", NginxBinPath, CONFIG_PATH)
+}
+
+func ensureBaseRuntimeAssets(rootDir string) {
+	restoreDirIfMissing("assets/conf", filepath.Join(rootDir, "conf"))
+	restoreDirIfMissing("assets/lua", filepath.Join(rootDir, "lua"))
+	restoreDirIfMissing("assets/data", filepath.Join(rootDir, "data"))
+	restoreDirIfMissing("assets/cert", filepath.Join(rootDir, "cert"))
+}
+
+func patchNginxConfigPaths(content string, rootDir string) string {
+	absCache, _ := filepath.Abs(filepath.Join(rootDir, "cache"))
+	absData, _ := filepath.Abs(filepath.Join(rootDir, "data", "ip2region.xdb"))
+	content = strings.ReplaceAll(content, "/var/cache/nginx", filepath.ToSlash(absCache))
+	// Support both the intended placeholder and the legacy hard-coded repo path.
+	content = strings.ReplaceAll(content, "/opt/cdn-agent/data/ip2region.xdb", filepath.ToSlash(absData))
+	content = strings.ReplaceAll(content, "/www/server/go_project/openresty/cdn-system/agent/edge-node/data/ip2region.xdb", filepath.ToSlash(absData))
+	return content
 }
 
 func unzipEmbedded(zipPath, dest string) error {

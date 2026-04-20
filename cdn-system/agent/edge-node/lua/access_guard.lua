@@ -268,6 +268,18 @@ local function normalize_raw_header(raw)
     return raw
 end
 
+local function clean_geo_value(value)
+    if value == nil then
+        return ""
+    end
+    value = tostring(value)
+    value = string.match(value, "^%s*(.-)%s*$") or ""
+    if value == "" or value == "0" or value == "-" then
+        return ""
+    end
+    return value
+end
+
 local function apply_realtime_send(domain_conf)
     if not domain_conf then
         return
@@ -313,28 +325,63 @@ local function resolve_geo_record(ip)
     if not ip or not _G.IP_SEARCHER then
         return nil
     end
+    local cache = _G.IP_LRU_CACHE
+    if cache then
+        local cached = cache:get("geo_record:" .. ip)
+        if cached ~= nil then
+            return cached
+        end
+    end
     local ok, res = pcall(function()
         return _G.IP_SEARCHER:search(ip)
     end)
     if not ok or not res then
         return nil
     end
+    local record = nil
     if type(res) == "table" then
-        return res
+        record = {
+            country = clean_geo_value(res.country or res[1] or ""),
+            region = clean_geo_value(res.region or res.province or res[2] or ""),
+            province = clean_geo_value(res.province or res.region or res[2] or ""),
+            city = clean_geo_value(res.city or res[3] or ""),
+            isp = clean_geo_value(res.isp or res[4] or ""),
+            raw = clean_geo_value(res.raw or ""),
+        }
+    else
+        local raw = tostring(res)
+        local parts = {}
+        for part in string.gmatch(raw, "([^|]+)") do
+            table.insert(parts, part)
+        end
+        record = {
+            country = clean_geo_value(parts[1] or ""),
+            region = clean_geo_value(parts[2] or ""),
+            province = clean_geo_value(parts[2] or ""),
+            city = clean_geo_value(parts[3] or ""),
+            isp = clean_geo_value(parts[4] or ""),
+            raw = raw,
+        }
     end
-    local raw = tostring(res)
-    local parts = {}
-    for part in string.gmatch(raw, "([^|]+)") do
-        table.insert(parts, part)
+    if cache and record then
+        cache:set("geo_record:" .. ip, record, 600)
     end
-    return {
-        country = parts[1] or "",
-        region = parts[2] or "",
-        province = parts[3] or "",
-        city = parts[4] or "",
-        isp = parts[5] or "",
-        raw = raw,
-    }
+    return record
+end
+
+local function apply_geo_logging(ip)
+    ngx.var.client_country = ""
+    ngx.var.client_province = ""
+    ngx.var.client_city = ""
+    ngx.var.client_isp = ""
+    local geo = resolve_geo_record(ip)
+    if not geo then
+        return
+    end
+    ngx.var.client_country = geo.country or ""
+    ngx.var.client_province = geo.province or ""
+    ngx.var.client_city = geo.city or ""
+    ngx.var.client_isp = geo.isp or ""
 end
 
 local function contains_any(haystack, needles)
@@ -925,6 +972,7 @@ if domain_conf then
     end
     apply_request_logging(domain_conf)
     local client_ip = ngx.var.remote_addr
+    apply_geo_logging(client_ip)
     local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
     local crawler_allowed = false
     local crawler_action = domain_conf.crawler_action or ""

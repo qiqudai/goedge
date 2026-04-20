@@ -24,6 +24,23 @@ import (
 	"gorm.io/gorm"
 )
 
+func setSettingMapValue(settings map[string]interface{}, path []string, value interface{}) {
+	if len(path) == 0 || settings == nil {
+		return
+	}
+	current := settings
+	for i := 0; i < len(path)-1; i++ {
+		key := path[i]
+		next, ok := current[key].(map[string]interface{})
+		if !ok || next == nil {
+			next = map[string]interface{}{}
+			current[key] = next
+		}
+		current = next
+	}
+	current[path[len(path)-1]] = value
+}
+
 // List returns the list of sites for the current user
 func (ctrl *SiteController) List(c *gin.Context) {
 	userID, _ := c.Get("userID")
@@ -728,6 +745,12 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 	}
 	if req.Settings != nil {
 		services.NormalizeSiteSettings(req.Settings)
+	}
+	if req.CertID != nil {
+		if req.Settings == nil {
+			req.Settings = map[string]interface{}{}
+		}
+		setSettingMapValue(req.Settings, []string{"https", "certificate_id"}, *req.CertID)
 	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {

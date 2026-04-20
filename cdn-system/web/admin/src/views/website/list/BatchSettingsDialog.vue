@@ -117,7 +117,7 @@
               <el-option
                 v-for="cert in certList"
                 :key="cert.id"
-                :label="cert.name"
+                :label="getCertOptionLabel(cert)"
                 :value="cert.id"
               />
             </el-select>
@@ -1523,6 +1523,44 @@ const hasSectionSelection = (section) => {
 
 const isSubmitting = (section) => submittingSection.value === section
 
+const resolveListResult = (res) => {
+  const payload = res?.data && typeof res.data === 'object' && !Array.isArray(res.data)
+    ? res.data
+    : res
+
+  if (Array.isArray(payload?.list)) {
+    return payload.list
+  }
+  if (Array.isArray(payload?.data)) {
+    return payload.data
+  }
+  if (Array.isArray(res?.list)) {
+    return res.list
+  }
+  if (Array.isArray(res?.data)) {
+    return res.data
+  }
+  return []
+}
+
+const getCertOptionLabel = (cert) => {
+  if (!cert || typeof cert !== 'object') {
+    return ''
+  }
+  const name = String(cert.name || '').trim()
+  const domain = String(cert.domain || '').trim()
+  if (name && domain && name !== domain) {
+    return `${name} (${domain})`
+  }
+  if (name) {
+    return name
+  }
+  if (domain) {
+    return domain
+  }
+  return `证书 #${cert.id || ''}`.trim()
+}
+
 const loadDependencies = async () => {
   await Promise.all([
     loadUserPackages(),
@@ -1538,7 +1576,7 @@ const loadUserPackages = async () => {
   loading.userPackages = true
   try {
     const res = await request.get('/user_packages', { params: { pageSize: 1000 } })
-    userPackages.value = res.data?.list || res.list || []
+    userPackages.value = resolveListResult(res)
   } catch (e) {
     console.error(e)
   } finally {
@@ -1551,7 +1589,7 @@ const loadSiteGroups = async () => {
   loading.siteGroups = true
   try {
     const res = await request.get('/site_groups', { params: { pageSize: 1000 } })
-    siteGroups.value = res.data?.list || res.list || []
+    siteGroups.value = resolveListResult(res)
   } catch (e) {
     console.error(e)
   } finally {
@@ -1564,7 +1602,7 @@ const loadCerts = async () => {
   loading.certs = true
   try {
     const res = await request.get('/certs', { params: { pageSize: 1000 } })
-    certList.value = res.data?.list || res.list || []
+    certList.value = resolveListResult(res)
   } catch (e) {
     console.error(e)
   } finally {
@@ -1577,7 +1615,7 @@ const loadAcls = async () => {
   loading.acls = true
   try {
     const res = await request.get('/acls', { baseURL: '/api/v1' })
-    aclList.value = res.data?.list || res.list || []
+    aclList.value = resolveListResult(res)
   } catch (e) {
     console.error(e)
   } finally {
@@ -1590,7 +1628,7 @@ const loadCcRules = async () => {
   loading.ccRules = true
   try {
     const res = await request.get('/rules/cc/groups')
-    const list = res.data?.list || res.list || []
+    const list = resolveListResult(res)
     systemRules.value = list.filter(item => item.is_system)
     userRules.value = list.filter(item => !item.is_system)
   } catch (e) {

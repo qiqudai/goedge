@@ -19,6 +19,10 @@ import (
 type rawAccessLog struct {
 	TimeISO8601          string  `json:"time_iso8601"`
 	RemoteAddr           string  `json:"remote_addr"`
+	ClientCountry        string  `json:"client_country"`
+	ClientProvince       string  `json:"client_province"`
+	ClientCity           string  `json:"client_city"`
+	ClientISP            string  `json:"client_isp"`
 	SiteName             string  `json:"site_name"`
 	Host                 string  `json:"host"`
 	Request              string  `json:"request"`
@@ -84,6 +88,10 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 				"node_id":                nodeID,
 				"node_ip":                nodeIP,
 				"remote_addr":            raw.RemoteAddr,
+				"client_country":         raw.ClientCountry,
+				"client_province":        raw.ClientProvince,
+				"client_city":            raw.ClientCity,
+				"client_isp":             raw.ClientISP,
 				"site_name":              raw.SiteName,
 				"host":                   raw.Host,
 				"method":                 method,
@@ -105,8 +113,8 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 		return insertHTTPRows(httpCfg, "node_access_logs", rows)
 	}
 	stmt, err := db.CK.Prepare(`INSERT INTO node_access_logs
-		(ts, node_id, node_ip, remote_addr, site_name, host, method, uri, status, bytes, request_time, upstream_addr, upstream_response_time, upstream_cache_status, http_referer, http_user_agent, scheme, ssl_protocol, ssl_cipher, raw)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(ts, node_id, node_ip, remote_addr, client_country, client_province, client_city, client_isp, site_name, host, method, uri, status, bytes, request_time, upstream_addr, upstream_response_time, upstream_cache_status, http_referer, http_user_agent, scheme, ssl_protocol, ssl_cipher, raw)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		log.Printf("[CK] Prepare access logs failed: %v", err)
 		return 0
@@ -134,6 +142,10 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			nodeID,
 			nodeIP,
 			raw.RemoteAddr,
+			raw.ClientCountry,
+			raw.ClientProvince,
+			raw.ClientCity,
+			raw.ClientISP,
 			raw.SiteName,
 			raw.Host,
 			method,

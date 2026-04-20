@@ -1,0 +1,182 @@
+@page "/global/errors"
+@using Cnn.Common.Contracts.Admin
+@using Microsoft.AspNetCore.Components
+@inject ApiClient Api
+
+<div class="page-container error-pages">
+    <div class="page-title">自定义错误页面</div>
+
+    @if (_loading)
+    {
+        <div class="card config-card">加载中...</div>
+    }
+    else
+    {
+        <div class="card config-card">
+            <div class="card-body">
+                <div class="error-layout">
+                    <div class="error-nav">
+                        @foreach (var item in _errorCodes)
+                        {
+                            <button class='error-tab @(item.Key == _activeCode ? "active" : "")'
+                                    @onclick='@(() => SetActive(item.Key))'>
+                                <div class="error-tab-title">@item.Label</div>
+                                <div class="error-tab-key">@item.Key</div>
+                            </button>
+                        }
+                    </div>
+
+                    <div class="error-content">
+                        <div class="editor-header">
+                            <h3>@(ActiveLabel) (@_activeCode)</h3>
+                            <span class="tip">编辑内容：</span>
+                        </div>
+
+                        <InputTextArea class="form-control" rows="20" @bind-Value="ActiveContent" @onblur="QueueSaveAsync" />
+
+                        <div class="preview" @key="_activeCode">
+                            @((MarkupString)ActiveContent)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3 d-flex align-items-center gap-2">
+                    <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+                    @if (_saving)
+                    {
+                        <span class="text-muted">保存中...</span>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_message))
+                {
+                    <div class="alert @_messageClass mt-3">@_message</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading;
+    private bool _saving;
+    private bool _saveQueued;
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    private string _activeCode = "403";
+    private GlobalConfigDto _config = new();
+    private readonly Dictionary<string, string> _errorPages = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly List<ErrorCodeItem> _errorCodes = new()
+    {
+        new("400", "400 错误页面"),
+        new("403", "403 错误页面"),
+        new("502", "502 错误页面"),
+        new("504", "504 错误页面"),
+        new("traffic_limit", "流量超限"),
+        new("site_locked", "网站被锁"),
+        new("domain_invalid", "域名无效"),
+        new("conn_limit", "连接数超限"),
+        new("timeout", "套餐到期"),
+        new("ip", "限制IP访问")
+    };
+
+    private string ActiveLabel => _errorCodes.FirstOrDefault(item => item.Key == _activeCode)?.Label ?? "错误页面";
+
+    private string ActiveContent
+    {
+        get => _errorPages.TryGetValue(_activeCode, out var value) ? value : string.Empty;
+        set => _errorPages[_activeCode] = value ?? string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private void SetActive(string code)
+    {
+        _activeCode = code;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _message = null;
+
+        var response = await Api.GetAsync<GlobalConfigDto>("global_config", ApiScope.Admin);
+        _config = response?.Data ?? new GlobalConfigDto();
+
+        _errorPages.Clear();
+        if (_config.ErrorPages != null)
+        {
+            foreach (var pair in _config.ErrorPages)
+            {
+                _errorPages[pair.Key] = pair.Value ?? string.Empty;
+            }
+        }
+
+        foreach (var item in _errorCodes)
+        {
+            if (!_errorPages.ContainsKey(item.Key))
+            {
+                _errorPages[item.Key] = $"<h1>{item.Label}</h1><p>系统默认页面</p>";
+            }
+        }
+
+        _loading = false;
+    }
+
+    private async Task QueueSaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        await SaveAsync();
+
+        if (_saveQueued)
+        {
+            _saveQueued = false;
+            await SaveAsync();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+
+        _config.ErrorPages = new Dictionary<string, string>(_errorPages, StringComparer.OrdinalIgnoreCase);
+
+        var response = await Api.PostAsync<object>("global_config", _config, ApiScope.Admin);
+        _saving = false;
+
+        if (response != null && (response.Code == 0 || response.Code == 200))
+        {
+            SetMessage(true, "保存成功");
+        }
+        else
+        {
+            SetMessage(false, response?.Message ?? "保存失败");
+        }
+    }
+
+    private void SetMessage(bool success, string message)
+    {
+        _message = message;
+        _messageClass = success ? "alert-success" : "alert-danger";
+    }
+
+    private sealed record ErrorCodeItem(string Key, string Label);
+}
+

@@ -1,6 +1,24 @@
 <template>
   <div class="dnsapi-section">
     <div class="filter-container">
+      <el-select
+        v-if="isAdmin"
+        v-model="selectedUserId"
+        placeholder="请选择用户"
+        style="width: 280px"
+        filterable
+        clearable
+        :loading="userLoading"
+        @visible-change="handleUserDropdown"
+        @change="handleUserChange"
+      >
+        <el-option
+          v-for="u in users"
+          :key="u.id"
+          :label="`${u.name} (${u.username || u.email || u.id})`"
+          :value="u.id"
+        />
+      </el-select>
       <el-button type="primary" @click="openDnsapiDialog">新增 DNS 接口</el-button>
       <el-button :disabled="!selectedDnsapi.length" @click="removeDnsapiBatch">删除</el-button>
     </div>
@@ -34,6 +52,24 @@
 
   <el-dialog v-model="dnsapiDialogVisible" title="新增 DNS 接口" width="520px">
     <el-form :model="dnsapiForm" label-width="90px">
+      <el-form-item v-if="isAdmin" label="所属用户" required>
+        <el-select
+          v-model="dnsapiForm.user_id"
+          placeholder="请选择用户"
+          style="width: 100%;"
+          filterable
+          clearable
+          :loading="userLoading"
+          @visible-change="handleUserDropdown"
+        >
+          <el-option
+            v-for="u in users"
+            :key="u.id"
+            :label="`${u.name} (${u.username || u.email || u.id})`"
+            :value="u.id"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="名称" required>
         <el-input v-model="dnsapiForm.name" placeholder="请输入名称" />
       </el-form-item>
@@ -70,6 +106,13 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 
+const props = defineProps({
+  isAdmin: {
+    type: Boolean,
+    default: false
+  }
+})
+
 const emit = defineEmits(['list-updated'])
 
 const dnsapiList = ref([])
@@ -77,8 +120,12 @@ const dnsapiLoading = ref(false)
 const selectedDnsapi = ref([])
 const dnsapiTypes = ref([])
 const dnsapiDialogVisible = ref(false)
+const users = ref([])
+const userLoading = ref(false)
+const selectedUserId = ref('')
 const dnsapiForm = reactive({
   id: 0,
+  user_id: '',
   name: '',
   remark: '',
   type: '',
@@ -108,9 +155,45 @@ const formatDnsType = type => {
   return t ? t.name : type
 }
 
+const searchUsers = async (keyword = '') => {
+  if (!props.isAdmin) return
+  userLoading.value = true
+  try {
+    const res = await request.get('/users', { params: { keyword, pageSize: 200 } })
+    users.value = (res.data?.list || res.list || []).map(item => ({
+      ...item,
+      username: item.username || item.email || item.name
+    }))
+  } finally {
+    userLoading.value = false
+  }
+}
+
+const handleUserDropdown = visible => {
+  if (visible && props.isAdmin && !users.value.length) {
+    searchUsers('')
+  }
+}
+
+const handleUserChange = userId => {
+  selectedUserId.value = userId || ''
+  dnsapiList.value = []
+  selectedDnsapi.value = []
+  loadDnsapiList()
+}
+
 const loadDnsapiList = () => {
+  if (props.isAdmin && !selectedUserId.value) {
+    dnsapiList.value = []
+    emit('list-updated', [])
+    return
+  }
   dnsapiLoading.value = true
-  request.get('/dnsapi').then(res => {
+  const params = {}
+  if (props.isAdmin && selectedUserId.value) {
+    params.user_id = Number(selectedUserId.value)
+  }
+  request.get('/dnsapi', { params }).then(res => {
     dnsapiList.value = res.data?.list || res.list || []
     emit('list-updated', dnsapiList.value)
     dnsapiLoading.value = false
@@ -140,7 +223,12 @@ const resetDnsapiAuth = () => {
 }
 
 const openDnsapiDialog = () => {
+  if (props.isAdmin && !selectedUserId.value) {
+    ElMessage.warning('请先选择用户')
+    return
+  }
   dnsapiForm.id = 0
+  dnsapiForm.user_id = props.isAdmin ? Number(selectedUserId.value) || '' : ''
   dnsapiForm.name = ''
   dnsapiForm.remark = ''
   dnsapiForm.type = ''
@@ -150,6 +238,7 @@ const openDnsapiDialog = () => {
 
 const openDnsapiEdit = row => {
   dnsapiForm.id = row.id
+  dnsapiForm.user_id = Number(row.user_id || row.uid || selectedUserId.value) || ''
   dnsapiForm.name = row.name
   dnsapiForm.remark = row.remark || ''
   dnsapiForm.type = row.type
@@ -162,7 +251,12 @@ const submitDnsapi = () => {
     ElMessage.warning('请填写完整信息')
     return
   }
+  if (props.isAdmin && !dnsapiForm.user_id) {
+    ElMessage.warning('请选择用户')
+    return
+  }
   const payload = {
+    user_id: props.isAdmin ? Number(dnsapiForm.user_id) || 0 : undefined,
     name: dnsapiForm.name,
     remark: dnsapiForm.remark,
     type: dnsapiForm.type,
@@ -216,6 +310,9 @@ const removeDnsapiBatch = () => {
 }
 
 onMounted(() => {
+  if (props.isAdmin) {
+    searchUsers('')
+  }
   loadDnsapiList()
   loadDnsapiTypes()
 })

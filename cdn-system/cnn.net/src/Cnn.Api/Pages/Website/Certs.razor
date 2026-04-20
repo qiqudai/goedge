@@ -1,0 +1,1162 @@
+@page "/website/certs"
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services.Deletion
+@using Cnn.Api.Services.Tasks.Workflow
+@inject ApiClient Api
+@inject ClientSession Session
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">证书管理</div>
+
+    <div class="tab-bar">
+        <button class='tab-button @(_activeTopTab == "list" ? "active" : "")' @onclick='@(() => SetTopTabAsync("list"))'>证书列表</button>
+        <button class='tab-button @(_activeTopTab == "default" ? "active" : "")' @onclick='@(() => SetTopTabAsync("default"))'>默认设置</button>
+        <button class='tab-button @(_activeTopTab == "dns" ? "active" : "")' @onclick='@(() => SetTopTabAsync("dns"))'>DNS 接口</button>
+    </div>
+
+    @if (_activeTopTab == "list")
+    {
+        <div class="filter-bar">
+            @if (Session.IsAdmin)
+            {
+                <select class="form-select" style="max-width: 320px" @bind="_listUserId" @bind:after="OnListUserChangedAsync">
+                    <option value="0">全部用户</option>
+                    @foreach (var user in _listUsers)
+                    {
+                        <option value="@user.Id">@FormatDefaultUser(user)</option>
+                    }
+                </select>
+            }
+            <button class="btn btn-primary" @onclick="OpenCreate">添加证书</button>
+            <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="HandleBatchReissueAsync">重新申请</button>
+            <select class="form-select" style="max-width: 180px" @bind="_batchAction">
+                <option value="enable">启用</option>
+                <option value="disable">禁用</option>
+                <option value="auto_renew_enable">开启续签</option>
+                <option value="auto_renew_disable">关闭续签</option>
+                <option value="force_disable">强制禁用</option>
+                <option value="delete">删除</option>
+                <option value="download">下载</option>
+            </select>
+            <button class="btn btn-outline-secondary" disabled="@(!_selectedIds.Any())" @onclick="ApplyBatchActionAsync">提交</button>
+            <button class="btn btn-outline-secondary" @onclick="RefreshAsync">刷新</button>
+        </div>
+
+        <div class="filter-bar">
+            <select class="form-select" style="max-width: 140px" @bind="_searchField">
+                <option value="">全部</option>
+                <option value="name">名称</option>
+                <option value="domain">域名</option>
+                <option value="type">类型</option>
+            </select>
+            <InputText class="form-control" style="max-width: 260px" @bind-Value="_keyword" placeholder="输入名称/域名, 模糊搜索" />
+            <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+
+        @if (_showPagingDiagnostics)
+        {
+            <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+                <div><strong>分页诊断</strong></div>
+                <div>stateKey: <code>website:certs:table</code></div>
+                <div>pagingEnabled: <code>@(_pageQuery.PagingEnabled ? "true" : "false")</code></div>
+                <div>page: <code>@_pageQuery.Page</code>, pageSize: <code>@_pageQuery.PageSize</code></div>
+                <div>loaded: <code>@_items.Count</code>, total: <code>@_total</code></div>
+            </div>
+        }
+
+        <TablePager @ref="_tablePager"
+                    StateKey="website:certs:table"
+                    Total="_total"
+                    DefaultPageSize="20"
+                    UnpagedLimit="1000"
+                    QueryChanged="OnPageQueryChangedAsync">
+            <ChildContent>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th style="width: 44px">
+                                    <input type="checkbox" class="form-check-input" checked="@IsAllSelected" @onchange="ToggleSelectAll" />
+                                </th>
+                                <th>ID</th>
+                                @if (Session.IsAdmin)
+                                {
+                                    <th>用户</th>
+                                }
+                                <th>名称</th>
+                                <th>域名</th>
+                                <th>类型</th>
+                                <th>创建时间</th>
+                                <th>到期时间</th>
+                                <th>自动续签</th>
+                                <th>状态</th>
+                                <th>失败原因</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading)
+                            {
+                                <tr><td colspan="12">加载中...</td></tr>
+                            }
+                            else if (_items.Count == 0)
+                            {
+                                <tr><td colspan="12">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in _items)
+                                {
+                                    var state = DisplayState(item);
+                                    var failReason = IssueFailReason(item);
+                                    <tr>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input" checked="@IsSelected(item.Id)" @onchange="e => ToggleSelected(item.Id, e)" />
+                                        </td>
+                                        <td>@item.Id</td>
+                                        @if (Session.IsAdmin)
+                                        {
+                                            <td>@FormatUser(item)</td>
+                                        }
+                                        <td>@item.Name</td>
+                                        <td>@item.Domain</td>
+                                        <td>@item.Type</td>
+                                        <td>@FormatDate(item.CreateAt)</td>
+                                        <td>@FormatDate(item.ExpireTime)</td>
+                                        <td>@(item.AutoRenew ? "是" : "否")</td>
+                                        <td>
+                                            <span class="badge @StateBadgeClass(state)">@StateText(state, item.Enable)</span>
+                                            @if (state == "fail" && item.IssueTaskRetryAt is not null)
+                                            {
+                                                <div class="small text-muted mt-1">下次重试: @FormatDate(item.IssueTaskRetryAt)</div>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(failReason))
+                                            {
+                                                <button class="btn btn-link p-0 text-danger" @onclick='@(() => ShowErrorAsync(failReason!))'>@failReason</button>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                        <td class="d-flex gap-2 flex-wrap">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEdit(item)">管理</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleEnableAsync(item, true)">启用</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleEnableAsync(item, false)">禁用</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleAutoRenewAsync(item, true)">开启续签</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleAutoRenewAsync(item, false)">关闭续签</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ReissueAsync(item)">重签</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowChallengeAsync(item)">DNS验证</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => DownloadAsync(item)">下载</button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(item)">删除</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </TablePager>
+    }
+    else if (_activeTopTab == "default")
+    {
+        <div class="card config-card p-3">
+            <div class="row g-3 align-items-end">
+                @if (Session.IsAdmin)
+                {
+                    <div class="col-md-4">
+                        <label class="form-label">用户搜索</label>
+                        <div class="d-flex gap-2">
+                            <InputText class="form-control" @bind-Value="_defaultUserKeyword" placeholder="输入ID/邮箱/用户名/手机号" />
+                            <button class="btn btn-outline-secondary text-nowrap" @onclick="SearchDefaultUsersAsync" disabled="@_defaultLoading">搜索</button>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">目标用户</label>
+                        <select class="form-select" @bind="_defaultUserId" @bind:after="OnDefaultUserChangedAsync">
+                            <option value="0">全局默认</option>
+                            @foreach (var user in _defaultUsers)
+                            {
+                                <option value="@user.Id">@FormatDefaultUser(user)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary w-100" @onclick="LoadDefaultSettingsAsync" disabled="@_defaultLoading">加载</button>
+                    </div>
+                }
+                <div class="col-md-4">
+                    <label class="form-label">证书类型</label>
+                    <select class="form-select" @bind="_defaultSettings.Type">
+                        <option value="system">系统默认设置</option>
+                        <option value="zerossl">ZeroSSL(推荐)</option>
+                        <option value="letsencrypt">Let's Encrypt</option>
+                        <option value="buypass">BuyPass</option>
+                        <option value="google">Google CA</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">DNS 接口</label>
+                    <select class="form-select" @bind="_defaultSettings.DnsApi">
+                        <option value="0">默认</option>
+                        @foreach (var api in _dnsApis)
+                        {
+                            <option value="@api.Id">@api.Name (@api.Type)</option>
+                        }
+                    </select>
+                    <div class="form-text">这里的 DNS 接口仅用于证书申请(DNS 验证)，与站点 CNAME 解析无关。</div>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary" @onclick="SaveDefaultSettingsAsync" disabled="@_defaultSaving">保存</button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <DnsApiTab />
+    }
+</div>
+
+@if (_editorVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_editing.Id > 0 ? "编辑证书" : "添加证书")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    @if (Session.IsAdmin)
+                    {
+                        <div class="col-md-4">
+                            <label class="form-label">用户搜索</label>
+                            <div class="d-flex gap-2">
+                                <InputText class="form-control" @bind-Value="_editorUserKeyword" placeholder="输入ID/邮箱/用户名/手机号" />
+                                <button class="btn btn-outline-secondary text-nowrap" @onclick="SearchEditorUsersAsync">搜索</button>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">目标用户</label>
+                            <select class="form-select" @bind="_editing.UserId" @bind:after="OnEditorUserChangedAsync">
+                                <option value="0">请选择用户</option>
+                                @foreach (var user in _editorUsers)
+                                {
+                                    <option value="@user.Id">@FormatDefaultUser(user)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="form-label">名称</label>
+                        <InputText class="form-control" @bind-Value="_editing.Name" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">备注</label>
+                        <InputText class="form-control" @bind-Value="_editing.Description" placeholder="可选" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">类型</label>
+                        <select class="form-select" @bind="_editing.Type">
+                            <option value="upload">上传证书</option>
+                            <option value="letsencrypt">LetsEncrypt</option>
+                            <option value="zerossl">ZeroSSL</option>
+                            <option value="buypass">BuyPass</option>
+                            <option value="google">Google</option>
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">域名(多域名用逗号或换行)</label>
+                        <InputTextArea class="form-control" rows="3" @bind-Value="_editing.Domain" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">DNS API账户</label>
+                        <select class="form-select" @bind="_editing.DnsApi">
+                            <option value="0">默认</option>
+                            @foreach (var api in _dnsApis)
+                            {
+                                <option value="@api.Id">@api.Name (@api.Type)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">自动续期</label>
+                        <div class="form-check form-switch">
+                            <InputCheckbox class="form-check-input" @bind-Value="_editing.AutoRenew" />
+                        </div>
+                    </div>
+                    @if (IsUploadType(_editing.Type))
+                    {
+                        <div class="col-md-12">
+                            <label class="form-label">证书内容</label>
+                            <InputTextArea class="form-control" rows="4" @bind-Value="_editing.CertPem" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">私钥内容</label>
+                            <InputTextArea class="form-control" rows="4" @bind-Value="_editing.KeyPem" />
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseEditor">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_challengeVisible && _challenge != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>DNS验证信息</h5>
+                <button class="btn-close" @onclick="CloseChallenge"></button>
+            </div>
+            <div class="modal-body">
+                <div>记录名: @_challenge.RecordName</div>
+                <div>记录值: @_challenge.RecordValue</div>
+                <div>记录类型: @_challenge.RecordType</div>
+                <div>Zone: @_challenge.Zone</div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseChallenge">关闭</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<CertItemDto> _items = new();
+    private readonly List<DnsApiItemDto> _dnsApis = new();
+    private readonly HashSet<long> _selectedIds = new();
+
+    private bool _loading;
+    private bool _saving;
+    private bool _showPagingDiagnostics;
+    private string _keyword = string.Empty;
+    private string _searchField = string.Empty;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private long _total;
+    private string _batchAction = "enable";
+
+    private string _activeTopTab = "list";
+
+    private bool _editorVisible;
+    private CertEditModel _editing = new();
+
+    private bool _challengeVisible;
+    private DnsChallengeInfoDto? _challenge;
+
+    private bool _defaultLoading;
+    private bool _defaultSaving;
+    private long _defaultUserId;
+    private string _defaultUserKeyword = string.Empty;
+    private readonly List<UserItemDto> _defaultUsers = new();
+    private readonly List<UserItemDto> _listUsers = new();
+    private long _listUserId;
+    private string _editorUserKeyword = string.Empty;
+    private readonly List<UserItemDto> _editorUsers = new();
+    private CertDefaultSettingsDto _defaultSettings = new() { Type = "system", DnsApi = 0 };
+    private TablePager? _tablePager;
+
+    private bool IsAllSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.Id));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDnsApisAsync();
+        if (Session.IsAdmin)
+        {
+            await LoadListUsersAsync();
+            await SearchEditorUsersAsync();
+        }
+    }
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private async Task SetTopTabAsync(string tab)
+    {
+        if (_activeTopTab == tab)
+        {
+            return;
+        }
+
+        _activeTopTab = tab;
+
+        if (tab == "default")
+        {
+            await LoadDnsApisAsync();
+            await LoadDefaultSettingsAsync();
+        }
+        else if (tab == "dns")
+        {
+            await LoadDnsApisAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _pageQuery.Page.ToString(),
+            ["pageSize"] = _pageQuery.PageSize.ToString(),
+            ["keyword"] = _keyword,
+            ["search_field"] = _searchField
+        };
+        if (Session.IsAdmin && _listUserId > 0)
+        {
+            query["user_id"] = _listUserId.ToString();
+        }
+
+        var response = await Api.GetAsync<CertListResult>("certs", Scope, query);
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            _items.AddRange(response.Data.List);
+            _total = response.Data.Total;
+        }
+        else
+        {
+            _total = 0;
+        }
+
+        // Keep selection only for current page.
+        var currentIds = _items.Select(i => i.Id).ToHashSet();
+        _selectedIds.RemoveWhere(id => !currentIds.Contains(id));
+
+        _loading = false;
+    }
+
+    private async Task LoadDnsApisAsync(long? userId = null)
+    {
+        Dictionary<string, string?>? query = null;
+        var resolvedUserId = userId.GetValueOrDefault();
+        if (Session.IsAdmin && resolvedUserId > 0)
+        {
+            query = new Dictionary<string, string?>
+            {
+                ["user_id"] = resolvedUserId.ToString()
+            };
+        }
+
+        var response = await Api.GetAsync<DnsApiListResult>("dnsapi", Scope, query);
+        _dnsApis.Clear();
+        if (response?.Data?.List != null)
+        {
+            _dnsApis.AddRange(response.Data.List);
+        }
+    }
+
+    private async Task LoadDefaultSettingsAsync()
+    {
+        _defaultLoading = true;
+        var query = new Dictionary<string, string?>();
+        if (Session.IsAdmin && _defaultUserId > 0)
+        {
+            query["user_id"] = _defaultUserId.ToString();
+        }
+
+        var response = await Api.GetAsync<CertDefaultSettingsDto>(
+            "certs/default_settings",
+            Scope,
+            query.Count > 0 ? query : null);
+
+        _defaultSettings = response?.Data ?? new CertDefaultSettingsDto { Type = "system", DnsApi = 0 };
+        if (string.IsNullOrWhiteSpace(_defaultSettings.Type))
+        {
+            _defaultSettings.Type = "system";
+        }
+
+        _defaultLoading = false;
+    }
+
+    private async Task SearchDefaultUsersAsync()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        _defaultLoading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = "1",
+            ["pageSize"] = "20",
+            ["keyword"] = _defaultUserKeyword
+        };
+
+        var response = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, query);
+        _defaultUsers.Clear();
+        if (response?.Data?.List != null)
+        {
+            _defaultUsers.AddRange(response.Data.List);
+        }
+
+        _defaultLoading = false;
+    }
+
+    private async Task LoadListUsersAsync()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = "1",
+            ["pageSize"] = "200"
+        };
+        var response = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, query);
+        _listUsers.Clear();
+        if (response?.Data?.List != null)
+        {
+            _listUsers.AddRange(response.Data.List.OrderBy(x => x.Name ?? string.Empty).ThenBy(x => x.Id));
+        }
+    }
+
+    private Task OnListUserChangedAsync()
+    {
+        if (_tablePager != null)
+        {
+            return _tablePager.SearchAsync();
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        return LoadAsync();
+    }
+
+    private async Task SearchEditorUsersAsync()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = "1",
+            ["pageSize"] = "50",
+            ["keyword"] = _editorUserKeyword
+        };
+
+        var response = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, query);
+        _editorUsers.Clear();
+        if (response?.Data?.List != null)
+        {
+            _editorUsers.AddRange(response.Data.List);
+        }
+    }
+
+    private async Task OnEditorUserChangedAsync()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        _editing.DnsApi = 0;
+        await LoadDnsApisAsync(_editing.UserId > 0 ? _editing.UserId : null);
+    }
+
+    private async Task OnDefaultUserChangedAsync()
+    {
+        await LoadDefaultSettingsAsync();
+    }
+
+    private async Task SaveDefaultSettingsAsync()
+    {
+        _defaultSaving = true;
+        var request = new CertDefaultSettingsRequest
+        {
+            UserId = Session.IsAdmin ? (_defaultUserId > 0 ? _defaultUserId : null) : null,
+            Type = _defaultSettings.Type,
+            DnsApi = _defaultSettings.DnsApi
+        };
+
+        var result = await Api.PostAsync<object>("certs/default_settings", request, Scope);
+        _defaultSaving = false;
+        if (result?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "默认证书配置保存失败");
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", "默认证书配置已保存");
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await RefreshAsync();
+    }
+
+    private Task RefreshAsync()
+    {
+        if (_tablePager != null)
+        {
+            return _tablePager.RefreshAsync();
+        }
+
+        return LoadAsync();
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+
+    private bool IsSelected(long id)
+    {
+        return _selectedIds.Contains(id);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var checkedAll = args?.Value is bool b && b;
+        if (!checkedAll)
+        {
+            _selectedIds.Clear();
+            return;
+        }
+
+        foreach (var item in _items)
+        {
+            _selectedIds.Add(item.Id);
+        }
+    }
+
+    private void ToggleSelected(long id, ChangeEventArgs args)
+    {
+        var isChecked = args?.Value is bool b && b;
+        if (isChecked)
+        {
+            _selectedIds.Add(id);
+        }
+        else
+        {
+            _selectedIds.Remove(id);
+        }
+    }
+
+    private List<long> SelectedIds()
+    {
+        return _selectedIds.Where(id => id > 0).Distinct().ToList();
+    }
+
+    private async Task HandleBatchReissueAsync()
+    {
+        var ids = SelectedIds();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var result = await Api.PostAsync<object>("certs/reissue", new CertReissueRequest { Ids = ids }, Scope);
+        if (result?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "证书重新申请提交失败");
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", $"已提交 {ids.Count} 个证书重签任务");
+        await RefreshAsync();
+    }
+
+    private async Task ApplyBatchActionAsync()
+    {
+        var ids = SelectedIds();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var action = _batchAction?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return;
+        }
+
+        if (action == "download")
+        {
+            foreach (var id in ids)
+            {
+                var url = $"/api/v1/{(Session.IsAdmin ? "admin" : "user")}/certs/{id}/download";
+                await Js.InvokeVoidAsync("open", url, "_blank");
+            }
+            return;
+        }
+
+        if (action == "delete")
+        {
+            var ok = await Js.InvokeAsync<bool>("confirm", "确认删除选中的证书？");
+            if (!ok)
+            {
+                return;
+            }
+        }
+
+        var request = new CertBatchActionRequest
+        {
+            Action = action,
+            Ids = ids
+        };
+
+        var response = await Api.PostAsync<CertBatchActionResult>("certs/batch_action", request, Scope);
+        if (response == null || response.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "证书批量操作提交失败");
+            return;
+        }
+
+        var taskId = response.Data?.TaskId ?? 0;
+        if (taskId > 0)
+        {
+            await Js.InvokeVoidAsync("alert", $"证书{ResolveBatchActionLabel(action)}任务已提交：{taskId}");
+        }
+
+        await RefreshAsync();
+        if (taskId > 0)
+        {
+            await RefreshAfterTaskAsync();
+        }
+    }
+
+    private async Task ToggleEnableAsync(CertItemDto item, bool enable)
+    {
+        var response = await Api.PostAsync<CertBatchActionResult>("certs/batch_action", new CertBatchActionRequest
+        {
+            Action = enable ? "enable" : "disable",
+            Ids = new[] { item.Id }
+        }, Scope);
+        if (response == null || response.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "证书状态更新失败");
+            return;
+        }
+
+        var taskId = response.Data?.TaskId ?? 0;
+        if (taskId > 0)
+        {
+            await Js.InvokeVoidAsync("alert", $"证书{(enable ? "启用" : "禁用")}任务已提交：{taskId}");
+        }
+
+        await RefreshAsync();
+        if (taskId > 0)
+        {
+            await RefreshAfterTaskAsync();
+        }
+    }
+
+    private async Task ToggleAutoRenewAsync(CertItemDto item, bool enable)
+    {
+        var result = await Api.PostAsync<object>("certs/batch_action", new CertBatchActionRequest
+        {
+            Action = enable ? "auto_renew_enable" : "auto_renew_disable",
+            Ids = new[] { item.Id }
+        }, Scope);
+        if (result?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "自动续签状态更新失败");
+            return;
+        }
+
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAfterTaskAsync()
+    {
+        await Task.Delay(1200);
+        await RefreshAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string ResolveBatchActionLabel(string action) => action switch
+    {
+        "enable" => "启用",
+        "disable" => "禁用",
+        "force_disable" => "强制禁用",
+        "delete" => "删除",
+        _ => action
+    };
+
+    private void OpenCreate()
+    {
+        _editing = new CertEditModel();
+        _editorUserKeyword = string.Empty;
+        _editorUsers.Clear();
+        if (Session.IsAdmin)
+        {
+            _ = SearchEditorUsersAsync();
+        }
+        _editorVisible = true;
+    }
+
+    private void OpenEdit(CertItemDto item)
+    {
+        _editing = CertEditModel.FromItem(item);
+        _editorUserKeyword = item.UserId > 0 ? item.UserId.ToString() : string.Empty;
+        _editorUsers.Clear();
+        if (Session.IsAdmin)
+        {
+            _ = SearchEditorUsersAsync();
+            _ = LoadDnsApisAsync(item.UserId > 0 ? item.UserId : null);
+        }
+        _editorVisible = true;
+    }
+
+    private void CloseEditor()
+    {
+        _editorVisible = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        if (Session.IsAdmin && _editing.UserId <= 0)
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", "管理员新增证书时必须先选择用户");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_editing.Domain))
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", "请填写证书域名");
+            return;
+        }
+        if (IsUploadType(_editing.Type) && (string.IsNullOrWhiteSpace(_editing.CertPem) || string.IsNullOrWhiteSpace(_editing.KeyPem)))
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", "上传证书类型必须填写证书内容和私钥内容");
+            return;
+        }
+        if (HasWildcardDomain(_editing.Domain) && _editing.DnsApi <= 0 && !IsUploadType(_editing.Type))
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", "包含泛域名时，证书申请必须指定 DNS API 账户");
+            return;
+        }
+
+        ApiResponse<object>? result;
+        if (_editing.Id > 0)
+        {
+            result = await Api.PutAsync<object>($"certs/{_editing.Id}", _editing.ToUpdateRequest(), Scope);
+        }
+        else
+        {
+            result = await Api.PostAsync<object>("certs", _editing.ToCreateRequest(), Scope);
+        }
+        _saving = false;
+        if (result?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "证书保存失败");
+            return;
+        }
+
+        _editorVisible = false;
+        await Js.InvokeVoidAsync("alert", _editing.Id > 0 ? "证书已更新" : "证书已创建");
+        await RefreshAsync();
+    }
+
+    private async Task DeleteAsync(CertItemDto item)
+    {
+        var result = await DeleteWorkflowHelper.ConfirmAndRequestAsync(
+            Api,
+            Js,
+            $"certs/{item.Id}",
+            Scope,
+            "确认删除该证书？",
+            "证书删除任务已提交");
+        if (!result.Success)
+        {
+            if (!result.Cancelled)
+            {
+                await Js.InvokeVoidAsync("alert", result.Message);
+            }
+
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", result.Message);
+        await RefreshAsync();
+        if (result.TaskId > 0)
+        {
+            await RefreshAfterTaskAsync();
+        }
+    }
+
+    private async Task ReissueAsync(CertItemDto item)
+    {
+        var request = new CertReissueRequest { Ids = new List<long> { item.Id } };
+        var result = await Api.PostAsync<object>("certs/reissue", request, Scope);
+        if (result?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", result?.Message ?? "证书重签提交失败");
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", "证书重签任务已提交");
+        await RefreshAsync();
+    }
+
+    private async Task ShowChallengeAsync(CertItemDto item)
+    {
+        var response = await Api.GetAsync<DnsChallengeInfoDto>($"certs/{item.Id}/dns_challenge", Scope);
+        _challenge = response?.Data;
+        if (_challenge != null)
+        {
+            _challengeVisible = true;
+        }
+    }
+
+    private void CloseChallenge()
+    {
+        _challengeVisible = false;
+    }
+
+    private async Task DownloadAsync(CertItemDto item)
+    {
+        var url = $"/api/v1/{(Session.IsAdmin ? "admin" : "user")}/certs/{item.Id}/download";
+        await Js.InvokeVoidAsync("open", url, "_blank");
+    }
+
+    private static string BuildDeleteBlockedMessage(string? message, IReadOnlyList<DeleteReferenceItem>? references)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            lines.Add(message.Trim());
+        }
+
+        foreach (var item in references?.Take(5) ?? Array.Empty<DeleteReferenceItem>())
+        {
+            lines.Add($"- {item.DisplayName} [{item.Relation}]");
+        }
+
+        if ((references?.Count ?? 0) > 5)
+        {
+            lines.Add($"- 还有 {references!.Count - 5} 项依赖未展示");
+        }
+
+        return lines.Count == 0 ? "当前资源暂时无法删除" : string.Join("\n", lines);
+    }
+
+    private Task ShowErrorAsync(string err)
+    {
+        return Js.InvokeVoidAsync("alert", err).AsTask();
+    }
+
+    private static string FormatUser(CertItemDto item)
+    {
+        var name = string.IsNullOrWhiteSpace(item.UserName) ? "" : item.UserName.Trim();
+        return string.IsNullOrWhiteSpace(name) ? $"uid: {item.UserId}" : $"{name} ({item.UserId})";
+    }
+
+    private static string FormatDefaultUser(UserItemDto user)
+    {
+        var name = string.IsNullOrWhiteSpace(user.Name) ? "-" : user.Name.Trim();
+        var email = string.IsNullOrWhiteSpace(user.Email) ? "-" : user.Email.Trim();
+        return $"{name} ({user.Id}) / {email}";
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        if (value == null || value == DateTime.MinValue)
+        {
+            return "-";
+        }
+
+        return value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    private static string DisplayState(CertItemDto item)
+    {
+        var state = item.State?.Trim().ToLowerInvariant() ?? string.Empty;
+        var taskState = item.IssueTaskState?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        if ((taskState == "fail" || taskState == "retrying") && state != "ready" && state != "success")
+        {
+            return "fail";
+        }
+
+        if (state == "issuing" && (item.IssueTaskErrTimes ?? 0) > 0)
+        {
+            return "fail";
+        }
+
+        return state;
+    }
+
+    private static string StateBadgeClass(string state)
+    {
+        return state switch
+        {
+            "fail" => "text-bg-danger",
+            "dns_pending" => "text-bg-warning",
+            "issuing" => "text-bg-warning",
+            "waiting" => "text-bg-secondary",
+            "ready" => "text-bg-success",
+            "success" => "text-bg-success",
+            _ => "text-bg-info"
+        };
+    }
+
+    private static string StateText(string state, bool enable)
+    {
+        if (!enable)
+        {
+            return "禁用";
+        }
+
+        return state switch
+        {
+            "dns_pending" => "DNS验证中",
+            "waiting" => "待签发",
+            "issuing" => "签发中",
+            "ready" => "已签发",
+            "success" => "已签发",
+            "fail" => "失败",
+            _ => "正常"
+        };
+    }
+
+    private static string? IssueFailReason(CertItemDto item)
+    {
+        var state = DisplayState(item);
+        if (state != "fail")
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.IssueTaskRet))
+        {
+            return item.IssueTaskRet;
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Ret))
+        {
+            return item.Ret;
+        }
+
+        return null;
+    }
+
+    private static bool IsUploadType(string? type)
+    {
+        var normalized = type?.Trim().ToLowerInvariant() ?? string.Empty;
+        return normalized is "upload" or "self";
+    }
+
+    private static bool HasWildcardDomain(string? domainRaw)
+    {
+        if (string.IsNullOrWhiteSpace(domainRaw))
+        {
+            return false;
+        }
+
+        var domains = domainRaw
+            .Split(new[] { ',', '\n', '\r', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return domains.Any(d => d.StartsWith("*.", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class CertEditModel
+    {
+        public long Id { get; set; }
+        public long UserId { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? Type { get; set; } = "upload";
+        public string? Domain { get; set; }
+        public int DnsApi { get; set; }
+        public string? CertPem { get; set; }
+        public string? KeyPem { get; set; }
+        public bool AutoRenew { get; set; } = true;
+
+        public static CertEditModel FromItem(CertItemDto item)
+        {
+            return new CertEditModel
+            {
+                Id = item.Id,
+                UserId = item.UserId,
+                Name = item.Name,
+                Description = item.Description,
+                Type = item.Type,
+                Domain = item.Domain,
+                DnsApi = item.DnsApi,
+                CertPem = item.CertPem,
+                KeyPem = item.KeyPem,
+                AutoRenew = item.AutoRenew
+            };
+        }
+
+        public CertCreateRequest ToCreateRequest()
+        {
+            return new CertCreateRequest
+            {
+                UserId = UserId,
+                Name = Name,
+                Description = Description,
+                Type = Type,
+                Domain = Domain,
+                DnsApi = DnsApi,
+                CertPem = CertPem,
+                KeyPem = KeyPem,
+                AutoRenew = AutoRenew
+            };
+        }
+
+        public CertUpdateRequest ToUpdateRequest()
+        {
+            return new CertUpdateRequest
+            {
+                UserId = UserId,
+                Name = Name,
+                Description = Description,
+                Type = Type,
+                Domain = Domain,
+                DnsApi = DnsApi,
+                CertPem = CertPem,
+                KeyPem = KeyPem,
+                AutoRenew = AutoRenew
+            };
+        }
+    }
+}

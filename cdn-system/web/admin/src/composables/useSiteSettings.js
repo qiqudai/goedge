@@ -239,7 +239,8 @@ export function useSiteSettings() {
         // 加载辅助数据 (允许部分失败，静默处理)
         const loadAux = async (url, refVar) => {
           try {
-            const r = await request.get(url)
+            const requestConfig = url === '/certs' ? { params: { pageSize: 1000 } } : undefined
+            const r = await request.get(url, requestConfig)
             if (Array.isArray(r.data)) {
               refVar.value = r.data
             } else {
@@ -493,7 +494,7 @@ export function useSiteSettings() {
 
   const loadCerts = () => withLoading(async () => {
     try {
-      const r = await request.get('/certs')
+      const r = await request.get('/certs', { params: { pageSize: 1000 } })
       certList.value = r.data?.list || r.list || []
     } catch (e) { console.error('Load certs failed', e) }
   })

@@ -1,0 +1,23 @@
+2026/01/29 20:59:19 i18n load failed: invalid character 'ï' looking for beginning of value
+2026/01/29 20:59:19 [Info] Loaded config from /mnt/e/cdn/goedge/cdn-system/tmp/edge-test/app/agent.json
+2026/01/29 20:59:19 Starting Edge Agent...
+2026/01/29 20:59:19 Target Master: http://127.0.0.1:8080
+2026/01/29 20:59:19 Node ID:       test-node
+2026/01/29 20:59:19 Debug Mode:    false
+2026/01/29 20:59:19 [Init] WorkDir reset: /mnt/e/cdn/goedge/cdn-system/tmp/edge-test/app/edge-node
+APP:
+total 108024
+drwxrwxrwx 1 tt tt      4096 Jan 29 20:59 .
+drwxrwxrwx 1 tt tt      4096 Jan 29 20:59 ..
+-rwxrwxrwx 1 tt tt       171 Jan 29 20:59 agent.json
+-rwxrwxrwx 1 tt tt 110614310 Jan 29 20:59 cdn-agent
+drwxrwxrwx 1 tt tt      4096 Jan 29 20:59 edge-node
+EDGE:
+total 0
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 .
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 ..
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 cache
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 cert
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 conf
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 data
+drwxrwxrwx 1 tt tt 4096 Jan 29 20:59 logs

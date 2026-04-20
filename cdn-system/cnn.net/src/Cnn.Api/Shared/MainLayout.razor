@@ -1,5 +1,5 @@
 @inherits LayoutComponentBase
-@using Cnn.Api.Contracts
+@using Cnn.Common.Contracts
 @using global::System.Timers
 @inject ClientSession Session
 @inject LocalStorageService Storage
@@ -8,74 +8,97 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
 
+<MudThemeProvider @bind-IsDarkMode="_isDark" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
 <PageTitle>@_pageTitle</PageTitle>
 
-<div class="app-shell">
-    <aside class="sidebar">
-        <div class="sidebar-logo">
-            @if (!string.IsNullOrWhiteSpace(_systemInfo?.LogoFile))
+<div class="common-layout">
+    <MudLayout>
+        <MudAppBar Dense="true" Elevation="0" Class="app-header">
+            <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
+            </MudHidden>
+
+            <MudText Typo="Typo.body1" Class="header-title">@_consoleTitle</MudText>
+            <MudSpacer />
+
+            @if (!Session.IsAdmin)
             {
-                <img src="@_systemInfo!.LogoFile" alt="logo" />
-            }
-            else
-            {
-                <span>@(_systemInfo?.SysName ?? "CDN Admin")</span>
-            }
-        </div>
-        <NavMenu />
-    </aside>
-    <div class="app-main">
-        <header class="app-header">
-            <div class="header-title">@_consoleTitle</div>
-            <div class="header-actions">
-                @if (!Session.IsAdmin)
+                @if (_unreadCount > 0)
                 {
-                    <button type="button" class="message-badge" @onclick="GoMessages">
-                        <span class="badge-icon">🔔</span>
-                        @if (_unreadCount > 0)
-                        {
-                            <span class="badge-count">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
-                        }
-                    </button>
+                    <MudBadge Content="@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())" Color="Color.Error" Overlap="true">
+                        <MudIconButton Icon="@Icons.Material.Filled.NotificationsNone" Color="Color.Inherit" OnClick="GoMessages" />
+                    </MudBadge>
                 }
-                <button type="button" class="theme-toggle" @onclick="ToggleTheme">
-                    <span>@(_isDark ? "🌙" : "☀️")</span>
-                </button>
-                <div class="user-menu">
-                    <button type="button" class="user-trigger" @onclick="ToggleUserMenu">👤</button>
-                    @if (_showUserMenu)
-                    {
-                        <div class="user-dropdown">
-                            @if (Session.IsAdmin)
-                            {
-                                <button type="button" @onclick="GoSystemConfig">系统设置</button>
-                            }
-                            else
-                            {
-                                <button type="button" @onclick="GoProfile">个人中心</button>
-                            }
-                            <button type="button" class="danger" @onclick="Logout">退出登录</button>
-                        </div>
-                    }
-                </div>
-            </div>
-        </header>
-        <main class="app-content">
-            @Body
-        </main>
-        @if (_showFooter)
-        {
-            <footer class="app-footer">
-                <div class="footer-links">
-                    @foreach (var link in _footerLinks)
-                    {
-                        <a href="@link.Url" target="_blank" rel="noopener">@link.Label</a>
-                    }
-                </div>
-                <div class="footer-copy">@_systemInfo?.FooterCopyright</div>
-            </footer>
-        }
-    </div>
+                else
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.NotificationsNone" Color="Color.Inherit" OnClick="GoMessages" />
+                }
+            }
+
+            <button class="theme-switch @(_isDark ? "dark" : string.Empty)" type="button" @onclick="ToggleTheme">
+                <span class="theme-thumb">
+                    <MudIcon Icon="@(_isDark ? Icons.Material.Filled.DarkMode : Icons.Material.Filled.LightMode)" Size="Size.Small" />
+                </span>
+            </button>
+
+            <MudMenu Icon="@Icons.Material.Filled.PersonOutline" Color="Color.Inherit" Dense="true">
+                @if (Session.IsAdmin)
+                {
+                    <MudMenuItem OnClick="GoSystemConfig">系统设置</MudMenuItem>
+                }
+                else
+                {
+                    <MudMenuItem OnClick="GoProfile">个人中心</MudMenuItem>
+                }
+                <MudDivider />
+                <MudMenuItem OnClick="Logout">退出登录</MudMenuItem>
+            </MudMenu>
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawerOpen"
+                   Anchor="Anchor.Start"
+                   Variant="DrawerVariant.Responsive"
+                   Breakpoint="Breakpoint.Md"
+                   ClipMode="DrawerClipMode.Always"
+                   Elevation="0"
+                   Class="app-drawer">
+            <MudDrawerHeader Class="drawer-header">
+                @if (!string.IsNullOrWhiteSpace(_systemInfo?.LogoFile))
+                {
+                    <img src="@_systemInfo!.LogoFile" class="drawer-logo" alt="logo" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.h6" Class="drawer-title">@(_systemInfo?.SysName ?? "CDN Admin")</MudText>
+                }
+            </MudDrawerHeader>
+
+            <NavMenu />
+        </MudDrawer>
+
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.False" Class="content-wrap">
+                @Body
+            </MudContainer>
+
+            @if (_showFooter)
+            {
+                <footer class="app-footer">
+                    <div class="footer-links">
+                        @foreach (var link in _footerLinks)
+                        {
+                            <a href="@link.Url" target="_blank" rel="noopener">@link.Label</a>
+                        }
+                    </div>
+                    <div class="footer-copy">@_systemInfo?.FooterCopyright</div>
+                </footer>
+            }
+        </MudMainContent>
+    </MudLayout>
 </div>
 
 @code {
@@ -83,7 +106,7 @@
     private string _pageTitle = "CDN Admin";
     private string _consoleTitle = "管理后台";
     private bool _isDark;
-    private bool _showUserMenu;
+    private bool _drawerOpen = true;
     private int _unreadCount;
     private Timer? _pollTimer;
     private List<(string Label, string Url)> _footerLinks = new();
@@ -180,6 +203,11 @@
         await Js.InvokeVoidAsync("cnn.theme.set", _isDark ? "dark" : "light");
     }
 
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
     private async Task PollUnreadAsync()
     {
         if (Session.IsAdmin)
@@ -212,20 +240,13 @@
         _ = PollUnreadAsync();
     }
 
-    private void ToggleUserMenu()
-    {
-        _showUserMenu = !_showUserMenu;
-    }
-
     private void GoSystemConfig()
     {
-        _showUserMenu = false;
         Navigation.NavigateTo("/system/config");
     }
 
     private void GoProfile()
     {
-        _showUserMenu = false;
         Navigation.NavigateTo("/account/profile");
     }
 
@@ -236,7 +257,6 @@
 
     private async Task Logout()
     {
-        _showUserMenu = false;
         Session.Clear();
         await Storage.RemoveItemAsync("admin_token");
         await Storage.RemoveItemAsync("role");

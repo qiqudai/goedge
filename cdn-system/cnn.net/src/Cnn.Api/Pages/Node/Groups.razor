@@ -1,0 +1,576 @@
+﻿
+@page "/node/groups"
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services
+@using Cnn.Api.Services.Deletion
+@using Cnn.Api.Services.Tasks.Workflow
+@inject ApiClient Api
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <div class="page-title">线路分组</div>
+
+    <div class="filter-bar">
+        <button class="btn btn-primary" @onclick="OpenCreate">新增分组</button>
+        <button class="btn btn-outline-danger" disabled="@(!_selectedGroupIds.Any())" @onclick="BatchDeleteAsync">删除</button>
+        <div class="ms-auto d-flex flex-wrap gap-2">
+            <select class="form-select" style="max-width: 160px" @bind="_filters.RegionId">
+                <option value="0">所有区域</option>
+                @foreach (var region in _regions)
+                {
+                    <option value="@region.Id">@region.Name</option>
+                }
+            </select>
+            <InputText class="form-control" style="max-width: 220px" @bind-Value="_filters.Keyword" placeholder="名称/解析值" />
+            <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+            <button class="btn btn-link" @onclick="ResetFilters">清除</button>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+    </div>
+
+    @if (_showPagingDiagnostics)
+    {
+        <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+            <div><strong>分页诊断</strong></div>
+            <div>stateKey: <code>node:groups:table</code></div>
+            <div>pagingEnabled: <code>@(_pageQuery.PagingEnabled ? "true" : "false")</code></div>
+            <div>page: <code>@_pageQuery.Page</code>, pageSize: <code>@_pageQuery.PageSize</code></div>
+            <div>loaded: <code>@_groups.Count</code>, total: <code>@_total</code></div>
+        </div>
+    }
+
+    <TablePager @ref="_tablePager"
+                StateKey="node:groups:table"
+                Total="_total"
+                DefaultPageSize="20"
+                UnpagedLimit="1000"
+                QueryChanged="OnPageQueryChangedAsync">
+        <ChildContent>
+            <div class="table-responsive mt-3">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px">
+                                <input type="checkbox" class="form-check-input" checked="@AllSelected" @onchange="ToggleSelectAll" />
+                            </th>
+                            <th style="width: 80px">ID</th>
+                            <th>名称</th>
+                            <th style="width: 120px">区域</th>
+                            <th>解析值</th>
+                            <th style="width: 220px">统计</th>
+                            <th style="width: 100px">L2配置</th>
+                            <th style="width: 80px">排序</th>
+                            <th style="width: 200px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_loading)
+                        {
+                            <tr><td colspan="9">加载中...</td></tr>
+                        }
+                        else if (_groups.Count == 0)
+                        {
+                            <tr><td colspan="9">暂无数据</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in _groups)
+                            {
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" class="form-check-input" checked="@_selectedGroupIds.Contains(item.Id)" @onchange="e => ToggleGroup(item.Id, e)" />
+                                    </td>
+                                    <td>@item.Id</td>
+                                    <td>
+                                        <button class="btn btn-link btn-sm p-0" @onclick="@(() => OpenEdit(item))">@item.Name</button>
+                                    </td>
+                                    <td>@ResolveRegion(item.RegionId)</td>
+                                    <td>
+                                        <div>@ResolveCname(item)</div>
+                                        <div class="text-muted small">IPv4：@(string.IsNullOrWhiteSpace(item.Ipv4Resolution) ? "-" : item.Ipv4Resolution)</div>
+                                    </td>
+                                    <td>
+                                        节点数(@item.NodeCount) 网站数(@item.SiteCount) 转发数(@item.ForwardCount)
+                                    </td>
+                                    <td>@(string.IsNullOrWhiteSpace(item.L2Config) || item.L2Config == "default" ? "默认配置" : item.L2Config)</td>
+                                    <td>@(item.SortOrder?.ToString() ?? "-")</td>
+                                    <td>
+                                        <button class="btn btn-link btn-sm" @onclick="@(() => GoResolution(item))">配置解析</button>
+                                        <button class="btn btn-link btn-sm" @onclick="@(() => OpenEdit(item))">编辑</button>
+                                        <button class="btn btn-link btn-sm text-danger" @onclick="@(() => DeleteAsync(item))">删除</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ChildContent>
+    </TablePager>
+</div>
+
+@if (_editorVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_editor.Id > 0 ? "编辑线路分组" : "新增线路分组")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">名称</label>
+                    <InputText class="form-control" @bind-Value="_editor.Name" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">区域</label>
+                    <select class="form-select" @bind="_editor.RegionId">
+                        <option value="0">请选择区域</option>
+                        @foreach (var region in _regions)
+                        {
+                            <option value="@region.Id">@region.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">解析值</label>
+                    <InputText class="form-control" @bind-Value="_editor.CnameHostname" placeholder="留空自动生成" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">CNAME域名</label>
+                    <select class="form-select" @bind="_editor.CnameDomain">
+                        <option value="">请选择</option>
+                        @foreach (var domain in _cnameDomains)
+                        {
+                            <option value="@domain.Domain">@domain.Domain</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">IPv4解析值</label>
+                    <InputText class="form-control" @bind-Value="_editor.Ipv4Resolution" placeholder="留空自动生成" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">备注</label>
+                    <InputText class="form-control" @bind-Value="_editor.Remark" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">排序</label>
+                    <InputText class="form-control" @bind-Value="_editor.SortOrder" placeholder="数字越小越靠前" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">L2配置</label>
+                    <select class="form-select" @bind="_editor.L2Config">
+                        <option value="default">默认配置</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">备用IP切换</label>
+                    <div class="d-flex flex-wrap gap-3">
+                        <label class="form-check">
+                            <input type="radio" class="form-check-input" name="spareSwitch" value="1" checked='@(_editor.SpareIpSwitch == "1")' @onchange='@(() => _editor.SpareIpSwitch = "1")' />
+                            <span class="form-check-label">有主IP下线时</span>
+                        </label>
+                        <label class="form-check">
+                            <input type="radio" class="form-check-input" name="spareSwitch" value="2" checked='@(_editor.SpareIpSwitch == "2")' @onchange='@(() => _editor.SpareIpSwitch = "2")' />
+                            <span class="form-check-label">在线IP数少于备用IP数时</span>
+                        </label>
+                        <label class="form-check">
+                            <input type="radio" class="form-check-input" name="spareSwitch" value="3" checked='@(_editor.SpareIpSwitch == "3")' @onchange='@(() => _editor.SpareIpSwitch = "3")' />
+                            <span class="form-check-label">间隔切换</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseEditor">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAsync">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<NodeGroupListItem> _groups = new();
+    private readonly List<RegionListItem> _regions = new();
+    private readonly List<CnameDomainItem> _cnameDomains = new();
+    private readonly HashSet<long> _selectedGroupIds = new();
+    private readonly GroupFilters _filters = new();
+    private bool _showPagingDiagnostics;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private long _total;
+    private bool _loading;
+    private TablePager? _tablePager;
+
+    private bool _editorVisible;
+    private NodeGroupEditor _editor = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRegionsAsync();
+        await LoadCnameDomainsAsync();
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _pageQuery.Page.ToString(),
+            ["limit"] = _pageQuery.PageSize.ToString(),
+            ["keyword"] = _filters.Keyword
+        };
+
+        if (_filters.RegionId > 0)
+        {
+            query["region_id"] = _filters.RegionId.ToString();
+        }
+
+        var response = await Api.GetAsync<NodeGroupListResult>("node-groups", ApiScope.Admin, query);
+        _groups.Clear();
+        if (response?.Data?.List != null)
+        {
+            _groups.AddRange(response.Data.List);
+            _total = response.Data.Total;
+        }
+        else
+        {
+            _total = 0;
+        }
+
+        PruneSelection();
+        _loading = false;
+    }
+
+    private async Task LoadRegionsAsync()
+    {
+        var response = await Api.GetAsync<RegionListResult>("regions", ApiScope.Admin);
+        _regions.Clear();
+        if (response?.Data?.List != null)
+        {
+            _regions.AddRange(response.Data.List);
+        }
+    }
+
+    private async Task LoadCnameDomainsAsync()
+    {
+        var response = await Api.GetAsync<CnameDomainListResult>("cname_domains", ApiScope.Admin);
+        _cnameDomains.Clear();
+        if (response?.Data?.List != null)
+        {
+            _cnameDomains.AddRange(response.Data.List);
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadGroupsAsync();
+    }
+
+    private async Task ResetFilters()
+    {
+        _filters.Keyword = string.Empty;
+        _filters.RegionId = 0;
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadGroupsAsync();
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadGroupsAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+
+    private bool AllSelected => _groups.Count > 0 && _groups.All(g => _selectedGroupIds.Contains(g.Id));
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            foreach (var item in _groups)
+            {
+                _selectedGroupIds.Add(item.Id);
+            }
+        }
+        else
+        {
+            _selectedGroupIds.Clear();
+        }
+    }
+
+    private void ToggleGroup(long id, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            _selectedGroupIds.Add(id);
+        }
+        else
+        {
+            _selectedGroupIds.Remove(id);
+        }
+    }
+
+    private void PruneSelection()
+    {
+        var ids = _groups.Select(g => g.Id).ToHashSet();
+        _selectedGroupIds.RemoveWhere(id => !ids.Contains(id));
+    }
+
+    private string ResolveRegion(long? regionId)
+    {
+        if (regionId == null || regionId == 0)
+        {
+            return "默认";
+        }
+
+        var match = _regions.FirstOrDefault(r => r.Id == regionId);
+        return match?.Name ?? "默认";
+    }
+
+    private static string ResolveCname(NodeGroupListItem item)
+    {
+        var host = item.CnameHostname ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(item.CnameDomain))
+        {
+            return host;
+        }
+
+        if (string.IsNullOrWhiteSpace(host) || host == "@")
+        {
+            return item.CnameDomain;
+        }
+
+        return $"{host}.{item.CnameDomain}";
+    }
+
+    private void OpenCreate()
+    {
+        _editor = NodeGroupEditor.CreateDefault(_cnameDomains);
+        if (_regions.Count > 0)
+        {
+            _editor.RegionId = _regions[0].Id;
+        }
+        _editorVisible = true;
+    }
+
+    private void OpenEdit(NodeGroupListItem item)
+    {
+        _editor = NodeGroupEditor.FromItem(item, _cnameDomains);
+        _editorVisible = true;
+    }
+
+    private void CloseEditor()
+    {
+        _editorVisible = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_editor.CnameDomain))
+        {
+            await Js.InvokeVoidAsync("alert", "请先选择CNAME域名");
+            return;
+        }
+
+        var payload = new NodeGroupUpsertRequest
+        {
+            Name = _editor.Name?.Trim(),
+            RegionId = _editor.RegionId > 0 ? _editor.RegionId : null,
+            CnameHostname = _editor.CnameHostname?.Trim(),
+            CnameDomain = _editor.CnameDomain?.Trim(),
+            Ipv4Resolution = _editor.Ipv4Resolution?.Trim(),
+            Remark = _editor.Remark?.Trim(),
+            SpareIpSwitch = _editor.SpareIpSwitch,
+            L2Config = _editor.L2Config,
+            SortOrder = _editor.SortOrderValue
+        };
+
+        if (_editor.Id > 0)
+        {
+            await Api.PutAsync<object>($"node-groups/{_editor.Id}", payload, ApiScope.Admin);
+        }
+        else
+        {
+            await Api.PostAsync<object>("node-groups", payload, ApiScope.Admin);
+        }
+
+        _editorVisible = false;
+        await LoadGroupsAsync();
+    }
+
+    private async Task DeleteAsync(NodeGroupListItem item)
+    {
+        var result = await DeleteWorkflowHelper.ConfirmAndRequestAsync(
+            Api,
+            Js,
+            $"node-groups/{item.Id}",
+            ApiScope.Admin,
+            "确认删除该分组？",
+            "线路分组删除任务已提交");
+        if (!result.Success)
+        {
+            if (!result.Cancelled)
+            {
+                await Js.InvokeVoidAsync("alert", result.Message);
+            }
+
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", result.Message);
+        await LoadGroupsAsync();
+        if (result.TaskId > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private async Task BatchDeleteAsync()
+    {
+        if (!_selectedGroupIds.Any())
+        {
+            return;
+        }
+
+        var confirm = await Js.InvokeAsync<bool>("confirm", "确认删除选中的分组？");
+        if (!confirm)
+        {
+            return;
+        }
+
+        foreach (var id in _selectedGroupIds.ToList())
+        {
+            var previewResult = await DeleteWorkflowHelper.PreviewAsync(Api, $"node-groups/{id}", ApiScope.Admin);
+            if (!previewResult.Success)
+            {
+                await Js.InvokeVoidAsync("alert", previewResult.Message);
+                return;
+            }
+        }
+
+        var taskIds = new List<long>();
+        foreach (var id in _selectedGroupIds.ToList())
+        {
+            var requestResult = await DeleteWorkflowHelper.RequestAsync(Api, $"node-groups/{id}", ApiScope.Admin, "线路分组删除任务已提交");
+            if (!requestResult.Success)
+            {
+                await Js.InvokeVoidAsync("alert", requestResult.Message);
+                return;
+            }
+
+            if (requestResult.TaskId > 0)
+            {
+                taskIds.Add(requestResult.TaskId);
+            }
+        }
+
+        await Js.InvokeVoidAsync("alert", taskIds.Count > 0
+            ? $"线路分组删除任务已提交，共 {taskIds.Count} 个任务"
+            : "线路分组删除任务已提交");
+        _selectedGroupIds.Clear();
+        await LoadGroupsAsync();
+        if (taskIds.Count > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private async Task RefreshAfterDeleteTaskAsync()
+    {
+        await Task.Delay(1200);
+        await LoadGroupsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void GoResolution(NodeGroupListItem item)
+    {
+        Nav.NavigateTo($"/node/groups/{item.Id}/resolution");
+    }
+
+    private sealed class GroupFilters
+    {
+        public string Keyword { get; set; } = string.Empty;
+        public long RegionId { get; set; }
+    }
+
+    private sealed class NodeGroupEditor
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public long RegionId { get; set; }
+        public string CnameHostname { get; set; } = string.Empty;
+        public string CnameDomain { get; set; } = string.Empty;
+        public string Ipv4Resolution { get; set; } = string.Empty;
+        public string Remark { get; set; } = string.Empty;
+        public string SpareIpSwitch { get; set; } = "1";
+        public string L2Config { get; set; } = "default";
+        public string SortOrder { get; set; } = "100";
+
+        public int? SortOrderValue => int.TryParse(SortOrder, out var val) ? val : null;
+
+        public static NodeGroupEditor CreateDefault(IReadOnlyList<CnameDomainItem> domains)
+        {
+            return new NodeGroupEditor
+            {
+                CnameDomain = domains.FirstOrDefault()?.Domain ?? string.Empty
+            };
+        }
+
+        public static NodeGroupEditor FromItem(NodeGroupListItem item, IReadOnlyList<CnameDomainItem> domains)
+        {
+            return new NodeGroupEditor
+            {
+                Id = item.Id,
+                Name = item.Name ?? string.Empty,
+                RegionId = item.RegionId ?? 0,
+                CnameHostname = item.CnameHostname ?? string.Empty,
+                CnameDomain = string.IsNullOrWhiteSpace(item.CnameDomain)
+                    ? domains.FirstOrDefault()?.Domain ?? string.Empty
+                    : item.CnameDomain,
+                Ipv4Resolution = item.Ipv4Resolution ?? string.Empty,
+                Remark = item.Remark ?? string.Empty,
+                SpareIpSwitch = item.SpareIpSwitch ?? "1",
+                L2Config = item.L2Config ?? "default",
+                SortOrder = item.SortOrder?.ToString() ?? "100"
+            };
+        }
+    }
+}

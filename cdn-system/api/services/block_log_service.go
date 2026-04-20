@@ -15,6 +15,8 @@ import (
 type BlockedCurrentRow struct {
 	Host      string
 	IP        string
+	Country   string
+	Province  string
 	Status    int
 	BlockTime time.Time
 }
@@ -23,6 +25,8 @@ type BlockedCurrentRow struct {
 type BlockedHistoryRow struct {
 	Host      string
 	IP        string
+	Country   string
+	Province  string
 	Status    int
 	BlockTime time.Time
 }
@@ -53,11 +57,15 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 	}
 	whereSQL := strings.Join(conditions, " AND ")
 	countSQL := fmt.Sprintf("SELECT uniqExact((host, remote_addr)) FROM node_access_logs WHERE %s", whereSQL)
-	querySQL := fmt.Sprintf(`SELECT host, remote_addr, max(ts) AS block_time, any(status) AS status
+	querySQL := fmt.Sprintf(`SELECT host, remote_addr,
+		argMax(%s, ts) AS client_country,
+		argMax(%s, ts) AS client_province,
+		max(ts) AS block_time,
+		any(status) AS status
 		FROM node_access_logs WHERE %s
 		GROUP BY host, remote_addr
 		ORDER BY block_time DESC
-		LIMIT ? OFFSET ?`, whereSQL)
+		LIMIT ? OFFSET ?`, AccessLogClientCountryExpr(), AccessLogClientProvinceExpr(), whereSQL)
 
 	if httpCfg := buildHTTPConfig(); httpCfg != nil {
 		return queryBlockedCurrentHTTP(httpCfg, countSQL, querySQL, args, limit, offset)
@@ -74,15 +82,17 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 	defer rows.Close()
 	list := make([]BlockedCurrentRow, 0)
 	for rows.Next() {
-		var host, ip string
+		var host, ip, country, province string
 		var ts time.Time
 		var status int
-		if err := rows.Scan(&host, &ip, &ts, &status); err != nil {
+		if err := rows.Scan(&host, &ip, &country, &province, &ts, &status); err != nil {
 			continue
 		}
 		list = append(list, BlockedCurrentRow{
 			Host:      strings.TrimSpace(host),
 			IP:        strings.TrimSpace(ip),
+			Country:   strings.TrimSpace(country),
+			Province:  strings.TrimSpace(province),
 			Status:    status,
 			BlockTime: ts,
 		})
@@ -110,10 +120,13 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 	}
 	whereSQL := strings.Join(conditions, " AND ")
 	countSQL := fmt.Sprintf("SELECT count() FROM node_access_logs WHERE %s", whereSQL)
-	querySQL := fmt.Sprintf(`SELECT ts, host, remote_addr, status
+	querySQL := fmt.Sprintf(`SELECT ts, host, remote_addr,
+		%s AS client_country,
+		%s AS client_province,
+		status
 		FROM node_access_logs WHERE %s
 		ORDER BY ts DESC
-		LIMIT ? OFFSET ?`, whereSQL)
+		LIMIT ? OFFSET ?`, AccessLogClientCountryExpr(), AccessLogClientProvinceExpr(), whereSQL)
 
 	if httpCfg := buildHTTPConfig(); httpCfg != nil {
 		return queryBlockedHistoryHTTP(httpCfg, countSQL, querySQL, args, limit, offset)
@@ -131,14 +144,16 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 	list := make([]BlockedHistoryRow, 0)
 	for rows.Next() {
 		var ts time.Time
-		var host, ip string
+		var host, ip, country, province string
 		var status int
-		if err := rows.Scan(&ts, &host, &ip, &status); err != nil {
+		if err := rows.Scan(&ts, &host, &ip, &country, &province, &status); err != nil {
 			continue
 		}
 		list = append(list, BlockedHistoryRow{
 			Host:      strings.TrimSpace(host),
 			IP:        strings.TrimSpace(ip),
+			Country:   strings.TrimSpace(country),
+			Province:  strings.TrimSpace(province),
 			Status:    status,
 			BlockTime: ts,
 		})
@@ -244,6 +259,8 @@ func queryBlockedCurrentHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 		list = append(list, BlockedCurrentRow{
 			Host:      strings.TrimSpace(toStringAny(raw["host"])),
 			IP:        strings.TrimSpace(toStringAny(raw["remote_addr"])),
+			Country:   strings.TrimSpace(toStringAny(raw["client_country"])),
+			Province:  strings.TrimSpace(toStringAny(raw["client_province"])),
 			Status:    int(toInt64(raw["status"])),
 			BlockTime: blockTime,
 		})
@@ -303,6 +320,8 @@ func queryBlockedHistoryHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 		list = append(list, BlockedHistoryRow{
 			Host:      strings.TrimSpace(toStringAny(raw["host"])),
 			IP:        strings.TrimSpace(toStringAny(raw["remote_addr"])),
+			Country:   strings.TrimSpace(toStringAny(raw["client_country"])),
+			Province:  strings.TrimSpace(toStringAny(raw["client_province"])),
 			Status:    int(toInt64(raw["status"])),
 			BlockTime: blockTime,
 		})

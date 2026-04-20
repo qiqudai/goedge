@@ -1,0 +1,363 @@
+@page "/website/monitor"
+@page "/website/statistics"
+@using global::System.Globalization
+@using Cnn.Common.Contracts
+@inject ApiClient Api
+@inject ClientSession Session
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">数据统计</div>
+
+    <div class="tab-bar">
+        <button class='tab-button @(_activeTab == "basic" ? "active" : "")' @onclick='@(() => SetTab("basic"))'>基础数据</button>
+        <button class='tab-button @(_activeTab == "quality" ? "active" : "")' @onclick='@(() => SetTab("quality"))'>质量监控</button>
+        <button class='tab-button @(_activeTab == "origin" ? "active" : "")' @onclick='@(() => SetTab("origin"))'>回源监控</button>
+        <button class='tab-button @(_activeTab == "ranking" ? "active" : "")' @onclick='@(() => SetTab("ranking"))'>数据排行</button>
+    </div>
+
+    @if (_activeTab == "basic")
+    {
+        <div class="card config-card p-3">
+            <div class="mb-3" id="statBandwidthChart" style="height: 260px;"></div>
+            <div class="mb-3" id="statTrafficChart" style="height: 260px;"></div>
+            <div class="mb-3" id="statQpsChart" style="height: 260px;"></div>
+        </div>
+    }
+    else if (_activeTab == "quality")
+    {
+        <div class="card config-card p-3">
+            <div class="mb-3" id="statHitChart" style="height: 260px;"></div>
+            <div class="mb-3" id="stat4xxChart" style="height: 260px;"></div>
+            <div class="mb-3" id="stat5xxChart" style="height: 260px;"></div>
+        </div>
+    }
+    else if (_activeTab == "origin")
+    {
+        <div class="card config-card p-3">
+            <div class="mb-3" id="statOriginBandwidth" style="height: 260px;"></div>
+            <div class="mb-3" id="statOriginTraffic" style="height: 260px;"></div>
+        </div>
+    }
+    else
+    {
+        <div class="filter-bar">
+            <select class="form-select" style="max-width: 180px" @bind="_rankingType" @bind:after="OnRankingTypeChangedAsync">
+                <option value="domain">域名排行</option>
+                <option value="url">热门URL</option>
+                <option value="latency">耗时排行</option>
+                <option value="ip">客户端IP排行</option>
+                <option value="country">国家排行</option>
+                <option value="province">省份排行</option>
+                <option value="referer">热门来源</option>
+            </select>
+
+            <select class="form-select" style="max-width: 140px" @bind="_timeRange" @bind:after="OnTimeRangeChangedAsync">
+                <option value="10min">10分钟实时</option>
+                <option value="30min">30分钟</option>
+                <option value="1h">1小时</option>
+                <option value="custom">自定义</option>
+            </select>
+
+            @if (_timeRange == "custom")
+            {
+                <InputDate Type="InputDateType.DateTimeLocal" class="form-control" style="max-width: 220px" @bind-Value="_customStart" @bind-Value:after="OnCustomRangeChangedAsync" />
+                <InputDate Type="InputDateType.DateTimeLocal" class="form-control" style="max-width: 220px" @bind-Value="_customEnd" @bind-Value:after="OnCustomRangeChangedAsync" />
+            }
+
+            <InputText class="form-control" style="max-width: 220px" @bind-Value="_rankingKeyword" placeholder="@SearchPlaceholder" @onkeyup="OnKeywordKeyUpAsync" />
+            <button class="btn btn-primary" @onclick="LoadRankingAsync">刷新</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_rankingError))
+        {
+            <div class="alert alert-warning py-2">@_rankingError</div>
+        }
+
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    @if (!IsLatency)
+                    {
+                        <tr>
+                            <th>排行</th>
+                            <th>@RankingItemLabel</th>
+                            <th>请求次数</th>
+                            <th>出站流量</th>
+                            <th>回源流量</th>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <th>排行</th>
+                            <th>URL</th>
+                            <th>平均耗时(ms)</th>
+                            <th>最大耗时(ms)</th>
+                            <th>最小耗时(ms)</th>
+                            <th>P95耗时(ms)</th>
+                            <th>请求次数</th>
+                        </tr>
+                    }
+                </thead>
+                <tbody>
+                    @if (!IsLatency)
+                    {
+                        @if (_ranking.Count == 0)
+                        {
+                            <tr><td colspan="5">暂无数据</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _ranking)
+                            {
+                                <tr>
+                                    <td>@row.Rank</td>
+                                    <td>@row.Item</td>
+                                    <td>@row.RequestCount</td>
+                                    <td>@row.OutTraffic</td>
+                                    <td>@row.OriginTraffic</td>
+                                </tr>
+                            }
+                        }
+                    }
+                    else
+                    {
+                        @if (_latencyRanking.Count == 0)
+                        {
+                            <tr><td colspan="7">暂无数据</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _latencyRanking)
+                            {
+                                <tr>
+                                    <td>@row.Rank</td>
+                                    <td>@row.Item</td>
+                                    <td><span class="latency-chip latency-avg">@FormatMilliseconds(row.AvgTime)</span></td>
+                                    <td><span class="latency-chip latency-max">@FormatMilliseconds(row.MaxTime)</span></td>
+                                    <td><span class="latency-chip latency-min">@FormatMilliseconds(row.MinTime)</span></td>
+                                    <td>@FormatMilliseconds(row.P95Time)</td>
+                                    <td>@row.RequestCount</td>
+                                </tr>
+                            }
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private string _activeTab = "basic";
+    private string _rankingType = "domain";
+    private string _timeRange = "10min";
+    private string _rankingKeyword = string.Empty;
+    private DateTime? _customStart;
+    private DateTime? _customEnd;
+    private string _rankingError = string.Empty;
+
+    private readonly List<StatRankingItemDto> _ranking = new();
+    private readonly List<StatLatencyItemDto> _latencyRanking = new();
+
+    private bool IsLatency => string.Equals(_rankingType, "latency", StringComparison.OrdinalIgnoreCase);
+
+    private string RankingItemLabel => _rankingType switch
+    {
+        "domain" => "域名",
+        "url" => "URL",
+        "latency" => "URL",
+        "ip" => "IP地址",
+        "country" => "国家",
+        "province" => "省份",
+        "referer" => "来源",
+        _ => "项目"
+    };
+
+    private string SearchPlaceholder => _rankingType switch
+    {
+        "domain" => "输入域名",
+        "url" => "输入URL",
+        "latency" => "输入URL",
+        "ip" => "输入IP",
+        "country" => "输入国家",
+        "province" => "输入省份",
+        "referer" => "输入来源",
+        _ => "关键字"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBasicAsync();
+    }
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private async Task SetTab(string tab)
+    {
+        _activeTab = tab;
+        if (tab == "basic")
+        {
+            await LoadBasicAsync();
+        }
+        else if (tab == "quality")
+        {
+            await LoadQualityAsync();
+        }
+        else if (tab == "origin")
+        {
+            await LoadOriginAsync();
+        }
+        else
+        {
+            await LoadRankingAsync();
+        }
+    }
+
+    private async Task OnRankingTypeChangedAsync()
+    {
+        if (_activeTab == "ranking")
+        {
+            await LoadRankingAsync();
+        }
+    }
+
+    private async Task OnTimeRangeChangedAsync()
+    {
+        if (_activeTab == "ranking" && _timeRange != "custom")
+        {
+            await LoadRankingAsync();
+        }
+    }
+
+    private async Task OnCustomRangeChangedAsync()
+    {
+        if (_activeTab == "ranking" && _timeRange == "custom" && _customStart != null && _customEnd != null)
+        {
+            await LoadRankingAsync();
+        }
+    }
+
+    private async Task OnKeywordKeyUpAsync(KeyboardEventArgs args)
+    {
+        if (_activeTab == "ranking" && string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await LoadRankingAsync();
+        }
+    }
+
+    private async Task LoadBasicAsync()
+    {
+        var response = await Api.GetAsync<StatBasicResultDto>("stats/basic", Scope);
+        if (response?.Data == null)
+        {
+            return;
+        }
+        await RenderChartAsync("statBandwidthChart", "带宽", response.Data.XAxis, response.Data.Bandwidth);
+        await RenderChartAsync("statTrafficChart", "流量", response.Data.XAxis, response.Data.Traffic);
+        await RenderChartAsync("statQpsChart", "QPS", response.Data.XAxis, response.Data.Qps);
+    }
+
+    private async Task LoadQualityAsync()
+    {
+        var response = await Api.GetAsync<StatQualityResultDto>("stats/quality", Scope);
+        if (response?.Data == null)
+        {
+            return;
+        }
+        await RenderChartAsync("statHitChart", "命中率", response.Data.XAxis, response.Data.HitRate);
+        await RenderChartAsync("stat4xxChart", "4xx", response.Data.XAxis, response.Data.Status4xx);
+        await RenderChartAsync("stat5xxChart", "5xx", response.Data.XAxis, response.Data.Status5xx);
+    }
+
+    private async Task LoadOriginAsync()
+    {
+        var response = await Api.GetAsync<StatOriginResultDto>("stats/origin", Scope);
+        if (response?.Data == null)
+        {
+            return;
+        }
+        await RenderChartAsync("statOriginBandwidth", "回源带宽", response.Data.XAxis, response.Data.OriginBandwidth);
+        await RenderChartAsync("statOriginTraffic", "回源流量", response.Data.XAxis, response.Data.OriginTraffic);
+    }
+
+    private async Task LoadRankingAsync()
+    {
+        _rankingError = string.Empty;
+
+        var query = new Dictionary<string, string?>
+        {
+            ["type"] = _rankingType,
+            ["time_range"] = _timeRange,
+            ["keyword"] = _rankingKeyword
+        };
+
+        if (_timeRange == "custom")
+        {
+            if (_customStart == null || _customEnd == null)
+            {
+                _rankingError = "请选择完整的自定义时间范围";
+                _ranking.Clear();
+                _latencyRanking.Clear();
+                return;
+            }
+
+            if (_customEnd < _customStart)
+            {
+                _rankingError = "结束时间不能早于开始时间";
+                _ranking.Clear();
+                _latencyRanking.Clear();
+                return;
+            }
+
+            query["start_time"] = NormalizeCustomTime(_customStart.Value);
+            query["end_time"] = NormalizeCustomTime(_customEnd.Value);
+        }
+
+        if (IsLatency)
+        {
+            var response = await Api.GetAsync<StatLatencyResultDto>("stats/ranking", Scope, query);
+            _latencyRanking.Clear();
+            _ranking.Clear();
+            if (response?.Data?.List != null)
+            {
+                _latencyRanking.AddRange(response.Data.List);
+            }
+        }
+        else
+        {
+            var response = await Api.GetAsync<StatRankingResultDto>("stats/ranking", Scope, query);
+            _ranking.Clear();
+            _latencyRanking.Clear();
+            if (response?.Data?.List != null)
+            {
+                _ranking.AddRange(response.Data.List);
+            }
+        }
+    }
+
+    private async Task RenderChartAsync(string domId, string name, IReadOnlyList<string> xAxis, IReadOnlyList<double> data)
+    {
+        var payload = new
+        {
+            xAxis,
+            series = new
+            {
+                name,
+                data
+            }
+        };
+        await Js.InvokeVoidAsync("cnn.dashboard.render", domId, payload);
+    }
+
+    private static string NormalizeCustomTime(DateTime value)
+    {
+        return value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatMilliseconds(double value)
+    {
+        return value.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+}

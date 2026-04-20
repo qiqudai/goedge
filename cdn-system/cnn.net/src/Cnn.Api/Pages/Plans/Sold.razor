@@ -1,0 +1,694 @@
+@page "/plans/sold"
+@using Cnn.Common.Contracts
+@using Cnn.Common.Contracts.Admin
+@using global::System.Text.Json
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">已售套餐</div>
+
+    <div class="filter-bar">
+        <button class="btn btn-primary" @onclick="LoadAsync">同步数据</button>
+        <button class="btn btn-outline-danger" disabled="@(!_selectedIds.Any())" @onclick="BatchDeleteAsync">删除</button>
+        <select class="form-select" style="max-width: 160px" @bind="_keywordType">
+            <option value="user_id">用户ID</option>
+            <option value="user_name">用户名</option>
+            <option value="plan_name">套餐名称</option>
+        </select>
+        <InputText class="form-control" style="max-width: 220px" @bind-Value="_keyword" placeholder="关键词" />
+        <button class="btn btn-outline-secondary" @onclick="ApplyFilter">筛选</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th style="width:50px"><input type="checkbox" class="form-check-input" checked="@AllSelected" @onchange="ToggleSelectAll" /></th>
+                    <th>ID</th>
+                    <th>用户</th>
+                    <th>基础套餐</th>
+                    <th>套餐名称</th>
+                    <th>记录ID (CNAME)</th>
+                    <th>购买时间</th>
+                    <th>到期时间</th>
+                    <th>状态</th>
+                    <th style="width:160px">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_loading)
+                {
+                    <tr><td colspan="10">加载中...</td></tr>
+                }
+                else if (_filtered.Count == 0)
+                {
+                    <tr><td colspan="10">暂无数据</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _filtered)
+                    {
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" checked="@_selectedIds.Contains(item.Id)" @onchange="e => ToggleRow(item.Id, e)" /></td>
+                            <td>@item.Id</td>
+                            <td>@FormatUser(item)</td>
+                            <td>@(item.PackageName ?? "-")</td>
+                            <td>@item.PlanName</td>
+                            <td><span class="text-muted small">@(string.IsNullOrWhiteSpace(item.RecordId) ? "-" : item.RecordId)</span></td>
+                            <td>@FormatDate(item.CreatedAt)</td>
+                            <td>@FormatDate(item.EndAt)</td>
+                            <td>
+                                @{
+                                    var statusClass = item.Status switch
+                                    {
+                                        "enabled" => "badge bg-success",
+                                        "expired" => "badge bg-warning text-dark",
+                                        "disabled" => "badge bg-secondary",
+                                        _ => "badge bg-secondary"
+                                    };
+                                    var statusText = item.Status switch
+                                    {
+                                        "enabled" => "生效中",
+                                        "expired" => "已过期",
+                                        "disabled" => "已禁用",
+                                        _ => item.Status ?? "-"
+                                    };
+                                }
+                                <span class="@statusClass">@statusText</span>
+                            </td>
+                            <td>
+                                <button class="btn btn-link btn-sm" @onclick="@(() => OpenDetail(item))">详情</button>
+                                <button class="btn btn-link btn-sm" @onclick="@(() => OpenEdit(item))">编辑</button>
+                                <button class="btn btn-link btn-sm" @onclick="@(() => OpenUpgrade(item))">升降配</button>
+                                <button class="btn btn-link btn-sm text-danger" @onclick="@(() => DeleteOneAsync(item))">删除</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* 详情对话框 *@
+@if (_detailVisible && _detail != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel" style="max-width: 700px">
+            <div class="modal-header">
+                <h5>套餐详情 — @_detail.PlanName</h5>
+                <button class="btn-close" @onclick="@(() => _detailVisible = false)"></button>
+            </div>
+            <div class="modal-body">
+                <div class="tab-bar mb-3">
+                    <button class='tab-button @(_detailTab == "usage" ? "active" : "")' @onclick='@(() => _detailTab = "usage")'>用量统计</button>
+                    <button class='tab-button @(_detailTab == "spec" ? "active" : "")' @onclick='@(() => _detailTab = "spec")'>套餐规格</button>
+                </div>
+
+                @if (_detailTab == "usage")
+                {
+                    <table class="table table-bordered table-sm">
+                        <thead><tr><th>项目</th><th>总量</th><th>已用</th><th>剩余</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td>流量</td>
+                                <td>@FormatBytes(_detail.Traffic)</td>
+                                <td>-</td>
+                                <td>-</td>
+                            </tr>
+                            <tr><td>域名</td><td>@_detail.Domain</td><td>-</td><td>-</td></tr>
+                            <tr><td>主域名</td><td>@_detail.MainDomainLimit</td><td>-</td><td>-</td></tr>
+                            <tr><td>HTTP端口</td><td>@_detail.HttpPort</td><td>-</td><td>-</td></tr>
+                            <tr><td>Stream端口</td><td>@_detail.StreamPort</td><td>-</td><td>-</td></tr>
+                            <tr><td>连接数</td><td>@_detail.Connection</td><td>-</td><td>-</td></tr>
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <table class="table table-bordered table-sm">
+                        <tbody>
+                            <tr><td style="width:160px">用户</td><td>@FormatUser(_detail)</td></tr>
+                            <tr><td>套餐</td><td>@_detail.PlanName</td></tr>
+                            <tr><td>带宽</td><td>@(_detail.Bandwidth ?? "-")</td></tr>
+                            <tr><td>流量</td><td>@FormatBytes(_detail.Traffic)</td></tr>
+                            <tr><td>域名数</td><td>@_detail.Domain</td></tr>
+                            <tr><td>HTTP端口</td><td>@_detail.HttpPort</td></tr>
+                            <tr><td>Stream端口</td><td>@_detail.StreamPort</td></tr>
+                            <tr><td>自定义CC</td><td>@(_detail.CustomCcRule ? "开启" : "关闭")</td></tr>
+                            <tr><td>WebSocket</td><td>@(_detail.Websocket ? "开启" : "关闭")</td></tr>
+                            <tr><td>CNAME域名</td><td>@(_detail.CnameDomain ?? "-")</td></tr>
+                            <tr><td>CNAME模式</td><td>@(_detail.CnameMode ?? "-")</td></tr>
+                            <tr><td>购买时间</td><td>@FormatDate(_detail.CreatedAt)</td></tr>
+                            <tr><td>到期时间</td><td>@FormatDate(_detail.EndAt)</td></tr>
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="@(() => _detailVisible = false)">关闭</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* 升降配对话框 *@
+@if (_upgradeVisible && _upgradeItem != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel" style="max-width: 600px">
+            <div class="modal-header">
+                <h5>升降配 — @_upgradeItem.PlanName</h5>
+                <button class="btn-close" @onclick="CloseUpgrade"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-light border">
+                    当前套餐：@(_upgradeItem.PlanName ?? _upgradeItem.PackageName ?? $"#{_upgradeItem.PackageId}")
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">更换套餐</label>
+                    <select class="form-select" @bind="_upgradePlanId">
+                        <option value="0">请选择</option>
+                        @foreach (var plan in AvailableUpgradePlans)
+                        {
+                            <option value="@plan.Id">@plan.Name</option>
+                        }
+                    </select>
+                </div>
+                @if (AvailableUpgradePlans.Count == 0)
+                {
+                    <div class="text-muted small">当前没有可切换的目标套餐。</div>
+                }
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseUpgrade">取消</button>
+                <button class="btn btn-primary" disabled="@(_upgradePlanId <= 0 || _saving)" @onclick="SaveUpgradeAsync">@(_saving ? "处理中..." : "确定")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* 编辑对话框 *@
+@if (_editVisible && _editing != null)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel" style="max-width: 700px">
+            <div class="modal-header">
+                <h5>编辑套餐 — @_editing.PlanName</h5>
+                <button class="btn-close" @onclick="CloseEdit"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">区域</label>
+                        <select class="form-select" @bind="_editRegionId">
+                            <option value="0">请选择</option>
+                            @foreach (var region in _regions)
+                            {
+                                <option value="@region.Id">@region.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">线路分组</label>
+                        <select class="form-select" @bind="_editNodeGroupId">
+                            <option value="0">请选择</option>
+                            @foreach (var group in _nodeGroups)
+                            {
+                                <option value="@group.Id">@group.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">备用分组</label>
+                        <select class="form-select" @bind="_editBackupGroupId">
+                            <option value="0">不设置</option>
+                            @foreach (var group in _nodeGroups)
+                            {
+                                <option value="@group.Id">@group.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <hr />
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">到期时间</label>
+                        <InputText class="form-control" @bind-Value="_editEndAt" placeholder="yyyy-MM-dd HH:mm:ss" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">带宽限制</label>
+                        <InputText class="form-control" @bind-Value="_editBandwidth" placeholder="如: 100Mbps" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">流量(字节)</label>
+                        <InputText class="form-control" @bind-Value="_editTraffic" placeholder="字节数" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">连接数</label>
+                        <InputText class="form-control" @bind-Value="_editConnection" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">域名数</label>
+                        <InputText class="form-control" @bind-Value="_editDomain" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">主域名数</label>
+                        <InputText class="form-control" @bind-Value="_editMainDomainLimit" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">HTTP端口</label>
+                        <InputText class="form-control" @bind-Value="_editHttpPort" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Stream端口</label>
+                        <InputText class="form-control" @bind-Value="_editStreamPort" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_editCustomCcRule" />
+                            <span class="form-check-label">自定义CC规则</span>
+                        </label>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_editWebsocket" />
+                            <span class="form-check-label">WebSocket</span>
+                        </label>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_editHttp3" />
+                            <span class="form-check-label">HTTP/3</span>
+                        </label>
+                    </div>
+                </div>
+                <hr />
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">月付续费价(分)</label>
+                        <InputText class="form-control" @bind-Value="_editPriceMonthly" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">季度续费价(分)</label>
+                        <InputText class="form-control" @bind-Value="_editPriceQuarterly" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">年付续费价(分)</label>
+                        <InputText class="form-control" @bind-Value="_editPriceYearly" />
+                    </div>
+                </div>
+                <hr />
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">CNAME主机名</label>
+                        <InputText class="form-control" @bind-Value="_editCnameHostname" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">CNAME域名</label>
+                        <select class="form-select" @bind="_editCnameDomain">
+                            <option value="">请选择</option>
+                            @foreach (var cname in _cnameDomains)
+                            {
+                                <option value="@cname.Domain">@cname.Domain</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">CNAME模式</label>
+                        <select class="form-select" @bind="_editCnameMode">
+                            <option value="domain">按网站生成</option>
+                            <option value="package">按套餐生成</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseEdit">取消</button>
+                <button class="btn btn-primary" disabled="@_saving" @onclick="SaveEditAsync">@(_saving ? "保存中..." : "保存")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<UserPlanItemDto> _items = new();
+    private readonly List<UserPlanItemDto> _filtered = new();
+    private readonly HashSet<long> _selectedIds = new();
+    private readonly List<RegionListItem> _regions = new();
+    private readonly List<NodeGroupListItem> _nodeGroups = new();
+    private readonly List<CnameDomainItem> _cnameDomains = new();
+    private bool _loading;
+    private bool _saving;
+    private string _keywordType = "user_id";
+    private string _keyword = string.Empty;
+
+    private bool _detailVisible;
+    private string _detailTab = "usage";
+    private UserPlanItemDto? _detail;
+
+    private bool _editVisible;
+    private UserPlanItemDto? _editing;
+
+    private bool _upgradeVisible;
+    private UserPlanItemDto? _upgradeItem;
+    private long _upgradePlanId;
+    private readonly List<PlanItemDto> _planOptions = new();
+    private string _editEndAt = string.Empty;
+    private string _editBandwidth = string.Empty;
+    private string _editTraffic = string.Empty;
+    private string _editConnection = string.Empty;
+    private string _editDomain = string.Empty;
+    private string _editMainDomainLimit = string.Empty;
+    private string _editHttpPort = string.Empty;
+    private string _editStreamPort = string.Empty;
+    private bool _editCustomCcRule;
+    private bool _editWebsocket;
+    private bool _editHttp3;
+    private long _editRegionId;
+    private long _editNodeGroupId;
+    private long _editBackupGroupId;
+    private string _editPriceMonthly = string.Empty;
+    private string _editPriceQuarterly = string.Empty;
+    private string _editPriceYearly = string.Empty;
+    private string _editCnameHostname = string.Empty;
+    private string _editCnameDomain = string.Empty;
+    private string _editCnameMode = "domain";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        await LoadDependenciesAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var response = await Api.GetAsync<UserPlanListResult>("user_plans", ApiScope.Admin);
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            _items.AddRange(response.Data.List);
+        }
+        ApplyFilter();
+        _loading = false;
+    }
+
+    private async Task LoadDependenciesAsync()
+    {
+        var regionResponse = await Api.GetAsync<RegionListResult>("regions", ApiScope.Admin);
+        _regions.Clear();
+        if (regionResponse?.Data?.List != null) _regions.AddRange(regionResponse.Data.List);
+
+        var groupResponse = await Api.GetAsync<NodeGroupListResult>("node-groups", ApiScope.Admin);
+        _nodeGroups.Clear();
+        if (groupResponse?.Data?.List != null) _nodeGroups.AddRange(groupResponse.Data.List);
+
+        var cnameResponse = await Api.GetAsync<CnameDomainListResult>("cname_domains", ApiScope.Admin);
+        _cnameDomains.Clear();
+        if (cnameResponse?.Data?.List != null) _cnameDomains.AddRange(cnameResponse.Data.List);
+    }
+
+    private void ApplyFilter()
+    {
+        _filtered.Clear();
+        var keyword = _keyword.Trim();
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            _filtered.AddRange(_items);
+        }
+        else
+        {
+            foreach (var item in _items)
+            {
+                if (_keywordType == "user_id" && item.UserId.ToString().Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                {
+                    _filtered.Add(item);
+                }
+                else if (_keywordType == "user_name" && (item.UserName ?? string.Empty).Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                {
+                    _filtered.Add(item);
+                }
+                else if (_keywordType == "plan_name" && (item.PlanName ?? string.Empty).Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                {
+                    _filtered.Add(item);
+                }
+            }
+        }
+        _selectedIds.Clear();
+    }
+
+    private void OpenDetail(UserPlanItemDto item)
+    {
+        _detail = item;
+        _detailTab = "usage";
+        _detailVisible = true;
+    }
+
+    private void OpenEdit(UserPlanItemDto item)
+    {
+        _editing = item;
+        _editEndAt = item.EndAt.HasValue ? item.EndAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : string.Empty;
+        _editBandwidth = item.Bandwidth ?? string.Empty;
+        _editTraffic = item.Traffic.ToString();
+        _editConnection = item.Connection.ToString();
+        _editDomain = item.Domain.ToString();
+        _editMainDomainLimit = item.MainDomainLimit.ToString();
+        _editHttpPort = item.HttpPort.ToString();
+        _editStreamPort = item.StreamPort.ToString();
+        _editCustomCcRule = item.CustomCcRule;
+        _editWebsocket = item.Websocket;
+        _editHttp3 = item.Http3Enabled;
+        _editRegionId = item.RegionId;
+        _editNodeGroupId = item.NodeGroupId;
+        _editBackupGroupId = item.BackupGroupId;
+        _editPriceMonthly = string.Empty;
+        _editPriceQuarterly = string.Empty;
+        _editPriceYearly = string.Empty;
+        _editCnameHostname = item.CnameHostname ?? string.Empty;
+        _editCnameDomain = item.CnameDomain ?? string.Empty;
+        _editCnameMode = item.CnameMode ?? "domain";
+        _editVisible = true;
+    }
+
+    private void CloseEdit()
+    {
+        _editVisible = false;
+        _editing = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editing == null || _saving) return;
+        _saving = true;
+
+        var payload = new Dictionary<string, object?>();
+        if (!string.IsNullOrWhiteSpace(_editEndAt)) payload["end_at"] = _editEndAt;
+        if (!string.IsNullOrWhiteSpace(_editBandwidth)) payload["bandwidth"] = _editBandwidth;
+        if (long.TryParse(_editTraffic, out var traffic)) payload["traffic"] = traffic;
+        if (long.TryParse(_editConnection, out var connection)) payload["connection"] = connection;
+        if (long.TryParse(_editDomain, out var domain)) payload["domain"] = domain;
+        if (long.TryParse(_editMainDomainLimit, out var mainDomain)) payload["main_domain_limit"] = mainDomain;
+        if (long.TryParse(_editHttpPort, out var httpPort)) payload["http_port"] = httpPort;
+        if (long.TryParse(_editStreamPort, out var streamPort)) payload["stream_port"] = streamPort;
+        payload["custom_cc_rule"] = _editCustomCcRule;
+        payload["websocket"] = _editWebsocket;
+        payload["http3_enabled"] = _editHttp3;
+        if (_editRegionId > 0) payload["region_id"] = _editRegionId;
+        if (_editNodeGroupId > 0) payload["node_group_id"] = _editNodeGroupId;
+        payload["backup_group_id"] = _editBackupGroupId;
+        if (long.TryParse(_editPriceMonthly, out var pm)) payload["price_monthly"] = pm;
+        if (long.TryParse(_editPriceQuarterly, out var pq)) payload["price_quarterly"] = pq;
+        if (long.TryParse(_editPriceYearly, out var py)) payload["price_yearly"] = py;
+        if (!string.IsNullOrWhiteSpace(_editCnameHostname)) payload["cname_hostname"] = _editCnameHostname;
+        if (!string.IsNullOrWhiteSpace(_editCnameDomain)) payload["cname_domain"] = _editCnameDomain;
+        if (!string.IsNullOrWhiteSpace(_editCnameMode)) payload["cname_mode"] = _editCnameMode;
+
+        await Api.PutAsync<object>($"user_plans/{_editing.Id}", payload, ApiScope.Admin);
+        _saving = false;
+        _editVisible = false;
+        await LoadAsync();
+    }
+
+    private bool AllSelected => _filtered.Count > 0 && _filtered.All(item => _selectedIds.Contains(item.Id));
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            foreach (var item in _filtered) _selectedIds.Add(item.Id);
+        }
+        else
+        {
+            _selectedIds.Clear();
+        }
+    }
+
+    private void ToggleRow(long id, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked) _selectedIds.Add(id);
+        else _selectedIds.Remove(id);
+    }
+
+    private async Task BatchDeleteAsync()
+    {
+        if (!_selectedIds.Any()) return;
+        var ok = await Js.InvokeAsync<bool>("confirm", "确认删除选中的套餐？");
+        if (!ok) return;
+
+        foreach (var id in _selectedIds.ToList())
+        {
+            var previewResult = await DeleteWorkflowHelper.PreviewAsync(Api, $"user_packages/{id}", ApiScope.Admin);
+            if (!previewResult.Success)
+            {
+                await Js.InvokeVoidAsync("alert", previewResult.Message);
+                return;
+            }
+        }
+
+        var taskIds = new List<long>();
+        foreach (var id in _selectedIds.ToList())
+        {
+            var requestResult = await DeleteWorkflowHelper.RequestAsync(Api, $"user_packages/{id}", ApiScope.Admin, "已售套餐删除任务已提交");
+            if (!requestResult.Success)
+            {
+                await Js.InvokeVoidAsync("alert", requestResult.Message);
+                return;
+            }
+
+            if (requestResult.TaskId > 0)
+            {
+                taskIds.Add(requestResult.TaskId);
+            }
+        }
+
+        await Js.InvokeVoidAsync("alert", taskIds.Count > 0
+            ? $"已售套餐删除任务已提交，共 {taskIds.Count} 个任务"
+            : "已售套餐删除任务已提交");
+        await LoadAsync();
+        _selectedIds.Clear();
+        if (taskIds.Count > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private async Task DeleteOneAsync(UserPlanItemDto item)
+    {
+        var result = await DeleteWorkflowHelper.ConfirmAndRequestAsync(
+            Api,
+            Js,
+            $"user_packages/{item.Id}",
+            ApiScope.Admin,
+            $"确认删除用户 {FormatUser(item)} 的套餐？",
+            "已售套餐删除任务已提交");
+        if (!result.Success)
+        {
+            if (!result.Cancelled)
+            {
+                await Js.InvokeVoidAsync("alert", result.Message);
+            }
+
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", result.Message);
+        await LoadAsync();
+        if (result.TaskId > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private async Task RefreshAfterDeleteTaskAsync()
+    {
+        await Task.Delay(1200);
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenUpgrade(UserPlanItemDto item)
+    {
+        _upgradeItem = item;
+        _upgradePlanId = 0;
+        _upgradeVisible = true;
+        _ = LoadPlanOptionsAsync();
+    }
+
+    private void CloseUpgrade()
+    {
+        _upgradeVisible = false;
+        _upgradeItem = null;
+        _upgradePlanId = 0;
+    }
+
+    private async Task LoadPlanOptionsAsync()
+    {
+        if (_planOptions.Count > 0) return;
+        var response = await Api.GetAsync<PlanListResult>("plans", ApiScope.Admin);
+        _planOptions.Clear();
+        if (response?.Data?.List != null)
+        {
+            _planOptions.AddRange(response.Data.List
+                .Where(plan => plan.Status)
+                .OrderBy(plan => plan.SortOrder)
+                .ThenBy(plan => plan.Id));
+        }
+        StateHasChanged();
+    }
+
+    private async Task SaveUpgradeAsync()
+    {
+        if (_upgradeItem == null || _upgradePlanId <= 0 || _saving) return;
+
+        if (_upgradePlanId == _upgradeItem.PackageId)
+        {
+            await Js.InvokeVoidAsync("alert", "目标套餐不能与当前套餐相同");
+            return;
+        }
+
+        _saving = true;
+        var payload = new Dictionary<string, object?> { ["plan_id"] = _upgradePlanId };
+        var response = await Api.PostAsync<bool>($"user_plans/{_upgradeItem.Id}/switch", payload, ApiScope.Admin);
+        _saving = false;
+
+        if (response?.Code != ErrorCodes.Success || response.Data != true)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "套餐切换失败");
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", "套餐切换成功");
+        _upgradeVisible = false;
+        await LoadAsync();
+    }
+
+    private IReadOnlyList<PlanItemDto> AvailableUpgradePlans =>
+        _upgradeItem == null
+            ? Array.Empty<PlanItemDto>()
+            : _planOptions.Where(plan => plan.Id != _upgradeItem.PackageId).ToList();
+
+    private static string FormatUser(UserPlanItemDto item)
+    {
+        var name = string.IsNullOrWhiteSpace(item.UserName) ? "" : item.UserName.Trim();
+        return string.IsNullOrWhiteSpace(name) ? $"ID {item.UserId}" : $"{name} ({item.UserId})";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "不限";
+        if (bytes >= 1_000_000_000_000L) return $"{bytes / 1_000_000_000_000.0:F2} TB";
+        if (bytes >= 1_000_000_000L) return $"{bytes / 1_000_000_000.0:F2} GB";
+        if (bytes >= 1_000_000L) return $"{bytes / 1_000_000.0:F2} MB";
+        return $"{bytes} B";
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        if (value == null || value == DateTime.MinValue) return "-";
+        return value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    }
+}

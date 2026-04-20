@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -74,5 +75,71 @@ func TestWriteProxyBlock_CustomForwardedHeadersNoDuplicate(t *testing.T) {
 	}
 	if count := strings.Count(out, "proxy_set_header Upgrade "); count != 1 {
 		t.Fatalf("expected exactly one Upgrade header, got %d", count)
+	}
+}
+
+func TestWriteProxyBlock_HTTP3UnsupportedHidesAltSvc(t *testing.T) {
+	prevNginxBin := NginxBinPath
+	prevRoot := WorkDir
+	t.Cleanup(func() {
+		NginxBinPath = prevNginxBin
+		WorkDir = prevRoot
+		resetHTTP3SupportCacheForTests()
+	})
+	resetHTTP3SupportCacheForTests()
+
+	workDir := t.TempDir()
+	WorkDir = workDir
+	scriptPath := workDir + "/nginx-fake.sh"
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"-V\" ]; then\n" +
+		"  echo 'configure arguments: --with-http_v2_module' 1>&2\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake nginx script: %v", err)
+	}
+	NginxBinPath = scriptPath
+
+	domain := edgeDomain{HTTPSHTTP3: true}
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+	if !strings.Contains(out, "proxy_hide_header Alt-Svc;") {
+		t.Fatalf("expected proxy_hide_header Alt-Svc when nginx http_v3 module is missing")
+	}
+}
+
+func TestWriteProxyBlock_HTTP3SupportedStillHidesUpstreamAltSvc(t *testing.T) {
+	prevNginxBin := NginxBinPath
+	prevRoot := WorkDir
+	t.Cleanup(func() {
+		NginxBinPath = prevNginxBin
+		WorkDir = prevRoot
+		resetHTTP3SupportCacheForTests()
+	})
+	resetHTTP3SupportCacheForTests()
+
+	workDir := t.TempDir()
+	WorkDir = workDir
+	scriptPath := workDir + "/nginx-fake.sh"
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"-V\" ]; then\n" +
+		"  echo 'configure arguments: --with-http_v2_module --with-http_v3_module' 1>&2\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake nginx script: %v", err)
+	}
+	NginxBinPath = scriptPath
+
+	domain := edgeDomain{HTTPSHTTP3: true}
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+	if !strings.Contains(out, "proxy_hide_header Alt-Svc;") {
+		t.Fatalf("expected proxy_hide_header Alt-Svc even when nginx http_v3 module is available")
 	}
 }

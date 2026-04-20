@@ -31,6 +31,7 @@ test.com"
 
 <script setup>
 import { ref, watch, computed } from 'vue'
+import { validateDomain } from '@/utils/siteHelpers'
 
 const props = defineProps({
   modelValue: {
@@ -90,16 +91,11 @@ const validate = () => {
        // Allow IPv6? Usually domains don't have : unless port.
        // Requirement says: Pure domains only.
        reason = '不能包含端口'
-    } else if (!/^[a-z0-9.-]+$/.test(part)) {
-       // Basic regex for domain chars
-       reason = '包含非法字符'
+    } else if (part.includes('*') && !part.startsWith('*.')) {
+       reason = '泛域名只能以 *.'
     } else if (part.startsWith('-') || part.endsWith('-')) {
        reason = '不能以连字符开头或结尾'
-    } else if (!part.includes('.')) {
-       // Simple check for TLD (localhost might pass but usually rejected for public certs)
-       // Let's allow localhost if needed but usually requires dot for public.
-       // Requirement says "consistently validate".
-       // Just strict domain validation.
+    } else if (!validateDomain(part)) {
        reason = '格式不正确'
     }
 

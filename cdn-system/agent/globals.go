@@ -29,14 +29,14 @@ var (
 	DebugMode = false
 
 	GenevaEnable     = false
-	GenevaWindowSize = uint16(4)
+	GenevaWindowSize = uint16(512)
 
 	// Bootstrap behavior
-	ResetResources     = false // Clear WorkDir contents before init (requires safe path)
-	BootstrapSync      = false // Pull full config from API on startup
-	BootstrapStart     = false // Start OpenResty after bootstrap sync
-	AutoInstallService = true  // Linux: auto register systemd service on first start
-	AutoDisableFirewall = true // Linux: disable host firewall on startup to avoid blocked ports
+	ResetResources      = false // Clear WorkDir contents before init (requires safe path)
+	BootstrapSync       = false // Pull full config from API on startup
+	BootstrapStart      = false // Start OpenResty after bootstrap sync
+	AutoInstallService  = true  // Linux: auto register systemd service on first start
+	AutoDisableFirewall = true  // Linux: disable host firewall on startup to avoid blocked ports
 
 	localConfigMu    sync.RWMutex
 	LocalResources   *edgeResources

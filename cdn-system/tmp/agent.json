@@ -1,0 +1,9 @@
+{
+  "api": "http://127.0.0.1:8080",
+  "token": "1e53b4aaf19c4feda09cc353f28e4c7e",
+  "node_id": "1",
+  "debug": false,
+  "reset_resources": false,
+  "bootstrap_sync": true,
+  "bootstrap_start": true
+}

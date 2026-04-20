@@ -183,6 +183,7 @@ import { ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { validateDomain } from '@/utils/siteHelpers'
 
 import SiteGroupSelect from '@/components/SiteGroupSelect.vue'
 import DomainBatchInput from '@/components/DomainBatchInput.vue'
@@ -453,6 +454,31 @@ const handleBatchValidation = (res) => {
     validBatchDomains.value = res.valid
 }
 
+const validateBatchDataString = (dataStr) => {
+  const lines = dataStr.split('\n').map(line => line.trim()).filter(Boolean)
+  for (const line of lines) {
+    const segments = line.split('|').map(segment => segment.trim()).filter(Boolean)
+    const domainSegment = segments.find(segment => segment.startsWith('domain='))
+    if (!domainSegment) {
+      return '高级模式每行都必须包含 domain=...'
+    }
+
+    const rawDomains = domainSegment.slice('domain='.length)
+    const domains = rawDomains.split(',').map(item => item.trim()).filter(Boolean)
+    if (domains.length === 0) {
+      return '高级模式每行都必须至少填写一个域名'
+    }
+
+    for (const domain of domains) {
+      if (!validateDomain(domain)) {
+        return `域名格式不正确: ${domain}`
+      }
+    }
+  }
+
+  return ''
+}
+
 const handleBatchComplete = () => {
     ElMessage.success('批量添加完成')
     emit('success') // Refresh list
@@ -530,6 +556,13 @@ const handleSubmit = async () => {
 
         if (!dataStr) {
             ElMessage.error('请输入网站数据')
+            submitting.value = false
+            return
+        }
+
+        const batchValidationError = validateBatchDataString(dataStr)
+        if (batchValidationError) {
+            ElMessage.error(batchValidationError)
             submitting.value = false
             return
         }

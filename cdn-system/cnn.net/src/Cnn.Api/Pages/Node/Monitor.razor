@@ -1,0 +1,142 @@
+﻿@page "/node/monitor"
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">监控配置</div>
+
+    <div class="card config-card">
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">通知时间段</label>
+                <InputText class="form-control" style="max-width: 240px" @bind-Value="_config.NotificationPeriod" placeholder="8-22" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">通知方式</label>
+                <select class="form-select" style="max-width: 240px" @bind="_config.NotifyMethod">
+                    <option value="email">邮件</option>
+                    <option value="sms">短信</option>
+                    <option value="email sms">邮件+短信</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">通知类型</label>
+                <div class="d-flex flex-wrap gap-3">
+                    <label class="form-check">
+                        <input type="checkbox" class="form-check-input" checked='@_notifyTypes.Contains("node_ip_dns")' @onchange='e => ToggleNotifyType("node_ip_dns", e)' />
+                        <span class="form-check-label">节点IP变化</span>
+                    </label>
+                    <label class="form-check">
+                        <input type="checkbox" class="form-check-input" checked='@_notifyTypes.Contains("bandwidth")' @onchange='e => ToggleNotifyType("bandwidth", e)' />
+                        <span class="form-check-label">带宽超限</span>
+                    </label>
+                    <label class="form-check">
+                        <input type="checkbox" class="form-check-input" checked='@_notifyTypes.Contains("backup_ip")' @onchange='e => ToggleNotifyType("backup_ip", e)' />
+                        <span class="form-check-label">备用IP</span>
+                    </label>
+                    <label class="form-check">
+                        <input type="checkbox" class="form-check-input" checked='@_notifyTypes.Contains("backup_default_line")' @onchange='e => ToggleNotifyType("backup_default_line", e)' />
+                        <span class="form-check-label">备用默认解析</span>
+                    </label>
+                    <label class="form-check">
+                        <input type="checkbox" class="form-check-input" checked='@_notifyTypes.Contains("backup_group")' @onchange='e => ToggleNotifyType("backup_group", e)' />
+                        <span class="form-check-label">节点组备用</span>
+                    </label>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">邮箱</label>
+                <InputText class="form-control" style="max-width: 320px" @bind-Value="_config.Email" placeholder="admin@example.com" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">手机号</label>
+                <InputText class="form-control" style="max-width: 320px" @bind-Value="_config.Phone" placeholder="+86138..." />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">带宽超限次数</label>
+                <InputNumber class="form-control" style="max-width: 160px" @bind-Value="_config.BwExceedTimes" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">高负载自动降权</label>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="_config.AutoSwitchEnable" />
+                    <label class="form-check-label">启用</label>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">高负载恢复时间(秒)</label>
+                <InputNumber class="form-control" style="max-width: 160px" @bind-Value="_config.AutoSwitchRecover" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">监控API</label>
+                <InputText class="form-control" style="max-width: 420px" @bind-Value="_config.MonitorApi" placeholder="http://..." />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">检测间隔(秒)</label>
+                <InputNumber class="form-control" style="max-width: 160px" @bind-Value="_config.Interval" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">失败次数</label>
+                <InputNumber class="form-control" style="max-width: 160px" @bind-Value="_config.FailedTimes" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">失败率(%)</label>
+                <InputText class="form-control" style="max-width: 160px" @bind-Value="_config.FailedRate" />
+            </div>
+            <button class="btn btn-primary" @onclick="SaveAsync">保存配置</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private NodeMonitorConfigDto _config = new();
+    private readonly HashSet<string> _notifyTypes = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var response = await Api.GetAsync<NodeMonitorConfigDto>("monitor_config", ApiScope.Admin);
+        if (response?.Data != null)
+        {
+            _config = response.Data;
+            SyncNotifyTypesFromConfig();
+        }
+    }
+
+    private void SyncNotifyTypesFromConfig()
+    {
+        _notifyTypes.Clear();
+        var raw = _config.NotifyMsgType ?? string.Empty;
+        foreach (var part in raw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            _notifyTypes.Add(part);
+        }
+    }
+
+    private void ToggleNotifyType(string type, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            _notifyTypes.Add(type);
+        }
+        else
+        {
+            _notifyTypes.Remove(type);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _config.NotifyMsgType = string.Join(' ', _notifyTypes);
+        await Api.PostAsync<object>("monitor_config", _config, ApiScope.Admin);
+        await Js.InvokeVoidAsync("alert", "保存成功");
+    }
+}
+

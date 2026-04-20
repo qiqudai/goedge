@@ -2,6 +2,7 @@ package main
 
 import (
 	fsutil "cdn-common/io"
+	"os/exec"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,7 +11,54 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+var (
+	http3SupportOnce  sync.Once
+	http3SupportCache bool
+)
+
+func resetHTTP3SupportCacheForTests() {
+	http3SupportOnce = sync.Once{}
+	http3SupportCache = false
+}
+
+func nginxSupportsHTTP3() bool {
+	http3SupportOnce.Do(func() {
+		// Keep backward-compatible behavior in tests / bootstrap paths where nginx bin is not initialized yet.
+		if strings.TrimSpace(NginxBinPath) == "" {
+			http3SupportCache = true
+			return
+		}
+		cmd := exec.Command(NginxBinPath, "-V")
+		setNginxEnv(cmd)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("[Warn] HTTP/3 capability probe failed, disable quic for safety: %v", err)
+			http3SupportCache = false
+			return
+		}
+		http3SupportCache = strings.Contains(strings.ToLower(string(out)), "with-http_v3_module")
+		if !http3SupportCache {
+			log.Printf("[Warn] Nginx http_v3 module not found, skip quic listen/Alt-Svc")
+		}
+	})
+	return http3SupportCache
+}
+
+func effectiveConnLimit(domain edgeDomain) int {
+	if domain.ConnLimit <= 0 {
+		return 0
+	}
+	// HTTP/3 multiplexes concurrent requests on a single transport connection,
+	// and nginx counts each concurrent request toward limit_conn. Extremely low
+	// limits such as 1 break normal page loads and external H3 checks.
+	if domain.HTTPSHTTP3 && nginxSupportsHTTP3() && domain.ConnLimit < 10 {
+		return 10
+	}
+	return domain.ConnLimit
+}
 
 func resolveSiteTemplate(siteType string, defaults *edgeDefaultConfig) edgeSiteTemplate {
 	if defaults == nil {
@@ -78,6 +126,7 @@ func applyListenPortRules(domain *edgeDomain, resources *edgeResources) {
 func writeHTTPConfig(cfg edgeConfig) error {
 	rootDir := runtimeRoot()
 	confPath := filepath.Join(rootDir, "conf", "dynamic", "http.conf")
+	ensureFallbackCertReady()
 	if len(cfg.Domains) == 0 {
 		return ioutil.WriteFile(confPath, []byte(""), 0644)
 	}
@@ -303,18 +352,51 @@ func fallbackKeyPath() string {
 	return filepath.ToSlash(keyPath)
 }
 
-func siteCertPath(domain edgeDomain) string {
-	if path := strings.TrimSpace(domain.SSLCertPath); path != "" {
-		return filepath.ToSlash(path)
+func fileExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
 	}
-	return fallbackCertPath()
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
-func siteKeyPath(domain edgeDomain) string {
-	if path := strings.TrimSpace(domain.SSLKeyPath); path != "" {
-		return filepath.ToSlash(path)
+func ensureFallbackCertReady() {
+	rootDir := runtimeRoot()
+	if strings.TrimSpace(rootDir) == "" {
+		return
 	}
-	return fallbackKeyPath()
+	certDir := filepath.Join(rootDir, "cert")
+	if err := fsutil.EnsureDir(certDir); err != nil {
+		log.Printf("[Warn] ensure fallback cert dir failed: %v", err)
+		return
+	}
+	certPath := filepath.Join(certDir, "fallback.pem")
+	keyPath := filepath.Join(certDir, "fallback.key")
+	if fileExists(certPath) && fileExists(keyPath) {
+		return
+	}
+	generateFallbackCert(certDir)
+}
+
+func siteTLSPaths(domain edgeDomain) (string, string) {
+	certPath := strings.TrimSpace(domain.SSLCertPath)
+	keyPath := strings.TrimSpace(domain.SSLKeyPath)
+	if certPath != "" {
+		certPath = filepath.ToSlash(certPath)
+	}
+	if keyPath != "" {
+		keyPath = filepath.ToSlash(keyPath)
+	}
+	if certPath != "" && keyPath != "" && fileExists(certPath) && fileExists(keyPath) {
+		return certPath, keyPath
+	}
+	if certPath != "" || keyPath != "" {
+		log.Printf("[Warn] TLS cert/key missing for domain=%s cert=%s key=%s, fallback cert will be used", domain.Name, certPath, keyPath)
+	}
+	return fallbackCertPath(), fallbackKeyPath()
 }
 
 func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages map[string]string, errorPageDir string, status int, ipv6Enable bool) {
@@ -426,11 +508,20 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		if domain.HTTPSHTTP2 {
 			b.WriteString("    http2 on;\n")
 		}
-		if domain.HTTPSHTTP3 {
+		if domain.HTTPSHTTP3 && nginxSupportsHTTP3() {
+			quicListenSuffix := " quic reuseport"
+			if defaultServer {
+				quicListenSuffix += " default_server"
+			}
+			b.WriteString("    listen " + port + quicListenSuffix + ";\n")
+			if domain.IPv6Enable {
+				b.WriteString("    listen [::]:" + port + quicListenSuffix + ";\n")
+			}
 			b.WriteString(fmt.Sprintf("    add_header Alt-Svc 'h3=\\\":%s\\\"; ma=86400' always;\n", port))
 		}
-		b.WriteString("    ssl_certificate " + siteCertPath(domain) + ";\n")
-		b.WriteString("    ssl_certificate_key " + siteKeyPath(domain) + ";\n")
+		certPath, keyPath := siteTLSPaths(domain)
+		b.WriteString("    ssl_certificate " + certPath + ";\n")
+		b.WriteString("    ssl_certificate_key " + keyPath + ";\n")
 		if protocols := sanitizeNginxValue(domain.HTTPSSSLProtocols); protocols != "" {
 			b.WriteString("    ssl_protocols " + protocols + ";\n")
 		}
@@ -475,8 +566,8 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 	if domain.LimitRate > 0 {
 		b.WriteString(fmt.Sprintf("    limit_rate %d;\n", domain.LimitRate))
 	}
-	if domain.ConnLimit > 0 {
-		b.WriteString(fmt.Sprintf("    limit_conn addr_conn %d;\n", domain.ConnLimit))
+	if connLimit := effectiveConnLimit(domain); connLimit > 0 {
+		b.WriteString(fmt.Sprintf("    limit_conn addr_conn %d;\n", connLimit))
 	}
 
 	if _, ok := errorPages["conn_limit"]; ok {
@@ -829,6 +920,9 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	writeProxyCORS(b, domain)
 	writeStaticURLRules(b, domain)
 	writeProxyCustomHeaders(b, domain.Headers, domain.ResponseHeaders)
+	if tls {
+		b.WriteString("        proxy_hide_header Alt-Svc;\n")
+	}
 	b.WriteString("        proxy_pass $backend_target;\n")
 	writeProxySSL(b, domain)
 	applyCacheDirectives(b, cacheCfg, rule)
@@ -854,6 +948,10 @@ func writeProxyLogVars(b *strings.Builder) {
 	b.WriteString("        set $cdn_req_headers \"\";\n")
 	b.WriteString("        set $cdn_resp_headers \"\";\n")
 	b.WriteString("        set $cdn_req_body \"\";\n")
+	b.WriteString("        set $client_country \"\";\n")
+	b.WriteString("        set $client_province \"\";\n")
+	b.WriteString("        set $client_city \"\";\n")
+	b.WriteString("        set $client_isp \"\";\n")
 	b.WriteString("        set $cdn_realtime_send $cdn_realtime_send_default;\n")
 	b.WriteString("        set $cdn_cache_key \"\";\n")
 	b.WriteString("        set $cache_bypass 0;\n")
@@ -1233,6 +1331,9 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
 		b.WriteString(cacheLine + ";\n")
 	}
 	writeHTTPPerformanceDefaults(&b, cfg, cacheEnabled)
+	if nginxSupportsHTTP3() {
+		b.WriteString("quic_gso off;\n")
+	}
 
 	if cfg != nil && cfg.HTTP != nil {
 		writeHTTPDirectives(&b, cfg.HTTP)

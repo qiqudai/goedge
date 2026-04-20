@@ -1,0 +1,8 @@
+{
+  "api": "http://127.0.0.1:8080",
+  "token": "dummy-token",
+  "node_id": "test-node",
+  "reset_resources": true,
+  "bootstrap_sync": false,
+  "bootstrap_start": false
+}
