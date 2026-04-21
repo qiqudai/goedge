@@ -694,6 +694,75 @@ public sealed partial class SiteService
         }
     }
 
+    private static void EnsureSitePersistenceDefaults(Site site)
+    {
+        var now = DateTime.Now;
+
+        site.Uid ??= 0;
+        site.UserPackage ??= 0;
+        site.RegionId ??= null;
+        site.NodeGroupId ??= null;
+        site.BackupNodeGroup ??= null;
+        site.EnableBackupGroup ??= false;
+        site.DnsProviderId ??= null;
+
+        site.PlatformDnsRecordId ??= string.Empty;
+        site.UserDnsRecordId ??= string.Empty;
+        site.CnameDomain ??= string.Empty;
+        site.CnameHostname2 ??= string.Empty;
+        site.CnameMode ??= "site";
+        site.CnameHostname ??= string.Empty;
+        site.Domain ??= string.Empty;
+        site.HttpListen ??= string.Empty;
+        site.HttpsListen ??= string.Empty;
+
+        site.BalanceWay ??= "round_robin";
+        site.Backend ??= string.Empty;
+        site.BackendProtocol ??= "http";
+        site.BackendHttpsPort ??= "443";
+        site.BackendHttpPort ??= "80";
+        site.ProxyTimeout ??= "60";
+        site.BackendPortMapping ??= false;
+        site.HealthCheck ??= string.Empty;
+        site.UpsKeepalive ??= false;
+        site.UpsKeepaliveConn ??= 0;
+        site.UpsKeepaliveTimeout ??= 0;
+        site.ProxyHttpVersion ??= string.Empty;
+        site.ProxySslProtocols ??= string.Empty;
+        site.BackendHost ??= string.Empty;
+        site.Range ??= false;
+        site.ProxyCache ??= string.Empty;
+
+        site.CcDefaultRule ??= null;
+        site.CcSwitch ??= string.Empty;
+        site.ExtraCcRule ??= string.Empty;
+        site.BlockProxy ??= false;
+        site.BlockRegion ??= string.Empty;
+        site.BlackIp ??= string.Empty;
+        site.WhiteIp ??= string.Empty;
+        site.SpiderAllow ??= string.Empty;
+        site.Acl ??= null;
+        site.Hotlink ??= string.Empty;
+        site.Cors ??= string.Empty;
+        site.RespHeader ??= string.Empty;
+        site.ReqHeader ??= string.Empty;
+        site.Page404 ??= string.Empty;
+        site.Page50x ??= string.Empty;
+        site.UrlRewrite ??= string.Empty;
+        site.GzipEnable ??= false;
+        site.GzipTypes ??= string.Empty;
+        site.WebsocketEnable ??= true;
+        site.AcmeProxyToOrgin ??= false;
+        site.PostSizeLimit ??= 0;
+
+        site.CreateAt ??= now;
+        site.UpdateAt ??= now;
+        site.Version ??= 1;
+        site.Enable ??= true;
+        site.RecordId ??= Guid.NewGuid().ToString("N")[..8];
+        site.State ??= "running";
+    }
+
     private static void ApplySiteDefaultsScopedOverrides(Dictionary<string, object?> settings, Dictionary<string, string> defaults)
     {
         if (defaults == null || defaults.Count == 0)

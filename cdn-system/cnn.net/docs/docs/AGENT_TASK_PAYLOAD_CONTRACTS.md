@@ -17,8 +17,30 @@
 ## 2. `config_sync`
 - payload: `EdgeConfigDto` JSON 字符串
 - ack:
-  - `success + ret=ok|skipped`
+  - `success + ret`（JSON，含应用摘要）
   - `fail + error=config apply failed`
+  - `applied`（推荐结构）:
+```json
+{
+  "old_version": 100,
+  "new_version": 101,
+  "force": true,
+  "reason": "version_not_newer",
+  "stream": {
+    "success": true,
+    "received": 3,
+    "planned": 3,
+    "applied": 2,
+    "skipped": 1,
+    "skip_reasons": ["compile_errors"]
+  }
+}
+```
+- API 侧 ACK 审计字段（`task_type=config_sync`）会校验并落库：
+  - `streams_received`
+  - `streams_applied`
+  - `streams_skipped`
+  - `streams_reason`
 
 ## 3. `debug_switch` / `debug_log_switch`
 ### 3.1 批量格式

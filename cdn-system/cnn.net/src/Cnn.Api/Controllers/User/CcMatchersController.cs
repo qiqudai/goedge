@@ -125,7 +125,7 @@ public sealed class CcMatchersController : ControllerBase
             return authResult;
         }
 
-        var result = await _deletionPreviewService.PreviewAsync(ResourceTypes.SecurityRule, id, cancellationToken);
+        var result = await _deletionPreviewService.PreviewAsync(ResourceTypes.CcMatcher, id, cancellationToken);
         return Ok(ApiResponseFactory.Ok(HttpContext, _localizer, result));
     }
 
@@ -195,7 +195,7 @@ public sealed class CcMatchersController : ControllerBase
         }
 
         var result = await _resourceDeleteRequestService.RequestDeleteAsync(
-            DeleteRequestCommandFactory.Create(ResourceTypes.SecurityRule, id, userId, userId),
+            DeleteRequestCommandFactory.Create(ResourceTypes.CcMatcher, id, userId, userId),
             cancellationToken);
         if (result.Success)
         {

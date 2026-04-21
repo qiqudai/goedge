@@ -243,6 +243,10 @@ if domain_conf and domain_conf.realtime_return == false then
     realtime_return = false
 end
 
+-- Hide the concrete server product name. `server_tokens off` only strips
+-- version details and still leaves `openresty` in the Server header.
+ngx.header["Server"] = nil
+
 if realtime_return then
     local cache_status = normalize_cache_status(ngx.var.upstream_cache_status)
     local self_entry = build_cache_entry(role, node_id, cache_status)

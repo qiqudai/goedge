@@ -508,17 +508,10 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		if domain.HTTPSHTTP2 {
 			b.WriteString("    http2 on;\n")
 		}
-		if domain.HTTPSHTTP3 && nginxSupportsHTTP3() {
-			quicListenSuffix := " quic reuseport"
-			if defaultServer {
-				quicListenSuffix += " default_server"
-			}
-			b.WriteString("    listen " + port + quicListenSuffix + ";\n")
-			if domain.IPv6Enable {
-				b.WriteString("    listen [::]:" + port + quicListenSuffix + ";\n")
-			}
-			b.WriteString(fmt.Sprintf("    add_header Alt-Svc 'h3=\\\":%s\\\"; ma=86400' always;\n", port))
-		}
+		// Temporarily disable QUIC listen generation globally.
+		// Some runtime nginx builds/config combinations repeatedly trigger:
+		// "duplicate listen options for 0.0.0.0:443", causing full-site outages.
+		// Keep HTTP/2 and TLS stable first; re-enable QUIC after compatibility hardening.
 		certPath, keyPath := siteTLSPaths(domain)
 		b.WriteString("    ssl_certificate " + certPath + ";\n")
 		b.WriteString("    ssl_certificate_key " + keyPath + ";\n")
@@ -535,7 +528,7 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 			b.WriteString("    ssl_stapling on;\n")
 			b.WriteString("    ssl_stapling_verify on;\n")
 		}
-		if domain.HTTPSHSTS {
+		if domain.HTTPSHSTS && !hasResponseHeader(domain.ResponseHeaders, "Strict-Transport-Security") {
 			b.WriteString("    add_header Strict-Transport-Security \"max-age=31536000\" always;\n")
 		}
 	} else {
@@ -922,6 +915,9 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	writeProxyCustomHeaders(b, domain.Headers, domain.ResponseHeaders)
 	if tls {
 		b.WriteString("        proxy_hide_header Alt-Svc;\n")
+		if domain.HTTPSHSTS {
+			b.WriteString("        proxy_hide_header Strict-Transport-Security;\n")
+		}
 	}
 	b.WriteString("        proxy_pass $backend_target;\n")
 	writeProxySSL(b, domain)
@@ -1051,6 +1047,21 @@ func writeProxyCustomHeaders(b *strings.Builder, headers map[string]string, resp
 		}
 		b.WriteString("        add_header " + name + " " + quoteNginxValue(value) + " always;\n")
 	}
+}
+
+func hasResponseHeader(headers map[string]string, target string) bool {
+	target = strings.ToLower(sanitizeHeaderName(target))
+	if target == "" {
+		return false
+	}
+	for _, key := range sortedStringKeys(headers) {
+		name := strings.ToLower(sanitizeHeaderName(key))
+		value := sanitizeHeaderValue(headers[key])
+		if name == target && value != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func writeProxyAccessRules(b *strings.Builder, domain edgeDomain) {

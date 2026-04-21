@@ -12,12 +12,8 @@ public sealed class ProxyConfigValidator
             return ProxyApplyResult.Fail(0, "config is null");
         }
 
-        // Some bootstrap payloads may carry version=0 before first persisted bump.
-        // Treat negative versions as invalid, but allow 0 to keep runtime available.
-        if (config.Version < 0)
-        {
-            return ProxyApplyResult.Fail(config.Version, "version must be >= 0");
-        }
+        // Go control-plane may generate signed 64-bit hash versions that can be negative.
+        // Version ordering is handled by ConfigVersionTracker; validator should not reject by sign.
 
         var upstreamMap = new Dictionary<string, EdgeUpstreamDto>(StringComparer.OrdinalIgnoreCase);
         foreach (var upstream in config.Upstreams)
@@ -92,7 +88,8 @@ public sealed class ProxyConfigValidator
         if (!string.IsNullOrWhiteSpace(domain.OriginProtocol))
         {
             var protocol = domain.OriginProtocol.Trim().ToLowerInvariant();
-            if (protocol is not ("http" or "https"))
+            // Go control-plane can emit "follow" to inherit origin scheme.
+            if (protocol is not ("http" or "https" or "follow"))
             {
                 return $"has invalid origin_protocol: {domain.OriginProtocol}";
             }

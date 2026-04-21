@@ -26,17 +26,20 @@ public sealed partial class EdgeConfigService : IEdgeConfigService
     private readonly IGlobalConfigService _globalConfigService;
     private readonly ISystemConfigService _systemConfigService;
     private readonly ICryptoService _cryptoService;
+    private readonly ILogger<EdgeConfigService>? _logger;
 
     public EdgeConfigService(
         ISqlSugarClient db,
         IGlobalConfigService globalConfigService,
         ISystemConfigService systemConfigService,
-        ICryptoService cryptoService)
+        ICryptoService cryptoService,
+        ILogger<EdgeConfigService>? logger = null)
     {
         _db = db;
         _globalConfigService = globalConfigService;
         _systemConfigService = systemConfigService;
         _cryptoService = cryptoService;
+        _logger = logger;
     }
 
     public async Task<ServiceResult<EdgeConfigDto>> GenerateAsync(string nodeId, CancellationToken cancellationToken)
@@ -92,6 +95,14 @@ public sealed partial class EdgeConfigService : IEdgeConfigService
         await PopulateNodeConfigAsync(config, node, systemCfg, cancellationToken);
 
         config.Version = ComputeVersion(config);
+        _logger?.LogInformation(
+            "edge config generated node_id={NodeId} version={Version} domains={Domains} upstreams={Upstreams} streams={Streams} fallback_cert={FallbackCert}",
+            config.NodeId ?? nodeId,
+            config.Version,
+            config.Domains?.Count ?? 0,
+            config.Upstreams?.Count ?? 0,
+            config.Streams?.Count ?? 0,
+            !string.IsNullOrWhiteSpace(config.FallbackCertData) && !string.IsNullOrWhiteSpace(config.FallbackKeyData));
         return ServiceResult<EdgeConfigDto>.Ok(config);
     }
 
@@ -150,9 +161,9 @@ public sealed partial class EdgeConfigService : IEdgeConfigService
             foreach (var entry in ParseCcRuleData(rule.Data))
             {
                 var matcherId = ParseEntryId(entry, "matcher", "matcher_id");
-                var filterId = ParseEntryId(entry, "filter1", "filter_id");
+                var filterId = ParseEntryId(entry, "filter1", "filter1_id", "filter_id");
                 var action = ParseEntryString(entry, "action");
-                var enabled = ParseEntryBool(entry, "state", true);
+                var enabled = ParseEntryBool(entry, true, "state", "is_on", "enabled");
                 items.Add(new EdgeCCRuleItemDto
                 {
                     MatcherId = matcherId == 0 ? null : matcherId,
@@ -232,20 +243,22 @@ public sealed partial class EdgeConfigService : IEdgeConfigService
         return Array.Empty<Dictionary<string, JsonElement>>();
     }
 
-    private static long ParseEntryId(Dictionary<string, JsonElement> entry, string key, string fallbackKey)
+    private static long ParseEntryId(Dictionary<string, JsonElement> entry, params string[] keys)
     {
-        if (TryGetEntry(entry, key, out var value))
+        foreach (var key in keys)
         {
-            var id = ParseId(value);
-            if (id > 0)
+            if (!TryGetEntry(entry, key, out var value))
             {
-                return id;
+                continue;
             }
-        }
 
-        if (TryGetEntry(entry, fallbackKey, out var fallback))
-        {
-            return ParseId(fallback);
+            var id = ParseId(value);
+            if (id <= 0)
+            {
+                continue;
+            }
+
+            return id;
         }
 
         return 0;
@@ -256,9 +269,17 @@ public sealed partial class EdgeConfigService : IEdgeConfigService
         return TryGetEntry(entry, key, out var value) ? ParseString(value) : string.Empty;
     }
 
-    private static bool ParseEntryBool(Dictionary<string, JsonElement> entry, string key, bool defaultValue)
+    private static bool ParseEntryBool(Dictionary<string, JsonElement> entry, bool defaultValue, params string[] keys)
     {
-        return TryGetEntry(entry, key, out var value) ? ParseBool(value, defaultValue) : defaultValue;
+        foreach (var key in keys)
+        {
+            if (TryGetEntry(entry, key, out var value))
+            {
+                return ParseBool(value, defaultValue);
+            }
+        }
+
+        return defaultValue;
     }
 
     private static bool TryGetEntry(Dictionary<string, JsonElement> entry, string key, out JsonElement value)

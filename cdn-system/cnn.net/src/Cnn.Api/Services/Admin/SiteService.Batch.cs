@@ -163,6 +163,8 @@ public sealed partial class SiteService
                     success++;
                     break;
                 case "fail":
+                case "failed":
+                case "failure":
                     fail++;
                     var domain = ExtractDomainFromTask(task.Data);
                     failItems.Add(new SiteBatchFailItem
@@ -189,7 +191,7 @@ public sealed partial class SiteService
             Running = running,
             Pending = pending,
             Done = success + fail,
-            Percent = 0,
+            Percent = total == 0 ? 0 : (int)Math.Round((success + fail) * 100d / total),
             FailItems = failItems
         };
 

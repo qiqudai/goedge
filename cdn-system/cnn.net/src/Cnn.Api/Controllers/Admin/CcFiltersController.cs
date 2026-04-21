@@ -65,7 +65,7 @@ public sealed class CcFiltersController : ControllerBase
             this,
             _localizer,
             _resourceDeleteRequestService,
-            DeleteRequestCommandFactory.Create(ResourceTypes.SecurityRule, id),
+            DeleteRequestCommandFactory.Create(ResourceTypes.CcFilter, id),
             cancellationToken);
     }
 
@@ -76,7 +76,7 @@ public sealed class CcFiltersController : ControllerBase
             this,
             _localizer,
             _deletionPreviewService,
-            ResourceTypes.SecurityRule,
+            ResourceTypes.CcFilter,
             id,
             cancellationToken);
     }
@@ -88,7 +88,7 @@ public sealed class CcFiltersController : ControllerBase
             this,
             _localizer,
             _resourceDeleteRequestService,
-            DeleteRequestCommandFactory.Create(ResourceTypes.SecurityRule, id),
+            DeleteRequestCommandFactory.Create(ResourceTypes.CcFilter, id),
             cancellationToken);
     }
 

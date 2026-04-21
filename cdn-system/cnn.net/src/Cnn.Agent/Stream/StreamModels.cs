@@ -41,6 +41,7 @@ public sealed record StreamRuntimeReport(
     string ActiveMode,
     bool NatActive,
     string? LastError,
+    string LastPlanHash,
     long LastConfigVersion,
     int LastReceived,
     int LastPlanned,

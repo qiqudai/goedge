@@ -2,6 +2,7 @@ using Cnn.Api.Services.Agent;
 using Cnn.Api.Services.Common;
 using Cnn.Common.Contracts;
 using SqlSugar;
+using System.Text.Json;
 using SystemTask = System.Threading.Tasks.Task;
 using TaskEntity = Cnn.Domain.Entities.Task;
 using Xunit;
@@ -278,5 +279,91 @@ public sealed class AgentTaskAckServiceTests
         Assert.Equal("success", task.State);
         Assert.NotNull(task.EndAt);
         Assert.Contains("partial success", task.Ret ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async SystemTask HandleAsync_ConfigSyncAck_WritesValidatedStreamAuditFields()
+    {
+        using var scope = new RealMySqlTestScope();
+        var taskId = await scope.Db.Insertable(new TaskEntity
+        {
+            Type = AgentTaskTypes.ConfigSync,
+            Name = "config-sync-stream-audit-valid-" + Guid.NewGuid().ToString("N"),
+            State = "running",
+            Enable = true,
+            CreateAt = DateTime.Now
+        }).ExecuteReturnBigIdentityAsync();
+
+        var sut = new AgentTaskAckService(scope.Db);
+        var applied = JsonSerializer.Deserialize<JsonElement>(
+            """
+            {
+              "old_version": 100,
+              "new_version": 101,
+              "stream": {
+                "received": 3,
+                "applied": 2,
+                "skipped": 1,
+                "skip_reasons": ["compile_errors"]
+              }
+            }
+            """);
+
+        await sut.HandleAsync(new TaskAckMessage
+        {
+            TaskId = taskId,
+            TaskType = AgentTaskTypes.ConfigSync,
+            Status = "success",
+            Ret = "ok",
+            Applied = applied
+        }, CancellationToken.None);
+
+        var task = await scope.Db.Queryable<TaskEntity>().Where(t => t.Id == taskId).SingleAsync();
+        Assert.Equal("success", task.State);
+        Assert.Contains("\"streams_received\":3", task.Ret ?? string.Empty);
+        Assert.Contains("\"streams_applied\":2", task.Ret ?? string.Empty);
+        Assert.Contains("\"streams_skipped\":1", task.Ret ?? string.Empty);
+        Assert.Contains("\"streams_reason\":\"compile_errors\"", task.Ret ?? string.Empty);
+        Assert.Contains("\"streams_audit_valid\":true", task.Ret ?? string.Empty);
+    }
+
+    [Fact]
+    public async SystemTask HandleAsync_ConfigSyncAck_MarksInvalidWhenAuditFieldsMissingOrOutOfRange()
+    {
+        using var scope = new RealMySqlTestScope();
+        var taskId = await scope.Db.Insertable(new TaskEntity
+        {
+            Type = AgentTaskTypes.ConfigSync,
+            Name = "config-sync-stream-audit-invalid-" + Guid.NewGuid().ToString("N"),
+            State = "running",
+            Enable = true,
+            CreateAt = DateTime.Now
+        }).ExecuteReturnBigIdentityAsync();
+
+        var sut = new AgentTaskAckService(scope.Db);
+        var applied = JsonSerializer.Deserialize<JsonElement>(
+            """
+            {
+              "stream": {
+                "received": 1,
+                "applied": 2
+              }
+            }
+            """);
+
+        await sut.HandleAsync(new TaskAckMessage
+        {
+            TaskId = taskId,
+            TaskType = AgentTaskTypes.ConfigSync,
+            Status = "success",
+            Ret = "ok",
+            Applied = applied
+        }, CancellationToken.None);
+
+        var task = await scope.Db.Queryable<TaskEntity>().Where(t => t.Id == taskId).SingleAsync();
+        Assert.Equal("success", task.State);
+        Assert.Contains("\"streams_audit_valid\":false", task.Ret ?? string.Empty);
+        Assert.Contains("\"streams_reason\":\"invalid_stream_audit\"", task.Ret ?? string.Empty);
+        Assert.Contains("missing_skipped", task.Ret ?? string.Empty);
     }
 }

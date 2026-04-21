@@ -465,6 +465,47 @@ type edgeCCFilter struct {
 	Extra        string `json:"extra,omitempty"`
 }
 
+func normalizeEdgeDomainName(input string) string {
+	host := strings.TrimSpace(strings.ToLower(input))
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "#"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "?"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	host = strings.TrimSuffix(host, ".")
+	return strings.TrimSpace(host)
+}
+
+func normalizeEdgeDomains(domains []edgeDomain) []edgeDomain {
+	if len(domains) == 0 {
+		return nil
+	}
+	out := make([]edgeDomain, 0, len(domains))
+	seen := map[string]struct{}{}
+	for _, domain := range domains {
+		host := normalizeEdgeDomainName(domain.Name)
+		if host == "" {
+			continue
+		}
+		domain.Name = host
+		if _, exists := seen[host]; exists {
+			continue
+		}
+		seen[host] = struct{}{}
+		out = append(out, domain)
+	}
+	return out
+}
+
 func generateDynamicConfigs(payload []byte) error {
 	if len(payload) == 0 {
 		return nil
@@ -473,6 +514,7 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := json.Unmarshal(payload, &cfg); err != nil {
 		return err
 	}
+	cfg.Domains = normalizeEdgeDomains(cfg.Domains)
 	setLocalNginxConfig(cfg.Nginx)
 	if fallback := parseResourcesFallback(payload); fallback != nil {
 		if cfg.Resources == nil {

@@ -143,3 +143,40 @@ func TestWriteProxyBlock_HTTP3SupportedStillHidesUpstreamAltSvc(t *testing.T) {
 		t.Fatalf("expected proxy_hide_header Alt-Svc even when nginx http_v3 module is available")
 	}
 }
+
+func TestWriteHTTPServer_HSTSDoesNotDuplicateCustomResponseHeader(t *testing.T) {
+	domain := edgeDomain{
+		Name:        "example.com",
+		HttpsListen: []string{"443"},
+		HTTPSHSTS:   true,
+		ResponseHeaders: map[string]string{
+			"Strict-Transport-Security": "max-age=1",
+		},
+	}
+
+	var b strings.Builder
+	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	out := b.String()
+
+	if count := strings.Count(strings.ToLower(out), "add_header strict-transport-security "); count != 1 {
+		t.Fatalf("expected exactly one Strict-Transport-Security header, got %d\n%s", count, out)
+	}
+	if !strings.Contains(out, "add_header Strict-Transport-Security \"max-age=1\" always;") {
+		t.Fatalf("expected custom Strict-Transport-Security header to be preserved")
+	}
+	if strings.Contains(out, "add_header Strict-Transport-Security \"max-age=31536000\" always;") {
+		t.Fatalf("default Strict-Transport-Security header should be skipped when custom header is present")
+	}
+}
+
+func TestWriteProxyBlock_HSTSHidesOriginHeader(t *testing.T) {
+	domain := edgeDomain{HTTPSHSTS: true}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_hide_header Strict-Transport-Security;") {
+		t.Fatalf("expected origin Strict-Transport-Security header to be hidden when CDN HSTS is enabled")
+	}
+}

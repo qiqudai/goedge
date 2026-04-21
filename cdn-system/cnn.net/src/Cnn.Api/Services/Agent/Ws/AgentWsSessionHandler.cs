@@ -45,6 +45,7 @@ public class AgentWsSessionHandler : IAgentWsSessionHandler
         var rateLimitService = services.GetRequiredService<INodeRateLimitService>();
         var ackService = services.GetRequiredService<IAgentTaskAckService>();
         var ackWaiter = services.GetRequiredService<IAgentAckWaiter>();
+        var logger = services.GetRequiredService<ILogger<AgentWsSessionHandler>>();
 
         var connectionId = Guid.NewGuid().ToString("N");
         connections.Register(connectionId, socket);
@@ -133,6 +134,13 @@ public class AgentWsSessionHandler : IAgentWsSessionHandler
                 var configResult = await edgeConfigService.GenerateAsync(boundNodeIdText, context.RequestAborted);
                 if (configResult.Success && configResult.Data != null)
                 {
+                    logger.LogInformation(
+                        "agent ws edge_config dispatch node_id={NodeId} version={Version} streams={Streams} domains={Domains} upstreams={Upstreams}",
+                        boundNodeIdText,
+                        configResult.Data.Version,
+                        configResult.Data.Streams?.Count ?? 0,
+                        configResult.Data.Domains?.Count ?? 0,
+                        configResult.Data.Upstreams?.Count ?? 0);
                     await SendWsAsync(socket, new { kind = AgentMessageKinds.EdgeConfig, data = configResult.Data });
                     _ = traceService.TraceAsync(new AgentApiTraceRecord
                     {
@@ -144,6 +152,15 @@ public class AgentWsSessionHandler : IAgentWsSessionHandler
                         TraceId = context.TraceIdentifier,
                         Payload = JsonSerializer.Serialize(configResult.Data, jsonOptions)
                     }, context.RequestAborted);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "agent ws edge_config dispatch skipped node_id={NodeId} success={Success} error_code={ErrorCode} message={Message}",
+                        boundNodeIdText,
+                        configResult.Success,
+                        configResult.ErrorCode,
+                        configResult.MessageKey ?? string.Empty);
                 }
                 break;
             }

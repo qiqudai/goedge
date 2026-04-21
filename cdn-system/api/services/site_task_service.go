@@ -23,6 +23,7 @@ type SiteCreatePayload struct {
 }
 
 func CreateSiteCreateTask(payload SiteCreatePayload, batchID string) (*models.Task, error) {
+	payload.Domain = normalizeTaskSiteDomain(payload.Domain)
 	data, _ := json.Marshal(payload)
 
 	// Idempotency logic removed
@@ -69,6 +70,11 @@ func processSiteCreateTask(task *models.Task) {
 	var payload SiteCreatePayload
 	if err := json.Unmarshal([]byte(task.Data), &payload); err != nil {
 		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "ret": "Invalid Data: " + err.Error(), "end_at": time.Now()})
+		return
+	}
+	payload.Domain = normalizeTaskSiteDomain(payload.Domain)
+	if payload.Domain == "" {
+		db.DB.Model(task).Updates(map[string]interface{}{"state": "fail", "ret": "domain is required", "end_at": time.Now()})
 		return
 	}
 
@@ -224,9 +230,23 @@ func buildSiteCnameForTask(hostname, cnameDomain string) string {
 }
 
 func normalizeTaskSiteDomain(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	value = strings.TrimSuffix(value, ".")
-	return value
+	host := strings.TrimSpace(strings.ToLower(value))
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "#"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "?"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	host = strings.TrimSuffix(host, ".")
+	return strings.TrimSpace(host)
 }
 
 func decodeTaskSiteDomainRaw(raw string) []string {

@@ -190,6 +190,15 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		return
 	}
 
+	if req.Domains != nil {
+		normalizedDomains := normalizeSiteDomains(*req.Domains)
+		if len(normalizedDomains) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("domain is required")})
+			return
+		}
+		req.Domains = &normalizedDomains
+	}
+
 	if isUserReq && req.UserPackageID != nil && *req.UserPackageID > 0 {
 		if err := ensureUserPackageOwnership(userID, *req.UserPackageID); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
@@ -283,7 +292,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		if req.BackendProtocol != nil {
 			updates["backend_protocol"] = normalizeBackendProtocolValue(*req.BackendProtocol)
 		}
-		if req.Domains != nil && len(*req.Domains) > 0 {
+		if req.Domains != nil {
 			updates["domain"] = encodeList(*req.Domains)
 		}
 		if req.Enable != nil {

@@ -131,13 +131,18 @@ public sealed partial class SiteService
 
         var defaults = await LoadSiteDefaultMapWithGroupAsync(targetUserId, request.GroupId);
         ApplySiteDefaults(site, settings, defaults);
+        EnsureSitePersistenceDefaults(site);
         settings = SiteSettingsNormalizer.Normalize(settings);
 
         var groupIds = ResolveGroupIds(request.GroupIds, request.GroupId);
 
-        await _db.Ado.UseTranAsync(async () =>
+        var tran = await _db.Ado.UseTranAsync(async () =>
         {
             var id = await _db.Insertable(site).ExecuteReturnIdentityAsync();
+            if (id <= 0)
+            {
+                throw new InvalidOperationException("db_create_error");
+            }
             site.Id = id;
 
             if (groupIds.Count > 0)
@@ -156,6 +161,14 @@ public sealed partial class SiteService
             await SaveSiteSettingsAsync(site.Id, settings);
             await UpsertSiteTypeMetaAsync(site.Id, siteType);
         });
+
+        if (!tran.IsSuccess || site.Id <= 0)
+        {
+            var key = string.Equals(tran.ErrorMessage, "db_create_error", StringComparison.Ordinal)
+                ? "db_create_error"
+                : "db_save_error";
+            return ServiceResult<SiteDetailDto>.Fail(ErrorCodes.DbError, key);
+        }
 
         await _configVersionService.BumpAsync("site", new[] { (long)site.Id }, cancellationToken);
 

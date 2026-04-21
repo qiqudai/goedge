@@ -8,25 +8,56 @@ NODE_ID="${NODE_ID:-}"
 TASK_TYPE="${TASK_TYPE:-config_sync}"
 WAIT_SECONDS="${WAIT_SECONDS:-10}"
 PAYLOAD_JSON="${PAYLOAD_JSON:-{}}"
+PAYLOAD_FILE="${PAYLOAD_FILE:-}"
+AUTH_X_FORWARDED_FOR="${AUTH_X_FORWARDED_FOR:-}"
 
 json_post() {
   local url="$1"
   local body="$2"
   local token="${3:-}"
+  local -a curl_args
+  curl_args=(-sS -X POST "${BASE_URL}${url}" -H 'Content-Type: application/json')
+  if [[ -n "$AUTH_X_FORWARDED_FOR" ]]; then
+    curl_args+=(-H "X-Forwarded-For: ${AUTH_X_FORWARDED_FOR}")
+  fi
   if [[ -n "$token" ]]; then
-    curl -sS -X POST "${BASE_URL}${url}" -H 'Content-Type: application/json' -H "Authorization: Bearer ${token}" -d "$body"
+    curl_args+=(-H "Authorization: Bearer ${token}")
+    curl "${curl_args[@]}" -d "$body"
   else
-    curl -sS -X POST "${BASE_URL}${url}" -H 'Content-Type: application/json' -d "$body"
+    curl "${curl_args[@]}" -d "$body"
+  fi
+}
+
+json_post_file() {
+  local url="$1"
+  local file="$2"
+  local token="${3:-}"
+  local -a curl_args
+  curl_args=(-sS -X POST "${BASE_URL}${url}" -H 'Content-Type: application/json')
+  if [[ -n "$AUTH_X_FORWARDED_FOR" ]]; then
+    curl_args+=(-H "X-Forwarded-For: ${AUTH_X_FORWARDED_FOR}")
+  fi
+  if [[ -n "$token" ]]; then
+    curl_args+=(-H "Authorization: Bearer ${token}")
+    curl "${curl_args[@]}" --data-binary "@${file}"
+  else
+    curl "${curl_args[@]}" --data-binary "@${file}"
   fi
 }
 
 json_get() {
   local url="$1"
   local token="${2:-}"
+  local -a curl_args
+  curl_args=(-sS "${BASE_URL}${url}")
+  if [[ -n "$AUTH_X_FORWARDED_FOR" ]]; then
+    curl_args+=(-H "X-Forwarded-For: ${AUTH_X_FORWARDED_FOR}")
+  fi
   if [[ -n "$token" ]]; then
-    curl -sS "${BASE_URL}${url}" -H "Authorization: Bearer ${token}"
+    curl_args+=(-H "Authorization: Bearer ${token}")
+    curl "${curl_args[@]}"
   else
-    curl -sS "${BASE_URL}${url}"
+    curl "${curl_args[@]}"
   fi
 }
 
@@ -72,14 +103,30 @@ if [[ -z "$NODE_ID" || "$NODE_ID" == "null" || "$NODE_ID" == "0" ]]; then
   exit 1
 fi
 
-dispatch_body="$(jq -n \
-  --argjson node_id "$NODE_ID" \
-  --arg task_type "$TASK_TYPE" \
-  --arg payload "$PAYLOAD_JSON" \
-  --argjson wait_seconds "$WAIT_SECONDS" \
-  '{node_id:$node_id, task_type:$task_type, payload:$payload, wait_seconds:$wait_seconds}')"
+if [[ -n "$PAYLOAD_FILE" ]]; then
+  if [[ ! -f "$PAYLOAD_FILE" ]]; then
+    echo "PAYLOAD_FILE not found: $PAYLOAD_FILE"
+    exit 1
+  fi
+  dispatch_body="$(jq -n \
+    --argjson node_id "$NODE_ID" \
+    --arg task_type "$TASK_TYPE" \
+    --rawfile payload "$PAYLOAD_FILE" \
+    --argjson wait_seconds "$WAIT_SECONDS" \
+    '{node_id:$node_id, task_type:$task_type, payload:$payload, wait_seconds:$wait_seconds}')"
+else
+  dispatch_body="$(jq -n \
+    --argjson node_id "$NODE_ID" \
+    --arg task_type "$TASK_TYPE" \
+    --arg payload "$PAYLOAD_JSON" \
+    --argjson wait_seconds "$WAIT_SECONDS" \
+    '{node_id:$node_id, task_type:$task_type, payload:$payload, wait_seconds:$wait_seconds}')"
+fi
 
-dispatch_resp="$(json_post '/api/v1/admin/ws/dispatch' "$dispatch_body" "$admin_token")"
+dispatch_body_file="$(mktemp)"
+printf '%s' "$dispatch_body" > "$dispatch_body_file"
+dispatch_resp="$(json_post_file '/api/v1/admin/ws/dispatch' "$dispatch_body_file" "$admin_token")"
+rm -f "$dispatch_body_file"
 assert_json "$dispatch_resp"
 
 code="$(jq -r '.code' <<<"$dispatch_resp")"
@@ -101,6 +148,12 @@ fi
 
 if [[ -z "$state" || "$state" == "timeout" ]]; then
   echo "No ACK received within ${WAIT_SECONDS}s"
+  echo "$dispatch_resp" | jq .
+  exit 1
+fi
+
+if [[ "$state" != "success" ]]; then
+  echo "ACK state is not success"
   echo "$dispatch_resp" | jq .
   exit 1
 fi

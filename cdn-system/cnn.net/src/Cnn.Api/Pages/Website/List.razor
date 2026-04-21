@@ -788,7 +788,7 @@
                 <button class="btn-close" @onclick="CloseExport"></button>
             </div>
             <div class="modal-body">
-                <InputTextArea class="form-control" rows="10" value="@_exportContent" readonly />
+                <textarea class="form-control" rows="10" readonly>@_exportContent</textarea>
             </div>
             <div class="modal-footer d-flex justify-content-end gap-2">
                 <button class="btn btn-secondary" @onclick="CloseExport">关闭</button>
@@ -1886,7 +1886,7 @@
 
     private void ToggleSelectAll(ChangeEventArgs args)
     {
-        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        var isChecked = IsChecked(args.Value);
         if (isChecked)
         {
             foreach (var item in _items)
@@ -1902,7 +1902,7 @@
 
     private void ToggleRow(long id, ChangeEventArgs args)
     {
-        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        var isChecked = IsChecked(args.Value);
         if (isChecked)
         {
             _selectedIds.Add(id);
@@ -1911,6 +1911,16 @@
         {
             _selectedIds.Remove(id);
         }
+    }
+
+    private static bool IsChecked(object? value)
+    {
+        return value switch
+        {
+            bool checkedValue => checkedValue,
+            string text => text.Equals("true", StringComparison.OrdinalIgnoreCase) || text.Equals("on", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
     }
 
     private static string FormatUser(SiteListItem item)

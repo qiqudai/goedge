@@ -77,6 +77,38 @@ public sealed class ProxyConfigValidatorTests
         Assert.Contains("upstream_passive_health_check_rate_limit", result.Error ?? string.Empty);
     }
 
+    [Fact]
+    public void Validate_AllowsNegativeVersionFromGoHash()
+    {
+        var validator = new ProxyConfigValidator();
+        var config = BuildConfig(new EdgeDomainDto
+        {
+            Name = "example.com",
+            UpstreamKey = "upstream-1"
+        });
+        config.Version = -4092667256324154400;
+
+        var result = validator.Validate(config);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public void Validate_AllowsFollowOriginProtocol()
+    {
+        var validator = new ProxyConfigValidator();
+        var config = BuildConfig(new EdgeDomainDto
+        {
+            Name = "example.com",
+            UpstreamKey = "upstream-1",
+            OriginProtocol = "follow"
+        });
+
+        var result = validator.Validate(config);
+
+        Assert.True(result.Success);
+    }
+
     private static EdgeConfigDto BuildConfig(EdgeDomainDto domain)
     {
         return new EdgeConfigDto

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestWriteHTTPServer_HTTP3EnabledAddsQuicListen(t *testing.T) {
+func TestWriteHTTPServer_HTTP3EnabledSkipsQuicListenForStability(t *testing.T) {
 	prevNginxBin := NginxBinPath
 	t.Cleanup(func() {
 		NginxBinPath = prevNginxBin
@@ -29,14 +29,11 @@ func TestWriteHTTPServer_HTTP3EnabledAddsQuicListen(t *testing.T) {
 	if !strings.Contains(out, "listen 443 ssl;") {
 		t.Fatalf("expected tls listen directive")
 	}
-	if !strings.Contains(out, "listen 443 quic reuseport;") {
-		t.Fatalf("expected quic listen directive when https_http3 is enabled")
+	if strings.Contains(out, " quic reuseport;") {
+		t.Fatalf("unexpected quic listen directive while QUIC is globally disabled for stability")
 	}
-	if !strings.Contains(out, "listen [::]:443 quic reuseport;") {
-		t.Fatalf("expected ipv6 quic listen directive when https_http3 is enabled")
-	}
-	if !strings.Contains(out, "add_header Alt-Svc 'h3=\\\":443\\\"; ma=86400' always;") {
-		t.Fatalf("expected Alt-Svc header when https_http3 is enabled")
+	if strings.Contains(out, "add_header Alt-Svc") {
+		t.Fatalf("unexpected Alt-Svc header while QUIC is globally disabled for stability")
 	}
 }
 

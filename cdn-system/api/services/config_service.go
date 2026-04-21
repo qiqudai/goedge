@@ -237,6 +237,10 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			usedRuleIDs = append(usedRuleIDs, effectiveSite.CcDefaultRule)
 		}
 		for _, domain := range effectiveSite.Domains {
+			normalizedDomain := normalizeDomainHostForEdge(domain)
+			if normalizedDomain == "" {
+				continue
+			}
 			limitRate := calcDomainLimitRate(
 				effectiveSite.UserID,
 				effectiveSite.NodeGroupID,
@@ -252,7 +256,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				nodeGroupCounts,
 			)
 			domainConf := models.EdgeDomain{
-				Name:                        domain,
+				Name:                        normalizedDomain,
 				SiteType:                    siteType,
 				UpstreamKey:                 upstreamKey,
 				L2UpstreamKey:               l2UpstreamKey,
@@ -322,7 +326,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				UpstreamKeepaliveTimeout:    advCfg.keepaliveTimeout,
 			}
 			if hasHTTPS {
-				cert := findCertForSiteDomain(selectedCertID, domain, certs)
+				cert := findCertForSiteDomain(selectedCertID, normalizedDomain, certs)
 				if cert != nil {
 					domainConf.SSLCertData = cert.Cert
 					// Decrypt key
@@ -1590,7 +1594,7 @@ func findCertForSiteDomain(certID int64, domain string, certs []models.Cert) *mo
 }
 
 func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
-	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = normalizeDomainHostForEdge(domain)
 	if domain == "" {
 		return nil
 	}
@@ -1598,7 +1602,7 @@ func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
 		// Handle multi-domain certs (comma separated)
 		domains := strings.Split(cert.Domain, ",")
 		for _, d := range domains {
-			candidate := strings.TrimSpace(strings.ToLower(d))
+			candidate := normalizeDomainHostForEdge(d)
 			if candidate == "" {
 				continue
 			}
@@ -1617,6 +1621,26 @@ func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
 		}
 	}
 	return nil
+}
+
+func normalizeDomainHostForEdge(input string) string {
+	host := strings.TrimSpace(strings.ToLower(input))
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "#"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, "?"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	host = strings.TrimSuffix(host, ".")
+	return strings.TrimSpace(host)
 }
 
 func parseIPList(raw string) []string {

@@ -125,7 +125,7 @@ public sealed class CcRuleGroupsController : ControllerBase
             return authResult;
         }
 
-        var result = await _deletionPreviewService.PreviewAsync(ResourceTypes.SecurityRule, id, cancellationToken);
+        var result = await _deletionPreviewService.PreviewAsync(ResourceTypes.CcRuleGroup, id, cancellationToken);
         return Ok(ApiResponseFactory.Ok(HttpContext, _localizer, result));
     }
 
@@ -195,7 +195,7 @@ public sealed class CcRuleGroupsController : ControllerBase
         }
 
         var result = await _resourceDeleteRequestService.RequestDeleteAsync(
-            DeleteRequestCommandFactory.Create(ResourceTypes.SecurityRule, id, userId, userId),
+            DeleteRequestCommandFactory.Create(ResourceTypes.CcRuleGroup, id, userId, userId),
             cancellationToken);
         if (result.Success)
         {

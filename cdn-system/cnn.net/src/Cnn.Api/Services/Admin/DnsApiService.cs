@@ -23,7 +23,7 @@ public sealed class DnsApiService : IDnsApiService
         new("cloudflare", "Cloudflare", new[] { "email", "api_key" }),
         new("aliyun", "Aliyun", new[] { "access_key_id", "access_key_secret" }),
         new("dnspod", "DNSPod.cn", new[] { "id", "token" }),
-        new("dnspod_intl", "DNSPod.com", new[] { "id", "token" }),
+        new("dnspod_intl", "DNSPod.com", new[] { "secret_id", "secret_key" }),
         new("godaddy", "GoDaddy", new[] { "api_key", "api_secret" }),
         new("namecom", "Name.com", new[] { "username", "api_token" }),
         new("namecheap", "Namecheap", new[] { "user", "api_key", "ip" }),
@@ -135,7 +135,7 @@ public sealed class DnsApiService : IDnsApiService
             return ServiceResult<DnsApiItemDto>.Fail(ErrorCodes.InvalidParam, "user_id_required");
         }
 
-        var auth = NormalizeAuth(request.Auth, request.Data);
+        var auth = NormalizeAuth(type, request.Auth, request.Data);
 
         var item = new Dnsapi
         {
@@ -194,7 +194,7 @@ public sealed class DnsApiService : IDnsApiService
             Name = request.Name?.Trim(),
             Des = request.Remark,
             Type = request.Type?.Trim(),
-            Auth = NormalizeAuth(request.Auth, request.Data)
+            Auth = NormalizeAuth(request.Type, request.Auth, request.Data)
         };
 
         var rows = await _db.Updateable(updates)
@@ -249,20 +249,117 @@ public sealed class DnsApiService : IDnsApiService
         return Task.FromResult(ServiceResult<DnsApiTypesResult>.Ok(new DnsApiTypesResult(Types)));
     }
 
-    private static string? NormalizeAuth(string? auth, JsonElement? data)
+    private static string? NormalizeAuth(string? type, string? auth, JsonElement? data)
     {
+        var normalizedType = type?.Trim();
         if (!string.IsNullOrWhiteSpace(auth))
         {
-            return auth;
+            var normalizedAuth = NormalizeDnsPodIntlAuth(normalizedType, auth);
+            return string.IsNullOrWhiteSpace(normalizedAuth) ? auth : normalizedAuth;
         }
 
         if (data.HasValue &&
             data.Value.ValueKind != JsonValueKind.Undefined &&
             data.Value.ValueKind != JsonValueKind.Null)
         {
-            return data.Value.GetRawText();
+            var raw = data.Value.GetRawText();
+            var normalizedData = NormalizeDnsPodIntlAuth(normalizedType, raw);
+            return string.IsNullOrWhiteSpace(normalizedData) ? raw : normalizedData;
         }
 
         return auth;
+    }
+
+    private static string? NormalizeDnsPodIntlAuth(string? type, string? auth)
+    {
+        if (!string.Equals(type, "dnspod_intl", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(auth))
+        {
+            return auth;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(auth);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return auth;
+            }
+
+            var root = doc.RootElement;
+            var secretId = GetCredential(root, "secret_id");
+            var secretKey = GetCredential(root, "secret_key");
+            if (string.IsNullOrWhiteSpace(secretId))
+            {
+                secretId = GetCredential(root, "id");
+            }
+            if (string.IsNullOrWhiteSpace(secretKey))
+            {
+                secretKey = GetCredential(root, "token");
+            }
+
+            if (string.IsNullOrWhiteSpace(secretId) || string.IsNullOrWhiteSpace(secretKey))
+            {
+                return auth;
+            }
+
+            var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["secret_id"] = secretId.Trim(),
+                ["secret_key"] = secretKey.Trim()
+            };
+
+            if (root.TryGetProperty("ttl", out var ttlElement))
+            {
+                payload["ttl"] = ttlElement.ValueKind switch
+                {
+                    JsonValueKind.Number when ttlElement.TryGetInt32(out var ttl) => ttl,
+                    JsonValueKind.String => ttlElement.GetString(),
+                    _ => ttlElement.ToString()
+                };
+            }
+
+            if (root.TryGetProperty("ip_weight", out var ipWeight))
+            {
+                payload["ip_weight"] = ipWeight.ValueKind switch
+                {
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.String when bool.TryParse(ipWeight.GetString(), out var parsed) => parsed,
+                    _ => ipWeight.ToString()
+                };
+            }
+
+            if (root.TryGetProperty("apiType", out var apiType) && apiType.ValueKind == JsonValueKind.String)
+            {
+                payload["apiType"] = apiType.GetString();
+            }
+
+            if (root.TryGetProperty("region", out var region) && region.ValueKind == JsonValueKind.String)
+            {
+                payload["region"] = region.GetString();
+            }
+
+            return JsonSerializer.Serialize(payload);
+        }
+        catch
+        {
+            return auth;
+        }
+    }
+
+    private static string? GetCredential(JsonElement root, string key)
+    {
+        if (!root.TryGetProperty(key, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
+        }
+
+        return value.ToString();
     }
 }

@@ -264,13 +264,15 @@ public sealed class AgentTaskAckService : IAgentTaskAckService
 
     private static string BuildRetWithDiagnostics(string baseRet, TaskAckMessage message)
     {
+        var hasStreamAudit = TryBuildStreamAuditDiagnostics(message, out var streamAudit);
         var hasDiagnostics =
             !string.IsNullOrWhiteSpace(message.RetCode) ||
             !string.IsNullOrWhiteSpace(message.ErrorType) ||
             message.IsRetryable.HasValue ||
             message.Attempt.HasValue ||
             message.MaxAttempts.HasValue ||
-            message.NextBackoffMs.HasValue;
+            message.NextBackoffMs.HasValue ||
+            hasStreamAudit;
 
         if (!hasDiagnostics)
         {
@@ -286,6 +288,18 @@ public sealed class AgentTaskAckService : IAgentTaskAckService
             ["max_attempts"] = message.MaxAttempts,
             ["next_backoff_ms"] = message.NextBackoffMs
         };
+        if (hasStreamAudit)
+        {
+            details["streams_received"] = streamAudit.Received;
+            details["streams_applied"] = streamAudit.Applied;
+            details["streams_skipped"] = streamAudit.Skipped;
+            details["streams_reason"] = streamAudit.Reason;
+            details["streams_audit_valid"] = streamAudit.Valid;
+            if (!string.IsNullOrWhiteSpace(streamAudit.ValidationError))
+            {
+                details["streams_audit_error"] = streamAudit.ValidationError;
+            }
+        }
 
         var compact = JsonSerializer.Serialize(details, JsonOptions);
         if (string.IsNullOrWhiteSpace(baseRet))
@@ -295,6 +309,265 @@ public sealed class AgentTaskAckService : IAgentTaskAckService
 
         return $"{baseRet} | {compact}";
     }
+
+    private static bool TryBuildStreamAuditDiagnostics(TaskAckMessage message, out StreamAuditSnapshot snapshot)
+    {
+        snapshot = default;
+        if (!string.Equals(message.TaskType?.Trim(), AgentTaskTypes.ConfigSync, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var issues = new List<string>();
+        var received = ReadAuditCount(message.Applied, "received", issues);
+        var applied = ReadAuditCount(message.Applied, "applied", issues);
+        var skipped = ReadAuditCount(message.Applied, "skipped", issues);
+        var reason = ReadAuditReason(message);
+        var valid = issues.Count == 0;
+
+        if (valid)
+        {
+            if (applied > received)
+            {
+                issues.Add("applied_gt_received");
+            }
+
+            if (skipped > received)
+            {
+                issues.Add("skipped_gt_received");
+            }
+
+            if (applied + skipped > received)
+            {
+                issues.Add("applied_plus_skipped_gt_received");
+            }
+        }
+
+        if (issues.Count > 0)
+        {
+            valid = false;
+            if (string.IsNullOrWhiteSpace(message.Error))
+            {
+                reason = "invalid_stream_audit";
+            }
+        }
+
+        snapshot = new StreamAuditSnapshot(
+            Received: received,
+            Applied: applied,
+            Skipped: skipped,
+            Reason: reason,
+            Valid: valid,
+            ValidationError: issues.Count == 0 ? null : string.Join(",", issues));
+        return true;
+    }
+
+    private static int ReadAuditCount(JsonElement? appliedRoot, string field, List<string> issues)
+    {
+        if (!TryReadCountCandidate(appliedRoot, field, out var value, out var present, out var parseError))
+        {
+            if (!present)
+            {
+                issues.Add($"missing_{field}");
+                return 0;
+            }
+
+            issues.Add(parseError ?? $"invalid_{field}");
+            return 0;
+        }
+
+        return value;
+    }
+
+    private static bool TryReadCountCandidate(
+        JsonElement? appliedRoot,
+        string field,
+        out int value,
+        out bool present,
+        out string? parseError)
+    {
+        value = 0;
+        present = false;
+        parseError = null;
+        if (!appliedRoot.HasValue || appliedRoot.Value.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (TryGetField(appliedRoot.Value, field, out var rawField))
+        {
+            present = true;
+            return TryParseNonNegativeInt(rawField, out value, out parseError);
+        }
+
+        if (TryGetField(appliedRoot.Value, "stream", out var stream) && stream.ValueKind == JsonValueKind.Object && TryGetField(stream, field, out rawField))
+        {
+            present = true;
+            return TryParseNonNegativeInt(rawField, out value, out parseError);
+        }
+
+        return false;
+    }
+
+    private static bool TryParseNonNegativeInt(JsonElement element, out int value, out string? parseError)
+    {
+        value = 0;
+        parseError = null;
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Number:
+            {
+                if (!element.TryGetInt32(out var parsed))
+                {
+                    parseError = "not_int32";
+                    return false;
+                }
+
+                if (parsed < 0)
+                {
+                    parseError = "negative";
+                    return false;
+                }
+
+                value = parsed;
+                return true;
+            }
+            case JsonValueKind.String:
+            {
+                if (!int.TryParse(element.GetString(), out var parsed))
+                {
+                    parseError = "not_numeric_string";
+                    return false;
+                }
+
+                if (parsed < 0)
+                {
+                    parseError = "negative";
+                    return false;
+                }
+
+                value = parsed;
+                return true;
+            }
+            default:
+                parseError = $"invalid_type_{element.ValueKind.ToString().ToLowerInvariant()}";
+                return false;
+        }
+    }
+
+    private static string ReadAuditReason(TaskAckMessage message)
+    {
+        if (TryReadReasonFromApplied(message.Applied, out var reason))
+        {
+            return reason;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.Error))
+        {
+            return message.Error.Trim();
+        }
+
+        if (string.Equals(message.Status?.Trim(), "success", StringComparison.OrdinalIgnoreCase))
+        {
+            return "none";
+        }
+
+        return "unknown";
+    }
+
+    private static bool TryReadReasonFromApplied(JsonElement? appliedRoot, out string reason)
+    {
+        reason = string.Empty;
+        if (!appliedRoot.HasValue || appliedRoot.Value.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (TryGetField(appliedRoot.Value, "reason", out var reasonElement) && TryReadString(reasonElement, out reason))
+        {
+            return true;
+        }
+
+        if (TryGetField(appliedRoot.Value, "stream", out var streamElement) && streamElement.ValueKind == JsonValueKind.Object)
+        {
+            if (TryGetField(streamElement, "reason", out var streamReason) && TryReadString(streamReason, out reason))
+            {
+                return true;
+            }
+
+            if (TryGetField(streamElement, "skip_reasons", out var skipReasons) && TryReadFirstArrayString(skipReasons, out reason))
+            {
+                return true;
+            }
+
+            if (TryGetField(streamElement, "errors", out var errors) && TryReadFirstArrayString(errors, out reason))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadFirstArrayString(JsonElement element, out string value)
+    {
+        value = string.Empty;
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var item in element.EnumerateArray())
+        {
+            if (TryReadString(item, out value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadString(JsonElement element, out string value)
+    {
+        value = string.Empty;
+        if (element.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var text = element.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        value = text.Trim();
+        return true;
+    }
+
+    private static bool TryGetField(JsonElement obj, string key, out JsonElement value)
+    {
+        foreach (var property in obj.EnumerateObject())
+        {
+            if (string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private readonly record struct StreamAuditSnapshot(
+        int Received,
+        int Applied,
+        int Skipped,
+        string Reason,
+        bool Valid,
+        string? ValidationError);
 }
 
 public sealed class TaskAckMessage

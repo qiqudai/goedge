@@ -107,7 +107,7 @@ public sealed partial class SiteService
             ? SplitFields(request.WhiteIp!)
             : new List<string>();
 
-        await _db.Ado.UseTranAsync(async () =>
+        var tran = await _db.Ado.UseTranAsync(async () =>
         {
             var sites = await _db.Queryable<Site>().Where(s => ids.Contains(s.Id)).ToListAsync();
             foreach (var site in sites)
@@ -213,7 +213,11 @@ public sealed partial class SiteService
 
                 site.UpdateAt = DateTime.Now;
 
-                await _db.Updateable(site).ExecuteCommandAsync();
+                var rows = await _db.Updateable(site).ExecuteCommandAsync();
+                if (rows <= 0)
+                {
+                    throw new InvalidOperationException("db_save_error");
+                }
 
                 if (request.Settings != null)
                 {
@@ -250,6 +254,11 @@ public sealed partial class SiteService
                 }
             }
         });
+
+        if (!tran.IsSuccess)
+        {
+            return ServiceResult<bool>.Fail(ErrorCodes.DbError, "db_save_error");
+        }
 
         await _configVersionService.BumpAsync("site", ids, cancellationToken);
 

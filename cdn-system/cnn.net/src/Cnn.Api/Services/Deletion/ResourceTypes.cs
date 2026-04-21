@@ -6,6 +6,9 @@ public static class ResourceTypes
     public const string LineGroup = "line_group";
     public const string Certificate = "certificate";
     public const string SecurityRule = "security_rule";
+    public const string CcRuleGroup = "cc_rule_group";
+    public const string CcMatcher = "cc_matcher";
+    public const string CcFilter = "cc_filter";
     public const string AclRule = "acl_rule";
     public const string ProductPlan = "product_plan";
     public const string Subscription = "subscription";

@@ -876,9 +876,17 @@
         }
 
         ApiResponse<object>? result;
+        var recreatedFromMissing = false;
         if (_editing.Id > 0)
         {
             result = await Api.PutAsync<object>($"certs/{_editing.Id}", _editing.ToUpdateRequest(), Scope);
+            if (result?.Code == ErrorCodes.NotFound)
+            {
+                // If the original cert id was deleted, fall back to creating a new cert
+                // so users can save uploaded cert content without manual re-add flow.
+                result = await Api.PostAsync<object>("certs", _editing.ToCreateRequest(), Scope);
+                recreatedFromMissing = result?.Code == ErrorCodes.Success;
+            }
         }
         else
         {
@@ -892,7 +900,14 @@
         }
 
         _editorVisible = false;
-        await Js.InvokeVoidAsync("alert", _editing.Id > 0 ? "证书已更新" : "证书已创建");
+        if (recreatedFromMissing)
+        {
+            await Js.InvokeVoidAsync("alert", "原证书不存在，已按当前内容重建并保存");
+        }
+        else
+        {
+            await Js.InvokeVoidAsync("alert", _editing.Id > 0 ? "证书已更新" : "证书已创建");
+        }
         await RefreshAsync();
     }
 

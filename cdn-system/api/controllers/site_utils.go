@@ -416,6 +416,10 @@ func parseBatchLine(line string) (*batchSiteItem, error) {
 	if len(item.Domains) == 0 {
 		return nil, errors.New("domain is required")
 	}
+	item.Domains = normalizeSiteDomains(item.Domains)
+	if len(item.Domains) == 0 {
+		return nil, errors.New("domain is required")
+	}
 	return item, nil
 }
 

@@ -1,6 +1,7 @@
 using Cnn.Api.Services.Admin;
 using Cnn.Common.Contracts.Admin;
 using Cnn.Domain.Entities;
+using System.Text.Json;
 using SystemTask = System.Threading.Tasks.Task;
 using Xunit;
 
@@ -113,5 +114,29 @@ public sealed class DnsApiServiceOwnershipTests
         Assert.Equal(3, result.Data!.Total);
         Assert.Single(result.Data.List);
         Assert.Contains(marker, result.Data.List[0].Name ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async SystemTask CreateAsync_DnsPodIntl_NormalizesLegacyIdTokenCredentials()
+    {
+        using var scope = new RealMySqlTestScope();
+        var sut = new DnsApiService(scope.Db);
+
+        var result = await sut.CreateAsync(new DnsApiCreateRequest
+        {
+            UserId = ExistingUserA,
+            Name = "dnspod-intl-test",
+            Type = "dnspod_intl",
+            Data = JsonDocument.Parse("{\"id\":\"legacy-id\",\"token\":\"legacy-token\",\"ttl\":600}").RootElement
+        }, null, false, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data!.Auth));
+
+        using var authDoc = JsonDocument.Parse(result.Data.Auth!);
+        Assert.Equal("legacy-id", authDoc.RootElement.GetProperty("secret_id").GetString());
+        Assert.Equal("legacy-token", authDoc.RootElement.GetProperty("secret_key").GetString());
+        Assert.Equal(600, authDoc.RootElement.GetProperty("ttl").GetInt32());
     }
 }

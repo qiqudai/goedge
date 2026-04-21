@@ -374,10 +374,10 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
             ["Domain"] = domain,
             ["SubDomain"] = record.Name,
             ["RecordType"] = record.Type,
-            ["RecordLine"] = line,
             ["Value"] = record.Value,
             ["TTL"] = record.TTL
         };
+        SetRecordLinePayload(payload, line);
         if (record.Weight > 0)
         {
             payload["Weight"] = record.Weight;
@@ -415,10 +415,10 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
             ["RecordId"] = recordId,
             ["SubDomain"] = record.Name,
             ["RecordType"] = record.Type,
-            ["RecordLine"] = line,
             ["Value"] = newValue,
             ["TTL"] = record.TTL
         };
+        SetRecordLinePayload(payload, line);
         if (record.Weight > 0)
         {
             payload["Weight"] = record.Weight;
@@ -484,13 +484,12 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
 
         foreach (var item in list.EnumerateArray())
         {
-            var line = item.TryGetProperty("Line", out var lineProp) ? lineProp.GetString() : null;
-            if (!string.IsNullOrWhiteSpace(record.Line) && !string.Equals(line, record.Line, StringComparison.OrdinalIgnoreCase))
+            if (!LineMatches(item, record.Line))
             {
                 continue;
             }
 
-            var recordId = item.TryGetProperty("RecordId", out var idProp) ? idProp.GetUInt64() : 0;
+            var recordId = ReadUInt64Property(item, "RecordId");
             if (recordId == 0)
             {
                 continue;
@@ -533,12 +532,11 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
         foreach (var item in list.EnumerateArray())
         {
             var type = item.TryGetProperty("Type", out var typeProp) ? typeProp.GetString() : null;
-            var line = item.TryGetProperty("Line", out var lineProp) ? lineProp.GetString() : null;
             if (!string.Equals(type, record.Type, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
-            if (!string.IsNullOrWhiteSpace(record.Line) && !string.Equals(line, record.Line, StringComparison.OrdinalIgnoreCase))
+            if (!LineMatches(item, record.Line))
             {
                 continue;
             }
@@ -580,7 +578,6 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
         {
             var type = item.TryGetProperty("Type", out var typeProp) ? typeProp.GetString() : null;
             var value = item.TryGetProperty("Value", out var valueProp) ? valueProp.GetString() : null;
-            var line = item.TryGetProperty("Line", out var lineProp) ? lineProp.GetString() : null;
             if (!string.Equals(type, record.Type, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -589,7 +586,7 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
             {
                 continue;
             }
-            if (!string.IsNullOrWhiteSpace(record.Line) && !string.Equals(line, record.Line, StringComparison.OrdinalIgnoreCase))
+            if (!LineMatches(item, record.Line))
             {
                 continue;
             }
@@ -632,8 +629,8 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
 
         foreach (var item in list.EnumerateArray())
         {
-            var ttl = item.TryGetProperty("TTL", out var ttlProp) ? (int)ttlProp.GetUInt64() : 600;
-            var weight = item.TryGetProperty("Weight", out var weightProp) ? (int)weightProp.GetUInt64() : 0;
+            var ttl = ReadIntProperty(item, "TTL", 600);
+            var weight = ReadIntProperty(item, "Weight", 0);
             results.Add(new DnsRecord
             {
                 Type = item.TryGetProperty("Type", out var typeProp) ? (typeProp.GetString() ?? string.Empty) : string.Empty,
@@ -763,7 +760,76 @@ internal sealed class DnsPodProvider : IDnsRecordProvider, IDnsRecordValueReplac
     private static bool IsIgnorableTc3(string code, string message)
     {
         code = (code ?? string.Empty).Trim();
-        return code is "InvalidParameter.DomainRecordExist" or "ResourceNotFound.NoDataOfRecord" or "InvalidParameter.RecordLineInvalid";
+        return code is "InvalidParameter.DomainRecordExist" or "ResourceNotFound.NoDataOfRecord";
+    }
+
+    private static int ReadIntProperty(JsonElement root, string propertyName, int fallback)
+    {
+        if (!root.TryGetProperty(propertyName, out var value))
+        {
+            return fallback;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt32(out var number) => number,
+            JsonValueKind.Number when value.TryGetUInt64(out var unsigned) => (int)Math.Min(unsigned, int.MaxValue),
+            JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => fallback
+        };
+    }
+
+    private static void SetRecordLinePayload(Dictionary<string, object?> payload, string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            payload["RecordLine"] = "Default";
+            return;
+        }
+
+        var trimmed = line.Trim();
+        if (trimmed.Contains('='))
+        {
+            payload["RecordLine"] = "Default";
+            payload["RecordLineId"] = trimmed;
+            return;
+        }
+
+        payload["RecordLine"] = trimmed;
+    }
+
+    private static bool LineMatches(JsonElement item, string? expectedLine)
+    {
+        if (string.IsNullOrWhiteSpace(expectedLine))
+        {
+            return true;
+        }
+
+        var expected = expectedLine.Trim();
+        var line = item.TryGetProperty("Line", out var lineProp) ? lineProp.GetString() : null;
+        if (!string.IsNullOrWhiteSpace(line) && string.Equals(line, expected, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var lineId = item.TryGetProperty("LineId", out var lineIdProp) ? lineIdProp.GetString() : null;
+        return !string.IsNullOrWhiteSpace(lineId) && string.Equals(lineId, expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ulong ReadUInt64Property(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var value))
+        {
+            return 0;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetUInt64(out var unsigned) => unsigned,
+            JsonValueKind.Number when value.TryGetInt64(out var signed) && signed > 0 => (ulong)signed,
+            JsonValueKind.String when ulong.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => 0
+        };
     }
 
     private static string Sha256Hex(string data)

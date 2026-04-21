@@ -84,6 +84,21 @@
   - `ForwardGroupService.DeleteAsync` now deletes `merge_stream_group` relations in transaction before deleting `stream_group`
   - resolved previous MySQL FK crash (`merge_stream_group` -> `stream_group`) seen during extended regression
 
+## .NET Agent/API compatibility baseline (2026-04-20)
+- Agent compatibility relaxed to align with Go control-plane payload:
+  - `ProxyConfigValidator` no longer rejects negative `version` values.
+  - `origin_protocol=follow` is accepted and no longer treated as invalid.
+- Agent config apply observability expanded:
+  - `config_sync` ACK `applied` now includes stream summary (`received/planned/applied/skipped/skip_reasons`).
+  - stream runtime report now records last apply snapshot and skip reasons.
+- API ACK audit field validation added:
+  - for `task_type=config_sync`, API validates and records `streams_received/streams_applied/streams_skipped/streams_reason`.
+  - invalid/missing stream audit fields are marked with `streams_audit_valid=false` and diagnostic reason.
+- Dispatch/verification script baseline solidified:
+  - `scripts/verify_agent_ws_ack.sh` enforces ACK `state=success`.
+  - large payload path supports `PAYLOAD_FILE` and sends by file body to avoid argument length issues.
+  - supports `AUTH_X_FORWARDED_FOR` pass-through.
+
 ## Confirmed blockers / gaps
 1. Agent real-time effectiveness is not fully provable in current local environment.
 - There are node records in MySQL, but no validated live agent heartbeat/session evidence was established in this run.

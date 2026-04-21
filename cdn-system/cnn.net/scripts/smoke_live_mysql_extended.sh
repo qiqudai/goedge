@@ -20,6 +20,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 EXTERNAL_DNS_SKIPPED=0
 EXTERNAL_DNS_REASON=""
+EXIT_EXTERNAL_DEPENDENCY=20
 
 json_get() {
   local url="$1"
@@ -99,13 +100,26 @@ assert_code_ne() {
 try_skip_external_dns_failure() {
   local phase="$1"
   local json="$2"
+  if ! jq -e . >/dev/null 2>&1 <<<"$json"; then
+    if [[ "$STRICT_EXTERNAL_DNS" == "1" ]]; then
+      echo "external dns dependency failure at ${phase} (STRICT_EXTERNAL_DNS=1, non-json response)"
+      echo "$json"
+      exit "$EXIT_EXTERNAL_DEPENDENCY"
+    fi
+
+    EXTERNAL_DNS_SKIPPED=1
+    EXTERNAL_DNS_REASON="${phase}:non_json_response"
+    echo "external dns dependency unavailable at ${phase}; continue with controlled skip (non-json response)"
+    return 0
+  fi
+
   local code
   code="$(jq -r '.code // ""' <<<"$json")"
 
   if [[ "$STRICT_EXTERNAL_DNS" == "1" ]]; then
     echo "external dns dependency failure at ${phase} (STRICT_EXTERNAL_DNS=1)"
     echo "$json" | jq .
-    exit 1
+    exit "$EXIT_EXTERNAL_DEPENDENCY"
   fi
 
   case "$code" in
@@ -649,7 +663,17 @@ else
   [[ -n "$cert_apply_site_id" && "$cert_apply_site_id" != "null" ]] || { echo "missing cert apply site id"; exit 1; }
 
   apply_cert_result="$(json_post '/api/v1/admin/sites/apply_cert' "{\"ids\":[${cert_apply_site_id}]}" "$admin_token")"
-  apply_cert_code="$(jq -r '.code // ""' <<<"$apply_cert_result")"
+  apply_cert_code="$(jq -r '.code // ""' <<<"$apply_cert_result" 2>/dev/null || true)"
+  if [[ -z "$apply_cert_code" ]]; then
+    if try_skip_external_dns_failure "site_apply_cert" "$apply_cert_result"; then
+      apply_cert_code="skipped"
+    else
+      echo "unexpected non-json apply_cert response:"
+      echo "$apply_cert_result"
+      exit 1
+    fi
+  fi
+
   if [[ "$apply_cert_code" != "200" ]]; then
     if try_skip_external_dns_failure "site_apply_cert" "$apply_cert_result"; then
       :

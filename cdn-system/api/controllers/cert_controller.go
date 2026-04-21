@@ -28,6 +28,23 @@ import (
 
 type CertController struct{}
 
+func countSitesReferencingCertIDs(certIDs []int64) (int64, error) {
+	if len(certIDs) == 0 {
+		return 0, nil
+	}
+
+	var siteCount int64
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
+		err := db.DB.Table("site").Where("cert_id IN ?", certIDs).Count(&siteCount).Error
+		return siteCount, err
+	}
+
+	err := db.DB.Table("site").
+		Where("CAST(JSON_UNQUOTE(JSON_EXTRACT(settings, '$.https.certificate_id')) AS SIGNED) IN ?", certIDs).
+		Count(&siteCount).Error
+	return siteCount, err
+}
+
 // List returns the list of certificates for the current user
 func (ctrl *CertController) List(c *gin.Context) {
 	userID, _ := c.Get("userID")
@@ -137,9 +154,46 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		uid := parseUserID(mustGet(c, "userID"))
 		query = query.Where("uid = ?", uid)
 	}
-	var existing models.Cert
-	if err := query.Select("id", "issue_task_id", "task_id", "state", "type").First(&existing).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found or permission denied")})
+	var existing struct {
+		ID          int
+		IssueTaskID int64  `gorm:"column:issue_task_id"`
+		TaskID      int64  `gorm:"column:task_id"`
+		State       string `gorm:"column:state"`
+		Type        string `gorm:"column:type"`
+	}
+	if err := query.
+		Select("id", "COALESCE(issue_task_id, 0) AS issue_task_id", "COALESCE(task_id, 0) AS task_id", "state", "type").
+		First(&existing).Error; err != nil {
+		// If editing an uploaded cert whose original id no longer exists,
+		// recreate it directly so users can save cert/key without manual re-add.
+		if errors.Is(err, gorm.ErrRecordNotFound) && certModel.Type == "upload" && certProvided {
+			certModel.ID = 0
+			certModel.CreateAt = time.Now()
+			certModel.UpdateAt = certModel.CreateAt
+			certModel.AutoRenew = false
+			certModel.State = "ready"
+			certModel.Ret = ""
+			certModel.TaskID = 0
+			certModel.IssueTaskID = 0
+
+			if createErr := db.DB.Omit("task_id", "issue_task_id").Create(certModel).Error; createErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to save certificate")})
+				return
+			}
+
+			services.BumpConfigVersion("cert", []int64{int64(certModel.ID)})
+			c.JSON(http.StatusOK, gin.H{
+				"message":   T("Certificate uploaded successfully"),
+				"recreated": true,
+				"data":      certModel,
+			})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found or permission denied")})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to query certificate")})
 		return
 	}
 	targetState := strings.TrimSpace(existing.State)
@@ -157,12 +211,8 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update certificate")})
 		return
 	}
-	if result.RowsAffected == 0 {
-		// Possibly not found or permission denied (uid mismatch)
-		// We can't distinguish easily without prior query, but generic error is fine or 404
-		c.JSON(http.StatusNotFound, gin.H{"error": T("Certificate not found or permission denied")})
-		return
-	}
+	// rows_affected can be 0 when submitted values are identical to existing values.
+	// Since we already loaded the record successfully, treat it as a successful no-op.
 	if certModel.Type == "upload" && certProvided {
 		stopIssueTasksByID(existing.IssueTaskID, existing.TaskID)
 	}
@@ -233,9 +283,11 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 		}
 	case "disable", "force_disable":
 		// 1. Check if used by any site
-		var siteCount int64
-		// Site table has cert_id column in database
-		db.DB.Table("site").Where("cert_id IN ?", req.IDs).Count(&siteCount)
+		siteCount, err := countSitesReferencingCertIDs(req.IDs)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": i18n.T("cert.action_failed")})
+			return
+		}
 		if siteCount > 0 {
 			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": i18n.T("cert.site_ref_disable_first")})
 			return

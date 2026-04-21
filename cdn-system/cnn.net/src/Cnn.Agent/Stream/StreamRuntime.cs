@@ -227,6 +227,7 @@ public sealed class StreamRuntime : IStreamRuntime
             ActiveMode: _activeMode,
             NatActive: _natActive,
             LastError: _lastError,
+            LastPlanHash: _lastPlanHash,
             LastConfigVersion: _lastConfigVersion,
             LastReceived: _lastReceived,
             LastPlanned: _lastPlanned,

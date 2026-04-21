@@ -259,6 +259,7 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 	if len(domains) == 0 && strings.TrimSpace(req.DomainsInput) != "" {
 		domains = splitFields(req.DomainsInput)
 	}
+	domains = normalizeSiteDomains(domains)
 	if len(domains) == 0 {
 		return nil, nil, errors.New("domain is required")
 	}
@@ -413,9 +414,27 @@ func createSiteWithGroup(site *models.Site, groupIDs []int64) error {
 }
 
 func normalizeSiteDomain(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	value = strings.TrimSuffix(value, ".")
-	return value
+	return normalizeDomainHost(value)
+}
+
+func normalizeSiteDomains(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		host := normalizeSiteDomain(value)
+		if host == "" {
+			continue
+		}
+		if _, exists := seen[host]; exists {
+			continue
+		}
+		seen[host] = struct{}{}
+		out = append(out, host)
+	}
+	return out
 }
 
 func decodeSiteDomainRaw(raw string) []string {

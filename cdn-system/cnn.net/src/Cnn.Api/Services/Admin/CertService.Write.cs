@@ -42,12 +42,15 @@ public sealed partial class CertService
         {
             Uid = (int)uid,
             Name = request.Name?.Trim(),
-            Des = request.Description,
+            Des = request.Description ?? string.Empty,
             Type = type,
             Domain = request.Domain?.Trim(),
             Dnsapi = request.DnsApi > 0 ? request.DnsApi : null,
             AutoRenew = request.AutoRenew,
             Enable = true,
+            TaskId = null,
+            IssueTaskId = null,
+            Version = 1,
             CreateAt = now,
             UpdateAt = now
         };
@@ -93,6 +96,8 @@ public sealed partial class CertService
             certEntity.Domain = string.Join(',', domains);
             certEntity.CertPem = string.Empty;
             certEntity.Key = string.Empty;
+            certEntity.StartTime = now;
+            certEntity.ExpireTime = now;
             certEntity.State = "waiting";
             certEntity.Ret = string.Empty;
 
@@ -190,7 +195,7 @@ public sealed partial class CertService
         var update = new Cert
         {
             Name = request.Name?.Trim(),
-            Des = request.Description,
+            Des = request.Description ?? string.Empty,
             Type = type,
             Domain = request.Domain?.Trim(),
             Dnsapi = request.DnsApi > 0 ? request.DnsApi : null,
@@ -232,6 +237,12 @@ public sealed partial class CertService
                 return ServiceResult<bool>.Fail(ErrorCodes.MissingParam, string.IsNullOrWhiteSpace(domainError) ? "cert_domain_required" : domainError);
             }
             update.Domain = string.Join(',', domains);
+            update.CertPem = existing.CertPem ?? string.Empty;
+            update.Key = existing.Key ?? string.Empty;
+            update.StartTime = existing.StartTime ?? now;
+            update.ExpireTime = existing.ExpireTime ?? now;
+            update.State = existing.State ?? "waiting";
+            update.Ret = existing.Ret ?? string.Empty;
         }
 
         var rows = await _db.Updateable(update)
@@ -356,11 +367,21 @@ public sealed partial class CertService
                 {
                     Uid = (int)uid,
                     Name = DefaultCertName(domain),
+                    Des = string.Empty,
                     Type = type,
                     Domain = domain,
                     Dnsapi = request.DnsApi > 0 ? request.DnsApi : null,
+                    CertPem = string.Empty,
+                    Key = string.Empty,
+                    StartTime = now,
+                    ExpireTime = now,
                     AutoRenew = request.AutoRenew,
+                    State = "waiting",
+                    Ret = string.Empty,
                     Enable = true,
+                    TaskId = null,
+                    IssueTaskId = null,
+                    Version = 1,
                     CreateAt = now,
                     UpdateAt = now
                 };
@@ -418,6 +439,11 @@ public sealed partial class CertService
             return ServiceResult<CertWildcardResult>.Fail(ErrorCodes.MissingParam, "cert_type_required");
         }
 
+        if (request.DnsApi <= 0)
+        {
+            return ServiceResult<CertWildcardResult>.Fail(ErrorCodes.InvalidParam, "wildcard_requires_dnsapi");
+        }
+
         var uid = request.UserId;
         if (!isAdmin || uid <= 0)
         {
@@ -433,11 +459,21 @@ public sealed partial class CertService
         {
             Uid = (int)uid,
             Name = DefaultCertName(domain),
+            Des = string.Empty,
             Type = type,
             Domain = domain,
             Dnsapi = request.DnsApi > 0 ? request.DnsApi : null,
+            CertPem = string.Empty,
+            Key = string.Empty,
+            StartTime = now,
+            ExpireTime = now,
             AutoRenew = request.AutoRenew,
+            State = "waiting",
+            Ret = string.Empty,
             Enable = true,
+            TaskId = null,
+            IssueTaskId = null,
+            Version = 1,
             CreateAt = now,
             UpdateAt = now
         };
@@ -603,4 +639,3 @@ public sealed partial class CertService
         return ServiceResult<bool>.Ok(true);
     }
 }
-

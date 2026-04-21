@@ -39,6 +39,9 @@ public static class CoreModuleExtensions
         services.AddScoped<IDeletionGuard, LineGroupDeletionGuard>();
         services.AddScoped<IDeletionGuard, CertificateDeletionGuard>();
         services.AddScoped<IDeletionGuard, SecurityRuleDeletionGuard>();
+        services.AddScoped<IDeletionGuard, CcRuleGroupDeletionGuard>();
+        services.AddScoped<IDeletionGuard, CcMatcherDeletionGuard>();
+        services.AddScoped<IDeletionGuard, CcFilterDeletionGuard>();
         services.AddScoped<IDeletionGuard, AclRuleDeletionGuard>();
         services.AddScoped<IDeletionGuard, ProductPlanDeletionGuard>();
         services.AddScoped<IDeletionGuard, SubscriptionDeletionGuard>();
@@ -55,6 +58,7 @@ public static class CoreModuleExtensions
         services.AddScoped<ITaskHandler, NodeStatusTaskHandler>();
         services.AddScoped<ITaskHandler, ConfigSyncTaskHandler>();
         services.AddScoped<ITaskHandler, SiteStatusTaskHandler>();
+        services.AddScoped<ITaskHandler, SiteCreateTaskHandler>();
         services.AddScoped<ITaskHandler, StreamStatusTaskHandler>();
         services.AddScoped<ITaskHandler, CertificateStatusTaskHandler>();
         services.AddScoped<ITaskHandler, CertificateDeleteTaskHandler>();

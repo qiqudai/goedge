@@ -11,6 +11,7 @@ public static class RuntimeSchema
         EnsurePackageColumns(db, logger);
         EnsureUserPackageColumns(db, logger);
         EnsureTaskColumns(db, logger);
+        EnsureConfigColumns(db, logger);
         EnsureOpLogTable(db, logger);
         EnsureOpLogIndexes(db, logger);
         EnsureAccessLogDownloadTable(db, logger);
@@ -35,6 +36,53 @@ public static class RuntimeSchema
     private static void EnsureTaskColumns(ISqlSugarClient db, ILogger? logger)
     {
         TryAddColumn(db, "task", "targets_json", "longtext", true, logger);
+        EnsureMySqlLongTextColumn(db, logger, "task", "data");
+        EnsureMySqlLongTextColumn(db, logger, "task", "res");
+        EnsureMySqlLongTextColumn(db, logger, "task", "ret");
+    }
+
+    private static void EnsureConfigColumns(ISqlSugarClient db, ILogger? logger)
+    {
+        EnsureMySqlLongTextColumn(db, logger, "config", "value");
+    }
+
+    private static void EnsureMySqlLongTextColumn(ISqlSugarClient db, ILogger? logger, string table, string column)
+    {
+        if (db.CurrentConnectionConfig.DbType != DbType.MySql)
+        {
+            return;
+        }
+
+        if (!db.DbMaintenance.IsAnyTable(table))
+        {
+            return;
+        }
+
+        try
+        {
+            var dataType = db.Ado.GetString(
+                $"SELECT DATA_TYPE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = '{table}' AND column_name = '{column}' LIMIT 1");
+            if (string.IsNullOrWhiteSpace(dataType))
+            {
+                return;
+            }
+
+            var normalized = dataType.Trim().ToLowerInvariant();
+            if (normalized is "text" or "mediumtext" or "longtext")
+            {
+                return;
+            }
+
+            var nullableRaw = db.Ado.GetString(
+                $"SELECT IS_NULLABLE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = '{table}' AND column_name = '{column}' LIMIT 1");
+            var nullable = string.Equals(nullableRaw?.Trim(), "YES", StringComparison.OrdinalIgnoreCase);
+            var nullClause = nullable ? "NULL" : "NOT NULL";
+            db.Ado.ExecuteCommand($"ALTER TABLE {table} MODIFY COLUMN {column} LONGTEXT {nullClause}");
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Failed to ensure {Table}.{Column} column type", table, column);
+        }
     }
 
     private static void EnsureOpLogTable(ISqlSugarClient db, ILogger? logger)

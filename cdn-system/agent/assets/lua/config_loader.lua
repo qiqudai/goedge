@@ -19,6 +19,18 @@ local CHECK_INTERVAL = 1 -- seconds
 local current_config = nil
 local last_version = 0
 
+local function normalize_domain_host(input)
+    local host = tostring(input or "")
+    host = string.lower(host)
+    host = string.gsub(host, "^%s+", "")
+    host = string.gsub(host, "%s+$", "")
+    host = string.gsub(host, "^https?://", "")
+    host = string.gsub(host, "[/#?].*$", "")
+    host = string.gsub(host, ":%d+$", "")
+    host = string.gsub(host, "%.+$", "")
+    return host
+end
+
 -- Redis reporting removed (use API-based reporting if needed).
 
 -- Function to load config
@@ -59,6 +71,7 @@ function _M.load_config()
             return
         end
         for _, d in ipairs(cfg.domains) do
+            d.name = normalize_domain_host(d.name)
             local tpl = resolve_site_template(d.site_type, cfg.default_config)
             if tpl then
                 if type(d.cache) ~= "table" then
@@ -206,7 +219,11 @@ function _M.load_config()
     local domain_map = {}
     if config.domains then
         for _, d in ipairs(config.domains) do
-            domain_map[d.name] = d
+            local host = normalize_domain_host(d.name)
+            if host ~= "" then
+                d.name = host
+                domain_map[host] = d
+            end
         end
     end
     config.domain_map = domain_map

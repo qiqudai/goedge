@@ -162,9 +162,13 @@ public sealed partial class SiteService
 
         site.UpdateAt = DateTime.Now;
 
-        await _db.Ado.UseTranAsync(async () =>
+        var tran = await _db.Ado.UseTranAsync(async () =>
         {
-            await _db.Updateable(site).ExecuteCommandAsync();
+            var rows = await _db.Updateable(site).ExecuteCommandAsync();
+            if (rows <= 0)
+            {
+                throw new InvalidOperationException("db_save_error");
+            }
 
             if (request.Settings != null)
             {
@@ -189,6 +193,11 @@ public sealed partial class SiteService
                 }
             }
         });
+
+        if (!tran.IsSuccess)
+        {
+            return ServiceResult<SiteDetailDto>.Fail(ErrorCodes.DbError, "db_save_error");
+        }
 
         await _configVersionService.BumpAsync("site", new[] { (long)site.Id }, cancellationToken);
 

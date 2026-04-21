@@ -87,12 +87,12 @@
 
                 <div class="form-row">
                     <label class="form-label">创建时间</label>
-                    <InputText class="form-control" style="max-width:320px" Value="@_model.Basic.CreatedAt" readonly />
+                    <input class="form-control" style="max-width:320px" value="@_model.Basic.CreatedAt" readonly />
                 </div>
 
                 <div class="form-row">
                     <label class="form-label">更新时间</label>
-                    <InputText class="form-control" style="max-width:320px" Value="@_model.Basic.UpdatedAt" readonly />
+                    <input class="form-control" style="max-width:320px" value="@_model.Basic.UpdatedAt" readonly />
                 </div>
             </div>
         }
@@ -159,6 +159,7 @@
                             {
                                 @for (var i = 0; i < _model.Origin.List.Count; i++)
                                 {
+                                    var idx = i;
                                     var row = _model.Origin.List[i];
                                     <tr>
                                         <td><input class="form-control" value="@row.Address" @oninput="e => row.Address = GetInput(e)" /></td>
@@ -169,7 +170,7 @@
                                             </div>
                                         </td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveOriginRow(i)">删除</button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveOriginRow(idx)">删除</button>
                                         </td>
                                     </tr>
                                 }
@@ -370,6 +371,7 @@
                             {
                                 @for (var i = 0; i < _model.Cache.Rules.Count; i++)
                                 {
+                                    var idx = i;
                                     var row = _model.Cache.Rules[i];
                                     <tr>
                                         <td><InputCheckbox class="form-check-input" @bind-Value="row.Selected" /></td>
@@ -396,7 +398,7 @@
                                         <td><InputCheckbox class="form-check-input" @bind-Value="row.ForceCache" /></td>
                                         <td><InputCheckbox class="form-check-input" @bind-Value="row.Slice" /></td>
                                         <td><InputCheckbox class="form-check-input" @bind-Value="row.IgnoreVary" /></td>
-                                        <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveCacheRule(i)">删</button></td>
+                                        <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveCacheRule(idx)">删</button></td>
                                     </tr>
                                 }
                             }
@@ -564,6 +566,7 @@
                             {
                                 @for (var i = 0; i < _model.Advanced.UrlRedirects.Count; i++)
                                 {
+                                    var redirectIndex = i;
                                     var row = _model.Advanced.UrlRedirects[i];
                                     <tr>
                                         <td><input class="form-control" value="@row.Match" @oninput="e => row.Match = GetInput(e)" /></td>
@@ -577,15 +580,15 @@
                                             </select>
                                         </td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRedirectConditionPanel(i)">
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRedirectConditionPanel(redirectIndex)">
                                                 @(row.ConditionExpanded ? "收起条件" : "编辑条件")
                                             </button>
                                         </td>
                                         <td class="d-flex gap-2">
-                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRedirectConditionPanel(i)">
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleRedirectConditionPanel(redirectIndex)">
                                                 编辑
                                             </button>
-                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRedirectRule(i)">删</button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRedirectRule(redirectIndex)">删</button>
                                         </td>
                                     </tr>
                                     @if (row.ConditionExpanded)
@@ -595,7 +598,7 @@
                                                 <div class="matcher-box">
                                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                                         <strong>条件列表</strong>
-                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => AddRedirectCondition(i)">新增条件</button>
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => AddRedirectCondition(redirectIndex)">新增条件</button>
                                                     </div>
                                                     @if (row.Conditions.Count == 0)
                                                     {
@@ -605,6 +608,7 @@
                                                     {
                                                         @for (var c = 0; c < row.Conditions.Count; c++)
                                                         {
+                                                            var conditionIndex = c;
                                                             var cond = row.Conditions[c];
                                                             <div class="matcher-add mb-2">
                                                                 <select class="form-select" style="max-width:220px" @bind="cond.Key">
@@ -615,7 +619,7 @@
                                                                     <option value="method">method</option>
                                                                 </select>
                                                                 <InputText class="form-control" style="max-width:360px" @bind-Value="cond.Value" placeholder="条件值，如 /api 或 www.example.com" />
-                                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRedirectCondition(i, c)">删除</button>
+                                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRedirectCondition(redirectIndex, conditionIndex)">删除</button>
                                                             </div>
                                                         }
                                                     }
@@ -889,7 +893,14 @@
         _saving = true;
         try
         {
-            SyncOriginTextToList();
+            if (string.Equals(_activeTab, "basic", StringComparison.OrdinalIgnoreCase))
+            {
+                SyncOriginTextToList();
+            }
+            else
+            {
+                SyncOriginListToText();
+            }
 
             var settings = BuildSettingsPayload();
             var request = new SiteUpdateRequest
@@ -1128,7 +1139,24 @@
     }
 
     private void GoBack() => Nav.NavigateTo("/website/list");
-    private void SetTab(string tab) => _activeTab = tab;
+    private void SetTab(string tab)
+    {
+        if (string.Equals(_activeTab, tab, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (string.Equals(_activeTab, "basic", StringComparison.OrdinalIgnoreCase))
+        {
+            SyncOriginTextToList();
+        }
+        else if (string.Equals(_activeTab, "origin", StringComparison.OrdinalIgnoreCase))
+        {
+            SyncOriginListToText();
+        }
+
+        _activeTab = tab;
+    }
     private string TabCls(string tab) => _activeTab == tab ? "active" : string.Empty;
     private void ToggleCors() => _corsExpanded = !_corsExpanded;
 
@@ -1153,6 +1181,15 @@
         }
 
         _model.Origin.List = list;
+    }
+
+    private void SyncOriginListToText()
+    {
+        _originText = string.Join('\n',
+            _model.Origin.List
+                .Select(v => v.Address?.Trim() ?? string.Empty)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     private void AddOriginRow() => _model.Origin.List.Add(new OriginItem());
