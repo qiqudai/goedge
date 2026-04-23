@@ -16,6 +16,7 @@ type siteListItem struct {
 	ListenPorts     string                 `json:"listen_ports"`
 	HttpListen      []string               `json:"http_listen"`
 	HttpsListen     []string               `json:"https_listen"`
+	BackendProtocol string                 `json:"backend_protocol"`
 	OriginDisplay   string                 `json:"origin_display"`
 	CNAME           string                 `json:"cname"`
 	Backends        []string               `json:"backends"`

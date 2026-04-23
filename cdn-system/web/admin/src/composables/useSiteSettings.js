@@ -310,7 +310,7 @@ export function useSiteSettings() {
     const sOrigin = s.origin || {}
     const sBacksource = s.backsource || {}
 
-    siteSettings.origin.protocol = data.backend_protocol || s.backend_protocol || sBacksource.protocol || sOrigin.protocol || 'follow'
+    siteSettings.origin.protocol = data.backend_protocol || 'follow'
 
     // 映射 host
     const rawHost = s.origin_host || sOrigin.host || 'follow'

@@ -1713,7 +1713,6 @@ const buildSectionPayload = (section) => {
   if (section === 'origin') {
     if (selected.origin.protocol) {
       payload.backend_protocol = form.origin.protocol
-      settings.backend_protocol = form.origin.protocol
     }
     if (selected.origin.httpPort) {
       settings.origin_http_port = form.origin.httpPort || '80'

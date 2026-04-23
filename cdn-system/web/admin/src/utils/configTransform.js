@@ -60,8 +60,7 @@ export function buildSettingsPayload(siteSettings) {
       : siteSettings.origin.host,
     origin_timeout: siteSettings.origin.timeout,
     origin_http_port: siteSettings.origin.httpPort,
-    origin_https_port: siteSettings.origin.httpsPort,
-    backend_protocol: siteSettings.origin.protocol
+    origin_https_port: siteSettings.origin.httpsPort
   }
 }
 

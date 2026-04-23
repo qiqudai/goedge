@@ -263,6 +263,7 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromSettings)
 	}
 	if req.Settings != nil {
+		delete(req.Settings, "backend_protocol")
 		services.NormalizeSiteSettings(req.Settings)
 	}
 
@@ -753,6 +754,7 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromSettings)
 	}
 	if req.Settings != nil {
+		delete(req.Settings, "backend_protocol")
 		services.NormalizeSiteSettings(req.Settings)
 	}
 	if req.CertID != nil {

@@ -489,7 +489,6 @@ func applyLegacyBacksourceSettings(site *models.Site, backsourceCfg map[string]i
 	setIfMissingNonEmpty(backsourceCfg, "http_port", settings["origin_http_port"])
 	setIfMissingNonEmpty(backsourceCfg, "https_port", settings["origin_https_port"])
 	setIfMissingNonEmpty(backsourceCfg, "timeout", settings["origin_timeout"])
-	setIfMissingNonEmpty(backsourceCfg, "protocol", settings["backend_protocol"])
 	if site.BackendProtocol != "" {
 		setIfMissingNonEmpty(backsourceCfg, "protocol", site.BackendProtocol)
 	}
