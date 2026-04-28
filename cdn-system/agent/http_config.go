@@ -2,11 +2,11 @@ package main
 
 import (
 	fsutil "cdn-common/io"
-	"os/exec"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -904,6 +904,7 @@ func normalizeRuleLocation(rule string) string {
 func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *edgeCacheConfig, rule *edgeCacheRule) {
 	customHeaderSet := buildCustomHeaderNameSet(domain.Headers)
 	writeProxyBase(b, customHeaderSet)
+	writeBrowserCompatibilityHeaders(b, domain, customHeaderSet)
 	writeProxyLogVars(b)
 	writeProxyProtocol(b, domain, customHeaderSet)
 	writeProxyTimeouts(b, domain)
@@ -913,6 +914,8 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	writeProxyCORS(b, domain)
 	writeStaticURLRules(b, domain)
 	writeProxyCustomHeaders(b, domain.Headers, domain.ResponseHeaders)
+	writeProxyHiddenResponseHeaders(b, domain)
+	writeProxyRedirectRules(b, tls)
 	if tls {
 		b.WriteString("        proxy_hide_header Alt-Svc;\n")
 		if domain.HTTPSHSTS {
@@ -938,6 +941,33 @@ func writeProxyBase(b *strings.Builder, customHeaderSet map[string]struct{}) {
 	// strict origins like AWS S3 to reject the request with "duplicate headers".
 	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-For", "$remote_addr")
 	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Proto", "$scheme")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Host", "$host")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Port", "$server_port")
+}
+
+func writeBrowserCompatibilityHeaders(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
+	if strings.EqualFold(strings.TrimSpace(domain.SiteType), "api") ||
+		strings.EqualFold(strings.TrimSpace(domain.SiteType), "download") {
+		return
+	}
+
+	// Website origins often key off a small set of browser headers before they
+	// return the real page. Keep the values client-derived so custom headers still
+	// win when the site already configures them explicitly.
+	writeProxyHeaderIfMissing(b, customHeaderSet, "User-Agent", "$http_user_agent")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Accept", "$http_accept")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Accept-Language", "$http_accept_language")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Accept-Encoding", "$http_accept_encoding")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Referer", "$http_referer")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Cache-Control", "$http_cache_control")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Upgrade-Insecure-Requests", "$http_upgrade_insecure_requests")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-Fetch-Site", "$http_sec_fetch_site")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-Fetch-Mode", "$http_sec_fetch_mode")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-Fetch-User", "$http_sec_fetch_user")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-Fetch-Dest", "$http_sec_fetch_dest")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-CH-UA", "$http_sec_ch_ua")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-CH-UA-Mobile", "$http_sec_ch_ua_mobile")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Sec-CH-UA-Platform", "$http_sec_ch_ua_platform")
 }
 
 func writeProxyLogVars(b *strings.Builder) {
@@ -999,6 +1029,30 @@ func writeProxyHeaderIfMissing(b *strings.Builder, customHeaderSet map[string]st
 		}
 	}
 	b.WriteString("        proxy_set_header " + name + " " + value + ";\n")
+}
+
+func writeProxyHiddenResponseHeaders(b *strings.Builder, domain edgeDomain) {
+	if domain.EnableWebsocket {
+		return
+	}
+
+	// Some origins incorrectly emit hop-by-hop or protocol upgrade headers on
+	// normal page responses. Hiding them at the edge avoids client-side protocol
+	// errors, especially on HTTP/2 and HTTP/3 connections.
+	for _, name := range []string{"Upgrade", "Connection", "Keep-Alive", "Proxy-Connection"} {
+		b.WriteString("        proxy_hide_header " + name + ";\n")
+	}
+}
+
+func writeProxyRedirectRules(b *strings.Builder, tls bool) {
+	if !tls {
+		return
+	}
+
+	// Origins frequently emit absolute http:// redirects even when the client is
+	// already on HTTPS at the edge. Rewriting them back to HTTPS avoids browser
+	// downgrade loops and better matches what users expect from an HTTPS site.
+	b.WriteString("        proxy_redirect ~^http://([^/]+)(/.*)?$ https://$1$2;\n")
 }
 
 func writeProxyTimeouts(b *strings.Builder, domain edgeDomain) {

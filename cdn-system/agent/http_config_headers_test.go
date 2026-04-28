@@ -43,6 +43,12 @@ func TestWriteProxyBlock_DefaultXForwardedForNoAppend(t *testing.T) {
 	if !strings.Contains(out, "proxy_set_header X-Forwarded-For $remote_addr;") {
 		t.Fatalf("default X-Forwarded-For should be set to $remote_addr")
 	}
+	if !strings.Contains(out, "proxy_set_header X-Forwarded-Host $host;") {
+		t.Fatalf("default X-Forwarded-Host should be set to $host")
+	}
+	if !strings.Contains(out, "proxy_set_header X-Forwarded-Port $server_port;") {
+		t.Fatalf("default X-Forwarded-Port should be set to $server_port")
+	}
 }
 
 func TestWriteProxyBlock_CustomForwardedHeadersNoDuplicate(t *testing.T) {
@@ -78,6 +84,108 @@ func TestWriteProxyBlock_CustomForwardedHeadersNoDuplicate(t *testing.T) {
 	}
 }
 
+func TestWriteProxyBlock_WebsiteCompatibilityHeaders(t *testing.T) {
+	domain := edgeDomain{
+		SiteType: "website",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+
+	for _, want := range []string{
+		"proxy_set_header User-Agent $http_user_agent;",
+		"proxy_set_header Accept $http_accept;",
+		"proxy_set_header Accept-Language $http_accept_language;",
+		"proxy_set_header Accept-Encoding $http_accept_encoding;",
+		"proxy_set_header Referer $http_referer;",
+		"proxy_set_header Cache-Control $http_cache_control;",
+		"proxy_set_header Upgrade-Insecure-Requests $http_upgrade_insecure_requests;",
+		"proxy_set_header Sec-Fetch-Site $http_sec_fetch_site;",
+		"proxy_set_header Sec-Fetch-Mode $http_sec_fetch_mode;",
+		"proxy_set_header Sec-Fetch-User $http_sec_fetch_user;",
+		"proxy_set_header Sec-Fetch-Dest $http_sec_fetch_dest;",
+		"proxy_set_header Sec-CH-UA $http_sec_ch_ua;",
+		"proxy_set_header Sec-CH-UA-Mobile $http_sec_ch_ua_mobile;",
+		"proxy_set_header Sec-CH-UA-Platform $http_sec_ch_ua_platform;",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing compatibility header %q\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteProxyBlock_NonWebsiteSkipsCompatibilityHeaders(t *testing.T) {
+	domain := edgeDomain{
+		SiteType: "api",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+
+	for _, want := range []string{
+		"proxy_set_header User-Agent $http_user_agent;",
+		"proxy_set_header Accept $http_accept;",
+		"proxy_set_header Accept-Language $http_accept_language;",
+		"proxy_set_header Accept-Encoding $http_accept_encoding;",
+		"proxy_set_header Referer $http_referer;",
+		"proxy_set_header Cache-Control $http_cache_control;",
+		"proxy_set_header Upgrade-Insecure-Requests $http_upgrade_insecure_requests;",
+		"proxy_set_header Sec-Fetch-Site $http_sec_fetch_site;",
+		"proxy_set_header Sec-Fetch-Mode $http_sec_fetch_mode;",
+		"proxy_set_header Sec-Fetch-User $http_sec_fetch_user;",
+		"proxy_set_header Sec-Fetch-Dest $http_sec_fetch_dest;",
+		"proxy_set_header Sec-CH-UA $http_sec_ch_ua;",
+		"proxy_set_header Sec-CH-UA-Mobile $http_sec_ch_ua_mobile;",
+		"proxy_set_header Sec-CH-UA-Platform $http_sec_ch_ua_platform;",
+	} {
+		if strings.Contains(out, want) {
+			t.Fatalf("did not expect compatibility header %q for API site\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteProxyBlock_NonWebsocketHidesProblematicHopByHopResponseHeaders(t *testing.T) {
+	domain := edgeDomain{}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	for _, want := range []string{
+		"proxy_hide_header Upgrade;",
+		"proxy_hide_header Connection;",
+		"proxy_hide_header Keep-Alive;",
+		"proxy_hide_header Proxy-Connection;",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected non-websocket proxy to hide %q", want)
+		}
+	}
+}
+
+func TestWriteProxyBlock_WebsocketKeepsHopByHopResponseHeadersVisible(t *testing.T) {
+	domain := edgeDomain{
+		EnableWebsocket: true,
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	for _, unexpected := range []string{
+		"proxy_hide_header Upgrade;",
+		"proxy_hide_header Connection;",
+		"proxy_hide_header Keep-Alive;",
+		"proxy_hide_header Proxy-Connection;",
+	} {
+		if strings.Contains(out, unexpected) {
+			t.Fatalf("did not expect websocket proxy to hide %q", unexpected)
+		}
+	}
+}
+
 func TestWriteProxyBlock_HTTP3UnsupportedHidesAltSvc(t *testing.T) {
 	prevNginxBin := NginxBinPath
 	prevRoot := WorkDir
@@ -108,6 +216,18 @@ func TestWriteProxyBlock_HTTP3UnsupportedHidesAltSvc(t *testing.T) {
 	out := b.String()
 	if !strings.Contains(out, "proxy_hide_header Alt-Svc;") {
 		t.Fatalf("expected proxy_hide_header Alt-Svc when nginx http_v3 module is missing")
+	}
+}
+
+func TestWriteProxyBlock_TLSRewritesAbsoluteHTTPRedirectsToHTTPS(t *testing.T) {
+	domain := edgeDomain{}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_redirect ~^http://([^/]+)(/.*)?$ https://$1$2;") {
+		t.Fatalf("expected TLS proxy to rewrite absolute http redirects to https")
 	}
 }
 
