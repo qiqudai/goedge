@@ -1828,6 +1828,9 @@ func computeSiteCnameHostname(site models.Site, pkg models.UserPackage, override
 	pkgMode := strings.TrimSpace(pkg.CnameMode)
 	if siteMode == "package" || (siteMode == "" && pkgMode == "package") {
 		pkgHost := strings.TrimSpace(pkg.CnameHostname)
+		if pkgHost == "" {
+			pkgHost = strings.TrimSpace(pkg.RecordID)
+		}
 		if pkgHost != "" {
 			newCnameHostname = pkgHost
 			if pkgDomain != "" {
@@ -1862,7 +1865,7 @@ func refreshSiteCnameHostname(site *models.Site, overrideMode, overrideDomain *s
 		return false, nil
 	}
 	var pkg models.UserPackage
-	if err := db.DB.Select("cname_mode", "cname_hostname", "cname_domain").
+	if err := db.DB.Select("cname_mode", "cname_hostname", "cname_domain", "record_id").
 		Where("id = ?", site.UserPackageID).
 		First(&pkg).Error; err != nil {
 		return false, err
