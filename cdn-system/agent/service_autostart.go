@@ -119,6 +119,9 @@ func runStartupDiagnostics() {
 	if runtime.GOOS != "linux" {
 		return
 	}
+	if err := ensureRuntimeDependencies(); err != nil {
+		log.Printf("[Warn] Runtime dependency auto-install failed: %v", err)
+	}
 	if strings.TrimSpace(NginxBinPath) == "" {
 		log.Printf("[Warn] Startup check skipped: nginx path is empty")
 		return

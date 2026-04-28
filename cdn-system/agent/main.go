@@ -149,6 +149,9 @@ func main() {
 		}
 	}
 	initEnvironment()
+	if err := ensureRuntimeDependencies(); err != nil {
+		log.Printf("[Warn] Runtime dependency auto-install failed: %v", err)
+	}
 	runStartupDiagnostics()
 	bootstrapSyncAndStart()
 	if !(BootstrapSync && BootstrapStart) {

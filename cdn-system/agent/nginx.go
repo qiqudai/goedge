@@ -145,6 +145,9 @@ func startNginx() error {
 	if NginxBinPath == "" {
 		return nil
 	}
+	if err := ensureRuntimeDependencies(); err != nil {
+		log.Printf("[Warn] Runtime dependency auto-install failed before nginx start: %v", err)
+	}
 	confPath := nginxConfPath()
 	cmd := exec.Command(NginxBinPath, "-p", runtimeRoot(), "-c", confPath)
 	setNginxEnv(cmd)
@@ -235,6 +238,9 @@ func executeReload() error {
 	// Use absolute path to the extracted binary
 	if NginxBinPath == "" {
 		return nil // Should not happen if initEnvironment called
+	}
+	if err := ensureRuntimeDependencies(); err != nil {
+		log.Printf("[Warn] Runtime dependency auto-install failed before nginx reload: %v", err)
 	}
 
 	confPath := nginxConfPath()

@@ -299,6 +299,7 @@ print(json.dumps(data, indent=2))
 PY
 
 SERVICE_FILE="${tmp_dir}/cdn-agent.service"
+BOOTSTRAP_SCRIPT="${tmp_dir}/bootstrap_runtime_deps.sh"
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=CDN Agent
@@ -317,6 +318,9 @@ LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
 EOF
+
+cp "${ROOT_DIR}/agent/assets/scripts/bootstrap_runtime_deps.sh" "$BOOTSTRAP_SCRIPT"
+chmod 755 "$BOOTSTRAP_SCRIPT"
 
 SSH_OPTS=(-p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 SSH_BASE=(sshpass -p "$SSH_PASS" ssh "${SSH_OPTS[@]}")
@@ -350,12 +354,16 @@ run_remote "mkdir -p '$REMOTE_TMP'"
 "${SCP_BASE[@]}" "$AGENT_BIN" "${REMOTE_HOST}:${REMOTE_TMP}/cdn-agent"
 "${SCP_BASE[@]}" "$AGENT_JSON" "${REMOTE_HOST}:${REMOTE_TMP}/agent.json"
 "${SCP_BASE[@]}" "$SERVICE_FILE" "${REMOTE_HOST}:${REMOTE_TMP}/cdn-agent.service"
+"${SCP_BASE[@]}" "$BOOTSTRAP_SCRIPT" "${REMOTE_HOST}:${REMOTE_TMP}/bootstrap_runtime_deps.sh"
 
 run_remote_sudo "mkdir -p '$REMOTE_DIR'"
 run_remote_sudo "mv '$REMOTE_TMP/cdn-agent' '$REMOTE_DIR/cdn-agent'"
 run_remote_sudo "mv '$REMOTE_TMP/agent.json' '$REMOTE_DIR/agent.json'"
+run_remote_sudo "mkdir -p '$REMOTE_DIR/scripts'"
+run_remote_sudo "mv '$REMOTE_TMP/bootstrap_runtime_deps.sh' '$REMOTE_DIR/scripts/bootstrap_runtime_deps.sh'"
 run_remote_sudo "chmod 755 '$REMOTE_DIR/cdn-agent'"
 run_remote_sudo "chmod 600 '$REMOTE_DIR/agent.json'"
+run_remote_sudo "chmod 755 '$REMOTE_DIR/scripts/bootstrap_runtime_deps.sh'"
 
 if "${SSH_BASE[@]}" "$REMOTE_HOST" "command -v systemctl >/dev/null 2>&1"; then
   run_remote_sudo "mv '$REMOTE_TMP/cdn-agent.service' /etc/systemd/system/cdn-agent.service"

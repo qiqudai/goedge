@@ -46,6 +46,7 @@ func initEnvironment() {
 		restoreDir("assets/lua", filepath.Join(rootDir, "lua"))
 		restoreDir("assets/data", filepath.Join(rootDir, "data"))
 		restoreDir("assets/cert", filepath.Join(rootDir, "cert"))
+		restoreDir("assets/scripts", filepath.Join(rootDir, "scripts"))
 	}
 	ensureBaseRuntimeAssets(rootDir)
 
@@ -63,9 +64,8 @@ func initEnvironment() {
 		// Based on user provided zip: openresty/nginx/sbin/nginx
 		NginxBinPath = filepath.Join(rootDir, "openresty", "nginx", "sbin", "nginx")
 		if _, err := os.Stat(NginxBinPath); err != nil {
-			// Linux: Unzip the embedded openresty.zip
-			// Expect structure: openresty/nginx/sbin/nginx
-			zipPath := "assets/openresty.zip"
+			// Linux: Unzip the embedded OpenResty bundle selected for this distro.
+			zipPath := selectOpenRestyAsset()
 			destDir := rootDir
 			if err := unzipEmbedded(zipPath, destDir); err != nil {
 				log.Printf("[Warn] Failed to unzip %s: %v (Ignore if not Linux or file missing)", zipPath, err)
@@ -119,6 +119,7 @@ func ensureBaseRuntimeAssets(rootDir string) {
 	restoreDirIfMissing("assets/lua", filepath.Join(rootDir, "lua"))
 	restoreDirIfMissing("assets/data", filepath.Join(rootDir, "data"))
 	restoreDirIfMissing("assets/cert", filepath.Join(rootDir, "cert"))
+	restoreDirIfMissing("assets/scripts", filepath.Join(rootDir, "scripts"))
 }
 
 func patchNginxConfigPaths(content string, rootDir string) string {

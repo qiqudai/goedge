@@ -19,6 +19,38 @@ import (
 
 type UserController struct{}
 
+type userSaveRequest struct {
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Des      string `json:"des"`
+	Phone    string `json:"phone"`
+	QQ       string `json:"qq"`
+	Password string `json:"password"`
+	GroupID  int    `json:"group_id"`
+	Enable   bool   `json:"enable"`
+	Type     int    `json:"type"`
+
+	// Security
+	LoginCaptcha string `json:"login_captcha"`
+	WhiteIP      string `json:"white_ip"`
+}
+
+func normalizeUserGroupID(groupID int) (int, error) {
+	if groupID <= 0 {
+		return 0, nil
+	}
+
+	var count int64
+	if err := db.DB.Model(&models.UserGroup{}).Where("id = ?", groupID).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count == 0 {
+		return 0, errors.New("user group not found")
+	}
+
+	return groupID, nil
+}
+
 // ListUsers returns paginated user list
 // GET /api/v1/admin/users?page=1&size=20
 func (ctr *UserController) ListUsers(c *gin.Context) {
@@ -91,12 +123,211 @@ func (ctr *UserController) ToggleStatus(c *gin.Context) {
 // DeleteUser removes a user
 // DELETE /api/v1/admin/users/:id
 func (ctr *UserController) DeleteUser(c *gin.Context) {
-	id := c.Param("id")
-	if err := db.DB.Delete(&models.User{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Delete Failed")})
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid user id")})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"msg": fmt.Sprintf(T("User %s deleted"), id)})
+	if id == 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "Built-in admin (ID=1) cannot be deleted"})
+		return
+	}
+
+	type refCheck struct {
+		table string
+		col   string
+		count int64
+	}
+	checks := []refCheck{
+		{table: "cert", col: "uid"},
+		{table: "user_package", col: "uid"},
+		{table: "site", col: "uid"},
+		{table: "stream", col: "uid"},
+		{table: "dnsapi", col: "uid"},
+		{table: "acl", col: "uid"},
+		{table: "cc_rule", col: "uid"},
+		{table: "cc_match", col: "uid"},
+		{table: "cc_filter", col: "uid"},
+		{table: "api_key", col: "uid"},
+	}
+	blockers := make([]string, 0)
+	for i := range checks {
+		sql := fmt.Sprintf("%s = ?", checks[i].col)
+		if err := db.DB.Table(checks[i].table).Where(sql, id).Count(&checks[i].count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+			return
+		}
+		if checks[i].count > 0 {
+			blockers = append(blockers, fmt.Sprintf("%s:%d", checks[i].table, checks[i].count))
+		}
+	}
+	if len(blockers) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code": 400,
+			"msg":  "User has related resources, delete blocked: " + strings.Join(blockers, ", "),
+		})
+		return
+	}
+
+	if err := db.DB.Delete(&models.User{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete Failed")})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": fmt.Sprintf(T("User %d deleted"), id)})
+}
+
+// ListUserGroups returns all user groups.
+// GET /api/v1/admin/user_groups
+func (ctr *UserController) ListUserGroups(c *gin.Context) {
+	if err := db.Ensure(); err != nil {
+		db.Init()
+	}
+	db.DB.AutoMigrate(&models.UserGroup{})
+	var groups []models.UserGroup
+	if err := db.DB.Order("id asc").Find(&groups).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"msg":  T("success"),
+		"data": gin.H{"list": groups},
+	})
+}
+
+// CreateUserGroup creates a user group.
+// POST /api/v1/admin/user_groups
+func (ctr *UserController) CreateUserGroup(c *gin.Context) {
+	db.DB.AutoMigrate(&models.UserGroup{})
+	var req struct {
+		Name string `json:"name"`
+		Des  string `json:"des"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request body")})
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Group name is required")})
+		return
+	}
+	var exists int64
+	if err := db.DB.Model(&models.UserGroup{}).Where("name = ?", name).Count(&exists).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Database Error")})
+		return
+	}
+	if exists > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Group already exists")})
+		return
+	}
+	group := models.UserGroup{Name: name, Des: strings.TrimSpace(req.Des)}
+	if err := db.DB.Create(&group).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Create Failed")})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Create success"), "data": group})
+}
+
+// DeleteUserGroup deletes a user group.
+// DELETE /api/v1/admin/user_groups/:id
+func (ctr *UserController) DeleteUserGroup(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid group id")})
+		return
+	}
+	var usingCount int64
+	if err := db.DB.Model(&models.User{}).Where("group_id = ?", id).Count(&usingCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Database Error")})
+		return
+	}
+	if usingCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Group is in use")})
+		return
+	}
+	if err := db.DB.Delete(&models.UserGroup{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Delete Failed")})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Delete success")})
+}
+
+// CreateUser creates a user from the admin user list.
+// POST /api/v1/admin/users
+func (ctr *UserController) CreateUser(c *gin.Context) {
+	db.DB.AutoMigrate(&models.User{}) // Ensure columns exist
+	var req userSaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request body")})
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	password := strings.TrimSpace(req.Password)
+	email := strings.TrimSpace(req.Email)
+	phone := strings.TrimSpace(req.Phone)
+	if name == "" || password == "" || email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("Username, password and email are required")})
+		return
+	}
+
+	query := db.DB.Model(&models.User{}).Where("name = ?", name)
+	if email != "" {
+		query = query.Or("email = ?", email)
+	}
+	if phone != "" {
+		query = query.Or("phone = ?", phone)
+	}
+	var exists int64
+	if err := query.Count(&exists).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Database Error")})
+		return
+	}
+	if exists > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("User already exists")})
+		return
+	}
+
+	hash, err := utils.HashPasswordForStorage(password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create user")})
+		return
+	}
+
+	userType := req.Type
+	if userType != 1 {
+		userType = 2
+	}
+	groupID, err := normalizeUserGroupID(req.GroupID)
+	if err != nil {
+		if err.Error() == "user group not found" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid user group")})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Database Error")})
+		return
+	}
+	user := models.User{
+		Email:        email,
+		Name:         name,
+		Description:  strings.TrimSpace(req.Des),
+		Phone:        phone,
+		QQ:           strings.TrimSpace(req.QQ),
+		Password:     hash,
+		GroupID:      groupID,
+		Enable:       req.Enable,
+		Type:         userType,
+		LoginCaptcha: strings.TrimSpace(req.LoginCaptcha),
+		WhiteIP:      strings.TrimSpace(req.WhiteIP),
+		CreatedAt:    time.Now(),
+	}
+	if err := db.DB.Create(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create user")})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("User created successfully"), "data": user})
 }
 
 func getContextUserID(c *gin.Context) int64 {
@@ -214,32 +445,7 @@ func (ctr *UserController) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Email    string `json:"email"`
-		Name     string `json:"name"`
-		Des      string `json:"des"`
-		Phone    string `json:"phone"`
-		QQ       string `json:"qq"`
-		Password string `json:"password"`
-		GroupID  int    `json:"group_id"`
-		Enable   bool   `json:"enable"`
-
-		// Real-name
-		CertName string `json:"cert_name"`
-		CertNo   string `json:"cert_no"`
-		Company  string `json:"company"`
-		TeaCode  string `json:"tea_code"`
-
-		// Secondary
-		SecondaryAuth         bool   `json:"secondary_auth"`
-		SecondaryAuthDeadline string `json:"secondary_auth_deadline"`
-		SecondaryAuthAction   string `json:"secondary_auth_action"`
-
-		// Security
-		LoginCaptcha string `json:"login_captcha"`
-		WhiteIP      string `json:"white_ip"`
-	}
-
+	var req userSaveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request body")})
 		return
@@ -258,17 +464,20 @@ func (ctr *UserController) UpdateUser(c *gin.Context) {
 	updates["des"] = req.Des
 	updates["phone"] = req.Phone
 	updates["qq"] = req.QQ
-	updates["group_id"] = req.GroupID
+	groupID, err := normalizeUserGroupID(req.GroupID)
+	if err != nil {
+		if err.Error() == "user group not found" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid user group")})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Database Error")})
+		return
+	}
+	updates["group_id"] = groupID
 	updates["enable"] = req.Enable
-
-	updates["cert_name"] = req.CertName
-	updates["cert_no"] = req.CertNo
-	updates["company"] = req.Company
-	updates["tea_code"] = req.TeaCode
-
-	updates["secondary_auth"] = req.SecondaryAuth
-	updates["secondary_auth_deadline"] = req.SecondaryAuthDeadline
-	updates["secondary_auth_action"] = req.SecondaryAuthAction
+	if req.Type == 1 || req.Type == 2 {
+		updates["type"] = req.Type
+	}
 
 	updates["login_captcha"] = req.LoginCaptcha
 	updates["white_ip"] = req.WhiteIP

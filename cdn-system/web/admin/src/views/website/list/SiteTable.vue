@@ -100,8 +100,8 @@
       </template>
     </el-table-column>
     <el-table-column prop="user_package_name" label="套餐" min-width="80" />
-    <el-table-column prop="region_name" label="区域" min-width="80" />
-    <el-table-column prop="node_group_name" label="线路组" min-width="80" />
+    <el-table-column v-if="isAdmin" prop="region_name" label="区域" min-width="80" />
+    <el-table-column v-if="isAdmin" prop="node_group_name" label="线路组" min-width="80" />
     <el-table-column prop="group_name" label="分组" min-width="80" />
     <el-table-column label="状态" width="80" align="center">
       <template #default="{ row }">

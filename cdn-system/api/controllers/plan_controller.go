@@ -837,8 +837,8 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 		}
 		if strings.TrimSpace(newMode) != "" && strings.TrimSpace(newMode) != currentMode {
 			if err := db.DB.Model(&models.Site{}).
-				Where("user_package = ? AND (cname_mode = '' OR cname_mode IS NULL)", current.ID).
-				Update("cname_mode", currentMode).Error; err != nil {
+				Where("user_package = ?", current.ID).
+				Update("cname_mode", newMode).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
 				return
 			}
@@ -863,6 +863,12 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	var siteIDs []int64
 	if err := db.DB.Model(&models.Site{}).Where("user_package = ?", id).Pluck("id", &siteIDs).Error; err == nil && len(siteIDs) > 0 {
 		services.BumpConfigVersion("site", siteIDs)
+		var sites []models.Site
+		if err := db.DB.Where("id IN ?", siteIDs).Find(&sites).Error; err == nil {
+			for _, site := range sites {
+				resyncSiteCnameForSite(site)
+			}
+		}
 	}
 	resyncUserPackageGroupCnames(id)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
