@@ -114,7 +114,7 @@ func queryAccessBucketsWithExtraCondition(start, end time.Time, bucket time.Dura
 	if start.IsZero() || end.IsZero() || end.Before(start) || bucket <= 0 {
 		return []AccessBucket{}, nil
 	}
-	start, end = adjustAccessLogQueryRange(start, end)
+	start, end, bucketDisplayShift := accessLogQueryWindow(start, end)
 	httpCfg := buildHTTPConfig()
 	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []AccessBucket{}, nil
@@ -143,7 +143,7 @@ func queryAccessBucketsWithExtraCondition(start, end time.Time, bucket time.Dura
 		GROUP BY bucket ORDER BY bucket`, bucketExpr, blockedStatusCondition(), whereSQL)
 
 	if httpCfg != nil {
-		return queryAccessBucketsHTTP(httpCfg, query, args...)
+		return queryAccessBucketsHTTP(httpCfg, bucketDisplayShift, query, args...)
 	}
 	rows, err := db.CK.Query(query, args...)
 	if err != nil {
@@ -167,7 +167,7 @@ func queryAccessBucketsWithExtraCondition(start, end time.Time, bucket time.Dura
 		); err != nil {
 			continue
 		}
-		row.Bucket = bucketTime
+		row.Bucket = bucketTime.Add(bucketDisplayShift)
 		list = append(list, row)
 	}
 	return list, nil
@@ -233,7 +233,7 @@ type accessTotalsRow struct {
 	BlockedIPs uint64 `json:"blocked_ips"`
 }
 
-func queryAccessBucketsHTTP(cfg *httpCKConfig, query string, args ...interface{}) ([]AccessBucket, error) {
+func queryAccessBucketsHTTP(cfg *httpCKConfig, bucketDisplayShift time.Duration, query string, args ...interface{}) ([]AccessBucket, error) {
 	query = interpolateQuery(query, args...)
 	query = query + "\nFORMAT JSONEachRow"
 	body, err := queryClickHouseHTTP(cfg, query)
@@ -260,7 +260,7 @@ func queryAccessBucketsHTTP(cfg *httpCKConfig, query string, args ...interface{}
 			continue
 		}
 		list = append(list, AccessBucket{
-			Bucket:      bucketTime,
+			Bucket:      bucketTime.Add(bucketDisplayShift),
 			Requests:    toUint64Any(raw["requests"]),
 			Bytes:       pickUint64Any(raw, "out_bytes", "bytes"),
 			HitCount:    toUint64Any(raw["hit_count"]),

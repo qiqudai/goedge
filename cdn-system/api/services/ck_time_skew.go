@@ -20,8 +20,27 @@ var accessLogTimeSkewCache struct {
 }
 
 func adjustAccessLogQueryRange(start, end time.Time) (time.Time, time.Time) {
-	// Keep query range unchanged after UTC migration.
-	return start, end
+	adjustedStart, adjustedEnd, _ := accessLogQueryWindow(start, end)
+	return adjustedStart, adjustedEnd
+}
+
+func accessLogQueryWindow(start, end time.Time) (time.Time, time.Time, time.Duration) {
+	skew := detectAccessLogTimeSkew()
+	adjustedStart, adjustedEnd, displayShift := adjustAccessLogQueryRangeForSkew(start, end, time.Now(), skew)
+	return adjustedStart, adjustedEnd, displayShift
+}
+
+func adjustAccessLogQueryRangeForSkew(start, end, now time.Time, skew time.Duration) (time.Time, time.Time, time.Duration) {
+	if start.IsZero() || end.IsZero() || end.Before(start) || skew == 0 {
+		return start, end, 0
+	}
+	if end.Sub(start) > 2*time.Hour {
+		return start, end, 0
+	}
+	if end.Before(now.Add(-15*time.Minute)) || end.After(now.Add(15*time.Minute)) {
+		return start, end, 0
+	}
+	return start.Add(skew), end.Add(skew), -skew
 }
 
 func detectAccessLogTimeSkew() time.Duration {
@@ -84,7 +103,7 @@ func normalizeSkew(maxTS, nowTS int64) time.Duration {
 	if skew < -14*time.Hour || skew > 14*time.Hour {
 		return 0
 	}
-	if skew > -15*time.Minute && skew < 15*time.Minute {
+	if skew > -90*time.Second && skew < 90*time.Second {
 		return 0
 	}
 	return skew
