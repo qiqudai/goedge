@@ -66,10 +66,11 @@ public sealed class AccessStatsService : IAccessStatsService
             return Array.Empty<AccessBucket>();
         }
 
+        var queryWindow = await AccessLogQueryWindowResolver.ResolveAsync(cfg, range.Start, range.End, DateTime.Now, cancellationToken);
         var bucketExpr = BuildBucketExpression(range.Bucket);
         var conditions = new List<string>
         {
-            $"ts >= toDateTime('{range.Start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{range.End:yyyy-MM-dd HH:mm:ss}')"
+            $"ts >= toDateTime('{queryWindow.Start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{queryWindow.End:yyyy-MM-dd HH:mm:ss}')"
         };
         var hostClause = hostFilter.BuildHttpCondition();
         if (!string.IsNullOrWhiteSpace(hostClause))
@@ -119,8 +120,9 @@ public sealed class AccessStatsService : IAccessStatsService
                     continue;
                 }
 
+                var displayBucket = bucket.Add(queryWindow.BucketDisplayShift);
                 list.Add(new AccessBucket(
-                    bucket,
+                    displayBucket,
                     ReadUInt64(root, "requests"),
                     ReadUInt64(root, "out_bytes"),
                     ReadUInt64(root, "hit_count"),
@@ -152,9 +154,10 @@ public sealed class AccessStatsService : IAccessStatsService
             return new AccessTotals(0, 0, 0);
         }
 
+        var queryWindow = await AccessLogQueryWindowResolver.ResolveAsync(cfg, start, end, DateTime.Now, cancellationToken);
         var conditions = new List<string>
         {
-            $"ts >= toDateTime('{start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{end:yyyy-MM-dd HH:mm:ss}')"
+            $"ts >= toDateTime('{queryWindow.Start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{queryWindow.End:yyyy-MM-dd HH:mm:ss}')"
         };
         var hostClause = hostFilter.BuildHttpCondition();
         if (!string.IsNullOrWhiteSpace(hostClause))

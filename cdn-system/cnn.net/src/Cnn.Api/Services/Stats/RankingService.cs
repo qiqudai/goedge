@@ -63,9 +63,10 @@ public sealed class RankingService : IRankingService
             return Array.Empty<RankItem>();
         }
 
+        var queryWindow = await AccessLogQueryWindowResolver.ResolveAsync(cfg, start, end, DateTime.Now, cancellationToken);
         var conditions = new List<string>
         {
-            $"ts >= toDateTime('{start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{end:yyyy-MM-dd HH:mm:ss}')"
+            $"ts >= toDateTime('{queryWindow.Start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{queryWindow.End:yyyy-MM-dd HH:mm:ss}')"
         };
 
         var hostClause = hostFilter.BuildHttpCondition();
@@ -148,9 +149,10 @@ public sealed class RankingService : IRankingService
             return Array.Empty<RankItem>();
         }
 
+        var queryWindow = await AccessLogQueryWindowResolver.ResolveAsync(cfg, start, end, DateTime.Now, cancellationToken);
         var conditions = new List<string>
         {
-            $"ts >= toDateTime('{start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{end:yyyy-MM-dd HH:mm:ss}')"
+            $"ts >= toDateTime('{queryWindow.Start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{queryWindow.End:yyyy-MM-dd HH:mm:ss}')"
         };
 
         var hostClause = hostFilter.BuildHttpCondition();
@@ -249,9 +251,10 @@ public sealed class RankingService : IRankingService
             return Array.Empty<LatencyRankItem>();
         }
 
+        var queryWindow = await AccessLogQueryWindowResolver.ResolveAsync(cfg, start, end, DateTime.Now, cancellationToken);
         var conditions = new List<string>
         {
-            $"ts >= toDateTime('{start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{end:yyyy-MM-dd HH:mm:ss}') AND request_time > 0"
+            $"ts >= toDateTime('{queryWindow.Start:yyyy-MM-dd HH:mm:ss}') AND ts <= toDateTime('{queryWindow.End:yyyy-MM-dd HH:mm:ss}') AND request_time > 0"
         };
 
         var hostClause = hostFilter.BuildHttpCondition();
