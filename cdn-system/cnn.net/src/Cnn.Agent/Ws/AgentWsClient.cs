@@ -56,7 +56,7 @@ public sealed class AgentWsClient : BackgroundService
     private readonly AgentRuntimePaths _runtimePaths;
     private readonly AgentNodeState _nodeState;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IPackageBandwidthLimiter _packageBandwidthLimiter;
+    private readonly INodeBandwidthLimiter _nodeBandwidthLimiter;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<L2NodesResponse>> _l2Waiters = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _nodeSyncLock = new();
@@ -97,7 +97,7 @@ public sealed class AgentWsClient : BackgroundService
         AgentRuntimePaths runtimePaths,
         AgentNodeState nodeState,
         IHttpClientFactory httpClientFactory,
-        IPackageBandwidthLimiter packageBandwidthLimiter)
+        INodeBandwidthLimiter nodeBandwidthLimiter)
     {
         _configuration = configuration;
         _logger = logger;
@@ -120,7 +120,7 @@ public sealed class AgentWsClient : BackgroundService
         _runtimePaths = runtimePaths;
         _nodeState = nodeState;
         _httpClientFactory = httpClientFactory;
-        _packageBandwidthLimiter = packageBandwidthLimiter;
+        _nodeBandwidthLimiter = nodeBandwidthLimiter;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -2266,6 +2266,22 @@ public sealed class AgentWsClient : BackgroundService
         _tlsCertificateStore.Reload(config);
         _tlsRuntimePolicyStore.Reload(config);
         await PersistDynamicConfigAsync(config, cancellationToken);
+        var nodeBwApply = await _nodeBandwidthLimiter.ApplyAsync(config.NodeBandwidthLimit, cancellationToken);
+        if (!nodeBwApply.Applied)
+        {
+            _logger.LogWarning(
+                "node bandwidth apply failed iface={Interface} limit={Limit}Mbps message={Message}",
+                nodeBwApply.Interface,
+                nodeBwApply.LimitMbps,
+                nodeBwApply.Message);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "node bandwidth applied iface={Interface} limit={Limit}Mbps",
+                nodeBwApply.Interface,
+                nodeBwApply.LimitMbps);
+        }
 
         var apply = _proxyRuntime.TryApply(config, force);
         if (!apply.Success)
@@ -2530,23 +2546,6 @@ public sealed class AgentWsClient : BackgroundService
                 Version = pkg.Version,
                 Status = "updated"
             });
-        }
-
-        var limiterResult = await _packageBandwidthLimiter.ApplyAsync(_localPackages.Values.ToList(), cancellationToken);
-        if (!limiterResult.Applied)
-        {
-            _logger.LogWarning(
-                "package bandwidth apply failed iface={Interface} limit={Limit}Mbps message={Message}",
-                limiterResult.Interface,
-                limiterResult.LimitMbps,
-                limiterResult.Message);
-        }
-        else
-        {
-            _logger.LogInformation(
-                "package bandwidth applied iface={Interface} limit={Limit}Mbps",
-                limiterResult.Interface,
-                limiterResult.LimitMbps);
         }
 
         return applied;

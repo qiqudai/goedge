@@ -1,52 +1,41 @@
 using System.Diagnostics;
-using Cnn.Common.Contracts.Agent;
+using System.Globalization;
 
 namespace Cnn.Agent.Network;
 
-public sealed class LinuxPackageBandwidthLimiter : IPackageBandwidthLimiter
+public sealed class LinuxNodeBandwidthLimiter : INodeBandwidthLimiter
 {
-    private readonly ILogger<LinuxPackageBandwidthLimiter> _logger;
-    private const long MinLimitMbps = 1;
     private const int DefaultTimeoutMs = 5000;
 
-    public LinuxPackageBandwidthLimiter(ILogger<LinuxPackageBandwidthLimiter> logger)
-    {
-        _logger = logger;
-    }
-
-    public Task<PackageBandwidthApplyResult> ApplyAsync(
-        IReadOnlyCollection<AgentPackageConfigDto> packages,
-        CancellationToken cancellationToken)
+    public Task<NodeBandwidthApplyResult> ApplyAsync(string? bwLimit, CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsLinux())
         {
-            return Task.FromResult(new PackageBandwidthApplyResult(false, string.Empty, 0, "non-linux platform skipped"));
+            return Task.FromResult(new NodeBandwidthApplyResult(false, string.Empty, 0, "non-linux platform skipped"));
         }
 
         var iface = ResolveInterface();
         if (string.IsNullOrWhiteSpace(iface))
         {
-            return Task.FromResult(new PackageBandwidthApplyResult(false, string.Empty, 0, "default network interface not found"));
+            return Task.FromResult(new NodeBandwidthApplyResult(false, string.Empty, 0, "default network interface not found"));
         }
 
-        var requested = ResolveRequestedLimitMbps(packages);
-        var limit = requested <= 0 ? MinLimitMbps : requested;
-        if (requested <= 0)
+        var limit = ParseBandwidthMbps(bwLimit);
+        if (limit <= 0)
         {
-            _logger.LogWarning(
-                "package bandwidth is non-positive ({Requested}), forcing minimum limit {Limit}Mbps",
-                requested,
-                limit);
+            TryRun("tc", out _, "qdisc", "del", "dev", iface, "root");
+            TryRun("tc", out _, "qdisc", "del", "dev", iface, "ingress");
+            return Task.FromResult(new NodeBandwidthApplyResult(true, iface, 0, "unlimited"));
         }
 
         if (!TryRun("tc", out var err, "qdisc", "replace", "dev", iface, "root", "tbf", "rate", $"{limit}mbit", "burst", "256kb", "latency", "50ms"))
         {
-            return Task.FromResult(new PackageBandwidthApplyResult(false, iface, limit, $"egress limit apply failed: {err}"));
+            return Task.FromResult(new NodeBandwidthApplyResult(false, iface, limit, $"egress limit apply failed: {err}"));
         }
 
         if (!TryRun("tc", out err, "qdisc", "replace", "dev", iface, "handle", "ffff:", "ingress"))
         {
-            return Task.FromResult(new PackageBandwidthApplyResult(false, iface, limit, $"ingress qdisc apply failed: {err}"));
+            return Task.FromResult(new NodeBandwidthApplyResult(false, iface, limit, $"ingress qdisc apply failed: {err}"));
         }
 
         if (!TryRun("tc", out err,
@@ -55,36 +44,16 @@ public sealed class LinuxPackageBandwidthLimiter : IPackageBandwidthLimiter
                 "u32", "match", "u32", "0", "0",
                 "police", "rate", $"{limit}mbit", "burst", "256kb", "mtu", "64kb", "drop", "flowid", ":1"))
         {
-            return Task.FromResult(new PackageBandwidthApplyResult(false, iface, limit, $"ingress limit apply failed: {err}"));
+            return Task.FromResult(new NodeBandwidthApplyResult(false, iface, limit, $"ingress limit apply failed: {err}"));
         }
 
-        return Task.FromResult(new PackageBandwidthApplyResult(true, iface, limit, "ok"));
-    }
-
-    private static long ResolveRequestedLimitMbps(IReadOnlyCollection<AgentPackageConfigDto> packages)
-    {
-        long max = 0;
-        foreach (var pkg in packages)
-        {
-            if (!string.Equals(pkg.Status, "active", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var value = ParseBandwidthMbps(pkg.Limits?.Bandwidth);
-            if (value > max)
-            {
-                max = value;
-            }
-        }
-
-        return max;
+        return Task.FromResult(new NodeBandwidthApplyResult(true, iface, limit, "ok"));
     }
 
     private static long ParseBandwidthMbps(string? raw)
     {
         var value = raw?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(value))
+        if (string.IsNullOrWhiteSpace(value) || value is "0" or "unlimited" or "unlimit")
         {
             return 0;
         }
@@ -105,7 +74,7 @@ public sealed class LinuxPackageBandwidthLimiter : IPackageBandwidthLimiter
             value = value[..^1];
         }
 
-        if (!double.TryParse(value.Trim(), out var parsed))
+        if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
         {
             return 0;
         }
@@ -127,12 +96,10 @@ public sealed class LinuxPackageBandwidthLimiter : IPackageBandwidthLimiter
             var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             for (var i = 0; i < parts.Length - 1; i++)
             {
-                if (!string.Equals(parts[i], "dev", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(parts[i], "dev", StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    return parts[i + 1];
                 }
-
-                return parts[i + 1];
             }
         }
 

@@ -73,7 +73,7 @@ builder.Services.AddSingleton<IDebugSessionService, DebugSessionService>();
 builder.Services.AddSingleton<IDebugAuditLogger, DebugAuditLogger>();
 builder.Services.AddSingleton<IManualDebugLogWriter, ManualDebugLogWriter>();
 builder.Services.AddSingleton<IEdgeDomainResolver, EdgeDomainResolver>();
-builder.Services.AddSingleton<IPackageBandwidthLimiter, LinuxPackageBandwidthLimiter>();
+builder.Services.AddSingleton<INodeBandwidthLimiter, LinuxNodeBandwidthLimiter>();
 builder.Services.AddSingleton<WafMatcher>();
 builder.Services.AddSingleton<CcEngine>();
 builder.Services.AddSingleton<PluginHost>();

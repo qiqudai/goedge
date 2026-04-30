@@ -229,6 +229,11 @@ public sealed partial class EdgeConfigService
             var policy = MapBalancePolicy(balanceWay);
             var headers = BuildHeaderMapFromSettings(settings, site) ?? BuildRequestHeaders(site);
             var responseHeaders = BuildResponseHeaderMapFromSettings(settings) ?? BuildResponseHeaders(site);
+            var siteType = ParseStringSetting(settings, "site_type")?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(siteType))
+            {
+                siteType = "website";
+            }
 
             var aclId = ResolveAclId(settings, site.Acl);
             var (aclDefault, aclRules) = await BuildAclForSiteAsync(aclId);
@@ -263,7 +268,7 @@ public sealed partial class EdgeConfigService
 
             foreach (var domain in domains)
             {
-                var limitRate = CalcDomainLimitRate(site, userPackageMap, domainCountByUserGroup, nodeGroupCounts);
+                var limitRate = CalcDomainLimitRate(site, userPackageMap);
                 var connLimit = CalcDomainConnLimit(site, userPackageMap, domainCountByUserGroup, nodeGroupCounts);
 
                 var domainConf = new EdgeDomainDto
@@ -287,6 +292,7 @@ public sealed partial class EdgeConfigService
                     UrlRedirects = urlRedirects,
                     OriginConditions = originConditions,
                     Status = status,
+                    SiteType = siteType,
                     ConnLimit = connLimit > 0 ? connLimit : null,
                     AclDefaultAction = string.IsNullOrWhiteSpace(aclDefault) ? null : aclDefault,
                     AclRules = aclRules,
@@ -2281,17 +2287,8 @@ public sealed partial class EdgeConfigService
 
     private static long CalcDomainLimitRate(
         Site site,
-        Dictionary<int, UserPackage> userPackageMap,
-        Dictionary<int, Dictionary<int, int>> domainCountByUserGroup,
-        Dictionary<long, long> nodeGroupCounts)
+        Dictionary<int, UserPackage> userPackageMap)
     {
-        var userId = site.Uid ?? 0;
-        var groupId = site.NodeGroupId ?? 0;
-        if (userId <= 0 || groupId <= 0)
-        {
-            return 0;
-        }
-
         if (!site.UserPackage.HasValue || !userPackageMap.TryGetValue(site.UserPackage.Value, out var pkg))
         {
             return 0;
@@ -2303,24 +2300,7 @@ public sealed partial class EdgeConfigService
             return 0;
         }
 
-        if (!nodeGroupCounts.TryGetValue(groupId, out var nodeCount) || nodeCount <= 0)
-        {
-            return 0;
-        }
-
-        if (!domainCountByUserGroup.TryGetValue(groupId, out var groupMap))
-        {
-            return 0;
-        }
-
-        if (!groupMap.TryGetValue(userId, out var domainCount) || domainCount <= 0)
-        {
-            return 0;
-        }
-
-        var perNodeMbps = mbps / nodeCount;
-        var perDomainMbps = perNodeMbps / domainCount;
-        return MbpsToLimitRate(perDomainMbps);
+        return MbpsToLimitRate(mbps);
     }
 
     private static int CalcDomainConnLimit(

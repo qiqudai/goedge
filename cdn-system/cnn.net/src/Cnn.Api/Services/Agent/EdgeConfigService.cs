@@ -69,6 +69,7 @@ public sealed partial class EdgeConfigService : IEdgeConfigService
         {
             NodeId = node.Id.ToString(),
             NodeLevel = node.Level ?? 0,
+            NodeBandwidthLimit = node.BwLimit,
             Domains = new List<EdgeDomainDto>(),
             Upstreams = new List<EdgeUpstreamDto>(),
             Waf = global.Waf,

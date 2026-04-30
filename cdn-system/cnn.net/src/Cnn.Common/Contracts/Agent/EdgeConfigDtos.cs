@@ -15,6 +15,9 @@ public sealed class EdgeConfigDto
     [JsonPropertyName("node_level")]
     public int? NodeLevel { get; set; }
 
+    [JsonPropertyName("node_bw_limit")]
+    public string? NodeBandwidthLimit { get; set; }
+
     [JsonPropertyName("domains")]
     public List<EdgeDomainDto> Domains { get; set; } = new();
 
@@ -113,6 +116,9 @@ public sealed class EdgeDomainDto
 
     [JsonPropertyName("status")]
     public string? Status { get; set; }
+
+    [JsonPropertyName("site_type")]
+    public string? SiteType { get; set; }
 
     [JsonPropertyName("conn_limit")]
     public int? ConnLimit { get; set; }
