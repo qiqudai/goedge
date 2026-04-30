@@ -42,10 +42,10 @@
           <el-table-column prop="site_id" label="网站ID" width="100" />
           <el-table-column prop="domain" label="域名" />
           <el-table-column prop="ip" label="IP" />
-          <el-table-column prop="location" label="域名" />
+          <el-table-column prop="location" label="地区" />
           <el-table-column prop="filter" label="规则" />
           <el-table-column prop="block_time" label="封禁时间" />
-          <el-table-column prop="release_time" label="封禁时间" />
+          <el-table-column prop="release_time" label="解封时间" />
           <el-table-column label="操作" width="100">
             <template #default="scope">
               <el-button link type="primary" size="small" @click="handleUnblock(scope.row)">解封</el-button>

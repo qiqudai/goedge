@@ -1,11 +1,14 @@
 package controllers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"cdn-api/db"
+	"cdn-api/models"
 	"cdn-api/services"
 
 	"github.com/gin-gonic/gin"
@@ -54,8 +57,17 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 	}
 
 	list := make([]gin.H, 0, len(rows))
+	siteIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		siteID, _ := resolveBlockSite(index, row.Host)
+		if siteID > 0 {
+			siteIDs = append(siteIDs, siteID)
+		}
+	}
+	blackTimeoutBySite := loadSiteBlackTimeoutSeconds(siteIDs)
 	for i, row := range rows {
 		siteID, domain := resolveBlockSite(index, row.Host)
+		releaseTime := formatBlockReleaseTime(row.BlockTime, blackTimeoutBySite[siteID])
 		list = append(list, gin.H{
 			"id":           offset + i + 1,
 			"site_id":      siteID,
@@ -64,7 +76,7 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 			"location":     formatBlockLocation(row.Country, row.Province),
 			"filter":       blockFilterLabel(row.Status),
 			"block_time":   formatBlockTime(row.BlockTime),
-			"release_time": "PERMANENT",
+			"release_time": releaseTime,
 		})
 	}
 
@@ -287,6 +299,72 @@ func formatBlockTime(ts time.Time) string {
 		return "-"
 	}
 	return ts.Format(blockTimeLayout)
+}
+
+func formatBlockReleaseTime(blockTime time.Time, timeoutSeconds int64) string {
+	if timeoutSeconds <= 0 || blockTime.IsZero() {
+		return "PERMANENT"
+	}
+	return blockTime.Add(time.Duration(timeoutSeconds) * time.Second).Format(blockTimeLayout)
+}
+
+func loadSiteBlackTimeoutSeconds(siteIDs []int64) map[int64]int64 {
+	result := make(map[int64]int64)
+	uniq := make(map[int64]struct{})
+	filtered := make([]int64, 0, len(siteIDs))
+	for _, id := range siteIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := uniq[id]; ok {
+			continue
+		}
+		uniq[id] = struct{}{}
+		filtered = append(filtered, id)
+	}
+	if len(filtered) == 0 {
+		return result
+	}
+	var sites []models.Site
+	if err := db.DB.Select("id, settings").Where("id IN ?", filtered).Find(&sites).Error; err != nil {
+		return result
+	}
+	for _, site := range sites {
+		result[site.ID] = parseSiteBlackTimeoutSeconds(site.SettingsRaw)
+	}
+	return result
+}
+
+func parseSiteBlackTimeoutSeconds(settingsRaw string) int64 {
+	settingsRaw = strings.TrimSpace(settingsRaw)
+	if settingsRaw == "" {
+		return 0
+	}
+	var settings map[string]interface{}
+	if err := json.Unmarshal([]byte(settingsRaw), &settings); err != nil {
+		return 0
+	}
+	security, ok := settings["security"].(map[string]interface{})
+	if !ok {
+		return 0
+	}
+	raw, ok := security["ip_black_timeout"]
+	if !ok || raw == nil {
+		return 0
+	}
+	switch v := raw.(type) {
+	case float64:
+		return int64(v)
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return n
+	default:
+		return 0
+	}
 }
 
 func writeBlockList(ctx *gin.Context, list []gin.H, total interface{}) {

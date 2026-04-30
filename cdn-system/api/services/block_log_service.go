@@ -41,7 +41,8 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return []BlockedCurrentRow{}, 0, nil
 	}
-	if !db.ClickHouseEnabled() {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []BlockedCurrentRow{}, 0, nil
 	}
 	conditions := []string{"ts >= ? AND ts <= ?", blockedStatusCondition()}
@@ -58,16 +59,16 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 	whereSQL := strings.Join(conditions, " AND ")
 	countSQL := fmt.Sprintf("SELECT uniqExact((host, remote_addr)) FROM node_access_logs WHERE %s", whereSQL)
 	querySQL := fmt.Sprintf(`SELECT host, remote_addr,
-		argMax(%s, ts) AS client_country,
-		argMax(%s, ts) AS client_province,
+		argMax(%s, ts) AS log_client_country,
+		argMax(%s, ts) AS log_client_province,
 		max(ts) AS block_time,
-		any(status) AS status
+		any(status) AS block_status
 		FROM node_access_logs WHERE %s
 		GROUP BY host, remote_addr
 		ORDER BY block_time DESC
 		LIMIT ? OFFSET ?`, AccessLogClientCountryExpr(), AccessLogClientProvinceExpr(), whereSQL)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryBlockedCurrentHTTP(httpCfg, countSQL, querySQL, args, limit, offset)
 	}
 	var total uint64
@@ -104,7 +105,8 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return []BlockedHistoryRow{}, 0, nil
 	}
-	if !db.ClickHouseEnabled() {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []BlockedHistoryRow{}, 0, nil
 	}
 	conditions := []string{"ts >= ? AND ts <= ?", blockedStatusCondition()}
@@ -128,7 +130,7 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 		ORDER BY ts DESC
 		LIMIT ? OFFSET ?`, AccessLogClientCountryExpr(), AccessLogClientProvinceExpr(), whereSQL)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryBlockedHistoryHTTP(httpCfg, countSQL, querySQL, args, limit, offset)
 	}
 	var total uint64
@@ -165,7 +167,8 @@ func QueryBlockedStats(start, end time.Time, hostFilter HostFilter, limit, offse
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return []BlockedStatRow{}, 0, nil
 	}
-	if !db.ClickHouseEnabled() {
+	httpCfg := buildHTTPConfig()
+	if !db.ClickHouseEnabled() && httpCfg == nil {
 		return []BlockedStatRow{}, 0, nil
 	}
 	conditions := []string{"ts >= ? AND ts <= ?", blockedStatusCondition()}
@@ -182,7 +185,7 @@ func QueryBlockedStats(start, end time.Time, hostFilter HostFilter, limit, offse
 		ORDER BY cnt DESC
 		LIMIT ? OFFSET ?`, whereSQL)
 
-	if httpCfg := buildHTTPConfig(); httpCfg != nil {
+	if httpCfg != nil {
 		return queryBlockedStatsHTTP(httpCfg, countSQL, querySQL, args, limit, offset)
 	}
 	var total uint64
@@ -259,9 +262,9 @@ func queryBlockedCurrentHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 		list = append(list, BlockedCurrentRow{
 			Host:      strings.TrimSpace(toStringAny(raw["host"])),
 			IP:        strings.TrimSpace(toStringAny(raw["remote_addr"])),
-			Country:   strings.TrimSpace(toStringAny(raw["client_country"])),
-			Province:  strings.TrimSpace(toStringAny(raw["client_province"])),
-			Status:    int(toInt64(raw["status"])),
+			Country:   strings.TrimSpace(toStringAny(raw["log_client_country"])),
+			Province:  strings.TrimSpace(toStringAny(raw["log_client_province"])),
+			Status:    int(toInt64(raw["block_status"])),
 			BlockTime: blockTime,
 		})
 	}

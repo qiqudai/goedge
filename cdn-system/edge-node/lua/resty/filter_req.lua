@@ -12,6 +12,7 @@ end
 
 local function block(reason, status)
     status = status or 403
+    ngx.header["X-Block-Source"] = reason or "local_protection"
     ngx.log(ngx.WARN, "filter_req blocking request (", reason, ") status=", status)
     ngx.exit(status)
 end
@@ -28,7 +29,7 @@ function _M.run()
 
     if ok_anti_cc and anti_cc and ip then
         if anti_cc.check_limit(ip) then
-            block("anti_cc", 503)
+            block("anti_cc", 418)
             return
         end
     end

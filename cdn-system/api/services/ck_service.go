@@ -30,8 +30,11 @@ type rawAccessLog struct {
 	BodyBytesSent        int64   `json:"body_bytes_sent"`
 	RequestTime          float64 `json:"request_time"`
 	UpstreamAddr         string  `json:"upstream_addr"`
+	UpstreamConnectTime  string  `json:"upstream_connect_time"`
+	UpstreamHeaderTime   string  `json:"upstream_header_time"`
 	UpstreamResponseTime string  `json:"upstream_response_time"`
 	UpstreamCacheStatus  string  `json:"upstream_cache_status"`
+	BlockSource          string  `json:"block_source"`
 	HttpReferer          string  `json:"http_referer"`
 	HttpUserAgent        string  `json:"http_user_agent"`
 	Scheme               string  `json:"scheme"`
@@ -82,7 +85,21 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			}
 			method, uri := parseRequest(raw.Request)
 			ts := formatTime(parseISOTime(raw.TimeISO8601))
+			upstreamCT := parseFloatFirst(raw.UpstreamConnectTime)
+			upstreamHT := parseFloatFirst(raw.UpstreamHeaderTime)
 			upstreamRT := parseFloatFirst(raw.UpstreamResponseTime)
+			cacheStatus := normalizeCacheStatus(raw.UpstreamCacheStatus)
+			blockSource := normalizeBlockSource(raw)
+			slowReason, slowAdvice := DiagnoseAccessLogSlowReason(DiagnoseInput{
+				RequestTime:          raw.RequestTime,
+				UpstreamConnectTime:  upstreamCT,
+				UpstreamHeaderTime:   upstreamHT,
+				UpstreamResponseTime: upstreamRT,
+				UpstreamCacheStatus:  cacheStatus,
+				Status:               raw.Status,
+				Scheme:               raw.Scheme,
+				SSLProtocol:          raw.SSLProtocol,
+			})
 			rows = append(rows, map[string]interface{}{
 				"ts":                     ts,
 				"node_id":                nodeID,
@@ -100,8 +117,13 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 				"bytes":                  raw.BodyBytesSent,
 				"request_time":           raw.RequestTime,
 				"upstream_addr":          raw.UpstreamAddr,
+				"upstream_connect_time":  upstreamCT,
+				"upstream_header_time":   upstreamHT,
 				"upstream_response_time": upstreamRT,
-				"upstream_cache_status":  raw.UpstreamCacheStatus,
+				"upstream_cache_status":  cacheStatus,
+				"block_source":           blockSource,
+				"slow_reason":            slowReason,
+				"slow_advice":            slowAdvice,
 				"http_referer":           raw.HttpReferer,
 				"http_user_agent":        raw.HttpUserAgent,
 				"scheme":                 raw.Scheme,
@@ -113,8 +135,8 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 		return insertHTTPRows(httpCfg, "node_access_logs", rows)
 	}
 	stmt, err := db.CK.Prepare(`INSERT INTO node_access_logs
-		(ts, node_id, node_ip, remote_addr, client_country, client_province, client_city, client_isp, site_name, host, method, uri, status, bytes, request_time, upstream_addr, upstream_response_time, upstream_cache_status, http_referer, http_user_agent, scheme, ssl_protocol, ssl_cipher, raw)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(ts, node_id, node_ip, remote_addr, client_country, client_province, client_city, client_isp, site_name, host, method, uri, status, bytes, request_time, upstream_addr, upstream_connect_time, upstream_header_time, upstream_response_time, upstream_cache_status, block_source, slow_reason, slow_advice, http_referer, http_user_agent, scheme, ssl_protocol, ssl_cipher, raw)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		log.Printf("[CK] Prepare access logs failed: %v", err)
 		return 0
@@ -136,7 +158,21 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 		}
 		method, uri := parseRequest(raw.Request)
 		ts := parseISOTime(raw.TimeISO8601)
+		upstreamCT := parseFloatFirst(raw.UpstreamConnectTime)
+		upstreamHT := parseFloatFirst(raw.UpstreamHeaderTime)
 		upstreamRT := parseFloatFirst(raw.UpstreamResponseTime)
+		cacheStatus := normalizeCacheStatus(raw.UpstreamCacheStatus)
+		blockSource := normalizeBlockSource(raw)
+		slowReason, slowAdvice := DiagnoseAccessLogSlowReason(DiagnoseInput{
+			RequestTime:          raw.RequestTime,
+			UpstreamConnectTime:  upstreamCT,
+			UpstreamHeaderTime:   upstreamHT,
+			UpstreamResponseTime: upstreamRT,
+			UpstreamCacheStatus:  cacheStatus,
+			Status:               raw.Status,
+			Scheme:               raw.Scheme,
+			SSLProtocol:          raw.SSLProtocol,
+		})
 		if _, err := stmt.Exec(
 			ts,
 			nodeID,
@@ -154,8 +190,13 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			raw.BodyBytesSent,
 			raw.RequestTime,
 			raw.UpstreamAddr,
+			upstreamCT,
+			upstreamHT,
 			upstreamRT,
-			raw.UpstreamCacheStatus,
+			cacheStatus,
+			blockSource,
+			slowReason,
+			slowAdvice,
 			raw.HttpReferer,
 			raw.HttpUserAgent,
 			raw.Scheme,
@@ -463,6 +504,25 @@ func parseInt64First(value string) int64 {
 		return int64(num)
 	}
 	return 0
+}
+
+func normalizeBlockSource(raw rawAccessLog) string {
+	source := strings.ToLower(strings.TrimSpace(raw.BlockSource))
+	switch source {
+	case "anti_cc", "ip_block", "waf", "cc":
+		return source
+	}
+	// Fallback inference for older agents that do not emit block_source.
+	if strings.TrimSpace(raw.UpstreamAddr) != "" || parseFloatFirst(raw.UpstreamResponseTime) > 0 {
+		return "origin"
+	}
+	if raw.Status == 418 || raw.Status == 429 || raw.Status == 403 {
+		return "local_protection"
+	}
+	if raw.Status == 503 && raw.RequestTime == 0 {
+		return "local_protection"
+	}
+	return ""
 }
 
 func parseMetricLine(line string) (string, string, float64, bool) {

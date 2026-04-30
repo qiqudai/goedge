@@ -57,6 +57,12 @@ func blockedStatusCondition() string {
 	return "status IN (" + strings.Join(parts, ",") + ")"
 }
 
+// Some local protection paths currently return 503 without upstream interaction.
+// Treat these as protection blocks, not origin/server 5xx, to avoid polluting 5xx health metrics.
+func real5xxCondition() string {
+	return "(status >= 500 AND status < 600 AND (block_source = 'origin' OR (block_source = '' AND NOT (status = 503 AND upstream_addr = '' AND request_time = 0 AND upstream_response_time = 0))))"
+}
+
 func bucketExpression(bucket time.Duration) string {
 	if bucket >= 24*time.Hour {
 		return "toStartOfDay(ts, 'UTC')"
@@ -137,10 +143,10 @@ func queryAccessBucketsWithExtraCondition(start, end time.Time, bucket time.Dura
 		countIf(upstream_cache_status = 'HIT') AS hit_count,
 		sumIf(bytes, upstream_cache_status != 'HIT') AS origin_bytes,
 		countIf(status >= 400 AND status < 500) AS status_4xx,
-		countIf(status >= 500 AND status < 600) AS status_5xx,
+		countIf(%s) AS status_5xx,
 		uniqExactIf(remote_addr, %s) AS blocked_ips
 		FROM node_access_logs WHERE %s
-		GROUP BY bucket ORDER BY bucket`, bucketExpr, blockedStatusCondition(), whereSQL)
+		GROUP BY bucket ORDER BY bucket`, bucketExpr, real5xxCondition(), blockedStatusCondition(), whereSQL)
 
 	if httpCfg != nil {
 		return queryAccessBucketsHTTP(httpCfg, bucketDisplayShift, query, args...)
