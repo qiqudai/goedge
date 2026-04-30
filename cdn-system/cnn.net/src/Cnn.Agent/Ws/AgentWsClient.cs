@@ -17,6 +17,7 @@ using Cnn.Agent.Acme;
 using Cnn.Agent.Cache;
 using Cnn.Agent.Config;
 using Cnn.Agent.Diagnostics;
+using Cnn.Agent.Network;
 using Cnn.Agent.Proxy;
 using Cnn.Agent.Security;
 using Cnn.Agent.Sync;
@@ -55,6 +56,7 @@ public sealed class AgentWsClient : BackgroundService
     private readonly AgentRuntimePaths _runtimePaths;
     private readonly AgentNodeState _nodeState;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IPackageBandwidthLimiter _packageBandwidthLimiter;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<L2NodesResponse>> _l2Waiters = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _nodeSyncLock = new();
@@ -94,7 +96,8 @@ public sealed class AgentWsClient : BackgroundService
         AcmeTokenStore tokenStore,
         AgentRuntimePaths runtimePaths,
         AgentNodeState nodeState,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        IPackageBandwidthLimiter packageBandwidthLimiter)
     {
         _configuration = configuration;
         _logger = logger;
@@ -117,6 +120,7 @@ public sealed class AgentWsClient : BackgroundService
         _runtimePaths = runtimePaths;
         _nodeState = nodeState;
         _httpClientFactory = httpClientFactory;
+        _packageBandwidthLimiter = packageBandwidthLimiter;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -2526,6 +2530,23 @@ public sealed class AgentWsClient : BackgroundService
                 Version = pkg.Version,
                 Status = "updated"
             });
+        }
+
+        var limiterResult = await _packageBandwidthLimiter.ApplyAsync(_localPackages.Values.ToList(), cancellationToken);
+        if (!limiterResult.Applied)
+        {
+            _logger.LogWarning(
+                "package bandwidth apply failed iface={Interface} limit={Limit}Mbps message={Message}",
+                limiterResult.Interface,
+                limiterResult.LimitMbps,
+                limiterResult.Message);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "package bandwidth applied iface={Interface} limit={Limit}Mbps",
+                limiterResult.Interface,
+                limiterResult.LimitMbps);
         }
 
         return applied;
