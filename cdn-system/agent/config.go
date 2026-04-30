@@ -8,7 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -122,7 +125,8 @@ func extractVersion(body []byte) int64 {
 
 func applyNodeRuntimeControls(body []byte) {
 	var payload struct {
-		AntiBlocking *bool `json:"anti_blocking"`
+		AntiBlocking       *bool  `json:"anti_blocking"`
+		NodeBandwidthLimit string `json:"node_bandwidth_limit"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return
@@ -131,6 +135,125 @@ func applyNodeRuntimeControls(body []byte) {
 		AutoDisableFirewall = *payload.AntiBlocking
 		applyAntiBlockingPreference(*payload.AntiBlocking, "config_sync")
 	}
+	if err := applyNodeBandwidthLimit(strings.TrimSpace(payload.NodeBandwidthLimit)); err != nil {
+		log.Printf("[Warn] apply node bandwidth limit failed: %v", err)
+	}
+}
+
+func applyNodeBandwidthLimit(raw string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	iface, err := detectPrimaryInterface()
+	if err != nil {
+		return err
+	}
+	kbit, limited := parseBandwidthLimitKbit(raw)
+	if !limited {
+		return clearInterfaceBandwidthLimit(iface)
+	}
+	return setInterfaceBandwidthLimit(iface, kbit)
+}
+
+func detectPrimaryInterface() (string, error) {
+	candidates := [][]string{
+		{"route", "get", "1.1.1.1"},
+		{"route", "show", "default"},
+	}
+	devRegex := regexp.MustCompile(`\bdev\s+([a-zA-Z0-9_.:-]+)\b`)
+	for _, args := range candidates {
+		out, err := exec.Command("ip", args...).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		match := devRegex.FindStringSubmatch(string(out))
+		if len(match) >= 2 && strings.TrimSpace(match[1]) != "" {
+			return strings.TrimSpace(match[1]), nil
+		}
+	}
+	return "", fmt.Errorf("cannot detect primary network interface")
+}
+
+func parseBandwidthLimitKbit(raw string) (int64, bool) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	value = strings.TrimSuffix(value, "bps")
+	value = strings.TrimSpace(value)
+	if value == "" || value == "0" || value == "unlimited" || value == "unlimit" {
+		return 0, false
+	}
+	numPart := strings.TrimRight(value, "kmg")
+	unitPart := strings.TrimSpace(strings.TrimPrefix(value, numPart))
+	numPart = strings.TrimSpace(numPart)
+	if numPart == "" {
+		return 0, false
+	}
+	num, err := strconv.ParseFloat(numPart, 64)
+	if err != nil || num <= 0 {
+		return 0, false
+	}
+	multiplier := 1.0
+	switch unitPart {
+	case "g":
+		multiplier = 1000 * 1000
+	case "m":
+		multiplier = 1000
+	case "k", "":
+		multiplier = 1
+	default:
+		return 0, false
+	}
+	kbit := int64(num * multiplier)
+	if kbit <= 0 {
+		return 0, false
+	}
+	return kbit, true
+}
+
+func clearInterfaceBandwidthLimit(iface string) error {
+	commands := [][]string{
+		{"qdisc", "del", "dev", iface, "root"},
+		{"qdisc", "del", "dev", iface, "ingress"},
+	}
+	var firstErr error
+	for _, args := range commands {
+		out, err := exec.Command("tc", args...).CombinedOutput()
+		if err != nil {
+			text := strings.ToLower(string(out))
+			if strings.Contains(text, "noqueue") || strings.Contains(text, "no such file") || strings.Contains(text, "cannot find") || strings.Contains(text, "invalid handle") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("tc %s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	return firstErr
+}
+
+func setInterfaceBandwidthLimit(iface string, kbit int64) error {
+	_ = clearInterfaceBandwidthLimit(iface)
+	burst := strconv.FormatInt(maxInt64(kbit/20, 64), 10) + "kbit"
+	latency := "50ms"
+	egress := []string{"qdisc", "replace", "dev", iface, "root", "tbf", "rate", strconv.FormatInt(kbit, 10) + "kbit", "burst", burst, "latency", latency}
+	if out, err := exec.Command("tc", egress...).CombinedOutput(); err != nil {
+		return fmt.Errorf("tc %s: %v (%s)", strings.Join(egress, " "), err, strings.TrimSpace(string(out)))
+	}
+	ingressQdisc := []string{"qdisc", "replace", "dev", iface, "handle", "ffff:", "ingress"}
+	if out, err := exec.Command("tc", ingressQdisc...).CombinedOutput(); err != nil {
+		return fmt.Errorf("tc %s: %v (%s)", strings.Join(ingressQdisc, " "), err, strings.TrimSpace(string(out)))
+	}
+	police := []string{"filter", "replace", "dev", iface, "parent", "ffff:", "protocol", "all", "u32", "match", "u32", "0", "0", "police", "rate", strconv.FormatInt(kbit, 10) + "kbit", "burst", burst, "drop", "flowid", ":1"}
+	if out, err := exec.Command("tc", police...).CombinedOutput(); err != nil {
+		return fmt.Errorf("tc %s: %v (%s)", strings.Join(police, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func readLocalVersion() int64 {
@@ -293,48 +416,55 @@ type edgeDomain struct {
 		IP     string `json:"ip"`
 		Action string `json:"action"`
 	} `json:"acl_rules"`
-	BlackIPs                    []string         `json:"black_ips"`
-	WhiteIPs                    []string         `json:"white_ips"`
-	CCRuleID                    int64            `json:"cc_rule_id"`
-	OriginProtocol              string           `json:"origin_protocol"`
-	OriginHTTPPort              string           `json:"origin_http_port"`
-	OriginHTTPSPort             string           `json:"origin_https_port"`
-	Cache                       *edgeCacheConfig `json:"cache"`
-	HttpListen                  []string         `json:"http_listen"`
-	HttpsListen                 []string         `json:"https_listen"`
-	HTTPSForce                  bool             `json:"https_force"`
-	HTTPSRedirectPort           string           `json:"https_redirect_port"`
-	HTTPSHSTS                   bool             `json:"https_hsts"`
-	HTTPSHTTP2                  bool             `json:"https_http2"`
-	HTTPSOCSP                   bool             `json:"https_ocsp"`
-	HTTPSHTTP3                  bool             `json:"https_http3"`
-	HTTPSSSLProtocols           string           `json:"https_ssl_protocols"`
-	HTTPSSSLCiphers             string           `json:"https_ssl_ciphers"`
-	HTTPSSSLPreferServerCiphers string           `json:"https_ssl_prefer_server_ciphers"`
-	ProxyConnectTimeout         string           `json:"proxy_connect_timeout"`
-	ProxyReadTimeout            string           `json:"proxy_read_timeout"`
-	ProxySendTimeout            string           `json:"proxy_send_timeout"`
-	ProxyHTTPVersion            string           `json:"proxy_http_version"`
-	ProxySSLProtocols           string           `json:"proxy_ssl_protocols"`
-	EnableGzip                  bool             `json:"enable_gzip"`
-	GzipTypes                   string           `json:"gzip_types"`
-	EnableWebsocket             bool             `json:"enable_websocket"`
-	EnableRange                 bool             `json:"enable_range"`
-	BodyLimit                   int64            `json:"body_limit"`
-	LogRequestHeader            bool             `json:"log_request_header"`
-	LogResponseHeader           bool             `json:"log_response_header"`
-	LogRequestBody              bool             `json:"log_request_body"`
-	LogRequestBodySizeLimit     int              `json:"log_request_body_size_limit"`
-	OriginCert                  bool             `json:"origin_cert"`
-	RealtimeIdentify            bool             `json:"realtime_identify"`
-	RealtimeSend                bool             `json:"realtime_send"`
-	RealtimeReturn              bool             `json:"realtime_return"`
-	DefaultSite                 bool             `json:"default_site"`
-	IPv6Enable                  bool             `json:"ipv6_enable"`
-	LimitRate                   int64            `json:"limit_rate"`
-	UpstreamKeepalive           bool             `json:"upstream_keepalive"`
-	UpstreamKeepaliveConn       int              `json:"upstream_keepalive_conn"`
-	UpstreamKeepaliveTimeout    int              `json:"upstream_keepalive_timeout"`
+	BlackIPs                       []string         `json:"black_ips"`
+	WhiteIPs                       []string         `json:"white_ips"`
+	CCRuleID                       int64            `json:"cc_rule_id"`
+	OriginProtocol                 string           `json:"origin_protocol"`
+	OriginHTTPPort                 string           `json:"origin_http_port"`
+	OriginHTTPSPort                string           `json:"origin_https_port"`
+	OriginHostHeader               string           `json:"origin_host_header"`
+	OriginSNI                      string           `json:"origin_sni"`
+	OriginVerifyTLS                bool             `json:"origin_verify_tls"`
+	Cache                          *edgeCacheConfig `json:"cache"`
+	HttpListen                     []string         `json:"http_listen"`
+	HttpsListen                    []string         `json:"https_listen"`
+	HTTPSForce                     bool             `json:"https_force"`
+	HTTPSRedirectPort              string           `json:"https_redirect_port"`
+	HTTPSHSTS                      bool             `json:"https_hsts"`
+	HTTPSHTTP2                     bool             `json:"https_http2"`
+	HTTPSOCSP                      bool             `json:"https_ocsp"`
+	HTTPSHTTP3                     bool             `json:"https_http3"`
+	HTTPSSSLProtocols              string           `json:"https_ssl_protocols"`
+	HTTPSSSLCiphers                string           `json:"https_ssl_ciphers"`
+	HTTPSSSLPreferServerCiphers    string           `json:"https_ssl_prefer_server_ciphers"`
+	ProxyConnectTimeout            string           `json:"proxy_connect_timeout"`
+	ProxyReadTimeout               string           `json:"proxy_read_timeout"`
+	ProxySendTimeout               string           `json:"proxy_send_timeout"`
+	ProxyHTTPVersion               string           `json:"proxy_http_version"`
+	OriginHTTPVersionPolicy        string           `json:"origin_http_version_policy"`
+	OriginAutoDowngrade            bool             `json:"origin_auto_downgrade"`
+	OriginDowngradeThreshold       int              `json:"origin_downgrade_threshold"`
+	OriginDowngradeWindowSeconds   int              `json:"origin_downgrade_window_seconds"`
+	OriginDowngradeCooldownSeconds int              `json:"origin_downgrade_cooldown_seconds"`
+	ProxySSLProtocols              string           `json:"proxy_ssl_protocols"`
+	EnableGzip                     bool             `json:"enable_gzip"`
+	GzipTypes                      string           `json:"gzip_types"`
+	EnableWebsocket                bool             `json:"enable_websocket"`
+	EnableRange                    bool             `json:"enable_range"`
+	BodyLimit                      int64            `json:"body_limit"`
+	LogRequestHeader               bool             `json:"log_request_header"`
+	LogResponseHeader              bool             `json:"log_response_header"`
+	LogRequestBody                 bool             `json:"log_request_body"`
+	LogRequestBodySizeLimit        int              `json:"log_request_body_size_limit"`
+	OriginCert                     bool             `json:"origin_cert"`
+	RealtimeIdentify               bool             `json:"realtime_identify"`
+	RealtimeSend                   bool             `json:"realtime_send"`
+	RealtimeReturn                 bool             `json:"realtime_return"`
+	DefaultSite                    bool             `json:"default_site"`
+	IPv6Enable                     bool             `json:"ipv6_enable"`
+	UpstreamKeepalive              bool             `json:"upstream_keepalive"`
+	UpstreamKeepaliveConn          int              `json:"upstream_keepalive_conn"`
+	UpstreamKeepaliveTimeout       int              `json:"upstream_keepalive_timeout"`
 }
 
 type edgeNginxConfig struct {
@@ -350,20 +480,21 @@ type edgeNginxConfig struct {
 }
 
 type edgeConfig struct {
-	Domains          []edgeDomain                `json:"domains"`
-	Upstreams        []edgeUpstream              `json:"upstreams"`
-	Streams          []edgeStream                `json:"streams"`
-	NodeLevel        int                         `json:"node_level"`
-	Nginx            *edgeNginxConfig            `json:"nginx"`
-	FallbackCertData string                      `json:"fallback_cert_data"`
-	FallbackKeyData  string                      `json:"fallback_key_data"`
-	WAF              *edgeWAFConfig              `json:"waf,omitempty"`
-	Resources        *edgeResources              `json:"resources,omitempty"`
-	ErrorPages       map[string]string           `json:"error_pages,omitempty"`
-	DefaultConfig    *edgeDefaultConfig          `json:"default_config,omitempty"`
-	CCRules          map[string][]edgeCCRuleItem `json:"cc_rules,omitempty"`
-	CCMatchers       map[string]edgeCCMatcher    `json:"cc_matchers,omitempty"`
-	CCFilters        map[string]edgeCCFilter     `json:"cc_filters,omitempty"`
+	Domains            []edgeDomain                `json:"domains"`
+	Upstreams          []edgeUpstream              `json:"upstreams"`
+	Streams            []edgeStream                `json:"streams"`
+	NodeBandwidthLimit string                      `json:"node_bandwidth_limit"`
+	NodeLevel          int                         `json:"node_level"`
+	Nginx              *edgeNginxConfig            `json:"nginx"`
+	FallbackCertData   string                      `json:"fallback_cert_data"`
+	FallbackKeyData    string                      `json:"fallback_key_data"`
+	WAF                *edgeWAFConfig              `json:"waf,omitempty"`
+	Resources          *edgeResources              `json:"resources,omitempty"`
+	ErrorPages         map[string]string           `json:"error_pages,omitempty"`
+	DefaultConfig      *edgeDefaultConfig          `json:"default_config,omitempty"`
+	CCRules            map[string][]edgeCCRuleItem `json:"cc_rules,omitempty"`
+	CCMatchers         map[string]edgeCCMatcher    `json:"cc_matchers,omitempty"`
+	CCFilters          map[string]edgeCCFilter     `json:"cc_filters,omitempty"`
 }
 
 type edgeWAFConfig struct {

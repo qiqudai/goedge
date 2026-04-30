@@ -163,7 +163,7 @@ func writeHTTPConfig(cfg edgeConfig) error {
 
 	upstreamKeepalive := map[string]edgeDomain{}
 	for _, domain := range processedDomains {
-		if domain.UpstreamKey != "" && domain.UpstreamKeepalive {
+		if domain.UpstreamKey != "" && shouldUseOriginKeepalive(domain) {
 			upstreamKeepalive[domain.UpstreamKey] = domain
 		}
 	}
@@ -194,12 +194,12 @@ func writeHTTPConfig(cfg edgeConfig) error {
 		if keep, ok := upstreamKeepalive[upstream.ID]; ok {
 			conn := keep.UpstreamKeepaliveConn
 			if conn <= 0 {
-				conn = 32
+				conn = 64
 			}
 			b.WriteString(fmt.Sprintf("    keepalive %d;\n", conn))
 			timeout := keep.UpstreamKeepaliveTimeout
 			if timeout <= 0 {
-				timeout = 30
+				timeout = 60
 			}
 			b.WriteString(fmt.Sprintf("    keepalive_timeout %ds;\n", timeout))
 		}
@@ -556,9 +556,6 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 			b.WriteString("    gzip_types " + types + ";\n")
 		}
 	}
-	if domain.LimitRate > 0 {
-		b.WriteString(fmt.Sprintf("    limit_rate %d;\n", domain.LimitRate))
-	}
 	if connLimit := effectiveConnLimit(domain); connLimit > 0 {
 		b.WriteString(fmt.Sprintf("    limit_conn addr_conn %d;\n", connLimit))
 	}
@@ -903,7 +900,7 @@ func normalizeRuleLocation(rule string) string {
 
 func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *edgeCacheConfig, rule *edgeCacheRule) {
 	customHeaderSet := buildCustomHeaderNameSet(domain.Headers)
-	writeProxyBase(b, customHeaderSet)
+	writeProxyBase(b, domain, customHeaderSet)
 	writeBrowserCompatibilityHeaders(b, domain, customHeaderSet)
 	writeProxyLogVars(b)
 	writeProxyProtocol(b, domain, customHeaderSet)
@@ -927,13 +924,13 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	applyCacheDirectives(b, cacheCfg, rule)
 }
 
-func writeProxyBase(b *strings.Builder, customHeaderSet map[string]struct{}) {
+func writeProxyBase(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
 	b.WriteString("        limit_req zone=cc_limit burst=20 nodelay;\n")
 	b.WriteString("        limit_conn addr_conn 50;\n")
 	b.WriteString("        set $backend_target \"\";\n")
 	b.WriteString("        access_by_lua_file lua/access_guard.lua;\n")
 	b.WriteString("        header_filter_by_lua_file lua/response_headers.lua;\n")
-	writeProxyHeaderIfMissing(b, customHeaderSet, "Host", "$host")
+	writeProxyHeaderIfMissing(b, customHeaderSet, "Host", originHostHeaderValue(domain))
 	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Real-IP", "$remote_addr")
 	// Use $remote_addr instead of $proxy_add_x_forwarded_for to avoid sending
 	// duplicate X-Forwarded-For headers to the origin. $proxy_add_x_forwarded_for
@@ -943,6 +940,17 @@ func writeProxyBase(b *strings.Builder, customHeaderSet map[string]struct{}) {
 	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Proto", "$scheme")
 	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Host", "$host")
 	writeProxyHeaderIfMissing(b, customHeaderSet, "X-Forwarded-Port", "$server_port")
+}
+
+func originHostHeaderValue(domain edgeDomain) string {
+	host := sanitizeHeaderValue(domain.OriginHostHeader)
+	if host == "" {
+		return "$host"
+	}
+	if strings.HasPrefix(host, "$") {
+		return host
+	}
+	return quoteNginxValue(host)
 }
 
 func writeBrowserCompatibilityHeaders(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
@@ -982,6 +990,13 @@ func writeProxyLogVars(b *strings.Builder) {
 	b.WriteString("        set $cdn_cache_key \"\";\n")
 	b.WriteString("        set $cache_bypass 0;\n")
 	b.WriteString("        set $cache_ttl 0;\n")
+	b.WriteString("        set $origin_http_policy \"\";\n")
+	b.WriteString("        set $origin_auto_downgrade 1;\n")
+	b.WriteString("        set $origin_downgrade_threshold 3;\n")
+	b.WriteString("        set $origin_downgrade_window 60;\n")
+	b.WriteString("        set $origin_downgrade_cooldown 600;\n")
+	b.WriteString("        set $origin_compat 0;\n")
+	b.WriteString("        set $origin_connection \"\";\n")
 }
 
 func writeProxyProtocol(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
@@ -991,17 +1006,72 @@ func writeProxyProtocol(b *strings.Builder, domain edgeDomain, customHeaderSet m
 		writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "$connection_upgrade")
 		return
 	}
-	if version := sanitizeProxyHTTPVersion(domain.ProxyHTTPVersion); version != "" {
-		b.WriteString("        proxy_http_version " + version + ";\n")
-		if version == "1.1" && domain.UpstreamKeepalive {
-			writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "\"\"")
-		}
+	policy := originHTTPVersionPolicy(domain)
+	b.WriteString("        set $origin_http_policy " + quoteNginxValue(policy) + ";\n")
+	b.WriteString(fmt.Sprintf("        set $origin_auto_downgrade %d;\n", boolInt(domain.OriginAutoDowngrade)))
+	b.WriteString(fmt.Sprintf("        set $origin_downgrade_threshold %d;\n", positiveInt(domain.OriginDowngradeThreshold, 3)))
+	b.WriteString(fmt.Sprintf("        set $origin_downgrade_window %d;\n", positiveInt(domain.OriginDowngradeWindowSeconds, 60)))
+	b.WriteString(fmt.Sprintf("        set $origin_downgrade_cooldown %d;\n", positiveInt(domain.OriginDowngradeCooldownSeconds, 600)))
+	if policy == "compat" {
+		b.WriteString("        proxy_http_version 1.0;\n")
+		writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "close")
 		return
 	}
-	if domain.UpstreamKeepalive {
+	if policy == "http11" || policy == "auto" || domain.UpstreamKeepalive {
 		b.WriteString("        proxy_http_version 1.1;\n")
-		writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "\"\"")
+		if policy == "auto" {
+			writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "$origin_connection")
+		} else {
+			writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "\"\"")
+		}
 	}
+}
+
+func originHTTPVersionPolicy(domain edgeDomain) string {
+	policy := strings.ToLower(strings.TrimSpace(domain.OriginHTTPVersionPolicy))
+	switch policy {
+	case "auto", "http11", "compat":
+		return policy
+	default:
+		if sanitizeProxyHTTPVersion(domain.ProxyHTTPVersion) == "1.1" {
+			return "http11"
+		}
+		if sanitizeProxyHTTPVersion(domain.ProxyHTTPVersion) == "1.0" {
+			return "compat"
+		}
+		if domain.UpstreamKeepalive {
+			return "auto"
+		}
+		return "auto"
+	}
+}
+
+func shouldUseOriginKeepalive(domain edgeDomain) bool {
+	if domain.EnableWebsocket {
+		return false
+	}
+	switch originHTTPVersionPolicy(domain) {
+	case "auto", "http11":
+		return true
+	case "compat":
+		return false
+	default:
+		return domain.UpstreamKeepalive
+	}
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func positiveInt(value, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }
 
 func buildCustomHeaderNameSet(headers map[string]string) map[string]struct{} {
@@ -1262,7 +1332,10 @@ func writeProxySSL(b *strings.Builder, domain edgeDomain) {
 		return
 	}
 	b.WriteString("        proxy_ssl_server_name on;\n")
-	if domain.OriginCert {
+	if sni := originSNIValue(domain); sni != "" {
+		b.WriteString("        proxy_ssl_name " + sni + ";\n")
+	}
+	if domain.OriginVerifyTLS || domain.OriginCert {
 		if caPath := resolveOriginTrustedCA(); caPath != "" {
 			b.WriteString("        proxy_ssl_verify on;\n")
 			b.WriteString("        proxy_ssl_trusted_certificate " + caPath + ";\n")
@@ -1274,6 +1347,17 @@ func writeProxySSL(b *strings.Builder, domain edgeDomain) {
 	if protocols := sanitizeNginxValue(domain.ProxySSLProtocols); protocols != "" {
 		b.WriteString("        proxy_ssl_protocols " + protocols + ";\n")
 	}
+}
+
+func originSNIValue(domain edgeDomain) string {
+	sni := sanitizeNginxToken(domain.OriginSNI)
+	if sni == "" {
+		sni = sanitizeNginxToken(domain.OriginHostHeader)
+	}
+	if sni == "" {
+		return "$host"
+	}
+	return sni
 }
 
 func resolveOriginTrustedCA() string {

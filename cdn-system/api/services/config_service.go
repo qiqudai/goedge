@@ -35,12 +35,13 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	}
 
 	payload := &models.EdgeConfig{
-		Version:      0,
-		NodeID:       strconv.FormatInt(node.ID, 10),
-		NodeLevel:    node.Level,
-		AntiBlocking: true,
-		Domains:      make([]models.EdgeDomain, 0),
-		Upstreams:    make([]models.EdgeUpstream, 0),
+		Version:            0,
+		NodeID:             strconv.FormatInt(node.ID, 10),
+		NodeLevel:          node.Level,
+		NodeBandwidthLimit: strings.TrimSpace(node.BwLimit),
+		AntiBlocking:       true,
+		Domains:            make([]models.EdgeDomain, 0),
+		Upstreams:          make([]models.EdgeUpstream, 0),
 	}
 	if val, err := GetNodeConfigValue(node.ID, "anti_blocking"); err == nil && strings.TrimSpace(val) != "" {
 		payload.AntiBlocking = ParseBoolFlag(val)
@@ -162,6 +163,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 
 		cacheCfg := extractCacheConfig(effectiveSite.Settings)
 		originProtocol, originHTTPPort, originHTTPSPort := extractOriginConfig(*effectiveSite)
+		originHostHeader, originSNI, originVerifyTLS := extractOriginTLSConfig(*effectiveSite)
 		httpsCfg := extractHTTPSConfig(effectiveSite.Settings)
 		advCfg := extractAdvancedConfig(effectiveSite.Settings)
 		proxyTimeouts := extractProxyTimeouts(effectiveSite.Settings)
@@ -211,6 +213,10 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		if hasHTTPS && len(httpsListen) == 0 {
 			httpsListen = []string{"443"}
 		}
+		if !hasHTTPS {
+			httpsListen = nil
+			selectedCertID = 0
+		}
 		if pkg, ok := userPackageMap[effectiveSite.UserPackageID]; ok {
 			if expireCloseEnabled && !pkg.EndAt.IsZero() && pkg.EndAt.Before(now) {
 				status = "expired"
@@ -241,13 +247,6 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			if normalizedDomain == "" {
 				continue
 			}
-			limitRate := calcDomainLimitRate(
-				effectiveSite.UserID,
-				effectiveSite.NodeGroupID,
-				userPackageMap[effectiveSite.UserPackageID].Bandwidth,
-				domainCountByUserGroup,
-				nodeGroupCounts,
-			)
 			connLimit := calcDomainConnLimit(
 				effectiveSite.UserID,
 				effectiveSite.NodeGroupID,
@@ -256,74 +255,81 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				nodeGroupCounts,
 			)
 			domainConf := models.EdgeDomain{
-				Name:                        normalizedDomain,
-				SiteType:                    siteType,
-				UpstreamKey:                 upstreamKey,
-				L2UpstreamKey:               l2UpstreamKey,
-				UseL2:                       l2Enabled,
-				L2HTTPPort:                  l2HTTPPort,
-				L2HTTPSPort:                 l2HTTPSPort,
-				LoadBalancePolicy:           policy,
-				Headers:                     headers,
-				ResponseHeaders:             responseHeaders,
-				Hotlink:                     hotlinkCfg,
-				CORS:                        corsCfg,
-				Cookie:                      cookieCfg,
-				BlockTransparentProxy:       blockTransparentProxy,
-				CrawlerAction:               crawlerAction,
-				GuardPassTTL:                guardPassTTL,
-				GuardBlockTTL:               guardBlockTTL,
-				URLRedirects:                urlRedirects,
-				URLRewrites:                 urlRewrites,
-				OriginConditions:            originConditions,
-				Status:                      status,
-				WAFEnable:                   wafEnable,
-				ACLDefaultAction:            aclDefault,
-				ACLRules:                    aclRules,
-				BlackIPs:                    parseIPList(effectiveSite.BlackIPRaw),
-				WhiteIPs:                    parseIPList(effectiveSite.WhiteIPRaw),
-				RegionBlock:                 regionBlock,
-				CCRuleID:                    effectiveSite.CcDefaultRule,
-				OriginProtocol:              originProtocol,
-				OriginHTTPPort:              originHTTPPort,
-				OriginHTTPSPort:             originHTTPSPort,
-				Cache:                       cacheCfg,
-				HttpListen:                  effectiveSite.HttpListen,
-				HttpsListen:                 httpsListen,
-				HTTPSForce:                  httpsCfg.force,
-				HTTPSRedirectPort:           httpsCfg.redirectPort,
-				HTTPSHSTS:                   httpsCfg.hsts,
-				HTTPSHTTP2:                  httpsCfg.http2,
-				HTTPSOCSP:                   httpsCfg.ocsp,
-				HTTPSHTTP3:                  httpsCfg.http3,
-				HTTPSSSLProtocols:           httpsCfg.sslProtocols,
-				HTTPSSSLCiphers:             httpsCfg.sslCiphers,
-				HTTPSSSLPreferServerCiphers: httpsCfg.sslPreferServerCiphers,
-				ProxyConnectTimeout:         proxyTimeouts.connectTimeout,
-				ProxyReadTimeout:            proxyTimeouts.readTimeout,
-				ProxySendTimeout:            proxyTimeouts.sendTimeout,
-				ProxyHTTPVersion:            advCfg.proxyHTTPVersion,
-				ProxySSLProtocols:           advCfg.proxySSLProtocols,
-				EnableGzip:                  advCfg.gzip,
-				GzipTypes:                   advCfg.gzipTypes,
-				EnableWebsocket:             advCfg.websocket,
-				EnableRange:                 advCfg.rangeEnabled,
-				BodyLimit:                   advCfg.bodyLimit,
-				LogRequestHeader:            advCfg.logRequestHeader,
-				LogResponseHeader:           advCfg.logResponseHeader,
-				LogRequestBody:              advCfg.logRequestBody,
-				LogRequestBodySizeLimit:     advCfg.logRequestBodySizeLimit,
-				OriginCert:                  advCfg.originCert,
-				RealtimeIdentify:            advCfg.realtimeIdentify,
-				RealtimeSend:                advCfg.realtimeSend,
-				RealtimeReturn:              advCfg.realtimeReturn,
-				DefaultSite:                 advCfg.defaultSite,
-				IPv6Enable:                  advCfg.ipv6Enable,
-				LimitRate:                   limitRate,
-				ConnLimit:                   connLimit,
-				UpstreamKeepalive:           advCfg.keepalive,
-				UpstreamKeepaliveConn:       advCfg.keepaliveConn,
-				UpstreamKeepaliveTimeout:    advCfg.keepaliveTimeout,
+				Name:                           normalizedDomain,
+				SiteType:                       siteType,
+				UpstreamKey:                    upstreamKey,
+				L2UpstreamKey:                  l2UpstreamKey,
+				UseL2:                          l2Enabled,
+				L2HTTPPort:                     l2HTTPPort,
+				L2HTTPSPort:                    l2HTTPSPort,
+				LoadBalancePolicy:              policy,
+				Headers:                        headers,
+				ResponseHeaders:                responseHeaders,
+				Hotlink:                        hotlinkCfg,
+				CORS:                           corsCfg,
+				Cookie:                         cookieCfg,
+				BlockTransparentProxy:          blockTransparentProxy,
+				CrawlerAction:                  crawlerAction,
+				GuardPassTTL:                   guardPassTTL,
+				GuardBlockTTL:                  guardBlockTTL,
+				URLRedirects:                   urlRedirects,
+				URLRewrites:                    urlRewrites,
+				OriginConditions:               originConditions,
+				Status:                         status,
+				WAFEnable:                      wafEnable,
+				ACLDefaultAction:               aclDefault,
+				ACLRules:                       aclRules,
+				BlackIPs:                       parseIPList(effectiveSite.BlackIPRaw),
+				WhiteIPs:                       parseIPList(effectiveSite.WhiteIPRaw),
+				RegionBlock:                    regionBlock,
+				CCRuleID:                       effectiveSite.CcDefaultRule,
+				OriginProtocol:                 originProtocol,
+				OriginHTTPPort:                 originHTTPPort,
+				OriginHTTPSPort:                originHTTPSPort,
+				OriginHostHeader:               originHostHeader,
+				OriginSNI:                      originSNI,
+				OriginVerifyTLS:                originVerifyTLS || advCfg.originCert,
+				Cache:                          cacheCfg,
+				HttpListen:                     effectiveSite.HttpListen,
+				HttpsListen:                    httpsListen,
+				HTTPSForce:                     httpsCfg.force,
+				HTTPSRedirectPort:              httpsCfg.redirectPort,
+				HTTPSHSTS:                      httpsCfg.hsts,
+				HTTPSHTTP2:                     httpsCfg.http2,
+				HTTPSOCSP:                      httpsCfg.ocsp,
+				HTTPSHTTP3:                     httpsCfg.http3,
+				HTTPSSSLProtocols:              httpsCfg.sslProtocols,
+				HTTPSSSLCiphers:                httpsCfg.sslCiphers,
+				HTTPSSSLPreferServerCiphers:    httpsCfg.sslPreferServerCiphers,
+				ProxyConnectTimeout:            proxyTimeouts.connectTimeout,
+				ProxyReadTimeout:               proxyTimeouts.readTimeout,
+				ProxySendTimeout:               proxyTimeouts.sendTimeout,
+				ProxyHTTPVersion:               advCfg.proxyHTTPVersion,
+				OriginHTTPVersionPolicy:        advCfg.originHTTPVersionPolicy,
+				OriginAutoDowngrade:            advCfg.originAutoDowngrade,
+				OriginDowngradeThreshold:       advCfg.originDowngradeThreshold,
+				OriginDowngradeWindowSeconds:   advCfg.originDowngradeWindowSeconds,
+				OriginDowngradeCooldownSeconds: advCfg.originDowngradeCooldownSeconds,
+				ProxySSLProtocols:              advCfg.proxySSLProtocols,
+				EnableGzip:                     advCfg.gzip,
+				GzipTypes:                      advCfg.gzipTypes,
+				EnableWebsocket:                advCfg.websocket,
+				EnableRange:                    advCfg.rangeEnabled,
+				BodyLimit:                      advCfg.bodyLimit,
+				LogRequestHeader:               advCfg.logRequestHeader,
+				LogResponseHeader:              advCfg.logResponseHeader,
+				LogRequestBody:                 advCfg.logRequestBody,
+				LogRequestBodySizeLimit:        advCfg.logRequestBodySizeLimit,
+				OriginCert:                     advCfg.originCert,
+				RealtimeIdentify:               advCfg.realtimeIdentify,
+				RealtimeSend:                   advCfg.realtimeSend,
+				RealtimeReturn:                 advCfg.realtimeReturn,
+				DefaultSite:                    advCfg.defaultSite,
+				IPv6Enable:                     advCfg.ipv6Enable,
+				ConnLimit:                      connLimit,
+				UpstreamKeepalive:              advCfg.keepalive,
+				UpstreamKeepaliveConn:          advCfg.keepaliveConn,
+				UpstreamKeepaliveTimeout:       advCfg.keepaliveTimeout,
 			}
 			if hasHTTPS {
 				cert := findCertForSiteDomain(selectedCertID, normalizedDomain, certs)
@@ -335,6 +341,16 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 						plainKey = dec
 					}
 					domainConf.SSLKeyData = plainKey
+				} else if selectedCertID > 0 {
+					// A selected certificate that does not cover this domain is
+					// unsafe to serve. Keep the site out of HTTPS instead of
+					// exposing the fallback certificate as if HTTPS succeeded.
+					domainConf.HttpsListen = nil
+					domainConf.HTTPSForce = false
+					domainConf.HTTPSHSTS = false
+					domainConf.HTTPSHTTP2 = false
+					domainConf.HTTPSOCSP = false
+					domainConf.HTTPSHTTP3 = false
 				} else {
 					// Keep cert path empty so agent can always fall back to its local fallback cert.
 					// Avoid machine-specific absolute placeholder paths in payload.
@@ -1322,28 +1338,6 @@ func buildDomainCountByUserGroup(sites []models.Site) map[int64]map[int64]int {
 	return result
 }
 
-func calcDomainLimitRate(userID int64, nodeGroupID int64, bandwidth string, domainCountByUserGroup map[int64]map[int64]int, nodeGroupCounts map[int64]int64) int64 {
-	mbps := parseBandwidthMbps(bandwidth)
-	if mbps <= 0 {
-		return 0
-	}
-	nodeCount := nodeGroupCounts[nodeGroupID]
-	if nodeCount <= 0 {
-		return 0
-	}
-	groupMap := domainCountByUserGroup[nodeGroupID]
-	if groupMap == nil {
-		return 0
-	}
-	domainCount := groupMap[userID]
-	if domainCount <= 0 {
-		return 0
-	}
-	perNodeMbps := mbps / float64(nodeCount)
-	perDomainMbps := perNodeMbps / float64(domainCount)
-	return mbpsToLimitRate(perDomainMbps)
-}
-
 func calcDomainConnLimit(userID int64, nodeGroupID int64, connLimit int32, domainCountByUserGroup map[int64]map[int64]int, nodeGroupCounts map[int64]int64) int {
 	if connLimit <= 0 {
 		return 0
@@ -1482,6 +1476,36 @@ func resolveOriginHost(site models.Site) string {
 	}
 }
 
+func extractOriginTLSConfig(site models.Site) (string, string, bool) {
+	hostHeader := resolveOriginHost(site)
+	sni := ""
+	verifyTLS := false
+	if site.Settings != nil {
+		if originCfg := getMap(site.Settings, "origin"); originCfg != nil {
+			if v := parseString(originCfg["host_header"]); v != "" {
+				hostHeader = v
+			}
+			sni = firstNonEmptyString(originCfg["sni"], originCfg["tls_server_name"])
+			verifyTLS = parseBoolValue(originCfg["verify_tls"], false)
+		}
+	}
+	hostHeader = sanitizeHeaderValue(hostHeader)
+	sni = sanitizeNginxToken(sni)
+	if sni == "" {
+		sni = sanitizeNginxToken(hostHeader)
+	}
+	return hostHeader, sni, verifyTLS
+}
+
+func firstNonEmptyString(values ...interface{}) string {
+	for _, value := range values {
+		if s := parseString(value); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 func firstDomain(domains []string) string {
 	for _, domain := range domains {
 		trimmed := strings.TrimSpace(domain)
@@ -1582,13 +1606,30 @@ func sanitizeProxyHTTPVersion(value string) string {
 	}
 }
 
+func sanitizeOriginHTTPVersionPolicy(value string) string {
+	value = strings.ToLower(sanitizeNginxToken(value))
+	switch value {
+	case "auto", "http11", "compat":
+		return value
+	case "1.1", "http/1.1", "http11_keepalive":
+		return "http11"
+	case "1.0", "http/1.0", "http10":
+		return "compat"
+	default:
+		return ""
+	}
+}
+
 func findCertForSiteDomain(certID int64, domain string, certs []models.Cert) *models.Cert {
 	if certID > 0 {
 		for _, cert := range certs {
-			if int64(cert.ID) == certID {
+			if int64(cert.ID) == certID && CertificateCoversDomain(cert.Cert, domain).OK {
 				return &cert
 			}
 		}
+		// A selected certificate is authoritative. If it does not cover the
+		// domain, do not silently fall back to another certificate.
+		return nil
 	}
 	return findCertForDomain(domain, certs)
 }
@@ -1599,6 +1640,12 @@ func findCertForDomain(domain string, certs []models.Cert) *models.Cert {
 		return nil
 	}
 	for _, cert := range certs {
+		if strings.TrimSpace(cert.Cert) != "" {
+			if CertificateCoversDomain(cert.Cert, domain).OK {
+				return &cert
+			}
+			continue
+		}
 		// Handle multi-domain certs (comma separated)
 		domains := strings.Split(cert.Domain, ",")
 		for _, d := range domains {
@@ -1694,26 +1741,31 @@ type httpsConfig struct {
 }
 
 type advancedConfig struct {
-	gzip                    bool
-	gzipTypes               string
-	websocket               bool
-	rangeEnabled            bool
-	proxyHTTPVersion        string
-	proxySSLProtocols       string
-	bodyLimit               int64
-	logRequestHeader        bool
-	logResponseHeader       bool
-	logRequestBody          bool
-	logRequestBodySizeLimit int
-	originCert              bool
-	realtimeIdentify        bool
-	realtimeSend            bool
-	realtimeReturn          bool
-	defaultSite             bool
-	ipv6Enable              bool
-	keepalive               bool
-	keepaliveConn           int
-	keepaliveTimeout        int
+	gzip                           bool
+	gzipTypes                      string
+	websocket                      bool
+	rangeEnabled                   bool
+	proxyHTTPVersion               string
+	originHTTPVersionPolicy        string
+	originAutoDowngrade            bool
+	originDowngradeThreshold       int
+	originDowngradeWindowSeconds   int
+	originDowngradeCooldownSeconds int
+	proxySSLProtocols              string
+	bodyLimit                      int64
+	logRequestHeader               bool
+	logResponseHeader              bool
+	logRequestBody                 bool
+	logRequestBodySizeLimit        int
+	originCert                     bool
+	realtimeIdentify               bool
+	realtimeSend                   bool
+	realtimeReturn                 bool
+	defaultSite                    bool
+	ipv6Enable                     bool
+	keepalive                      bool
+	keepaliveConn                  int
+	keepaliveTimeout               int
 }
 
 type proxyTimeoutConfig struct {
@@ -1766,7 +1818,15 @@ func extractHTTPSConfig(settings map[string]interface{}) httpsConfig {
 }
 
 func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
-	cfg := advancedConfig{}
+	cfg := advancedConfig{
+		originHTTPVersionPolicy:        "auto",
+		originAutoDowngrade:            true,
+		originDowngradeThreshold:       3,
+		originDowngradeWindowSeconds:   60,
+		originDowngradeCooldownSeconds: 600,
+		keepaliveConn:                  64,
+		keepaliveTimeout:               60,
+	}
 	bodyLimitSet := false
 	adv := getMap(settings, "advanced")
 	if adv != nil {
@@ -1775,6 +1835,20 @@ func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
 		cfg.websocket = parseBoolValue(adv["websocket"], false)
 		cfg.rangeEnabled = parseBoolValue(adv["range"], false)
 		cfg.proxyHTTPVersion = sanitizeProxyHTTPVersion(parseString(adv["proxy_http_version"]))
+		cfg.originHTTPVersionPolicy = sanitizeOriginHTTPVersionPolicy(parseString(adv["origin_http_version_policy"]))
+		if cfg.originHTTPVersionPolicy == "" {
+			if cfg.proxyHTTPVersion == "1.1" {
+				cfg.originHTTPVersionPolicy = "http11"
+			} else if parseBoolValue(adv["ups_keepalive"], false) {
+				cfg.originHTTPVersionPolicy = "auto"
+			} else {
+				cfg.originHTTPVersionPolicy = "auto"
+			}
+		}
+		cfg.originAutoDowngrade = parseBoolValue(adv["origin_auto_downgrade"], true)
+		cfg.originDowngradeThreshold = parseIntValue(adv["origin_downgrade_threshold"], 3)
+		cfg.originDowngradeWindowSeconds = parseIntValue(adv["origin_downgrade_window_seconds"], 60)
+		cfg.originDowngradeCooldownSeconds = parseIntValue(adv["origin_downgrade_cooldown_seconds"], 600)
 		cfg.proxySSLProtocols = sanitizeNginxValue(parseString(adv["proxy_ssl_protocols"]))
 		if raw, ok := adv["body_limit"]; ok {
 			cfg.bodyLimit = normalizeBodyLimitToKB(raw, adv["body_limit_unit"])
@@ -1791,8 +1865,29 @@ func extractAdvancedConfig(settings map[string]interface{}) advancedConfig {
 		cfg.defaultSite = parseBoolValue(adv["default_site"], false)
 		cfg.ipv6Enable = parseBoolValue(adv["ipv6"], false)
 		cfg.keepalive = parseBoolValue(adv["ups_keepalive"], false)
-		cfg.keepaliveConn = parseIntValue(adv["ups_keepalive_conn"], 0)
-		cfg.keepaliveTimeout = parseIntValue(adv["ups_keepalive_timeout"], 0)
+		cfg.keepaliveConn = parseIntValue(adv["ups_keepalive_conn"], cfg.keepaliveConn)
+		cfg.keepaliveTimeout = parseIntValue(adv["ups_keepalive_timeout"], cfg.keepaliveTimeout)
+	}
+	if cfg.originHTTPVersionPolicy == "auto" || cfg.originHTTPVersionPolicy == "http11" {
+		cfg.keepalive = true
+	}
+	if cfg.originHTTPVersionPolicy == "compat" {
+		cfg.keepalive = false
+	}
+	if cfg.originDowngradeThreshold <= 0 {
+		cfg.originDowngradeThreshold = 3
+	}
+	if cfg.originDowngradeWindowSeconds <= 0 {
+		cfg.originDowngradeWindowSeconds = 60
+	}
+	if cfg.originDowngradeCooldownSeconds <= 0 {
+		cfg.originDowngradeCooldownSeconds = 600
+	}
+	if cfg.keepaliveConn <= 0 {
+		cfg.keepaliveConn = 64
+	}
+	if cfg.keepaliveTimeout <= 0 {
+		cfg.keepaliveTimeout = 60
 	}
 	if !bodyLimitSet && settings != nil {
 		if raw, ok := settings["upload_limit"]; ok {

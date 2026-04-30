@@ -159,6 +159,15 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 	if err := db.DB.Create(&task).Error; err != nil {
 		return err
 	}
+	if len(nodeIDs) > 0 {
+		change := ConfigChange{
+			Version:   GetConfigVersion(),
+			Resource:  "package_sync",
+			IDs:       []int64{up.ID},
+			Timestamp: time.Now(),
+		}
+		createConfigSyncTask(change, nodeIDs)
+	}
 
 	TriggerDispatchPending()
 	return nil
