@@ -123,6 +123,9 @@ public sealed class UserCreateRequest
     [JsonPropertyName("password")]
     public string? Password { get; set; }
 
+    [JsonPropertyName("group_id")]
+    public int? GroupId { get; set; }
+
     [JsonPropertyName("enable")]
     public bool? Enable { get; set; }
 

@@ -122,6 +122,9 @@ public sealed class EdgeConfigToYarpCompiler
     private static List<IReadOnlyDictionary<string, string>> BuildTransforms(EdgeDomainDto domain)
     {
         var transforms = new List<IReadOnlyDictionary<string, string>>();
+        var siteType = domain.SiteType?.Trim().ToLowerInvariant() ?? "website";
+        var isWebsite = string.Equals(siteType, "website", StringComparison.OrdinalIgnoreCase);
+        var isWebSocket = domain.EnableWebsocket == true;
 
         if (domain.Headers != null)
         {
@@ -155,6 +158,26 @@ public sealed class EdgeConfigToYarpCompiler
                     ["Set"] = header.Value ?? string.Empty
                 });
             }
+        }
+
+        if (isWebsite && !isWebSocket)
+        {
+            transforms.Add(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ResponseHeaderRemove"] = "Upgrade"
+            });
+            transforms.Add(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ResponseHeaderRemove"] = "Connection"
+            });
+            transforms.Add(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ResponseHeaderRemove"] = "Keep-Alive"
+            });
+            transforms.Add(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ResponseHeaderRemove"] = "Proxy-Connection"
+            });
         }
 
         return transforms;

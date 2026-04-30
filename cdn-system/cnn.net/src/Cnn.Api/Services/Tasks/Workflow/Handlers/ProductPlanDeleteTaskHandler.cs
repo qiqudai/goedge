@@ -42,6 +42,10 @@ public sealed class ProductPlanDeleteTaskHandler : ITaskHandler
             throw new InvalidOperationException("product plan is still referenced by sold packages");
         }
 
+        await _db.Deleteable<MergePackageGroup>()
+            .Where(x => x.PackageId == planId)
+            .ExecuteCommandAsync();
+
         await _db.Deleteable<Package>()
             .Where(x => x.Id == planId)
             .ExecuteCommandAsync();

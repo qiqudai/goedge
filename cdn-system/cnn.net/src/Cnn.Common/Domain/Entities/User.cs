@@ -41,4 +41,7 @@ public class User
     public bool? Enable { get; set; }
 
     public int? Type { get; set; }
+
+    [SugarColumn(ColumnName = "group_id")]
+    public int? GroupId { get; set; }
 }

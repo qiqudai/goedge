@@ -4,6 +4,7 @@ using Cnn.Common.Contracts.Admin;
 using Cnn.Api.Services.Common;
 using Cnn.Api.Services.Stats;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Cnn.Api.Services.Admin;
 
@@ -22,13 +23,16 @@ public sealed class BlockLogService : IBlockLogService
 
     private readonly IConfiguration _configuration;
     private readonly ISiteHostIndexService _siteHostIndexService;
+    private readonly ILogger<BlockLogService> _logger;
 
     public BlockLogService(
         IConfiguration configuration,
-        ISiteHostIndexService siteHostIndexService)
+        ISiteHostIndexService siteHostIndexService,
+        ILogger<BlockLogService> logger)
     {
         _configuration = configuration;
         _siteHostIndexService = siteHostIndexService;
+        _logger = logger;
     }
 
     public async Task<ServiceResult<BlockCurrentListResult>> ListCurrentAsync(
@@ -69,7 +73,22 @@ public sealed class BlockLogService : IBlockLogService
                        $"FROM node_access_logs WHERE {where} GROUP BY host, remote_addr ORDER BY block_time DESC " +
                        $"LIMIT {pageSize} OFFSET {offset} FORMAT JSONEachRow";
 
-        var rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, querySql, cancellationToken);
+        string[]? rows;
+        try
+        {
+            rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, querySql, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "QueryBlockedCurrent primary query failed, fallback enabled");
+            var fallbackSql = $"SELECT host, remote_addr, " +
+                              $"'-' AS agg_client_country, " +
+                              $"'-' AS agg_client_province, " +
+                              $"max(ts) AS block_time, any(status) AS status_code " +
+                              $"FROM node_access_logs WHERE {where} GROUP BY host, remote_addr ORDER BY block_time DESC " +
+                              $"LIMIT {pageSize} OFFSET {offset} FORMAT JSONEachRow";
+            rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, fallbackSql, cancellationToken);
+        }
         if (rows == null || rows.Length == 0)
         {
             return ServiceResult<BlockCurrentListResult>.Ok(new BlockCurrentListResult(Array.Empty<BlockCurrentItem>(), total));
@@ -150,7 +169,21 @@ public sealed class BlockLogService : IBlockLogService
         var querySql = $"SELECT host, count() AS cnt FROM node_access_logs WHERE {where} " +
                        $"GROUP BY host ORDER BY cnt DESC LIMIT {pageSize} OFFSET {offset} FORMAT JSONEachRow";
 
-        var rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, querySql, cancellationToken);
+        string[]? rows;
+        try
+        {
+            rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, querySql, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "QueryBlockedHistory primary query failed, fallback enabled");
+            var fallbackSql = $"SELECT ts, host, remote_addr, " +
+                              $"'-' AS client_country, " +
+                              $"'-' AS client_province, " +
+                              $"status FROM node_access_logs WHERE {where} " +
+                              $"ORDER BY ts DESC LIMIT {pageSize} OFFSET {offset} FORMAT JSONEachRow";
+            rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, fallbackSql, cancellationToken);
+        }
         if (rows == null || rows.Length == 0)
         {
             return ServiceResult<BlockStatListResult>.Ok(new BlockStatListResult(Array.Empty<BlockStatItem>(), total));

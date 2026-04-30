@@ -7,18 +7,34 @@
 @inject NavigationManager Navigation
 
 <div class="page-container">
-    <div class="page-title">用户列表</div>
+    <div class="page-title">用户管理</div>
 
-    <div class="filter-bar">
-        <InputText class="form-control" style="max-width: 220px" @bind-Value="_keyword" placeholder="用户名/邮箱/手机号" />
-        <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
-        <button class="btn btn-outline-primary" @onclick="OpenCreate">添加用户</button>
-        <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
-            @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
-        </button>
+    <div class="tab-bar mb-3">
+        <button class='tab-button @(IsMainTab("users") ? "active" : "")' @onclick='@(() => SetMainTab("users"))'>用户列表</button>
+        <button class='tab-button @(IsMainTab("groups") ? "active" : "")' @onclick='@(() => SetMainTab("groups"))'>用户分组</button>
     </div>
 
-    @if (_showPagingDiagnostics)
+    @if (IsMainTab("users"))
+    {
+        <div class="filter-bar">
+            <InputText class="form-control" style="max-width: 220px" @bind-Value="_keyword" placeholder="用户名/邮箱/手机号" />
+            <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+            <button class="btn btn-outline-primary" @onclick="OpenCreate">添加用户</button>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="filter-bar">
+            <InputText class="form-control" style="max-width: 280px" @bind-Value="_newGroupName" placeholder="新分组名称" />
+            <button class="btn btn-primary" @onclick="CreateGroupAsync" disabled="@_groupSaving">新增分组</button>
+            <button class="btn btn-outline-secondary" @onclick="LoadUserGroupsAsync">刷新</button>
+        </div>
+    }
+
+    @if (IsMainTab("users") && _showPagingDiagnostics)
     {
         <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
             <div><strong>分页诊断</strong></div>
@@ -29,78 +45,120 @@
         </div>
     }
 
-    <TablePager @ref="_tablePager"
-                StateKey="system:users:table"
-                Total="_total"
-                DefaultPageSize="20"
-                UnpagedLimit="1000"
-                QueryChanged="OnPageQueryChangedAsync">
-        <ChildContent>
-            <div class="table-responsive">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>用户名</th>
-                            <th>邮箱</th>
-                            <th>手机</th>
-                            <th>QQ</th>
-                            <th>余额</th>
-                            <th>状态</th>
-                            <th>备注</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_loading)
-                        {
-                            <tr><td colspan="9">加载中...</td></tr>
-                        }
-                        else if (_items.Count == 0)
-                        {
-                            <tr><td colspan="9">暂无数据</td></tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in _items)
+    @if (IsMainTab("users"))
+    {
+        <TablePager @ref="_tablePager"
+                    StateKey="system:users:table"
+                    Total="_total"
+                    DefaultPageSize="20"
+                    UnpagedLimit="1000"
+                    QueryChanged="OnPageQueryChangedAsync">
+            <ChildContent>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>手机</th>
+                                <th>QQ</th>
+                                <th>余额</th>
+                                <th>状态</th>
+                                <th>备注</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading)
                             {
-                                <tr>
-                                    <td>@row.Id</td>
-                                    <td>
-                                        <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Name</span>
-                                        @if (row.Type == 1)
-                                        {
-                                            <span class="badge bg-danger ms-2">管理员</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Email</span>
-                                    </td>
-                                    <td>
-                                        <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Phone</span>
-                                    </td>
-                                    <td>@(string.IsNullOrWhiteSpace(row.Qq) ? "-" : row.Qq)</td>
-                                    <td>@(row.Balance?.ToString() ?? "0")</td>
-                                    <td>
-                                        <div class="form-check form-switch">
-                                            <InputCheckbox class="form-check-input" @bind-Value="row.Status" @onchange="() => ChangeStatusAsync(row)" />
-                                        </div>
-                                    </td>
-                                    <td>@(string.IsNullOrWhiteSpace(row.Des) ? "-" : row.Des)</td>
-                                    <td class="d-flex flex-wrap gap-2">
-                                        <button class="btn btn-sm btn-primary" @onclick="() => OpenEdit(row)">编辑</button>
-                                        <button class="btn btn-sm btn-success" @onclick="() => ImpersonateAsync(row)">切换登录</button>
-                                        <button class="btn btn-sm btn-warning" @onclick="() => ResetPurgeAsync(row)">重置缓存次数</button>
-                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveAsync(row)">删除</button>
-                                    </td>
-                                </tr>
+                                <tr><td colspan="9">加载中...</td></tr>
                             }
+                            else if (_items.Count == 0)
+                            {
+                                <tr><td colspan="9">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in _items)
+                                {
+                                    <tr>
+                                        <td>@row.Id</td>
+                                        <td>
+                                            <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Name</span>
+                                            @if (row.Type == 1)
+                                            {
+                                                <span class="badge bg-danger ms-2">管理员</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Email</span>
+                                        </td>
+                                        <td>
+                                            <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Phone</span>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(row.Qq) ? "-" : row.Qq)</td>
+                                        <td>@(row.Balance?.ToString() ?? "0")</td>
+                                        <td>
+                                            <div class="form-check form-switch">
+                                                <InputCheckbox class="form-check-input" @bind-Value="row.Status" @onchange="() => ChangeStatusAsync(row)" />
+                                            </div>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(row.Des) ? "-" : row.Des)</td>
+                                        <td class="d-flex flex-wrap gap-2">
+                                            <button class="btn btn-sm btn-primary" @onclick="() => OpenEdit(row)">编辑</button>
+                                            <button class="btn btn-sm btn-success" @onclick="() => ImpersonateAsync(row)">切换登录</button>
+                                            <button class="btn btn-sm btn-warning" @onclick="() => ResetPurgeAsync(row)">重置缓存次数</button>
+                                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveAsync(row)">删除</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </TablePager>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>分组名称</th>
+                        <th>描述</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_groupLoading)
+                    {
+                        <tr><td colspan="4">加载中...</td></tr>
+                    }
+                    else if (_userGroups.Count == 0)
+                    {
+                        <tr><td colspan="4">暂无分组</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var group in _userGroups)
+                        {
+                            <tr>
+                                <td>@group.Id</td>
+                                <td>@group.Name</td>
+                                <td>@(string.IsNullOrWhiteSpace(group.Des) ? "-" : group.Des)</td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteGroupAsync(group)">删除</button>
+                                </td>
+                            </tr>
                         }
-                    </tbody>
-                </table>
-            </div>
-        </ChildContent>
-    </TablePager>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
 @if (_editorVisible)
@@ -114,7 +172,10 @@
             <div class="modal-body">
                 <div class="tab-bar">
                     <button class='tab-button @(IsEditTab("basic") ? "active" : "")' @onclick='@(() => SetEditTab("basic"))'>基本信息</button>
-                    <button class='tab-button @(IsEditTab("cert") ? "active" : "")' @onclick='@(() => SetEditTab("cert"))'>实名认证</button>
+                    @if (!_createMode)
+                    {
+                        <button class='tab-button @(IsEditTab("cert") ? "active" : "")' @onclick='@(() => SetEditTab("cert"))'>实名认证</button>
+                    }
                     <button class='tab-button @(IsEditTab("security") ? "active" : "")' @onclick='@(() => SetEditTab("security"))'>登录安全</button>
                 </div>
 
@@ -149,8 +210,14 @@
                             <InputText class="form-control" @bind-Value="_editor.Qq" />
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">用户分组ID</label>
-                            <InputNumber class="form-control" @bind-Value="_editor.GroupId" />
+                            <label class="form-label">用户分组</label>
+                            <select class="form-select" @bind="_editor.GroupId">
+                                <option value="0">默认分组</option>
+                                @foreach (var group in _userGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">密码</label>
@@ -261,6 +328,11 @@
     private int _total;
     private string _keyword = string.Empty;
     private TablePager? _tablePager;
+    private readonly List<UserGroupOption> _userGroups = new();
+    private string _mainTab = "users";
+    private bool _groupLoading;
+    private bool _groupSaving;
+    private string _newGroupName = string.Empty;
 
     private bool _editorVisible;
     private bool _saving;
@@ -269,6 +341,15 @@
     private UserEditModel _editor = new();
 
     protected override Task OnInitializedAsync() => Task.CompletedTask;
+    private bool IsMainTab(string tab) => string.Equals(_mainTab, tab, StringComparison.OrdinalIgnoreCase);
+    private async Task SetMainTab(string tab)
+    {
+        _mainTab = tab;
+        if (IsMainTab("groups"))
+        {
+            await LoadUserGroupsAsync();
+        }
+    }
 
     private async Task LoadAsync()
     {
@@ -364,6 +445,7 @@
         _createMode = false;
         _editTab = "basic";
         _editor = UserEditModel.FromRow(row);
+        _ = LoadUserGroupsAsync();
         _editorVisible = true;
     }
 
@@ -375,6 +457,7 @@
         {
             Enable = true
         };
+        _ = LoadUserGroupsAsync();
         _editorVisible = true;
     }
 
@@ -411,6 +494,13 @@
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(_editor.Email))
+            {
+                await Js.InvokeVoidAsync("alert", "邮箱不能为空");
+                _saving = false;
+                return;
+            }
+
             var createRequest = new UserCreateRequest
             {
                 Email = _editor.Email,
@@ -419,6 +509,7 @@
                 Phone = _editor.Phone,
                 Qq = _editor.Qq,
                 Password = _editor.Password,
+                GroupId = _editor.GroupId,
                 Enable = _editor.Enable,
                 CertName = _editor.CertName,
                 CertNo = _editor.CertNo,
@@ -472,6 +563,83 @@
         _saving = false;
         _editorVisible = false;
         await RefreshAsync();
+    }
+
+    private async Task LoadUserGroupsAsync()
+    {
+        if (_groupLoading)
+        {
+            return;
+        }
+
+        _groupLoading = true;
+        var response = await Api.GetAsync<UserGroupListResult>("user_groups", ApiScope.Admin);
+        _userGroups.Clear();
+        if (response?.Data?.List == null)
+        {
+            _groupLoading = false;
+            return;
+        }
+
+        foreach (var item in response.Data.List)
+        {
+            _userGroups.Add(new UserGroupOption
+            {
+                Id = (int)item.Id,
+                Name = string.IsNullOrWhiteSpace(item.Name) ? $"用户组#{item.Id}" : item.Name.Trim(),
+                Des = item.Des ?? string.Empty
+            });
+        }
+        _groupLoading = false;
+    }
+
+    private async Task CreateGroupAsync()
+    {
+        if (_groupSaving)
+        {
+            return;
+        }
+
+        var name = _newGroupName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            await Js.InvokeVoidAsync("alert", "分组名称不能为空");
+            return;
+        }
+
+        _groupSaving = true;
+        var response = await Api.PostAsync<UserGroupDto>("user_groups", new UserGroupUpsertRequest
+        {
+            Name = name
+        }, ApiScope.Admin);
+        _groupSaving = false;
+
+        if (response?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "新增分组失败");
+            return;
+        }
+
+        _newGroupName = string.Empty;
+        await LoadUserGroupsAsync();
+    }
+
+    private async Task DeleteGroupAsync(UserGroupOption group)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"确认删除分组【{group.Name}】？");
+        if (!ok)
+        {
+            return;
+        }
+
+        var response = await Api.DeleteAsync<bool>($"user_groups/{group.Id}", ApiScope.Admin);
+        if (response?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "删除分组失败");
+            return;
+        }
+
+        await LoadUserGroupsAsync();
     }
 
     private async Task RemoveAsync(UserRow row)
@@ -637,5 +805,12 @@
                 GroupId = row.GroupId
             };
         }
+    }
+
+    private sealed class UserGroupOption
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Des { get; set; } = string.Empty;
     }
 }

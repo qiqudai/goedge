@@ -108,12 +108,7 @@ public sealed class UserService : IUserService
         var loginCaptcha = (request.LoginCaptcha ?? string.Empty).Trim().ToLowerInvariant();
         var enable = request.Enable ?? true;
 
-        if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(email))
-        {
-            name = email;
-        }
-
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(password))
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(email))
         {
             return ServiceResult<UserItemDto>.Fail(ErrorCodes.InvalidParam);
         }
@@ -139,6 +134,20 @@ public sealed class UserService : IUserService
             return ServiceResult<UserItemDto>.Fail(ErrorCodes.InternalError, "user_create_failed");
         }
 
+        var groupId = request.GroupId.GetValueOrDefault();
+        if (groupId < 0)
+        {
+            return ServiceResult<UserItemDto>.Fail(ErrorCodes.InvalidParam, "user_group_id_required");
+        }
+        if (groupId > 0)
+        {
+            var groupExists = await _db.Queryable<UserGroup>().AnyAsync(g => g.Id == groupId);
+            if (!groupExists)
+            {
+                return ServiceResult<UserItemDto>.Fail(ErrorCodes.InvalidParam, "user_group_not_found");
+            }
+        }
+
         var user = new User
         {
             Email = email,
@@ -152,6 +161,7 @@ public sealed class UserService : IUserService
             CertNo = certNo,
             LoginCaptcha = loginCaptcha,
             WhiteIp = whiteIp,
+            GroupId = groupId,
             CreateAt = DateTime.Now,
             Type = 2,
             Balance = 0,
@@ -211,6 +221,19 @@ public sealed class UserService : IUserService
         var whiteIp = (request.WhiteIp ?? string.Empty).Trim();
         var loginCaptcha = (request.LoginCaptcha ?? string.Empty).Trim();
         var enable = request.Enable ?? false;
+        var groupId = request.GroupId.GetValueOrDefault();
+        if (groupId < 0)
+        {
+            return ServiceResult<bool>.Fail(ErrorCodes.InvalidParam, "user_group_id_required");
+        }
+        if (groupId > 0)
+        {
+            var groupExists = await _db.Queryable<UserGroup>().AnyAsync(g => g.Id == groupId);
+            if (!groupExists)
+            {
+                return ServiceResult<bool>.Fail(ErrorCodes.InvalidParam, "user_group_not_found");
+            }
+        }
 
         var rows = await _db.Updateable<User>()
             .SetColumns(u => new User
@@ -224,7 +247,8 @@ public sealed class UserService : IUserService
                 CertNo = certNo,
                 WhiteIp = whiteIp,
                 LoginCaptcha = loginCaptcha,
-                Enable = enable
+                Enable = enable,
+                GroupId = groupId
             })
             .Where(u => u.Id == id)
             .ExecuteCommandAsync();
@@ -404,6 +428,8 @@ public sealed class UserService : IUserService
             CreateAt = user.CreateAt?.ToString("yyyy-MM-dd HH:mm:ss"),
             Enable = user.Enable,
             Type = user.Type
+            ,
+            GroupId = user.GroupId ?? 0
         };
     }
 

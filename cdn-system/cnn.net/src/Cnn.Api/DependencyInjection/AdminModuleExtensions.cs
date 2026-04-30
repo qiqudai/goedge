@@ -38,6 +38,7 @@ public static class AdminModuleExtensions
         services.AddScoped<IEventLogService, EventLogService>();
         services.AddScoped<IBlockLogService, BlockLogService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IUserGroupService, UserGroupService>();
         services.AddScoped<IUserPackageService, UserPackageService>();
         services.AddScoped<IUserPackageSyncService, UserPackageSyncService>();
         services.AddScoped<Cnn.Api.Services.Admin.ISiteSettingsStore, Cnn.Api.Services.Admin.SiteSettingsStore>();
