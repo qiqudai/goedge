@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -247,6 +248,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			if normalizedDomain == "" {
 				continue
 			}
+			limitRate := calcDomainLimitRate(userPackageMap[effectiveSite.UserPackageID].Bandwidth)
 			connLimit := calcDomainConnLimit(
 				effectiveSite.UserID,
 				effectiveSite.NodeGroupID,
@@ -326,6 +328,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				RealtimeReturn:                 advCfg.realtimeReturn,
 				DefaultSite:                    advCfg.defaultSite,
 				IPv6Enable:                     advCfg.ipv6Enable,
+				LimitRate:                      limitRate,
 				ConnLimit:                      connLimit,
 				UpstreamKeepalive:              advCfg.keepalive,
 				UpstreamKeepaliveConn:          advCfg.keepaliveConn,
@@ -1379,10 +1382,49 @@ func parseBandwidthMbps(raw string) float64 {
 		value = strings.TrimSuffix(value, "k")
 	}
 	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil {
+	if err != nil || parsed <= 0 {
 		return 0
 	}
 	return parsed * multiplier
+}
+
+func calcDomainLimitRate(bandwidth string) int64 {
+	return parsePackageBandwidthToLimitRate(bandwidth)
+}
+
+func parsePackageBandwidthToLimitRate(raw string) int64 {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" || value == "0" || value == "unlimited" || value == "unlimit" || value == i18n.T("value.unlimited") {
+		return 0
+	}
+	re := regexp.MustCompile(`^([+-]?[0-9]+(?:\.[0-9]+)?)\s*([kmg]?)$`)
+	m := re.FindStringSubmatch(value)
+	if len(m) < 2 {
+		return 0
+	}
+	num, err := strconv.ParseFloat(m[1], 64)
+	if err != nil || num <= 0 {
+		return 0
+	}
+	unit := ""
+	if len(m) >= 3 {
+		unit = strings.TrimSpace(m[2])
+	}
+	mbps := num
+	switch unit {
+	case "g":
+		mbps = num * 1024
+	case "k":
+		mbps = num / 1024
+	case "m", "":
+		// keep as Mbps
+	default:
+		return 0
+	}
+	if mbps <= 0 {
+		return 0
+	}
+	return mbpsToLimitRate(mbps)
 }
 
 func mbpsToLimitRate(mbps float64) int64 {
@@ -1430,6 +1472,21 @@ func buildHeaderMap(site models.Site) map[string]string {
 		if originHost := resolveOriginHost(site); originHost != "" {
 			if value := sanitizeHeaderValue(originHost); value != "" {
 				result["Host"] = value
+			}
+		}
+	}
+	if host, ok := result["Host"]; ok {
+		normalized := normalizeHostHeaderMapValue(host, site)
+		switch {
+		case normalized == "":
+			delete(result, "Host")
+		case strings.HasPrefix(normalized, "$"):
+			result["Host"] = normalized
+		default:
+			if value := sanitizeHeaderValue(normalized); value != "" {
+				result["Host"] = value
+			} else {
+				delete(result, "Host")
 			}
 		}
 	}
@@ -1482,7 +1539,7 @@ func extractOriginTLSConfig(site models.Site) (string, string, bool) {
 	verifyTLS := false
 	if site.Settings != nil {
 		if originCfg := getMap(site.Settings, "origin"); originCfg != nil {
-			if v := parseString(originCfg["host_header"]); v != "" {
+			if v := normalizeOriginHostHeaderValue(parseString(originCfg["host_header"]), site); v != "" {
 				hostHeader = v
 			}
 			sni = firstNonEmptyString(originCfg["sni"], originCfg["tls_server_name"])
@@ -1495,6 +1552,18 @@ func extractOriginTLSConfig(site models.Site) (string, string, bool) {
 		sni = sanitizeNginxToken(hostHeader)
 	}
 	return hostHeader, sni, verifyTLS
+}
+
+func normalizeOriginHostHeaderValue(raw string, site models.Site) string {
+	raw = strings.TrimSpace(raw)
+	switch strings.ToLower(raw) {
+	case "", "follow":
+		return ""
+	case "domain":
+		return firstDomain(site.Domains)
+	default:
+		return raw
+	}
 }
 
 func firstNonEmptyString(values ...interface{}) string {
@@ -1541,6 +1610,20 @@ func buildResponseHeaderMap(settings map[string]interface{}) map[string]string {
 		}
 	}
 	return result
+}
+
+func normalizeHostHeaderMapValue(value string, site models.Site) string {
+	value = strings.TrimSpace(value)
+	switch strings.ToLower(value) {
+	case "":
+		return ""
+	case "follow":
+		return "$host"
+	case "domain":
+		return firstDomain(site.Domains)
+	default:
+		return value
+	}
 }
 
 func sanitizeHeaderName(name string) string {

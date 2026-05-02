@@ -28,6 +28,87 @@ func TestWriteProxyBlock_CustomHostHeaderNoDuplicate(t *testing.T) {
 	}
 }
 
+func TestWriteProxyBlock_OriginHostHeaderSetsHostAndDefaultSNI(t *testing.T) {
+	domain := edgeDomain{
+		OriginProtocol:   "https",
+		OriginHostHeader: "origin.example.com",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_set_header Host \"origin.example.com\";") {
+		t.Fatalf("expected origin Host header, got: %s", out)
+	}
+	if !strings.Contains(out, "proxy_ssl_name origin.example.com;") {
+		t.Fatalf("expected origin Host header to be default SNI, got: %s", out)
+	}
+}
+
+func TestWriteProxyBlock_OriginHostHeaderFollowFallsBackToHostVariable(t *testing.T) {
+	domain := edgeDomain{
+		OriginHostHeader: "follow",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_set_header Host $host;") {
+		t.Fatalf("expected follow sentinel to resolve to $host, got: %s", out)
+	}
+}
+
+func TestWriteProxyBlock_OriginHostHeaderDomainUsesFirstServerName(t *testing.T) {
+	domain := edgeDomain{
+		Name:             "*.fxhj.app, fxhj.app",
+		OriginHostHeader: "domain",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_set_header Host \"*.fxhj.app\";") {
+		t.Fatalf("expected domain sentinel to resolve to first server name, got: %s", out)
+	}
+}
+
+func TestWriteProxyBlock_ExplicitOriginSNIOverridesHostHeader(t *testing.T) {
+	domain := edgeDomain{
+		OriginProtocol:   "https",
+		OriginHostHeader: "origin-host.example.com",
+		OriginSNI:        "origin-sni.example.com",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, true, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_set_header Host \"origin-host.example.com\";") {
+		t.Fatalf("expected origin Host header, got: %s", out)
+	}
+	if !strings.Contains(out, "proxy_ssl_name origin-sni.example.com;") {
+		t.Fatalf("expected explicit SNI to override host header, got: %s", out)
+	}
+}
+
+func TestWriteProxyBlock_HTTPOriginSkipsProxySSL(t *testing.T) {
+	domain := edgeDomain{
+		OriginProtocol: "http",
+		OriginSNI:      "origin.example.com",
+	}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+
+	if strings.Contains(out, "proxy_ssl_server_name") || strings.Contains(out, "proxy_ssl_name") {
+		t.Fatalf("http origin must not emit proxy ssl directives, got: %s", out)
+	}
+}
+
 func TestWriteProxyBlock_DefaultXForwardedForNoAppend(t *testing.T) {
 	// When no custom X-Forwarded-For is set, the default should use $remote_addr
 	// (not $proxy_add_x_forwarded_for) to prevent duplicate headers when the

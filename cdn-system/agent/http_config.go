@@ -556,6 +556,9 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 			b.WriteString("    gzip_types " + types + ";\n")
 		}
 	}
+	if domain.LimitRate > 0 {
+		b.WriteString(fmt.Sprintf("    limit_rate %d;\n", domain.LimitRate))
+	}
 	if connLimit := effectiveConnLimit(domain); connLimit > 0 {
 		b.WriteString(fmt.Sprintf("    limit_conn addr_conn %d;\n", connLimit))
 	}
@@ -943,7 +946,17 @@ func writeProxyBase(b *strings.Builder, domain edgeDomain, customHeaderSet map[s
 }
 
 func originHostHeaderValue(domain edgeDomain) string {
-	host := sanitizeHeaderValue(domain.OriginHostHeader)
+	host := strings.TrimSpace(domain.OriginHostHeader)
+	switch strings.ToLower(host) {
+	case "", "follow":
+		return "$host"
+	case "domain":
+		if first := firstDomainName(domain.Name); first != "" {
+			return quoteNginxValue(first)
+		}
+		return "$host"
+	}
+	host = sanitizeHeaderValue(host)
 	if host == "" {
 		return "$host"
 	}
@@ -951,6 +964,17 @@ func originHostHeaderValue(domain edgeDomain) string {
 		return host
 	}
 	return quoteNginxValue(host)
+}
+
+func firstDomainName(raw string) string {
+	parts := strings.Split(raw, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			return p
+		}
+	}
+	return ""
 }
 
 func writeBrowserCompatibilityHeaders(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
