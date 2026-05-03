@@ -2,6 +2,8 @@
   <div class="domain-batch-input">
     <el-input
       v-model="rawInput"
+      name="batch_domains"
+      autocomplete="on"
       type="textarea"
       :rows="10"
       placeholder="请输入域名，每行一个，或者用逗号/空格分隔。

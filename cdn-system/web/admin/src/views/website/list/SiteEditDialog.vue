@@ -34,6 +34,8 @@
         <el-form-item label="网站域名" prop="domains">
           <el-input
             v-model="form.domains"
+            name="site_domains"
+            autocomplete="on"
             placeholder="每行一个域名，支持泛域名如 *.example.com"
           />
         </el-form-item>
@@ -49,6 +51,8 @@
         <el-form-item label="源站地址" prop="origins">
           <el-input
             v-model="form.origins"
+            name="site_origins"
+            autocomplete="on"
             placeholder="每行一个，如: 1.1.1.1 或 1.1.1.1:8080"
           />
         </el-form-item>
@@ -88,7 +92,7 @@
                 </el-select>
             </el-form-item>
             <el-form-item label="备注">
-                <el-input v-model="form.remark" placeholder="可选备注信息" />
+                <el-input v-model="form.remark" name="site_remark" autocomplete="on" placeholder="可选备注信息" />
             </el-form-item>
         </div>
       </el-form>
@@ -125,6 +129,8 @@
                         <el-form-item label="源站地址" required>
                              <el-input 
                                 v-model="batchForm.simpleBackends" 
+                                name="batch_simple_backends"
+                                autocomplete="on"
                                 type="textarea" 
                                 :rows="3" 
                                 placeholder="所有域名共享的源站，每行一个。如: 1.1.1.1" 
@@ -135,6 +141,8 @@
                          <el-form-item label="数据内容" required>
                             <el-input
                                 v-model="batchForm.data"
+                                name="batch_advanced_data"
+                                autocomplete="on"
                                 type="textarea"
                                 :rows="8"
                                 placeholder="格式: domain=域名|ip=源IP
