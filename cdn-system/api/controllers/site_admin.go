@@ -41,6 +41,33 @@ func setSettingMapValue(settings map[string]interface{}, path []string, value in
 	current[path[len(path)-1]] = value
 }
 
+func validateCertCoversDomains(certID int64, domains []string, userID int64) error {
+	if certID <= 0 {
+		return nil
+	}
+	var cert models.Cert
+	query := db.DB.Where("id = ?", certID)
+	if userID > 0 {
+		query = query.Where("uid = ?", userID)
+	}
+	if err := query.First(&cert).Error; err != nil {
+		return errors.New("Certificate not found or permission denied")
+	}
+	if strings.TrimSpace(cert.Cert) == "" {
+		return fmt.Errorf("certificate is not ready")
+	}
+	for _, domain := range domains {
+		domain = normalizeDomainHost(domain)
+		if domain == "" {
+			continue
+		}
+		if result := services.CertificateCoversDomain(cert.Cert, domain); !result.OK {
+			return fmt.Errorf("certificate does not cover domain: %s", domain)
+		}
+	}
+	return nil
+}
+
 // List returns the list of sites for the current user
 func (ctrl *SiteController) List(c *gin.Context) {
 	userID, _ := c.Get("userID")
@@ -265,6 +292,16 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	if req.Settings != nil {
 		delete(req.Settings, "backend_protocol")
 		services.NormalizeSiteSettings(req.Settings)
+	}
+	if req.CertID != nil && *req.CertID > 0 {
+		domainsForCert := oldSite.Domains
+		if req.Domains != nil {
+			domainsForCert = *req.Domains
+		}
+		if err := validateCertCoversDomains(*req.CertID, domainsForCert, userID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
 	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
@@ -662,12 +699,14 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("ids is required")})
 		return
 	}
+	requestUserID := int64(0)
 	if isUserRequest(c) {
 		userID := parseInt64(mustGet(c, "userID"))
 		if userID == 0 {
 			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
 			return
 		}
+		requestUserID = userID
 		allowed, err := filterSiteIDsForUser(req.IDs, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
@@ -762,6 +801,19 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 			req.Settings = map[string]interface{}{}
 		}
 		setSettingMapValue(req.Settings, []string{"https", "certificate_id"}, *req.CertID)
+	}
+	if req.CertID != nil && *req.CertID > 0 {
+		var sites []models.Site
+		if err := db.DB.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
+		for _, site := range sites {
+			if err := validateCertCoversDomains(*req.CertID, site.Domains, requestUserID); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+				return
+			}
+		}
 	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {
@@ -999,7 +1051,10 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 			return
 		}
 	case "unlock":
-		// No-op for now; placeholder to keep UI consistent
+		if err := unlockSiteBlacklists(req.IDs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Update failed")})
+			return
+		}
 	case "clear_cache":
 		// Create a cache clear task that will be pulled by all agents.
 		now := time.Now()
@@ -1064,6 +1119,75 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Action completed")})
+}
+
+func unlockSiteBlacklists(siteIDs []int64) error {
+	if len(siteIDs) == 0 {
+		return nil
+	}
+	var sites []models.Site
+	if err := db.DB.Select("id, domain, settings").Where("id IN ?", siteIDs).Find(&sites).Error; err != nil {
+		return err
+	}
+	if len(sites) == 0 {
+		return nil
+	}
+
+	domains := make([]string, 0, len(sites)*2)
+	seenDomains := make(map[string]struct{})
+	for _, site := range sites {
+		settings := map[string]interface{}{}
+		if strings.TrimSpace(site.SettingsRaw) != "" {
+			_ = json.Unmarshal([]byte(site.SettingsRaw), &settings)
+		}
+		setSecurityIPList(settings, "blacklist", []string{})
+		settingsRaw, _ := json.Marshal(settings)
+		updates := map[string]interface{}{
+			"black_ip":  "[]",
+			"settings":  string(settingsRaw),
+			"update_at": time.Now(),
+		}
+		if err := db.DB.Model(&models.Site{}).Where("id = ?", site.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		for _, domain := range parseStringListValue(site.DomainRaw) {
+			domain = strings.TrimSpace(domain)
+			if domain == "" {
+				continue
+			}
+			if _, ok := seenDomains[domain]; ok {
+				continue
+			}
+			seenDomains[domain] = struct{}{}
+			domains = append(domains, domain)
+		}
+	}
+
+	// Best-effort cleanup so "当前封禁" can immediately reflect manual unlock.
+	clearBlockedLogsByDomains(domains)
+	return nil
+}
+
+func clearBlockedLogsByDomains(domains []string) {
+	if !db.ClickHouseEnabled() || len(domains) == 0 {
+		return
+	}
+	values := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		d := strings.TrimSpace(domain)
+		if d == "" {
+			continue
+		}
+		values = append(values, "'"+strings.ReplaceAll(d, "'", "''")+"'")
+	}
+	if len(values) == 0 {
+		return
+	}
+	query := fmt.Sprintf(
+		"ALTER TABLE node_access_logs DELETE WHERE block_source = 'ip_block' AND host IN (%s)",
+		strings.Join(values, ","),
+	)
+	_, _ = db.CK.Exec(query)
 }
 
 // AdminApplyCert sets HTTPS listen ports for selected sites
@@ -1208,17 +1332,18 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 				httpsCfg = map[string]interface{}{}
 				settings["https"] = httpsCfg
 			}
-			httpsCfg["enable"] = true
-			httpsCfg["certificate_id"] = cert.ID
+			httpsCfg["enable"] = false
+			httpsCfg["state"] = "pending_issue"
+			httpsCfg["pending_certificate_id"] = cert.ID
+			httpsCfg["certificate_id"] = 0
+			httpsCfg["active_certificate_id"] = 0
+			httpsCfg["last_error"] = ""
 			if settingsRaw, err := json.Marshal(settings); err == nil {
 				if tx.Migrator().HasColumn(&models.Site{}, "settings") {
 					siteUpdates["settings"] = string(settingsRaw)
 				} else {
 					siteUpdates["SettingsRaw"] = string(settingsRaw)
 				}
-			}
-			if len(site.HttpsListen) == 0 && strings.TrimSpace(site.HttpsListenRaw) == "" {
-				siteUpdates["https_listen"] = encodeList([]string{"443"})
 			}
 			if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Updates(siteUpdates).Error; err != nil {
 				return err
