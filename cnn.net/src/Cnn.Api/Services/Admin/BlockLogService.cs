@@ -72,7 +72,9 @@ public sealed class BlockLogService : IBlockLogService
         var querySql = $"SELECT host, remote_addr, " +
                        $"argMax({AccessLogGeoExpressions.ClientCountryExpr()}, ts) AS agg_client_country, " +
                        $"argMax({AccessLogGeoExpressions.ClientProvinceExpr()}, ts) AS agg_client_province, " +
-                       $"max(ts) AS block_time, any(status) AS status_code " +
+                       $"max(ts) AS block_time, any(status) AS status_code, " +
+                       $"argMax(block_source, ts) AS block_source, " +
+                       $"argMax(JSONExtractString(raw, 'block_source'), ts) AS raw_block_source " +
                        $"FROM node_access_logs WHERE {where} GROUP BY host, remote_addr ORDER BY block_time DESC " +
                        $"LIMIT {pageSize} OFFSET {offset} FORMAT JSONEachRow";
 
@@ -116,6 +118,9 @@ public sealed class BlockLogService : IBlockLogService
                 var province = ReadString(root, "agg_client_province");
                 var status = ReadInt(root, "status_code");
                 var blockTime = NormalizeBlockTime(ReadString(root, "block_time"));
+                var blockSource = ReadString(root, "block_source");
+                var rawBlockSource = ReadString(root, "raw_block_source");
+                var source = ParseBlockSource(status, blockSource, rawBlockSource);
                 var (siteId, domain) = ResolveSite(index, host);
                 list.Add(new BlockCurrentItem
                 {
@@ -124,7 +129,12 @@ public sealed class BlockLogService : IBlockLogService
                     Domain = domain,
                     Ip = ip,
                     Location = AccessLogGeoExpressions.FormatLocation(country, province),
-                    Filter = BuildStatusLabel(status),
+                    Filter = source.DisplayLabel,
+                    BlockModule = source.Module,
+                    BlockRule = source.Rule,
+                    BlockRuleId = source.RuleId,
+                    BlockConfig = source.Config,
+                    BlockSource = source.RawSource,
                     BlockTime = blockTime,
                     ReleaseTime = "PERMANENT"
                 });
@@ -257,7 +267,8 @@ public sealed class BlockLogService : IBlockLogService
         var querySql = $"SELECT ts, host, remote_addr, " +
                        $"{AccessLogGeoExpressions.ClientCountryExpr()} AS client_country, " +
                        $"{AccessLogGeoExpressions.ClientProvinceExpr()} AS client_province, " +
-                       $"status FROM node_access_logs WHERE {where} " +
+                       $"status, block_source, JSONExtractString(raw, 'block_source') AS raw_block_source " +
+                       $"FROM node_access_logs WHERE {where} " +
                        $"ORDER BY ts DESC LIMIT {pageSize} OFFSET {offset} FORMAT JSONEachRow";
 
         var rows = await ClickHouseHttpHelper.QueryRowsAsync(cfg, querySql, cancellationToken);
@@ -285,6 +296,9 @@ public sealed class BlockLogService : IBlockLogService
                 var province = ReadString(root, "client_province");
                 var status = ReadInt(root, "status");
                 var blockTime = NormalizeBlockTime(ReadString(root, "ts"));
+                var blockSource = ReadString(root, "block_source");
+                var rawBlockSource = ReadString(root, "raw_block_source");
+                var source = ParseBlockSource(status, blockSource, rawBlockSource);
                 var (siteId, domain) = ResolveSite(index, host);
                 list.Add(new BlockHistoryItem
                 {
@@ -293,7 +307,12 @@ public sealed class BlockLogService : IBlockLogService
                     Domain = domain,
                     Ip = ip,
                     Location = AccessLogGeoExpressions.FormatLocation(country, province),
-                    Filter = BuildStatusLabel(status),
+                    Filter = source.DisplayLabel,
+                    BlockModule = source.Module,
+                    BlockRule = source.Rule,
+                    BlockRuleId = source.RuleId,
+                    BlockConfig = source.Config,
+                    BlockSource = source.RawSource,
                     BlockTime = blockTime,
                     IsManual = false
                 });
@@ -595,14 +614,120 @@ public sealed class BlockLogService : IBlockLogService
         return (0, domain);
     }
 
-    private static string BuildStatusLabel(int status)
+    private static ParsedBlockSource ParseBlockSource(int status, string? blockSource, string? rawBlockSource)
     {
-        if (status <= 0)
+        var normalizedRaw = (rawBlockSource ?? string.Empty).Trim();
+        var normalized = (blockSource ?? string.Empty).Trim();
+        var effective = !string.IsNullOrWhiteSpace(normalizedRaw) ? normalizedRaw : normalized;
+        var pairs = ParseSourcePairs(effective);
+
+        var moduleKey = ReadFirst(pairs, "type");
+        if (string.IsNullOrWhiteSpace(moduleKey))
         {
-            return "-";
+            moduleKey = normalized;
+        }
+        moduleKey = moduleKey?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        var rule = ReadFirst(pairs, "rule");
+        var config = ReadFirst(pairs, "config");
+        if (string.IsNullOrWhiteSpace(config))
+        {
+            config = ReadFirst(pairs, "config_id");
+        }
+        if (string.IsNullOrWhiteSpace(config))
+        {
+            config = ReadFirst(pairs, "mode");
+        }
+        if (string.IsNullOrWhiteSpace(config))
+        {
+            config = ReadFirst(pairs, "action");
+        }
+        if (string.IsNullOrWhiteSpace(config))
+        {
+            config = ReadFirst(pairs, "filter");
+        }
+        var ruleId = ParseLong(ReadFirst(pairs, "rule_id"));
+
+        var module = moduleKey switch
+        {
+            "ip_block" => "IP黑名单",
+            "anti_cc" => "Anti-CC",
+            "cc" => "CC防护",
+            "cc_rate_limit" => "CC频控",
+            "cc_guard" => "CC防护",
+            "waf" => "WAF",
+            "local_protection" => "本地防护",
+            "origin" => "源站返回",
+            _ => string.Empty
+        };
+        if (string.IsNullOrWhiteSpace(module))
+        {
+            module = status <= 0 ? "-" : "HTTP_" + status;
         }
 
-        return "HTTP_" + status;
+        var detail = new List<string> { module };
+        if (!string.IsNullOrWhiteSpace(rule))
+        {
+            detail.Add("规则:" + rule);
+        }
+        if (ruleId > 0)
+        {
+            detail.Add("规则ID:" + ruleId);
+        }
+        if (!string.IsNullOrWhiteSpace(config))
+        {
+            detail.Add("配置:" + config);
+        }
+        if (status > 0)
+        {
+            detail.Add("HTTP_" + status);
+        }
+
+        return new ParsedBlockSource(
+            string.Join(" | ", detail),
+            module,
+            rule ?? string.Empty,
+            ruleId,
+            config ?? string.Empty,
+            effective
+        );
+    }
+
+    private static Dictionary<string, string> ParseSourcePairs(string source)
+    {
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return dict;
+        }
+
+        var parts = source.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            var idx = part.IndexOf('=');
+            if (idx <= 0 || idx >= part.Length - 1)
+            {
+                continue;
+            }
+            var key = part[..idx].Trim();
+            var value = part[(idx + 1)..].Trim();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+            dict[key] = value;
+        }
+        return dict;
+    }
+
+    private static string ReadFirst(IReadOnlyDictionary<string, string> source, string key)
+    {
+        return source.TryGetValue(key, out var value) ? value : string.Empty;
+    }
+
+    private static long ParseLong(string? value)
+    {
+        return long.TryParse(value, out var result) ? result : 0;
     }
 
     private static string NormalizeBlockTime(string? raw)
@@ -614,6 +739,14 @@ public sealed class BlockLogService : IBlockLogService
 
         return raw;
     }
+
+    private sealed record ParsedBlockSource(
+        string DisplayLabel,
+        string Module,
+        string Rule,
+        long RuleId,
+        string Config,
+        string RawSource);
 
     private static string? ReadString(JsonElement root, string name)
     {
