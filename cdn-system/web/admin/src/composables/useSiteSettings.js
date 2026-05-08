@@ -48,10 +48,23 @@ const siteSettings = reactive({
     healthCheckHost: '',
     healthCheckPath: '/',
     healthCheckStatus: '200 301 302',
-    healthCheckInterval: 60
+    healthCheckInterval: 60,
+    sni: '',
+    verifyTLS: false,
+    httpVersionPolicy: 'auto',
+    autoDowngrade: true,
+    downgradeThreshold: 3,
+    downgradeWindowSeconds: 60,
+    downgradeCooldownSeconds: 600,
+    keepaliveConn: 64,
+    keepaliveTimeout: 60
   },
   https: {
     enable: false,
+    state: 'off',
+    error: '',
+    activeCertId: null,
+    pendingCertId: null,
     listenPorts: '443',
     certId: null,
     force: false,
@@ -326,6 +339,16 @@ export function useSiteSettings() {
     siteSettings.origin.httpsPort = s.origin_https_port || data.origin_https_port || sBacksource.https_port || sOrigin.httpsPort || '443'
     siteSettings.origin.timeout = parseInt(s.origin_timeout || data.origin_timeout || sBacksource.timeout || sOrigin.timeout || 60)
     siteSettings.origin.connTimeout = parseInt(sBacksource.connect_timeout || sOrigin.connTimeout || 10)
+    siteSettings.origin.sni = sOrigin.sni || sOrigin.tls_server_name || ''
+    siteSettings.origin.verifyTLS = !!sOrigin.verify_tls
+    const sAdvOrigin = s.advanced || {}
+    siteSettings.origin.httpVersionPolicy = sAdvOrigin.origin_http_version_policy || 'auto'
+    siteSettings.origin.autoDowngrade = sAdvOrigin.origin_auto_downgrade !== false
+    siteSettings.origin.downgradeThreshold = parseInt(sAdvOrigin.origin_downgrade_threshold || 3)
+    siteSettings.origin.downgradeWindowSeconds = parseInt(sAdvOrigin.origin_downgrade_window_seconds || 60)
+    siteSettings.origin.downgradeCooldownSeconds = parseInt(sAdvOrigin.origin_downgrade_cooldown_seconds || 600)
+    siteSettings.origin.keepaliveConn = parseInt(sAdvOrigin.ups_keepalive_conn || 64)
+    siteSettings.origin.keepaliveTimeout = parseInt(sAdvOrigin.ups_keepalive_timeout || 60)
 
     // 健康检查
     siteSettings.origin.healthCheckEnabled = sOrigin.health_check !== false
@@ -336,7 +359,13 @@ export function useSiteSettings() {
 
     // HTTPS设置
     const hasHttpsListen = Array.isArray(data.https_listen) && data.https_listen.length > 0
-    siteSettings.https.enable = typeof data.https === 'boolean' ? data.https : hasHttpsListen
+    siteSettings.https.state = data.https_state || data.settings?.https?.state || ''
+    siteSettings.https.error = data.https_error || data.settings?.https?.last_error || ''
+    siteSettings.https.activeCertId = data.active_cert_id || data.settings?.https?.active_certificate_id || null
+    siteSettings.https.pendingCertId = data.pending_cert_id || data.settings?.https?.pending_certificate_id || null
+    siteSettings.https.enable = siteSettings.https.state
+      ? siteSettings.https.state === 'active'
+      : (typeof data.https === 'boolean' ? data.https : hasHttpsListen)
     siteSettings.https.listenPorts = (data.https_listen || []).join(' ')
     const certIdFromSettings = data.settings?.https?.certificate_id
     const resolvedCertId = data.cert_id || parseInt(certIdFromSettings || 0, 10) || null
@@ -346,7 +375,9 @@ export function useSiteSettings() {
     if (data.settings?.https) {
       const h = data.settings.https
       if (h.enable !== undefined) {
-        siteSettings.https.enable = parseBool(h.enable, siteSettings.https.enable)
+        siteSettings.https.enable = siteSettings.https.state
+          ? siteSettings.https.state === 'active'
+          : parseBool(h.enable, siteSettings.https.enable)
       }
     }
 

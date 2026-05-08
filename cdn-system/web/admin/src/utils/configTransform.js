@@ -41,7 +41,14 @@ export function buildSettingsPayload(siteSettings) {
     realtime_send: siteSettings.advanced.realtimeSend,
     advanced: {
       body_limit: uploadLimitKB,
-      body_limit_unit: 'kb'
+      body_limit_unit: 'kb',
+      origin_http_version_policy: siteSettings.origin.httpVersionPolicy || 'auto',
+      origin_auto_downgrade: siteSettings.origin.autoDowngrade !== false,
+      origin_downgrade_threshold: parseInt(siteSettings.origin.downgradeThreshold || 3, 10),
+      origin_downgrade_window_seconds: parseInt(siteSettings.origin.downgradeWindowSeconds || 60, 10),
+      origin_downgrade_cooldown_seconds: parseInt(siteSettings.origin.downgradeCooldownSeconds || 600, 10),
+      ups_keepalive_conn: parseInt(siteSettings.origin.keepaliveConn || 64, 10),
+      ups_keepalive_timeout: parseInt(siteSettings.origin.keepaliveTimeout || 60, 10)
     },
     log_request_header: siteSettings.advanced.logRequestHeader,
     log_response_header: siteSettings.advanced.logResponseHeader,
@@ -55,8 +62,8 @@ export function buildSettingsPayload(siteSettings) {
     // Deprecated fields removed: proxy timeouts, upstream keepalive, limit rate
 
     // 源站相关设置
-    origin_host: siteSettings.origin.host === 'custom' 
-      ? siteSettings.origin.hostValue 
+    origin_host: siteSettings.origin.host === 'custom'
+      ? siteSettings.origin.hostValue
       : siteSettings.origin.host,
     origin_timeout: siteSettings.origin.timeout,
     origin_http_port: siteSettings.origin.httpPort,
@@ -70,6 +77,9 @@ export function buildSettingsPayload(siteSettings) {
  * @returns {Object} 源站负载
  */
 function buildOriginPayload(originSettings) {
+  const hostHeader = originSettings.host === 'custom'
+    ? originSettings.hostValue
+    : originSettings.host
   return {
     list: originSettings.list.map(item => ({
       address: item.address,
@@ -81,6 +91,10 @@ function buildOriginPayload(originSettings) {
       seconds: item.seconds ? parseInt(item.seconds) : 0
     })),
     connTimeout: parseInt(originSettings.connTimeout || 10),
+    host_header: hostHeader,
+    sni: originSettings.sni || '',
+    tls_server_name: originSettings.sni || '',
+    verify_tls: !!originSettings.verifyTLS,
     health_check: originSettings.healthCheckEnabled,
     health_host: originSettings.healthCheckHost,
     health_path: originSettings.healthCheckPath,

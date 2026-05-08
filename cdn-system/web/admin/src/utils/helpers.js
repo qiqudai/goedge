@@ -23,6 +23,26 @@ export function formatDate(value) {
   return parsed.toLocaleString();
 }
 
+export function formatDateInTimezone(value, timeZone = 'Asia/Shanghai') {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(parsed).replace(/\//g, '-');
+  } catch (e) {
+    return parsed.toLocaleString();
+  }
+}
+
 export function getCertDays(cert, certList) {
     if (!cert || !cert.id) return 0;
     const fullCert = certList.find(c => c.id === cert.id);
@@ -34,4 +54,3 @@ export function getCertDays(cert, certList) {
     
     return Math.max(0, Math.floor((expire - now) / (1000 * 60 * 60 * 24)));
 }
-

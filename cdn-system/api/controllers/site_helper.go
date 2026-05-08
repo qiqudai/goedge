@@ -953,10 +953,20 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		httpOn := len(site.HttpListen) > 0 || strings.TrimSpace(site.HttpListenRaw) != ""
 		httpsOn := len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
 		certID := site.CertID
+		activeCertID := int64(0)
+		pendingCertID := int64(0)
+		httpsState := ""
+		httpsError := ""
 		if site.Settings != nil {
 			if httpsCfg, ok := site.Settings["https"].(map[string]interface{}); ok {
 				if enable, ok := httpsCfg["enable"]; ok {
 					httpsOn = parseBoolValue(enable, httpsOn)
+				}
+				if rawState, ok := httpsCfg["state"]; ok && rawState != nil {
+					httpsState = strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", rawState)))
+				}
+				if rawError, ok := httpsCfg["last_error"]; ok && rawError != nil {
+					httpsError = strings.TrimSpace(fmt.Sprintf("%v", rawError))
 				}
 				if certID == 0 {
 					if rawCertID, ok := httpsCfg["certificate_id"]; ok && rawCertID != nil {
@@ -965,7 +975,28 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 						}
 					}
 				}
+				if rawActiveID, ok := httpsCfg["active_certificate_id"]; ok && rawActiveID != nil {
+					if parsedActiveID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprintf("%v", rawActiveID)), 10, 64); err == nil {
+						activeCertID = parsedActiveID
+					}
+				}
+				if rawPendingID, ok := httpsCfg["pending_certificate_id"]; ok && rawPendingID != nil {
+					if parsedPendingID, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprintf("%v", rawPendingID)), 10, 64); err == nil {
+						pendingCertID = parsedPendingID
+					}
+				}
 			}
+		}
+		if httpsState == "" {
+			if httpsOn && certID != 0 {
+				httpsState = "active"
+				activeCertID = certID
+			} else {
+				httpsState = "off"
+			}
+		}
+		if httpsState != "active" {
+			httpsOn = false
 		}
 		httpPorts := parseListenPorts(site.HttpListen, site.HttpListenRaw, "")
 		httpsPorts := parseListenPorts(site.HttpsListen, site.HttpsListenRaw, "")
@@ -1012,7 +1043,11 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			CNAME:           cname,
 			Backends:        site.Backends,
 			HTTPS:           httpsOn,
+			HTTPSState:      httpsState,
+			HTTPSError:      httpsError,
 			CertID:          certID,
+			ActiveCertID:    activeCertID,
+			PendingCertID:   pendingCertID,
 			UserPackageID:   site.UserPackageID,
 			UserPackageName: pkg.Name,
 			DNSProviderID:   site.DNSProviderID,

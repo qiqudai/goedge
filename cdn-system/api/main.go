@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -43,12 +44,7 @@ func main() {
 	db.Init()
 	db.InitClickHouse()
 
-	if err := db.DB.AutoMigrate(&models.UserPackage{}); err != nil {
-		log.Fatal("Failed to migrate schemas:", err)
-	}
-	if err := db.DB.AutoMigrate(&models.BalanceLedger{}); err != nil {
-		log.Fatal("Failed to migrate balance ledger:", err)
-	}
+	runMigrationsWithRetry()
 	if db.DB.Migrator().HasTable(&models.Task{}) {
 		if !db.DB.Migrator().HasColumn(&models.Task{}, "targets_json") {
 			if err := db.DB.Migrator().AddColumn(&models.Task{}, "TargetsJSON"); err != nil {
@@ -88,8 +84,9 @@ func main() {
 
 	routers.Setup(r)
 
-	go func() {
+	safeGo("node-health-loop", func() {
 		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
 		for range ticker.C {
 			enabled, maxFails := services.ResolveNodeHealthConfig()
 			if !enabled {
@@ -100,7 +97,7 @@ func main() {
 				services.HandleNodeOffline(nodeID)
 			}
 		}
-	}()
+	})
 
 	// Start DNS Worker
 	go services.StartDNSWorker()
@@ -135,9 +132,55 @@ func main() {
 	if !strings.Contains(addr, ":") {
 		addr = ":" + addr
 	}
-	if err := r.Run(addr); err != nil {
-		log.Fatal(err)
+	for {
+		if err := r.Run(addr); err != nil {
+			log.Printf("HTTP server stopped unexpectedly: %v, retrying in 2s", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		return
 	}
+}
+
+func runMigrationsWithRetry() {
+	for {
+		if err := db.DB.AutoMigrate(&models.UserPackage{}); err != nil {
+			if db.RecoverIfConnectionError(err) {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			log.Printf("Failed to migrate schemas (UserPackage): %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		if err := db.DB.AutoMigrate(&models.BalanceLedger{}); err != nil {
+			if db.RecoverIfConnectionError(err) {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			log.Printf("Failed to migrate schemas (BalanceLedger): %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		return
+	}
+}
+
+func safeGo(name string, fn func()) {
+	go func() {
+		for {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[%s] panic recovered: %v\n%s", name, r, string(debug.Stack()))
+					}
+				}()
+				fn()
+			}()
+			log.Printf("[%s] exited unexpectedly, restarting in 2s", name)
+			time.Sleep(2 * time.Second)
+		}
+	}()
 }
 
 func ensureNodeColumns() {

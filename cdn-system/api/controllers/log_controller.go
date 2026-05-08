@@ -51,8 +51,12 @@ type AccessLogRow struct {
 	Bytes                uint64    `json:"bytes"`
 	RequestTime          float64   `json:"request_time"`
 	UpstreamAddr         string    `json:"upstream_addr"`
+	UpstreamConnectTime  float64   `json:"upstream_connect_time"`
+	UpstreamHeaderTime   float64   `json:"upstream_header_time"`
 	UpstreamResponseTime float64   `json:"upstream_response_time"`
 	UpstreamCacheStatus  string    `json:"upstream_cache_status"`
+	SlowReason           string    `json:"slow_reason"`
+	SlowAdvice           string    `json:"slow_advice"`
 	HTTPReferer          string    `json:"http_referer"`
 	HTTPUserAgent        string    `json:"http_user_agent"`
 	Scheme               string    `json:"scheme"`
@@ -438,6 +442,28 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 		conditions = append(conditions, "upstream_cache_status = ?")
 		args = append(args, cacheStatus)
 	}
+	if slowReason := strings.TrimSpace(c.Query("slow_reason")); slowReason != "" {
+		conditions = append(conditions, "slow_reason = ?")
+		args = append(args, slowReason)
+	}
+	if minRequestTime := strings.TrimSpace(c.Query("min_request_time")); minRequestTime != "" {
+		if value, err := strconv.ParseFloat(minRequestTime, 64); err == nil {
+			conditions = append(conditions, "request_time >= ?")
+			args = append(args, value)
+		}
+	}
+	if minUpstreamRT := strings.TrimSpace(c.Query("min_upstream_response_time")); minUpstreamRT != "" {
+		if value, err := strconv.ParseFloat(minUpstreamRT, 64); err == nil {
+			conditions = append(conditions, "upstream_response_time >= ?")
+			args = append(args, value)
+		}
+	}
+	if minUpstreamCT := strings.TrimSpace(c.Query("min_upstream_connect_time")); minUpstreamCT != "" {
+		if value, err := strconv.ParseFloat(minUpstreamCT, 64); err == nil {
+			conditions = append(conditions, "upstream_connect_time >= ?")
+			args = append(args, value)
+		}
+	}
 	if referer := strings.TrimSpace(c.Query("referer")); referer != "" {
 		conditions = append(conditions, "http_referer LIKE ?")
 		args = append(args, "%"+referer+"%")
@@ -474,7 +500,8 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 	}
 
 	querySQL := fmt.Sprintf(`SELECT ts, node_id, node_ip, remote_addr, %s AS host, method, uri, status, bytes,
-		request_time, upstream_addr, upstream_response_time, upstream_cache_status, http_referer, http_user_agent,
+		request_time, upstream_addr, upstream_connect_time, upstream_header_time, upstream_response_time, upstream_cache_status,
+		slow_reason, slow_advice, http_referer, http_user_agent,
 		scheme, ssl_protocol, ssl_cipher
 		FROM node_access_logs WHERE %s ORDER BY ts DESC LIMIT ? OFFSET ?`, siteExpr, whereSQL)
 	args = append(args, pageSize, (page-1)*pageSize)
@@ -501,8 +528,12 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 			&row.Bytes,
 			&row.RequestTime,
 			&row.UpstreamAddr,
+			&row.UpstreamConnectTime,
+			&row.UpstreamHeaderTime,
 			&row.UpstreamResponseTime,
 			&row.UpstreamCacheStatus,
+			&row.SlowReason,
+			&row.SlowAdvice,
 			&row.HTTPReferer,
 			&row.HTTPUserAgent,
 			&row.Scheme,

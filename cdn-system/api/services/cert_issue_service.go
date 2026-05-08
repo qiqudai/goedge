@@ -337,8 +337,82 @@ func UpdateIssuedCert(certID int64, certPEM string, keyPEM string, notBefore tim
 	if err := db.DB.Model(&models.Cert{}).Where("id = ?", certID).Updates(updates).Error; err != nil {
 		return err
 	}
+	ActivatePendingHTTPSForCert(certID, certPEM)
 	BumpConfigVersion("cert", []int64{certID})
 	return nil
+}
+
+func ActivatePendingHTTPSForCert(certID int64, certPEM string) {
+	if certID == 0 {
+		return
+	}
+	var sites []models.Site
+	if err := db.DB.Find(&sites).Error; err != nil {
+		log.Printf("[CertIssue] load pending https sites failed cert_id=%d err=%v", certID, err)
+		return
+	}
+	changedSiteIDs := make([]int64, 0)
+	for _, site := range sites {
+		httpsCfg := getMap(site.Settings, "https")
+		if httpsCfg == nil {
+			continue
+		}
+		pendingID := int64(parseIntValue(httpsCfg["pending_certificate_id"], 0))
+		if pendingID != certID {
+			continue
+		}
+		settings := site.Settings
+		if settings == nil {
+			settings = map[string]interface{}{}
+		}
+		httpsCfg = getMap(settings, "https")
+		if httpsCfg == nil {
+			httpsCfg = map[string]interface{}{}
+			settings["https"] = httpsCfg
+		}
+		errText := ""
+		for _, domain := range site.Domains {
+			if result := CertificateCoversDomain(certPEM, domain); !result.OK {
+				errText = fmt.Sprintf("certificate does not cover domain: %s", normalizeDomainHostForEdge(domain))
+				break
+			}
+		}
+		if errText != "" {
+			httpsCfg["enable"] = false
+			httpsCfg["state"] = "failed"
+			httpsCfg["last_error"] = errText
+		} else {
+			httpsCfg["enable"] = true
+			httpsCfg["state"] = "probing"
+			httpsCfg["certificate_id"] = certID
+			httpsCfg["active_certificate_id"] = 0
+			httpsCfg["pending_certificate_id"] = certID
+			httpsCfg["last_error"] = ""
+			httpsCfg["probe_at"] = time.Now().Format(time.RFC3339)
+		}
+		raw, _ := json.Marshal(settings)
+		updates := map[string]interface{}{
+			"settings":  string(raw),
+			"update_at": time.Now(),
+		}
+		if errText == "" {
+			if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
+				updates["cert_id"] = certID
+			}
+			if len(site.HttpsListen) == 0 && strings.TrimSpace(site.HttpsListenRaw) == "" {
+				updates["https_listen"] = "[\"443\"]"
+			}
+		}
+		if err := db.DB.Model(&models.Site{}).Where("id = ?", site.ID).Updates(updates).Error; err != nil {
+			log.Printf("[CertIssue] update pending https site failed site_id=%d cert_id=%d err=%v", site.ID, certID, err)
+			continue
+		}
+		changedSiteIDs = append(changedSiteIDs, site.ID)
+	}
+	if len(changedSiteIDs) > 0 {
+		BumpConfigVersion("site", changedSiteIDs)
+		CreateHTTPSProbeTasksForSites(changedSiteIDs, certID)
+	}
 }
 
 func ParseCertTimes(certPEM string) (time.Time, time.Time, error) {
@@ -537,6 +611,53 @@ func markCertIssueFailed(certID int64, reason string) {
 	}
 	if err := db.DB.Model(&models.Cert{}).Where("id = ?", certID).Updates(updates).Error; err != nil {
 		log.Printf("[CertIssue] mark cert failed cert_id=%d err=%v", certID, err)
+	}
+	MarkPendingHTTPSFailedForCert(certID, reason)
+}
+
+func MarkPendingHTTPSFailedForCert(certID int64, reason string) {
+	if certID == 0 {
+		return
+	}
+	var sites []models.Site
+	if err := db.DB.Find(&sites).Error; err != nil {
+		log.Printf("[CertIssue] load pending https failed sites failed cert_id=%d err=%v", certID, err)
+		return
+	}
+	changedSiteIDs := make([]int64, 0)
+	for _, site := range sites {
+		httpsCfg := getMap(site.Settings, "https")
+		if httpsCfg == nil {
+			continue
+		}
+		pendingID := int64(parseIntValue(httpsCfg["pending_certificate_id"], 0))
+		if pendingID != certID {
+			continue
+		}
+		settings := site.Settings
+		if settings == nil {
+			settings = map[string]interface{}{}
+		}
+		httpsCfg = getMap(settings, "https")
+		if httpsCfg == nil {
+			httpsCfg = map[string]interface{}{}
+			settings["https"] = httpsCfg
+		}
+		httpsCfg["enable"] = false
+		httpsCfg["state"] = "failed"
+		httpsCfg["last_error"] = strings.TrimSpace(reason)
+		raw, _ := json.Marshal(settings)
+		if err := db.DB.Model(&models.Site{}).Where("id = ?", site.ID).Updates(map[string]interface{}{
+			"settings":  string(raw),
+			"update_at": time.Now(),
+		}).Error; err != nil {
+			log.Printf("[CertIssue] mark pending https failed site_id=%d cert_id=%d err=%v", site.ID, certID, err)
+			continue
+		}
+		changedSiteIDs = append(changedSiteIDs, site.ID)
+	}
+	if len(changedSiteIDs) > 0 {
+		BumpConfigVersion("site", changedSiteIDs)
 	}
 }
 

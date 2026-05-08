@@ -41,3 +41,10 @@ node_modules/
 /cdn-system/web/admin/tests
 /cdn-system/web/admin/test-results
 /cdn-system/cnn.net
+/cnn.net
+/build
+.DS_Store
+**/.DS_Store
+
+# local temp
+.DS_Store

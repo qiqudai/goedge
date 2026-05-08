@@ -7,6 +7,7 @@
 
     <div v-if="activeTab === 'query'">
       <div class="filter-container">
+        <div class="timezone-note">时间显示：北京时间 (UTC+8)</div>
         <div class="filter-row">
           <el-select
             v-model="listQuery.domain"
@@ -116,6 +117,25 @@
                 <el-option label="UPDATING" value="UPDATING" />
               </el-select>
             </el-form-item>
+            <el-form-item label="慢因类型">
+              <el-select v-model="listQuery.slow_reason" clearable placeholder="诊断类型" style="width: 190px">
+                <el-option label="缓存未命中回源慢" value="缓存未命中回源慢" />
+                <el-option label="回源建连慢" value="回源建连慢" />
+                <el-option label="源站首包慢" value="源站首包慢" />
+                <el-option label="源站响应慢" value="源站响应慢" />
+                <el-option label="客户端链路或 TLS 握手慢" value="客户端链路或 TLS 握手慢" />
+                <el-option label="源站或节点错误" value="源站或节点错误" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="总耗时≥">
+              <el-input v-model="listQuery.min_request_time" placeholder="秒" clearable style="width: 110px" />
+            </el-form-item>
+            <el-form-item label="源站≥">
+              <el-input v-model="listQuery.min_upstream_response_time" placeholder="秒" clearable style="width: 110px" />
+            </el-form-item>
+            <el-form-item label="建连≥">
+              <el-input v-model="listQuery.min_upstream_connect_time" placeholder="秒" clearable style="width: 110px" />
+            </el-form-item>
             <el-form-item label="来源">
               <el-input v-model="listQuery.referer" placeholder="来源地址" clearable />
             </el-form-item>
@@ -166,10 +186,27 @@
         </el-table-column>
         <el-table-column prop="remote_addr" label="客户端IP" width="130" />
         <el-table-column prop="bytes" label="字节数" width="90" />
-        <el-table-column prop="request_time" label="耗时" width="80" />
-        <el-table-column prop="upstream_response_time" label="回源耗时" width="90" />
+        <el-table-column prop="request_time" label="总耗时" width="80" />
+        <el-table-column prop="upstream_connect_time" label="建连耗时" width="90" />
+        <el-table-column prop="upstream_header_time" label="首包耗时" width="90" />
+        <el-table-column prop="upstream_response_time" label="源站耗时" width="90" />
         <el-table-column prop="upstream_addr" label="回源地址" width="140" show-overflow-tooltip />
-        <el-table-column prop="upstream_cache_status" label="缓存状态" width="90" />
+        <el-table-column prop="upstream_cache_status" label="缓存状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="cacheStatusTag(row.upstream_cache_status)" size="small">
+              {{ row.upstream_cache_status || '-' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="慢因诊断" min-width="160">
+          <template #default="{ row }">
+            <el-tooltip :content="row.slow_advice || '-'" placement="top">
+              <el-tag :type="slowReasonTag(row.slow_reason)" size="small">
+                {{ row.slow_reason || '-' }}
+              </el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column prop="http_referer" label="来源" width="140" show-overflow-tooltip />
         <el-table-column prop="http_user_agent" label="浏览器" width="160" show-overflow-tooltip />
         <el-table-column prop="node_id" label="节点ID" width="80" />
@@ -201,6 +238,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import request from '@/utils/request'
 import { ArrowDown, ArrowUp, Search } from '@element-plus/icons-vue'
+import { formatDateInTimezone } from '@/utils/helpers'
 
 const activeTab = ref('query')
 const advancedVisible = ref(true)
@@ -208,6 +246,7 @@ const listLoading = ref(false)
 const list = ref([])
 const total = ref(0)
 const domainOptions = ref([])
+const DISPLAY_TIMEZONE = 'Asia/Shanghai'
 
 const listQuery = reactive({
   page: 1,
@@ -228,6 +267,10 @@ const listQuery = reactive({
   node_ip: '',
   scheme: '',
   cache_status: '',
+  slow_reason: '',
+  min_request_time: '',
+  min_upstream_response_time: '',
+  min_upstream_connect_time: '',
   referer: '',
   user_agent: '',
   ssl_protocol: '',
@@ -243,7 +286,11 @@ const hasActiveFilters = computed(() => {
       listQuery.uri ||
       listQuery.status ||
       listQuery.status_min ||
-      listQuery.status_max
+      listQuery.status_max ||
+      listQuery.slow_reason ||
+      listQuery.min_request_time ||
+      listQuery.min_upstream_response_time ||
+      listQuery.min_upstream_connect_time
   )
 })
 
@@ -258,6 +305,22 @@ const getStatusColor = status => {
 
 const toggleAdvanced = () => {
   advancedVisible.value = !advancedVisible.value
+}
+
+const cacheStatusTag = status => {
+  const value = String(status || '').toUpperCase()
+  if (value === 'HIT') return 'success'
+  if (['MISS', 'EXPIRED', 'BYPASS'].includes(value)) return 'warning'
+  if (['STALE', 'UPDATING', 'REVALIDATED'].includes(value)) return 'info'
+  return ''
+}
+
+const slowReasonTag = reason => {
+  if (!reason || reason === '正常' || reason === '正常命中') return 'success'
+  if (['缓存未命中', '缓存未命中回源慢', '后台更新中'].includes(reason)) return 'warning'
+  if (['使用过期缓存兜底', '客户端链路或 TLS 握手慢'].includes(reason)) return 'info'
+  if (['源站或节点错误'].includes(reason)) return 'danger'
+  return 'warning'
 }
 
 const resetFilters = () => {
@@ -277,6 +340,10 @@ const resetFilters = () => {
   listQuery.node_ip = ''
   listQuery.scheme = ''
   listQuery.cache_status = ''
+  listQuery.slow_reason = ''
+  listQuery.min_request_time = ''
+  listQuery.min_upstream_response_time = ''
+  listQuery.min_upstream_connect_time = ''
   listQuery.referer = ''
   listQuery.user_agent = ''
   listQuery.ssl_protocol = ''
@@ -289,7 +356,10 @@ const handleFilter = () => {
   request
     .get('/logs/access', { params: listQuery })
     .then(res => {
-      list.value = res.data?.list || []
+      list.value = (res.data?.list || []).map(item => ({
+        ...item,
+        timestamp: formatDateInTimezone(item.timestamp || item.ts, DISPLAY_TIMEZONE)
+      }))
       total.value = res.data?.total || 0
       listLoading.value = false
     })
@@ -316,6 +386,11 @@ onMounted(() => {
 <style scoped>
 .filter-container {
   margin-bottom: 20px;
+}
+.timezone-note {
+  margin-bottom: 8px;
+  color: #909399;
+  font-size: 12px;
 }
 .filter-row {
   display: flex;

@@ -36,6 +36,14 @@ func processPendingTasks() {
 		Find(&tasks).Error
 
 	if err != nil {
+		if db.RecoverIfConnectionError(err) {
+			err = db.DB.Where("enable = ?", true).
+				Where("(state = ? OR (state = ? AND retry_at <= ?))", "pending", "retrying", now).
+				Where("type IN ?", []string{"DNS_PLATFORM_CNAME_UPSERT", "DNS_USER_CNAME_UPSERT"}).
+				Order("id asc").
+				Limit(10).
+				Find(&tasks).Error
+		}
 		log.Printf("[DNS Worker] Failed to fetch tasks: %v", err)
 		return
 	}

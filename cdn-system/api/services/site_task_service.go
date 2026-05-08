@@ -55,6 +55,9 @@ func StartSiteCreateWorker() {
 func processSiteCreateTasks() {
 	var tasks []models.Task
 	if err := db.DB.Where("type = ? AND state IN ?", "site_create", []string{"waiting", "retrying"}).Find(&tasks).Error; err != nil {
+		if db.RecoverIfConnectionError(err) {
+			_ = db.DB.Where("type = ? AND state IN ?", "site_create", []string{"waiting", "retrying"}).Find(&tasks).Error
+		}
 		return
 	}
 

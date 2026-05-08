@@ -462,6 +462,7 @@ type edgeDomain struct {
 	RealtimeReturn                 bool             `json:"realtime_return"`
 	DefaultSite                    bool             `json:"default_site"`
 	IPv6Enable                     bool             `json:"ipv6_enable"`
+	LimitRate                      int64            `json:"limit_rate"`
 	UpstreamKeepalive              bool             `json:"upstream_keepalive"`
 	UpstreamKeepaliveConn          int              `json:"upstream_keepalive_conn"`
 	UpstreamKeepaliveTimeout       int              `json:"upstream_keepalive_timeout"`

@@ -3,6 +3,7 @@
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane label="当前封禁" name="current">
         <div class="filter-container">
+          <span class="timezone-note">时间显示：本地时区 ({{ localTimeZoneLabel }})</span>
           <el-button type="primary" class="filter-item" @click="handleUnblockBatch">批量解封</el-button>
           <el-button class="filter-item" @click="handleUnblockSite">解封网站</el-button>
           <el-button class="filter-item" @click="handleExportCurrent">导出当前</el-button>
@@ -35,6 +36,7 @@
           layout="total, prev, pager, next, sizes, jumper"
           :total="currentTotal"
           persist-key="current"
+          @selection-change="handleCurrentSelectionChange"
           @size-change="fetchCurrentList"
           @current-change="fetchCurrentList"
         >
@@ -76,7 +78,7 @@
           @current-change="fetchStatsList"
         >
           <el-table-column prop="site_id" label="网站ID" />
-          <el-table-column prop="count" label="封禁时间" />
+          <el-table-column prop="count" label="封禁次数" />
         </AppTable>
       </el-tab-pane>
 
@@ -140,7 +142,7 @@
           <el-table-column prop="site_id" label="网站ID" width="100" />
           <el-table-column prop="domain" label="域名" />
           <el-table-column prop="ip" label="IP" />
-          <el-table-column prop="location" label="域名" />
+          <el-table-column prop="location" label="地区" />
           <el-table-column prop="filter" label="规则" />
           <el-table-column prop="block_time" label="封禁时间" />
           <el-table-column prop="is_manual" label="解封方式">
@@ -157,6 +159,7 @@ import { ref, onMounted, reactive, computed} from 'vue'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
+import { formatDateInTimezone } from '@/utils/helpers'
 
 const activeTab = ref('current')
 const loading = ref(false)
@@ -164,8 +167,35 @@ const loading = ref(false)
 // --- Current Blocked ---
 const currentList = ref([])
 const currentTotal = ref(0)
+const currentSelections = ref([])
 const currentQuery = reactive({ page: 1, pageSize: 10 })
 const currentFilter = reactive({ type: 'ip', keyword: '' })
+const DISPLAY_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const localTimeZoneLabel = computed(() => DISPLAY_TIMEZONE)
+
+const normalizeSourceTime = (value) => {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(text)) return text
+  // Backend returns wall-clock time without timezone; treat it as UTC+8 first.
+  return text.replace(' ', 'T') + '+08:00'
+}
+
+const normalizeReleaseTime = (value) => {
+  const text = String(value ?? '').trim()
+  if (!text) return '-'
+  if (text.toUpperCase() === 'PERMANENT') return '永久'
+  return formatDateInTimezone(normalizeSourceTime(text), DISPLAY_TIMEZONE)
+}
+
+const normalizeBlockRowTime = (row) => {
+  if (!row || typeof row !== 'object') return row
+  return {
+    ...row,
+    block_time: formatDateInTimezone(normalizeSourceTime(row.block_time), DISPLAY_TIMEZONE),
+    release_time: normalizeReleaseTime(row.release_time)
+  }
+}
 
 const getCurrentRowKey = (row) => {
   const siteID = row?.site_id || ''
@@ -183,7 +213,7 @@ const fetchCurrentList = async () => {
         keyword: currentFilter.keyword
       }
     })
-    currentList.value = res.data?.list || []
+    currentList.value = (res.data?.list || []).map(normalizeBlockRowTime)
     currentTotal.value = res.data?.total || 0
   } catch (error) {
     console.error(error)
@@ -192,17 +222,71 @@ const fetchCurrentList = async () => {
   }
 }
 
-const handleUnblockBatch = () => {
-  ElMessage.info('\u8bf7\u9009\u62e9\u9700\u8981\u89e3\u5c01\u7684\u8bb0\u5f55')
+const handleCurrentSelectionChange = (rows) => {
+  currentSelections.value = Array.isArray(rows) ? rows : []
 }
-const handleUnblockSite = () => {
-  ElMessage.info('\u8bf7\u9009\u62e9\u8981\u89e3\u5c01\u7684\u7f51\u7ad9')
+
+const handleUnblockBatch = async () => {
+  if (!currentSelections.value.length) {
+    ElMessage.info('\u8bf7\u9009\u62e9\u9700\u8981\u89e3\u5c01\u7684\u8bb0\u5f55')
+    return
+  }
+  loading.value = true
+  try {
+    await request.post('/logs/block/unblock_batch', {
+      items: currentSelections.value.map(r => ({ ip: r.ip }))
+    })
+    ElMessage.success('\u6279\u91cf\u89e3\u5c01\u6210\u529f')
+    await fetchCurrentList()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('\u6279\u91cf\u89e3\u5c01\u5931\u8d25')
+  } finally {
+    loading.value = false
+  }
+}
+const handleUnblockSite = async () => {
+  if (!currentSelections.value.length) {
+    ElMessage.info('\u8bf7\u9009\u62e9\u8981\u89e3\u5c01\u7684\u7f51\u7ad9')
+    return
+  }
+  const ids = [...new Set(currentSelections.value.map(r => Number(r.site_id)).filter(id => id > 0))]
+  if (!ids.length) {
+    ElMessage.warning('\u9009\u4e2d\u8bb0\u5f55\u6ca1\u6709\u53ef\u7528\u7f51\u7ad9ID')
+    return
+  }
+  loading.value = true
+  try {
+    await request.post('/logs/block/unblock_site', { site_ids: ids })
+    ElMessage.success('\u7f51\u7ad9\u89e3\u5c01\u6210\u529f')
+    await fetchCurrentList()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('\u7f51\u7ad9\u89e3\u5c01\u5931\u8d25')
+  } finally {
+    loading.value = false
+  }
 }
 const handleExportCurrent = () => {
   ElMessage.info('\u8bf7\u5148\u9009\u62e9\u8bb0\u5f55')
 }
-const handleUnblock = row => {
-  ElMessage.success(`\u89e3\u5c01\u6210\u529f IP: ${row.ip}`)
+const handleUnblock = async row => {
+  const ip = String(row?.ip || '').trim()
+  if (!ip) {
+    ElMessage.warning('IP \u4e0d\u53ef\u4e3a\u7a7a')
+    return
+  }
+  loading.value = true
+  try {
+    await request.post('/logs/block/unblock_ip', { ip })
+    ElMessage.success(`\u89e3\u5c01\u6210\u529f IP: ${ip}`)
+    await fetchCurrentList()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('\u89e3\u5c01\u5931\u8d25')
+  } finally {
+    loading.value = false
+  }
 }
 
 // --- Statistics ---
@@ -255,7 +339,7 @@ const fetchHistoryList = async () => {
         end_time: historyFilter.dateRange?.[1]
       }
     })
-    historyList.value = res.data?.list || []
+    historyList.value = (res.data?.list || []).map(normalizeBlockRowTime)
     historyTotal.value = res.data?.total || 0
   } catch (error) {
     console.error(error)
@@ -293,6 +377,11 @@ onMounted(() => {
 <style scoped>
 .filter-container {
   margin-bottom: 20px;
+}
+.timezone-note {
+  margin-right: 12px;
+  color: #909399;
+  font-size: 12px;
 }
 .filter-item {
   margin-right: 10px;

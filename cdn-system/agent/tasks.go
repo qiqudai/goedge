@@ -54,6 +54,8 @@ func processTask(id int64, taskType string, data string, report TaskProgressRepo
 			return "", nil
 		}
 		return applyConfigPayloadWithOptions([]byte(data), true)
+	case "https_probe":
+		return runHTTPSProbeTask(data)
 	case "package_sync":
 		return syncUserPackageTask(data)
 	case i18n.T("agent.task_sync_package"):

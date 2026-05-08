@@ -467,6 +467,9 @@ func (c *AgentWSController) handleProgressTaskAck(nodeID int64, ack TaskAckMsg, 
 	if strings.EqualFold(task.Type, "issue_cert") && state == "fail" {
 		services.MarkIssueTaskFailed(task.ID, buildAckRet(ack))
 	}
+	if strings.EqualFold(task.Type, services.TaskTypeHTTPSProbe) && (updates["state"] == "done" || updates["state"] == "fail") {
+		services.HandleHTTPSProbeTaskFinished(task.ID)
+	}
 }
 
 func (c *AgentWSController) handleTargetsTaskAck(nodeID int64, ack TaskAckMsg, task models.Task) {
@@ -548,6 +551,9 @@ func (c *AgentWSController) handleTargetsTaskAck(nodeID int64, ack TaskAckMsg, t
 
 		if err := db.DB.Model(&models.Task{}).Where("id = ?", current.ID).Updates(updates).Error; err != nil {
 			log.Printf("[WS] Task target ACK update failed: %v", err)
+		}
+		if strings.EqualFold(task.Type, services.TaskTypeHTTPSProbe) && (nextState == "done" || nextState == "fail") {
+			services.HandleHTTPSProbeTaskFinished(task.ID)
 		}
 	})
 }

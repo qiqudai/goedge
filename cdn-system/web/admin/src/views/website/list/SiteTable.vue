@@ -93,10 +93,16 @@
         <el-icon class="copy-icon" @click.stop="copyText(row.cname)"><CopyDocument /></el-icon>
       </template>
     </el-table-column>
-    <el-table-column label="HTTPS" width="80" align="center">
+    <el-table-column label="HTTPS" width="100" align="center">
       <template #default="{ row }">
-        <el-tag v-if="isHttpsEnabled(row.https)" type="success" size="small">开启</el-tag>
-        <el-tag v-else type="info" size="small">关闭</el-tag>
+        <el-tooltip
+          v-if="getHttpsStatus(row).error"
+          :content="getHttpsStatus(row).error"
+          placement="top"
+        >
+          <el-tag :type="getHttpsStatus(row).type" size="small">{{ getHttpsStatus(row).text }}</el-tag>
+        </el-tooltip>
+        <el-tag v-else :type="getHttpsStatus(row).type" size="small">{{ getHttpsStatus(row).text }}</el-tag>
       </template>
     </el-table-column>
     <el-table-column prop="user_package_name" label="套餐" min-width="80" />
@@ -229,6 +235,23 @@ const openSite = (row) => {
   if (!openSiteInBrowser(row)) {
     ElMessage.warning('没有可打开的网站地址')
   }
+}
+
+const getHttpsStatus = (row) => {
+  const state = String(row?.https_state || row?.httpsState || '').trim().toLowerCase()
+  if (state === 'active' || (!state && isHttpsEnabled(row?.https))) {
+    return { text: '开启', type: 'success', error: '' }
+  }
+  if (state === 'pending_issue') {
+    return { text: '申请中', type: 'warning', error: '' }
+  }
+  if (state === 'probing') {
+    return { text: '验证中', type: 'warning', error: '' }
+  }
+  if (state === 'failed') {
+    return { text: '失败', type: 'danger', error: row?.https_error || row?.httpsError || 'HTTPS 启用失败' }
+  }
+  return { text: '关闭', type: 'info', error: '' }
 }
 </script>
 

@@ -110,6 +110,9 @@ func Setup(r *gin.Engine) {
 			admin.GET("/logs/block/current", blockLogCtr.ListCurrent)
 			admin.GET("/logs/block/stats", blockLogCtr.ListStats)
 			admin.GET("/logs/block/history", blockLogCtr.ListHistory)
+			admin.POST("/logs/block/unblock_ip", blockLogCtr.UnblockIP)
+			admin.POST("/logs/block/unblock_batch", blockLogCtr.UnblockBatch)
+			admin.POST("/logs/block/unblock_site", blockLogCtr.UnblockSite)
 
 			// Messages
 			admin.GET("/messages", (&controllers.MessageController{}).AdminList)
@@ -453,6 +456,9 @@ func Setup(r *gin.Engine) {
 			user.GET("/logs/block/current", userBlockLogCtr.ListCurrent)
 			user.GET("/logs/block/stats", userBlockLogCtr.ListStats)
 			user.GET("/logs/block/history", userBlockLogCtr.ListHistory)
+			user.POST("/logs/block/unblock_ip", userBlockLogCtr.UnblockIP)
+			user.POST("/logs/block/unblock_batch", userBlockLogCtr.UnblockBatch)
+			user.POST("/logs/block/unblock_site", userBlockLogCtr.UnblockSite)
 
 			userStatCtr := &controllers.StatController{}
 			user.GET("/stats/basic", userStatCtr.ListBasic)

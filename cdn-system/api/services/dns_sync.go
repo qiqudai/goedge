@@ -6,7 +6,6 @@ import (
 	"cdn-api/services/dns"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 )
 
@@ -221,23 +220,7 @@ func diffDomains(oldDomains, newDomains []string) []string {
 }
 
 func splitRootDomain(domain string) (string, string) {
-	host := normalizeDomainHost(domain)
-	if host == "" || net.ParseIP(host) != nil {
-		return "", ""
-	}
-	if strings.HasPrefix(host, "*.") {
-		host = strings.TrimPrefix(host, "*.")
-	}
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
-		return "", ""
-	}
-	root := strings.Join(parts[len(parts)-2:], ".")
-	name := "@"
-	if len(parts) > 2 {
-		name = strings.Join(parts[:len(parts)-2], ".")
-	}
-	return root, name
+	return SplitDNSZoneAndRecord(domain)
 }
 
 func normalizeDomainHost(input string) string {

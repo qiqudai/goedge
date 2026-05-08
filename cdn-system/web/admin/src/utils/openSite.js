@@ -20,7 +20,9 @@ export function getPrimarySiteDomain(row) {
 export function buildSiteBrowseUrl(row) {
   const domain = getPrimarySiteDomain(row)
   if (!domain) return ''
-  return `${isHttpsEnabled(row?.https) ? 'https' : 'http'}://${domain}`
+  const state = String(row?.https_state || row?.httpsState || '').trim().toLowerCase()
+  const httpsActive = state ? state === 'active' : isHttpsEnabled(row?.https)
+  return `${httpsActive ? 'https' : 'http'}://${domain}`
 }
 
 export function openSiteInBrowser(row) {

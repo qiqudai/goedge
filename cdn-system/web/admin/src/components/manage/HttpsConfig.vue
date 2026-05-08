@@ -4,6 +4,9 @@
     <el-form label-width="120px" class="config-form">
       <el-form-item label="开关">
         <el-switch v-model="httpsSettings.enable" @change="handleEnableChange" />
+        <div v-if="httpsStatusText" class="form-helper">
+          当前状态：{{ httpsStatusText }}<span v-if="httpsSettings.error">，{{ httpsSettings.error }}</span>
+        </div>
       </el-form-item>
       
       <el-form-item label="证书选择" style="width: 520px">
@@ -158,6 +161,10 @@ const { saveSettings, siteId, loadSite, loadCerts } = useSiteSettings()
 
 const localSettings = ref({
   enable: props.modelValue?.enable || false,
+  state: props.modelValue?.state || 'off',
+  error: props.modelValue?.error || '',
+  activeCertId: props.modelValue?.activeCertId || null,
+  pendingCertId: props.modelValue?.pendingCertId || null,
   certId: props.modelValue?.certId || null,
   listenPorts: props.modelValue?.listenPorts || '443',
   force: props.modelValue?.force || false,
@@ -176,6 +183,15 @@ const listenPortOptions = computed(() => {
     label: port,
     value: port
   }))
+})
+
+const httpsStatusText = computed(() => {
+  const state = String(localSettings.value.state || '').toLowerCase()
+  if (state === 'active') return '已启用'
+  if (state === 'pending_issue') return '证书申请中'
+  if (state === 'probing') return '节点证书验证中'
+  if (state === 'failed') return '启用失败'
+  return ''
 })
 
 const handleEnableChange = (newVal) => {
@@ -202,8 +218,10 @@ const applyCert = async () => {
   const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
   const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
   if (created.length > 0) {
-    ElMessage.success('证书申请已提交')
-    localSettings.value.enable = true
+    ElMessage.success('证书申请已提交，签发并通过节点探测后才会启用 HTTPS')
+    localSettings.value.enable = false
+    localSettings.value.state = 'pending_issue'
+    localSettings.value.pendingCertId = created[0]
     localSettings.value.certId = created[0]
     if (!localSettings.value.listenPorts) {
       localSettings.value.listenPorts = '443'
@@ -247,6 +265,10 @@ watch(() => props.modelValue, (newVal) => {
   if (newVal && !isInternalUpdate) {
     localSettings.value = {
       enable: newVal.enable || false,
+      state: newVal.state || 'off',
+      error: newVal.error || '',
+      activeCertId: newVal.activeCertId || null,
+      pendingCertId: newVal.pendingCertId || null,
       certId: newVal.certId || null,
       listenPorts: newVal.listenPorts || '443',
       force: newVal.force || false,

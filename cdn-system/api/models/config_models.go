@@ -119,6 +119,7 @@ type EdgeDomain struct {
 	RealtimeReturn                 bool                     `json:"realtime_return"`
 	DefaultSite                    bool                     `json:"default_site,omitempty"`
 	IPv6Enable                     bool                     `json:"ipv6_enable,omitempty"`
+	LimitRate                      int64                    `json:"limit_rate,omitempty"`
 	UpstreamKeepalive              bool                     `json:"upstream_keepalive,omitempty"`
 	UpstreamKeepaliveConn          int                      `json:"upstream_keepalive_conn,omitempty"`
 	UpstreamKeepaliveTimeout       int                      `json:"upstream_keepalive_timeout,omitempty"`

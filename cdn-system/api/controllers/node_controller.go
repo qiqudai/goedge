@@ -7,9 +7,11 @@ import (
 	"cdn-api/services"
 	"cdn-api/utils"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,8 @@ import (
 type NodeController struct {
 	NodeService *services.NodeService
 }
+
+var errNodeSubIPChangeBlocked = errors.New("node.subip_change_blocked")
 
 type nodeRequest struct {
 	ID             int64              `json:"id"`
@@ -685,14 +689,40 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 			IsMgmt:    req.IsMgmt,
 			Enable:    req.Enable,
 		}
-		if err := replaceSubIPs(tx, id, parent, req.SubIPs); err != nil {
+
+		var oldSubNodes []models.Node
+		if err := tx.Select("id", "ip").Where("pid = ?", id).Find(&oldSubNodes).Error; err != nil {
 			return err
+		}
+		if !sameSubIPs(oldSubNodes, req.SubIPs) {
+			if len(oldSubNodes) > 0 {
+				oldIDs := make([]int64, 0, len(oldSubNodes))
+				for _, n := range oldSubNodes {
+					oldIDs = append(oldIDs, n.ID)
+				}
+				var lineCount int64
+				if err := tx.Model(&models.Line{}).
+					Where("node_ip_id IN ?", oldIDs).
+					Count(&lineCount).Error; err != nil {
+					return err
+				}
+				if lineCount > 0 {
+					return errNodeSubIPChangeBlocked
+				}
+			}
+			if err := replaceSubIPs(tx, id, parent, req.SubIPs); err != nil {
+				return err
+			}
 		}
 
 		return nil
 	})
 
 	if err != nil {
+		if errors.Is(err, errNodeSubIPChangeBlocked) {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": "该节点子IP已被线路引用，不能直接修改，请先解绑线路后重试"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Update Failed")})
 		return
 	}
@@ -996,4 +1026,42 @@ func replaceSubIPs(tx *gorm.DB, parentID int64, parent models.Node, subIPs []mod
 	}
 
 	return tx.Create(&nodes).Error
+}
+
+func normalizeSubIPValues(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(values))
+	for _, v := range values {
+		ip := strings.TrimSpace(v)
+		if ip == "" {
+			continue
+		}
+		normalized = append(normalized, ip)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func sameSubIPs(oldSubNodes []models.Node, newSubIPs []models.NodeSubIP) bool {
+	oldValues := make([]string, 0, len(oldSubNodes))
+	for _, n := range oldSubNodes {
+		oldValues = append(oldValues, n.IP)
+	}
+	newValues := make([]string, 0, len(newSubIPs))
+	for _, n := range newSubIPs {
+		newValues = append(newValues, n.IP)
+	}
+	oldNorm := normalizeSubIPValues(oldValues)
+	newNorm := normalizeSubIPValues(newValues)
+	if len(oldNorm) != len(newNorm) {
+		return false
+	}
+	for i := range oldNorm {
+		if oldNorm[i] != newNorm[i] {
+			return false
+		}
+	}
+	return true
 }

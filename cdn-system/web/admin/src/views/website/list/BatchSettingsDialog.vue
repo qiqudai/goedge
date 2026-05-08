@@ -251,6 +251,37 @@
             </div>
           </div>
           <div class="batch-row">
+            <el-checkbox v-model="selected.origin.sni">回源 SNI</el-checkbox>
+            <el-input
+              v-model="form.origin.sni"
+              placeholder="留空则跟随回源 HOST"
+              :disabled="!selected.origin.sni"
+              style="width: 360px"
+            />
+          </div>
+          <div class="batch-row">
+            <el-checkbox v-model="selected.origin.verifyTLS">校验源站证书</el-checkbox>
+            <el-switch v-model="form.origin.verifyTLS" :disabled="!selected.origin.verifyTLS" />
+          </div>
+          <div class="batch-row">
+            <el-checkbox v-model="selected.origin.httpVersionPolicy">回源 HTTP 版本</el-checkbox>
+            <el-radio-group v-model="form.origin.httpVersionPolicy" :disabled="!selected.origin.httpVersionPolicy">
+              <el-radio value="auto">自动加速</el-radio>
+              <el-radio value="http11">HTTP/1.1 keepalive</el-radio>
+              <el-radio value="compat">HTTP/1.0 兼容</el-radio>
+            </el-radio-group>
+          </div>
+          <div class="batch-row" v-if="form.origin.httpVersionPolicy === 'auto'">
+            <el-checkbox v-model="selected.origin.autoDowngrade">自动降级</el-checkbox>
+            <el-switch v-model="form.origin.autoDowngrade" :disabled="!selected.origin.autoDowngrade" />
+          </div>
+          <div class="batch-row" v-if="form.origin.httpVersionPolicy === 'auto'">
+            <el-checkbox v-model="selected.origin.downgradeParams">降级参数</el-checkbox>
+            <el-input v-model.number="form.origin.downgradeThreshold" placeholder="阈值" :disabled="!selected.origin.downgradeParams" style="width: 100px" />
+            <el-input v-model.number="form.origin.downgradeWindowSeconds" placeholder="窗口秒" :disabled="!selected.origin.downgradeParams" style="width: 110px" />
+            <el-input v-model.number="form.origin.downgradeCooldownSeconds" placeholder="冷却秒" :disabled="!selected.origin.downgradeParams" style="width: 110px" />
+          </div>
+          <div class="batch-row">
             <el-checkbox v-model="selected.origin.timeout">回源超时</el-checkbox>
             <el-input
               v-model.number="form.origin.timeout"
@@ -1156,6 +1187,13 @@ const defaultForm = () => ({
     httpsPort: '443',
     host: 'follow',
     hostValue: '',
+    sni: '',
+    verifyTLS: false,
+    httpVersionPolicy: 'auto',
+    autoDowngrade: true,
+    downgradeThreshold: 3,
+    downgradeWindowSeconds: 60,
+    downgradeCooldownSeconds: 600,
     timeout: 60,
     connTimeout: 10,
     balanceWay: '',
@@ -1261,6 +1299,11 @@ const defaultSelected = () => ({
     httpPort: false,
     httpsPort: false,
     host: false,
+    sni: false,
+    verifyTLS: false,
+    httpVersionPolicy: false,
+    autoDowngrade: false,
+    downgradeParams: false,
     timeout: false,
     connTimeout: false,
     balanceWay: false,
@@ -1727,6 +1770,25 @@ const buildSectionPayload = (section) => {
       }
       const hostValue = form.origin.host === 'custom' ? form.origin.hostValue : form.origin.host
       settings.origin_host = hostValue
+      setSetting(settings, ['origin', 'host_header'], hostValue)
+    }
+    if (selected.origin.sni) {
+      setSetting(settings, ['origin', 'sni'], form.origin.sni || '')
+      setSetting(settings, ['origin', 'tls_server_name'], form.origin.sni || '')
+    }
+    if (selected.origin.verifyTLS) {
+      setSetting(settings, ['origin', 'verify_tls'], !!form.origin.verifyTLS)
+    }
+    if (selected.origin.httpVersionPolicy) {
+      setSetting(settings, ['advanced', 'origin_http_version_policy'], form.origin.httpVersionPolicy || 'auto')
+    }
+    if (selected.origin.autoDowngrade) {
+      setSetting(settings, ['advanced', 'origin_auto_downgrade'], !!form.origin.autoDowngrade)
+    }
+    if (selected.origin.downgradeParams) {
+      setSetting(settings, ['advanced', 'origin_downgrade_threshold'], Number(form.origin.downgradeThreshold || 3))
+      setSetting(settings, ['advanced', 'origin_downgrade_window_seconds'], Number(form.origin.downgradeWindowSeconds || 60))
+      setSetting(settings, ['advanced', 'origin_downgrade_cooldown_seconds'], Number(form.origin.downgradeCooldownSeconds || 600))
     }
     if (selected.origin.timeout) {
       settings.origin_timeout = Number(form.origin.timeout) || 60

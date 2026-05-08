@@ -21,7 +21,11 @@ type siteListItem struct {
 	CNAME           string                 `json:"cname"`
 	Backends        []string               `json:"backends"`
 	HTTPS           bool                   `json:"https"`
+	HTTPSState      string                 `json:"https_state"`
+	HTTPSError      string                 `json:"https_error"`
 	CertID          int64                  `json:"cert_id"`
+	ActiveCertID    int64                  `json:"active_cert_id"`
+	PendingCertID   int64                  `json:"pending_cert_id"`
 	UserPackageID   int64                  `json:"user_package_id"`
 	UserPackageName string                 `json:"user_package_name"`
 	DNSProviderID   int64                  `json:"dns_provider_id"`

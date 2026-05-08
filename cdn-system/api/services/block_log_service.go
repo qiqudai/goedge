@@ -18,6 +18,7 @@ type BlockedCurrentRow struct {
 	Country   string
 	Province  string
 	Status    int
+	BlockFrom string
 	BlockTime time.Time
 }
 
@@ -28,6 +29,7 @@ type BlockedHistoryRow struct {
 	Country   string
 	Province  string
 	Status    int
+	BlockFrom string
 	BlockTime time.Time
 }
 
@@ -62,7 +64,8 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 		argMax(%s, ts) AS log_client_country,
 		argMax(%s, ts) AS log_client_province,
 		max(ts) AS block_time,
-		any(status) AS block_status
+		any(status) AS block_status,
+		argMax(block_source, ts) AS block_source
 		FROM node_access_logs WHERE %s
 		GROUP BY host, remote_addr
 		ORDER BY block_time DESC
@@ -86,7 +89,8 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 		var host, ip, country, province string
 		var ts time.Time
 		var status int
-		if err := rows.Scan(&host, &ip, &country, &province, &ts, &status); err != nil {
+		var blockSource string
+		if err := rows.Scan(&host, &ip, &country, &province, &ts, &status, &blockSource); err != nil {
 			continue
 		}
 		list = append(list, BlockedCurrentRow{
@@ -95,6 +99,7 @@ func QueryBlockedCurrent(start, end time.Time, hostFilter HostFilter, ipFilter s
 			Country:   strings.TrimSpace(country),
 			Province:  strings.TrimSpace(province),
 			Status:    status,
+			BlockFrom: strings.TrimSpace(blockSource),
 			BlockTime: ts,
 		})
 	}
@@ -125,7 +130,8 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 	querySQL := fmt.Sprintf(`SELECT ts, host, remote_addr,
 		%s AS client_country,
 		%s AS client_province,
-		status
+		status,
+		block_source
 		FROM node_access_logs WHERE %s
 		ORDER BY ts DESC
 		LIMIT ? OFFSET ?`, AccessLogClientCountryExpr(), AccessLogClientProvinceExpr(), whereSQL)
@@ -148,7 +154,8 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 		var ts time.Time
 		var host, ip, country, province string
 		var status int
-		if err := rows.Scan(&ts, &host, &ip, &country, &province, &status); err != nil {
+		var blockSource string
+		if err := rows.Scan(&ts, &host, &ip, &country, &province, &status, &blockSource); err != nil {
 			continue
 		}
 		list = append(list, BlockedHistoryRow{
@@ -157,6 +164,7 @@ func QueryBlockedHistory(start, end time.Time, hostFilter HostFilter, ipFilter s
 			Country:   strings.TrimSpace(country),
 			Province:  strings.TrimSpace(province),
 			Status:    status,
+			BlockFrom: strings.TrimSpace(blockSource),
 			BlockTime: ts,
 		})
 	}
@@ -265,6 +273,7 @@ func queryBlockedCurrentHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 			Country:   strings.TrimSpace(toStringAny(raw["log_client_country"])),
 			Province:  strings.TrimSpace(toStringAny(raw["log_client_province"])),
 			Status:    int(toInt64(raw["block_status"])),
+			BlockFrom: strings.TrimSpace(toStringAny(raw["block_source"])),
 			BlockTime: blockTime,
 		})
 	}
@@ -326,6 +335,7 @@ func queryBlockedHistoryHTTP(cfg *httpCKConfig, countSQL, querySQL string, args 
 			Country:   strings.TrimSpace(toStringAny(raw["client_country"])),
 			Province:  strings.TrimSpace(toStringAny(raw["client_province"])),
 			Status:    int(toInt64(raw["status"])),
+			BlockFrom: strings.TrimSpace(toStringAny(raw["block_source"])),
 			BlockTime: blockTime,
 		})
 	}
