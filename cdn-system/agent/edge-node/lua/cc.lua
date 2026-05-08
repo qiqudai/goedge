@@ -5,6 +5,40 @@ local guard = require "lua.guard"
 local _M = {}
 local store = ngx.shared.cc_req_rate
 
+local function block_request(reason, status)
+    local source = reason or "type=cc;rule=cc_rate_limit;rule_id=0;condition=unknown"
+    ngx.header["X-Block-Source"] = source
+    ngx.exit(status or 429)
+end
+
+local function build_cc_reason(rule_name, rule_id, rule, filter, extra)
+    local parts = {"type=cc", "rule=" .. tostring(rule_name or "cc"), "rule_id=" .. tostring(rule_id or 0)}
+    if rule and rule.filter_id then
+        table.insert(parts, "filter_id=" .. tostring(rule.filter_id))
+    end
+    if rule and rule.matcher_id then
+        table.insert(parts, "matcher_id=" .. tostring(rule.matcher_id))
+    end
+    if filter then
+        if filter.type ~= nil then
+            table.insert(parts, "config=" .. tostring(filter.type))
+        end
+        if filter.within_second ~= nil then
+            table.insert(parts, "window=" .. tostring(filter.within_second))
+        end
+        if filter.max_req ~= nil then
+            table.insert(parts, "max_req=" .. tostring(filter.max_req))
+        end
+        if filter.max_req_per_uri ~= nil then
+            table.insert(parts, "max_req_per_uri=" .. tostring(filter.max_req_per_uri))
+        end
+    end
+    if extra and extra ~= "" then
+        table.insert(parts, extra)
+    end
+    return table.concat(parts, ";")
+end
+
 local function split_lines(value)
     if not value or value == "" then
         return nil
@@ -107,15 +141,15 @@ end
 
 local function rate_exceeded(filter, host, ip, uri)
     if not store or not filter then
-        return false
+        return false, ""
     end
     if filter.within_second == 0 or filter.max_req == 0 then
-        return false
+        return false, ""
     end
 
     local window = tonumber(filter.within_second) or 0
     if window <= 0 then
-        return false
+        return false, ""
     end
     local max_req = tonumber(filter.max_req) or 0
     local max_req_per_uri = tonumber(filter.max_req_per_uri) or 0
@@ -123,18 +157,18 @@ local function rate_exceeded(filter, host, ip, uri)
     local base_key = host .. "|" .. ip
     local current = store:incr(base_key, 1, 0, window)
     if current and max_req > 0 and current >= max_req then
-        return true
+        return true, "scope=host_ip;current=" .. tostring(current)
     end
 
     if max_req_per_uri > 0 and uri then
         local uri_key = base_key .. "|" .. uri
         local uri_count = store:incr(uri_key, 1, 0, window)
         if uri_count and uri_count >= max_req_per_uri then
-            return true
+            return true, "scope=uri;current=" .. tostring(uri_count) .. ";uri=" .. tostring(uri or "")
         end
     end
 
-    return false
+    return false, ""
 end
 
 local function check_rule_id(rule_id, host, ip, uri)
@@ -184,15 +218,18 @@ local function check_rule_id(rule_id, host, ip, uri)
                 if window > 0 and max_req <= 1 and max_req_per_uri <= 1 then
                     force_guard = true
                 end
-                if force_guard or rate_exceeded(filter, host, ip, uri) then
+                local exceeded, detail = rate_exceeded(filter, host, ip, uri)
+                if force_guard or exceeded then
                     if not guard.ensure_passed(filter, host, ip) then
                         guard.challenge(filter, host, ip)
+                        ngx.header["X-Block-Source"] = build_cc_reason("cc_guard", rule_id, rule, filter, detail)
                         ngx.exit(200)
                     end
                 end
             elseif filter_type == "" or filter_type == "req_rate" or filter_type == "block" then
-                if rate_exceeded(filter, host, ip, uri) then
-                    ngx.exit(429)
+                local exceeded, detail = rate_exceeded(filter, host, ip, uri)
+                if exceeded then
+                    block_request(build_cc_reason("cc_rate_limit", rule_id, rule, filter, detail), 429)
                 end
             end
         end

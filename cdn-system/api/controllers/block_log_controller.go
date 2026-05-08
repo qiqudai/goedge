@@ -67,16 +67,22 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 	blackTimeoutBySite := loadSiteBlackTimeoutSeconds(siteIDs)
 	for i, row := range rows {
 		siteID, domain := resolveBlockSite(index, row.Host)
+		blockMeta := parseBlockMeta(row.Status, row.BlockFrom)
 		releaseTime := formatBlockReleaseTime(row.BlockTime, blackTimeoutBySite[siteID])
 		list = append(list, gin.H{
-			"id":           offset + i + 1,
-			"site_id":      siteID,
-			"domain":       domain,
-			"ip":           row.IP,
-			"location":     formatBlockLocation(row.Country, row.Province),
-			"filter":       blockFilterLabel(row.Status),
-			"block_time":   formatBlockTime(row.BlockTime),
-			"release_time": releaseTime,
+			"id":            offset + i + 1,
+			"site_id":       siteID,
+			"domain":        domain,
+			"ip":            row.IP,
+			"location":      formatBlockLocation(row.Country, row.Province),
+			"filter":        blockMeta.Label,
+			"block_module":  blockMeta.Module,
+			"block_rule":    blockMeta.Rule,
+			"block_rule_id": blockMeta.RuleID,
+			"block_config":  blockMeta.Config,
+			"block_source":  blockMeta.Source,
+			"block_time":    formatBlockTime(row.BlockTime),
+			"release_time":  releaseTime,
 		})
 	}
 
@@ -157,19 +163,128 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 	list := make([]gin.H, 0, len(rows))
 	for i, row := range rows {
 		siteID, domain := resolveBlockSite(index, row.Host)
+		blockMeta := parseBlockMeta(row.Status, row.BlockFrom)
 		list = append(list, gin.H{
-			"id":         offset + i + 1,
-			"site_id":    siteID,
-			"domain":     domain,
-			"ip":         row.IP,
-			"location":   formatBlockLocation(row.Country, row.Province),
-			"filter":     blockFilterLabel(row.Status),
-			"block_time": formatBlockTime(row.BlockTime),
-			"is_manual":  false,
+			"id":            offset + i + 1,
+			"site_id":       siteID,
+			"domain":        domain,
+			"ip":            row.IP,
+			"location":      formatBlockLocation(row.Country, row.Province),
+			"filter":        blockMeta.Label,
+			"block_module":  blockMeta.Module,
+			"block_rule":    blockMeta.Rule,
+			"block_rule_id": blockMeta.RuleID,
+			"block_config":  blockMeta.Config,
+			"block_source":  blockMeta.Source,
+			"block_time":    formatBlockTime(row.BlockTime),
+			"is_manual":     false,
 		})
 	}
 
 	writeBlockList(ctx, list, total)
+}
+
+// UnblockIP removes blocked records by IP.
+// POST /api/v1/admin/logs/block/unblock_ip
+func (c *BlockLogController) UnblockIP(ctx *gin.Context) {
+	var req struct {
+		IP string `json:"ip"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	ip := strings.TrimSpace(req.IP)
+	if ip == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ip is required"})
+		return
+	}
+	if err := services.DeleteBlockedLogsByIPs([]string{ip}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
+}
+
+// UnblockBatch removes blocked records by selected rows.
+// POST /api/v1/admin/logs/block/unblock_batch
+func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
+	var req struct {
+		Items []struct {
+			IP string `json:"ip"`
+		} `json:"items"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	ips := make([]string, 0, len(req.Items))
+	seen := make(map[string]struct{})
+	for _, item := range req.Items {
+		ip := strings.TrimSpace(item.IP)
+		if ip == "" {
+			continue
+		}
+		if _, ok := seen[ip]; ok {
+			continue
+		}
+		seen[ip] = struct{}{}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "items is required"})
+		return
+	}
+	if err := services.DeleteBlockedLogsByIPs(ips); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
+}
+
+// UnblockSite removes all blocked records for selected sites.
+// POST /api/v1/admin/logs/block/unblock_site
+func (c *BlockLogController) UnblockSite(ctx *gin.Context) {
+	var req struct {
+		SiteIDs []int64 `json:"site_ids"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if len(req.SiteIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "site_ids is required"})
+		return
+	}
+	var sites []models.Site
+	if err := db.DB.Select("id, domain").Where("id IN ?", req.SiteIDs).Find(&sites).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "load site failed"})
+		return
+	}
+	hosts := make([]string, 0, len(sites)*2)
+	seen := make(map[string]struct{})
+	for _, site := range sites {
+		for _, domain := range parseStringListValue(site.DomainRaw) {
+			domain = strings.TrimSpace(domain)
+			if domain == "" {
+				continue
+			}
+			if _, ok := seen[domain]; ok {
+				continue
+			}
+			seen[domain] = struct{}{}
+			hosts = append(hosts, domain)
+		}
+	}
+	if len(hosts) == 0 {
+		ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
+		return
+	}
+	if err := services.DeleteBlockedLogsByHosts(hosts); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
 }
 
 func parseBlockPage(ctx *gin.Context, defaultSize int) (int, int) {
@@ -287,11 +402,141 @@ func formatBlockLocation(country string, province string) string {
 	return country + "-" + province
 }
 
-func blockFilterLabel(status int) string {
+func blockFilterLabel(status int, blockSource string) string {
+	return parseBlockMeta(status, blockSource).Label
+}
+
+type blockMeta struct {
+	Label  string
+	Module string
+	Rule   string
+	RuleID int64
+	Config string
+	Source string
+}
+
+func parseBlockMeta(status int, sourceRaw string) blockMeta {
+	sourceRaw = strings.TrimSpace(sourceRaw)
+	pairs := parseBlockSourcePairs(sourceRaw)
+	moduleKey := strings.ToLower(strings.TrimSpace(firstBlockPair(pairs, "type")))
+	if moduleKey == "" {
+		moduleKey = strings.ToLower(sourceRaw)
+	}
+	rule := firstBlockPair(pairs, "rule")
+	config := firstBlockPair(pairs, "config")
+	if config == "" {
+		config = firstBlockPair(pairs, "config_id")
+	}
+	if config == "" {
+		config = firstBlockPair(pairs, "mode")
+	}
+	if config == "" {
+		config = firstBlockPair(pairs, "action")
+	}
+	if config == "" {
+		config = firstBlockPair(pairs, "filter")
+	}
+	ruleID, _ := strconv.ParseInt(strings.TrimSpace(firstBlockPair(pairs, "rule_id")), 10, 64)
+
+	module := moduleName(moduleKey, status)
+	parts := []string{module}
+	if rule != "" {
+		parts = append(parts, "规则:"+rule)
+	}
+	if ruleID > 0 {
+		parts = append(parts, "规则ID:"+strconv.FormatInt(ruleID, 10))
+	}
+	if config != "" {
+		parts = append(parts, "配置:"+config)
+	}
+	if status > 0 {
+		parts = append(parts, "HTTP_"+strconv.Itoa(status))
+	}
+
+	return blockMeta{
+		Label:  strings.Join(parts, " | "),
+		Module: module,
+		Rule:   rule,
+		RuleID: ruleID,
+		Config: config,
+		Source: sourceRaw,
+	}
+}
+
+func parseBlockSourcePairs(source string) map[string]string {
+	result := make(map[string]string)
+	if source == "" {
+		return result
+	}
+	parts := strings.Split(source, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		idx := strings.Index(part, "=")
+		if idx <= 0 || idx >= len(part)-1 {
+			continue
+		}
+		key := strings.TrimSpace(part[:idx])
+		val := strings.TrimSpace(part[idx+1:])
+		if key == "" {
+			continue
+		}
+		result[key] = val
+	}
+	return result
+}
+
+func firstBlockPair(pairs map[string]string, key string) string {
+	if value, ok := pairs[key]; ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func moduleName(moduleKey string, status int) string {
+	switch moduleKey {
+	case "ip_block":
+		return "IP黑名单"
+	case "anti_cc":
+		return "Anti-CC"
+	case "cc", "cc_guard":
+		return "CC防护"
+	case "cc_rate_limit":
+		return "CC频控"
+	case "waf":
+		return "WAF"
+	case "local_protection":
+		return "本地防护"
+	case "origin":
+		return "源站返回"
+	default:
+		if status <= 0 {
+			return "-"
+		}
+		return localProtectionLabel(status)
+	}
+}
+
+func localProtectionLabel(status int) string {
 	if status <= 0 {
 		return "-"
 	}
-	return "HTTP_" + strconv.Itoa(status)
+	switch status {
+	case 418:
+		return "CC防护"
+	case 429:
+		return "频控拦截"
+	case 451:
+		return "地区限制"
+	case 410:
+		return "策略拒绝"
+	case 403:
+		return "访问控制"
+	default:
+		return "HTTP_" + strconv.Itoa(status)
+	}
 }
 
 func formatBlockTime(ts time.Time) string {

@@ -10,14 +10,36 @@ local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
 local cjson = require "cjson.safe"
 
+local function build_reason(source_type, rule, extras)
+    local parts = {
+        "type=" .. tostring(source_type or "local_protection"),
+        "rule=" .. tostring(rule or source_type or "unknown"),
+        "rule_id=0"
+    }
+    if type(extras) == "table" then
+        for _, item in ipairs(extras) do
+            if item and item ~= "" then
+                table.insert(parts, tostring(item))
+            end
+        end
+    end
+    return table.concat(parts, ";")
+end
+
+local function block_request(reason, status)
+    local source = reason or build_reason("local_protection", "unknown")
+    ngx.header["X-Block-Source"] = source
+    ngx.exit(status or 403)
+end
+
 -- 1. IP Blocking Check (Legacy/Fallback)
 if ip_block.is_blocked(ngx.var.remote_addr) then
-    ngx.exit(418)
+    block_request(build_reason("ip_block", "ip_block", {"condition=ip_in_blacklist"}), 418)
 end
 
 -- 2. Anti-CC Check (Legacy/Fallback)
 if anti_cc.check_limit(ngx.var.remote_addr) then
-    ngx.exit(503)
+    block_request("type=cc;rule=anti_cc;rule_id=0;condition=legacy_rate_limit", 503)
 end
 
 -- 4. Dynamic Routing & Config Lookup
@@ -29,7 +51,7 @@ local function acl_check(domain_conf, ip)
         for _, rule in ipairs(rules) do
             if rule.ip == ip then
                 if rule.action == "deny" then
-                    ngx.exit(403)
+                    block_request(build_reason("local_protection", "acl_deny", {"condition=acl_rules"}), 403)
                 else
                     return
                 end
@@ -38,7 +60,7 @@ local function acl_check(domain_conf, ip)
     end
     local default_action = domain_conf.acl_default_action
     if default_action == "deny" then
-        ngx.exit(403)
+        block_request(build_reason("local_protection", "acl_default_deny", {"condition=acl_default_action=deny"}), 403)
     end
 end
 

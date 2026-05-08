@@ -6,8 +6,31 @@ local cc = require "lua.cc"
 local balancer = require "lua.balancer"
 local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
+local origin_auto = require "lua.origin_auto"
 local bit = require "bit"
 local cjson = require "cjson.safe"
+
+local function build_reason(source_type, rule, extras)
+    local parts = {
+        "type=" .. tostring(source_type or "local_protection"),
+        "rule=" .. tostring(rule or source_type or "unknown"),
+        "rule_id=0"
+    }
+    if type(extras) == "table" then
+        for _, item in ipairs(extras) do
+            if item and item ~= "" then
+                table.insert(parts, tostring(item))
+            end
+        end
+    end
+    return table.concat(parts, ";")
+end
+
+local function block_request(reason, status)
+    local source = reason or build_reason("local_protection", "unknown")
+    ngx.header["X-Block-Source"] = source
+    ngx.exit(status or 403)
+end
 
 local function ip_in_list(list, ip)
     if not list or not ip then
@@ -921,7 +944,7 @@ local function lookup_domain_conf()
 end
 
 if ip_block.is_blocked(ngx.var.remote_addr) then
-    ngx.exit(418)
+    block_request(build_reason("ip_block", "ip_block", {"condition=ip_in_blacklist"}), 418)
 end
 
 local function normalize_domain_conf(conf)
@@ -980,7 +1003,7 @@ if domain_conf then
         local ua = ngx.var.http_user_agent or ""
         local is_crawler = is_crawler_ua(ua)
         if crawler_action == "block" and is_crawler then
-            ngx.exit(403)
+            block_request(build_reason("local_protection", "crawler_block", {"condition=user_agent", "action=block"}), 403)
         end
         if crawler_action == "allow" and is_crawler then
             crawler_allowed = true
@@ -996,20 +1019,20 @@ if domain_conf then
     end
 
     if not whitelisted and ip_in_list(domain_conf.black_ips, client_ip) then
-        ngx.exit(403)
+        block_request(build_reason("local_protection", "ip_deny", {"condition=site_black_ips"}), 403)
     end
     if not whitelisted and region_blocked(domain_conf, client_ip) then
-        ngx.exit(403)
+        block_request(build_reason("local_protection", "region_block", {"condition=region_block"}), 403)
     end
     if not whitelisted and domain_conf.block_transparent_proxy then
         local xff = ngx.var.http_x_forwarded_for
         local via = ngx.var.http_via
         if (xff and xff ~= "") or (via and via ~= "") then
-            ngx.exit(403)
+            block_request(build_reason("local_protection", "transparent_proxy", {"condition=xff_or_via_present"}), 403)
         end
     end
     if not whitelisted and not crawler_allowed and not hotlink_allowed(domain_conf, ngx.var.uri or "") then
-        ngx.exit(403)
+        block_request(build_reason("local_protection", "hotlink", {"condition=referer_not_allowed"}), 403)
     end
 
     if apply_url_rewrites(domain_conf, ngx.var.uri or "", ngx.var.args or "") then
@@ -1041,6 +1064,7 @@ if domain_conf then
         return ngx.exit(ngx.HTTP_BAD_GATEWAY)
     end
     ngx.var.backend_target = backend_target
+    origin_auto.before_proxy(domain_conf, backend_target)
 
     quota.check_quota(ngx.var.host)
 end

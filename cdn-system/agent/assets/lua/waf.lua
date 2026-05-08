@@ -11,6 +11,23 @@ local cdnfly = require "lua.cdnfly_wrapper"
 local geo_country = require "lua.geo_country"
 local guard = require "lua.guard"
 
+local function build_waf_reason(rule, extras)
+    local parts = {"type=waf", "rule=" .. tostring(rule or "unknown"), "rule_id=0"}
+    if type(extras) == "table" then
+        for _, item in ipairs(extras) do
+            if item and item ~= "" then
+                table.insert(parts, tostring(item))
+            end
+        end
+    end
+    return table.concat(parts, ";")
+end
+
+local function mark_block_source(reason)
+    local source = reason or build_waf_reason("unknown")
+    ngx.header["X-Block-Source"] = source
+end
+
 local function to_string(value)
     if value == nil then
         return ""
@@ -191,8 +208,9 @@ local function should_block_page_rate_limit(config, ip)
     return count > limit
 end
 
-local function block_request(config, ip, reason, status)
+local function block_request(config, ip, reason, status, extras)
     if not config or not config.waf then
+        mark_block_source(build_waf_reason(reason or "waf", extras))
         ngx.exit(status or 403)
     end
     if is_log_only(config) then
@@ -212,6 +230,17 @@ local function block_request(config, ip, reason, status)
     if action == "page" and should_block_page_rate_limit(config, ip) then
         action = "ipset"
     end
+
+    local details = {}
+    if type(extras) == "table" then
+        for _, item in ipairs(extras) do
+            if item and item ~= "" then
+                table.insert(details, tostring(item))
+            end
+        end
+    end
+    table.insert(details, "mode=" .. tostring(action))
+    mark_block_source(build_waf_reason(reason or "waf", details))
 
     if action == "ipset" then
         set_ip_blacklist(config, ip)
@@ -443,12 +472,14 @@ local function apply_well_known_protection(config, ip, uri)
 
     local block_key = "waf:well_known:block:" .. ip
     if cache:get(block_key) == 1 then
+        mark_block_source(build_waf_reason("well_known", {"condition=well_known_path"}))
         ngx.exit(404)
     end
 
     local count = cache:incr("waf:well_known:count:" .. ip, 1, 0, 60)
     if count > threshold then
         cache:set(block_key, 1, 300)
+        mark_block_source(build_waf_reason("well_known", {"condition=well_known_path"}))
         ngx.exit(404)
     end
 end
@@ -528,13 +559,13 @@ function _M.check()
         end
 
         if region_blocked(ac.region_block, ip) then
-            block_request(config, ip, "region", 418)
+            block_request(config, ip, "region", 418, {"condition=access_control.region_block"})
             return
         end
     end
 
     if should_block_resource(config, ip, uri) then
-        block_request(config, ip, "resource", 403)
+        block_request(config, ip, "resource", 403, {"condition=resource_protection"})
         return
     end
 
@@ -546,6 +577,7 @@ function _M.check()
 
     if is_blocked == 1 then
         ngx.log(ngx.WARN, "WAF: IP Blocked (Cache Hit): ", ip)
+        mark_block_source(build_waf_reason("waf_cache", {"condition=ip_bl_cache_hit"}))
         ngx.exit(403)
     elseif is_blocked == 0 then
         -- Clean IP in cache, proceed to Cdnfly/Next but skip Redis

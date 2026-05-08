@@ -22,3 +22,27 @@ func TestFormatBlockLocation(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockFilterLabel(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		source string
+		want   string
+	}{
+		{name: "explicit anti cc", status: 418, source: "anti_cc", want: "Anti-CC | HTTP_418"},
+		{name: "explicit waf", status: 403, source: "waf", want: "WAF | HTTP_403"},
+		{name: "explicit ip block", status: 403, source: "ip_block", want: "IP黑名单 | HTTP_403"},
+		{name: "explicit origin", status: 403, source: "origin", want: "源站返回 | HTTP_403"},
+		{name: "fallback 418", status: 418, source: "", want: "CC防护 | HTTP_418"},
+		{name: "fallback 429", status: 429, source: "", want: "频控拦截 | HTTP_429"},
+		{name: "fallback 403", status: 403, source: "", want: "访问控制 | HTTP_403"},
+		{name: "fallback unknown", status: 499, source: "", want: "HTTP_499 | HTTP_499"},
+	}
+
+	for _, tt := range tests {
+		if got := blockFilterLabel(tt.status, tt.source); got != tt.want {
+			t.Fatalf("%s: blockFilterLabel(%d, %q) = %q, want %q", tt.name, tt.status, tt.source, got, tt.want)
+		}
+	}
+}

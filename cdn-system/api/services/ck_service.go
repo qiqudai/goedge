@@ -507,10 +507,15 @@ func parseInt64First(value string) int64 {
 }
 
 func normalizeBlockSource(raw rawAccessLog) string {
-	source := strings.ToLower(strings.TrimSpace(raw.BlockSource))
+	sourceRaw := strings.TrimSpace(raw.BlockSource)
+	source := strings.ToLower(sourceRaw)
 	switch source {
-	case "anti_cc", "ip_block", "waf", "cc":
+	case "anti_cc", "ip_block", "waf", "cc", "cc_rate_limit", "cc_guard", "local_protection", "origin":
 		return source
+	}
+	// Keep structured source untouched (type/rule/rule_id/config...) for attribution.
+	if strings.Contains(sourceRaw, "=") {
+		return sourceRaw
 	}
 	// Fallback inference for older agents that do not emit block_source.
 	if strings.TrimSpace(raw.UpstreamAddr) != "" || parseFloatFirst(raw.UpstreamResponseTime) > 0 {
