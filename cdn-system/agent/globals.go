@@ -12,11 +12,12 @@ var assetsFS embed.FS
 
 // Global Configuration
 var (
-	API_BaseURL   = "http://127.0.0.1:8080"
-	HEARTBEAT_INT = 3 * time.Second
-	LOG_SHIP_INT  = 5 * time.Second
-	METRICS_INT   = 10 * time.Second
-	L2_CHECK_INT  = 10 * time.Second
+	API_BaseURL     = "http://127.0.0.1:8080"
+	HEARTBEAT_INT   = 3 * time.Second
+	LOG_SHIP_INT    = 5 * time.Second
+	METRICS_INT     = 10 * time.Second
+	L2_CHECK_INT    = 10 * time.Second
+	CONFIG_PULL_INT = 60 * time.Second
 
 	// Dynamic Paths (will be set in initEnvironment)
 	WorkDir      = "."

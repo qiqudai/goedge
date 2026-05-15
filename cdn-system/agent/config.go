@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,21 +20,51 @@ import (
 
 // startConfigPull checks for config updates
 func startConfigPull() {
-	log.Printf("[Info] Config pull disabled; waiting for WS dispatch")
+	interval := CONFIG_PULL_INT
+	if interval <= 0 {
+		log.Printf("[Info] Config pull disabled")
+		return
+	}
+	if interval < 10*time.Second {
+		interval = 10 * time.Second
+	}
+	initialDelay := configPullInitialDelay(interval)
+	log.Printf("[Info] Config pull enabled interval=%s initial_delay=%s", interval, initialDelay)
+
+	timer := time.NewTimer(initialDelay)
+	defer timer.Stop()
+	for {
+		<-timer.C
+		if err := pullConfig(); err != nil {
+			log.Printf("[Error] Config Pull Failed: %v", err)
+		}
+		timer.Reset(interval)
+	}
 }
 
 func pullConfig() error {
-	req, _ := http.NewRequest("GET", API_BaseURL+"/api/v1/agent/config?node_id="+NodeID, nil)
+	endpoint := API_BaseURL + "/api/v1/agent/config?node_id=" + url.QueryEscape(NodeID)
+	if currentVersion := readLocalVersion(); currentVersion != 0 {
+		endpoint += "&version=" + strconv.FormatInt(currentVersion, 10)
+	}
+	req, _ := http.NewRequest("GET", endpoint, nil)
 	req.Header.Set("Authorization", "Bearer "+AuthToken)
 
 	body, status, err := doRequest(req, 10*time.Second, true)
 	if err != nil {
-		log.Printf("[Error] Config Pull Failed: %v", err)
 		return err
+	}
+
+	if status == http.StatusNotModified {
+		debugLogInteraction("GET", req.URL.String(), status, nil, nil)
+		return nil
 	}
 
 	if status == 200 {
 		debugLogInteraction("GET", req.URL.String(), status, nil, body)
+		if len(strings.TrimSpace(string(body))) == 0 {
+			return nil
+		}
 		if _, err := applyConfigPayload(body); err != nil {
 			return err
 		}
@@ -42,6 +73,26 @@ func pullConfig() error {
 
 	debugLogInteraction("GET", req.URL.String(), status, nil, nil)
 	return fmt.Errorf("config pull status: %d", status)
+}
+
+func configPullInitialDelay(interval time.Duration) time.Duration {
+	baseDelay := 5 * time.Second
+	if interval <= baseDelay {
+		return baseDelay
+	}
+	window := interval - baseDelay
+	if window > 30*time.Second {
+		window = 30 * time.Second
+	}
+	windowSeconds := int64(window / time.Second)
+	if windowSeconds <= 0 {
+		return baseDelay
+	}
+	nodeID, err := strconv.ParseInt(strings.TrimSpace(NodeID), 10, 64)
+	if err != nil || nodeID < 0 {
+		return baseDelay
+	}
+	return baseDelay + time.Duration(nodeID%windowSeconds)*time.Second
 }
 
 func applyConfigPayload(body []byte) (string, error) {

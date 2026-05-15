@@ -160,6 +160,7 @@ func main() {
 	startGenevaIfEnabled()
 
 	// 2. Start Tickers
+	go startConfigPull()      // Reconcile missed WS config dispatches.
 	go startWebSocketClient() // Persistent Connection
 	log.Printf("[Info] Access log ship enabled")
 	go startAccessLogShip()
