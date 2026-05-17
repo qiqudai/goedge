@@ -426,6 +426,15 @@ func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages ma
 		writeAcmeLocation(b)
 	}
 	b.WriteString("    location / {\n")
+	if status == 418 {
+		b.WriteString("        content_by_lua_block {\n")
+		b.WriteString("            local guard = require \"lua.unbound_guard\"\n")
+		b.WriteString("            guard.enforce(418)\n")
+		b.WriteString("        }\n")
+		b.WriteString("    }\n")
+		b.WriteString("}\n")
+		return
+	}
 	b.WriteString(fmt.Sprintf("        return %d;\n", status))
 	b.WriteString("    }\n")
 	b.WriteString("}\n")
