@@ -54,7 +54,7 @@ func blockedStatusCondition() string {
 	for _, code := range blockedStatusCodes {
 		parts = append(parts, fmt.Sprintf("%d", code))
 	}
-	return "status IN (" + strings.Join(parts, ",") + ")"
+	return "(status IN (" + strings.Join(parts, ",") + ") AND block_source != 'origin' AND NOT (block_source = '' AND upstream_addr != ''))"
 }
 
 // Some local protection paths currently return 503 without upstream interaction.
