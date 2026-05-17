@@ -42,3 +42,19 @@ func TestExecClickHouseMutationHTTP_UsesPOST(t *testing.T) {
 	}
 }
 
+func TestQuoteHostIPTuples_DedupesAndSkipsIncompleteRows(t *testing.T) {
+	got := quoteHostIPTuples([]BlockedLogKey{
+		{Host: "61.4.122.239", IP: "94.231.206.251"},
+		{Host: "61.4.122.239", IP: "94.231.206.251"},
+		{Host: "_", IP: "198.235.24.230"},
+		{Host: "", IP: "1.1.1.1"},
+		{Host: "example.com", IP: ""},
+	})
+	want := []string{
+		"('61.4.122.239','94.231.206.251')",
+		"('_','198.235.24.230')",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("quoteHostIPTuples() = %#v, want %#v", got, want)
+	}
+}

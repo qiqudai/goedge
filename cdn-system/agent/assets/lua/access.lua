@@ -13,6 +13,7 @@ local cjson = require "cjson.safe"
 local function build_reason(source_type, rule, extras)
     local parts = {
         "type=" .. tostring(source_type or "local_protection"),
+        "module=lua.access",
         "rule=" .. tostring(rule or source_type or "unknown"),
         "rule_id=0"
     }
@@ -39,7 +40,7 @@ end
 
 -- 2. Anti-CC Check (Legacy/Fallback)
 if anti_cc.check_limit(ngx.var.remote_addr) then
-    block_request("type=cc;rule=anti_cc;rule_id=0;condition=legacy_rate_limit", 503)
+    block_request("type=cc;module=lua.access;rule=anti_cc;rule_id=0;condition=legacy_rate_limit", 503)
 end
 
 -- 4. Dynamic Routing & Config Lookup

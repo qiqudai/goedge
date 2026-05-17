@@ -419,8 +419,12 @@ func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages ma
 		}
 	}
 	b.WriteString("    server_name _;\n")
+	b.WriteString("    add_header X-Block-Source 'type=local_protection;module=nginx.default_server;rule=unbound_domain;rule_id=0;condition=direct_ip_or_unbound_host' always;\n")
 	writeErrorPageServerDirectives(b, errorPages)
 	writeErrorPageDirectives(b, errorPages, errorPageDir)
+	if !tls {
+		writeAcmeLocation(b)
+	}
 	b.WriteString("    location / {\n")
 	b.WriteString(fmt.Sprintf("        return %d;\n", status))
 	b.WriteString("    }\n")
@@ -794,21 +798,10 @@ func writeAcmeLocation(b *strings.Builder) {
 	if abs, err := filepath.Abs(acmeRoot); err == nil {
 		acmeRoot = abs
 	}
-	acmeRoot = filepath.ToSlash(acmeRoot)
-	apiBase := strings.TrimRight(strings.TrimSpace(API_BaseURL), "/")
-	if apiBase == "" {
-		return
-	}
+	acmeChallengeRoot := filepath.ToSlash(filepath.Join(acmeRoot, ".well-known", "acme-challenge")) + "/"
 	b.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
-	b.WriteString("        root " + acmeRoot + ";\n")
+	b.WriteString("        alias " + acmeChallengeRoot + ";\n")
 	b.WriteString("        default_type text/plain;\n")
-	b.WriteString("        try_files $uri @acme_master;\n")
-	b.WriteString("    }\n")
-	b.WriteString("    location @acme_master {\n")
-	b.WriteString("        proxy_pass " + apiBase + ";\n")
-	b.WriteString("        proxy_set_header Host $host;\n")
-	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
-	b.WriteString("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
 	b.WriteString("    }\n")
 }
 

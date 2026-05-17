@@ -13,6 +13,11 @@ import (
 	"cdn-api/db"
 )
 
+type BlockedLogKey struct {
+	Host string
+	IP   string
+}
+
 func DeleteBlockedLogsByIPs(ips []string) error {
 	quoted := quoteValues(ips)
 	if len(quoted) == 0 {
@@ -26,6 +31,21 @@ func DeleteBlockedLogsByIPs(ips []string) error {
 		return err
 	}
 	return verifyBlockedLogsDeleted("remote_addr", quoted)
+}
+
+func DeleteBlockedLogsByHostIPs(items []BlockedLogKey) error {
+	tuples := quoteHostIPTuples(items)
+	if len(tuples) == 0 {
+		return nil
+	}
+	query := fmt.Sprintf(
+		"ALTER TABLE node_access_logs DELETE WHERE (host, remote_addr) IN (%s) AND status IN (403,410,418,429,451) SETTINGS mutations_sync = 1",
+		strings.Join(tuples, ","),
+	)
+	if err := execClickHouseMutation(query); err != nil {
+		return err
+	}
+	return verifyBlockedLogPairsDeleted(tuples)
 }
 
 func DeleteBlockedLogsByHosts(hosts []string) error {
@@ -56,6 +76,25 @@ func quoteValues(values []string) []string {
 		}
 		seen[v] = struct{}{}
 		out = append(out, quoteClickHouseString(v))
+	}
+	return out
+}
+
+func quoteHostIPTuples(items []BlockedLogKey) []string {
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{})
+	for _, item := range items {
+		host := strings.TrimSpace(item.Host)
+		ip := strings.TrimSpace(item.IP)
+		if host == "" || ip == "" {
+			continue
+		}
+		key := host + "\x00" + ip
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, "("+quoteClickHouseString(host)+","+quoteClickHouseString(ip)+")")
 	}
 	return out
 }
@@ -96,11 +135,43 @@ func verifyBlockedLogsDeleted(field string, quotedValues []string) error {
 	}
 }
 
+func verifyBlockedLogPairsDeleted(tuples []string) error {
+	if len(tuples) == 0 {
+		return nil
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		remaining, err := countBlockedLogPairs(tuples)
+		if err != nil {
+			return err
+		}
+		if remaining == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("unblock verify failed: %d records still present", remaining)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
 func countBlockedLogs(field string, quotedValues []string) (int64, error) {
 	query := fmt.Sprintf(
 		"SELECT count() FROM node_access_logs WHERE %s IN (%s) AND status IN (403,410,418,429,451)",
 		field, strings.Join(quotedValues, ","),
 	)
+	return countClickHouseRows(query)
+}
+
+func countBlockedLogPairs(tuples []string) (int64, error) {
+	query := fmt.Sprintf(
+		"SELECT count() FROM node_access_logs WHERE (host, remote_addr) IN (%s) AND status IN (403,410,418,429,451)",
+		strings.Join(tuples, ","),
+	)
+	return countClickHouseRows(query)
+}
+
+func countClickHouseRows(query string) (int64, error) {
 	if db.ClickHouseEnabled() && db.CK != nil {
 		var count int64
 		if err := db.CK.QueryRow(query).Scan(&count); err != nil {

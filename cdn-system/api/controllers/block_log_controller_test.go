@@ -38,6 +38,8 @@ func TestBlockFilterLabel(t *testing.T) {
 		{name: "fallback 429", status: 429, source: "", want: "频控拦截 | HTTP_429"},
 		{name: "fallback 403", status: 403, source: "", want: "访问控制 | HTTP_403"},
 		{name: "fallback unknown", status: 499, source: "", want: "HTTP_499 | HTTP_499"},
+		{name: "structured nginx default", status: 418, source: "type=local_protection;module=nginx.default_server;rule=unbound_domain;rule_id=0;condition=direct_ip_or_unbound_host", want: "本地防护 | 模块:nginx.default_server | 规则:unbound_domain | 条件:direct_ip_or_unbound_host | HTTP_418"},
+		{name: "structured lua waf", status: 418, source: "type=waf;module=lua.waf;rule=scanner;rule_id=0;condition=user_agent", want: "WAF | 模块:lua.waf | 规则:scanner | 条件:user_agent | HTTP_418"},
 	}
 
 	for _, tt := range tests {

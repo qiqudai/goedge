@@ -68,7 +68,10 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 	for i, row := range rows {
 		siteID, domain := resolveBlockSite(index, row.Host)
 		blockMeta := parseBlockMeta(row.Status, row.BlockFrom)
-		releaseTime := formatBlockReleaseTime(row.BlockTime, blackTimeoutBySite[siteID])
+		releaseTime := "-"
+		if siteID > 0 {
+			releaseTime = formatBlockReleaseTime(row.BlockTime, blackTimeoutBySite[siteID])
+		}
 		list = append(list, gin.H{
 			"id":            offset + i + 1,
 			"site_id":       siteID,
@@ -77,9 +80,11 @@ func (c *BlockLogController) ListCurrent(ctx *gin.Context) {
 			"location":      formatBlockLocation(row.Country, row.Province),
 			"filter":        blockMeta.Label,
 			"block_module":  blockMeta.Module,
+			"source_module": blockMeta.SourceModule,
 			"block_rule":    blockMeta.Rule,
 			"block_rule_id": blockMeta.RuleID,
 			"block_config":  blockMeta.Config,
+			"condition":     blockMeta.Condition,
 			"block_source":  blockMeta.Source,
 			"block_time":    formatBlockTime(row.BlockTime),
 			"release_time":  releaseTime,
@@ -172,9 +177,11 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 			"location":      formatBlockLocation(row.Country, row.Province),
 			"filter":        blockMeta.Label,
 			"block_module":  blockMeta.Module,
+			"source_module": blockMeta.SourceModule,
 			"block_rule":    blockMeta.Rule,
 			"block_rule_id": blockMeta.RuleID,
 			"block_config":  blockMeta.Config,
+			"condition":     blockMeta.Condition,
 			"block_source":  blockMeta.Source,
 			"block_time":    formatBlockTime(row.BlockTime),
 			"is_manual":     false,
@@ -188,7 +195,8 @@ func (c *BlockLogController) ListHistory(ctx *gin.Context) {
 // POST /api/v1/admin/logs/block/unblock_ip
 func (c *BlockLogController) UnblockIP(ctx *gin.Context) {
 	var req struct {
-		IP string `json:"ip"`
+		IP     string `json:"ip"`
+		Domain string `json:"domain"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
@@ -199,7 +207,14 @@ func (c *BlockLogController) UnblockIP(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ip is required"})
 		return
 	}
-	if err := services.DeleteBlockedLogsByIPs([]string{ip}); err != nil {
+	host := strings.TrimSpace(req.Domain)
+	var err error
+	if host != "" {
+		err = services.DeleteBlockedLogsByHostIPs([]services.BlockedLogKey{{Host: host, IP: ip}})
+	} else {
+		err = services.DeleteBlockedLogsByIPs([]string{ip})
+	}
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
 		return
 	}
@@ -211,7 +226,8 @@ func (c *BlockLogController) UnblockIP(ctx *gin.Context) {
 func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
 	var req struct {
 		Items []struct {
-			IP string `json:"ip"`
+			IP     string `json:"ip"`
+			Domain string `json:"domain"`
 		} `json:"items"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -219,10 +235,21 @@ func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
 		return
 	}
 	ips := make([]string, 0, len(req.Items))
+	keys := make([]services.BlockedLogKey, 0, len(req.Items))
 	seen := make(map[string]struct{})
 	for _, item := range req.Items {
 		ip := strings.TrimSpace(item.IP)
 		if ip == "" {
+			continue
+		}
+		host := strings.TrimSpace(item.Domain)
+		if host != "" {
+			key := host + "\x00" + ip
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			keys = append(keys, services.BlockedLogKey{Host: host, IP: ip})
 			continue
 		}
 		if _, ok := seen[ip]; ok {
@@ -231,13 +258,21 @@ func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
 		seen[ip] = struct{}{}
 		ips = append(ips, ip)
 	}
-	if len(ips) == 0 {
+	if len(keys) == 0 && len(ips) == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "items is required"})
 		return
 	}
-	if err := services.DeleteBlockedLogsByIPs(ips); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
-		return
+	if len(keys) > 0 {
+		if err := services.DeleteBlockedLogsByHostIPs(keys); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
+			return
+		}
+	}
+	if len(ips) > 0 {
+		if err := services.DeleteBlockedLogsByIPs(ips); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
+			return
+		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
 }
@@ -407,12 +442,14 @@ func blockFilterLabel(status int, blockSource string) string {
 }
 
 type blockMeta struct {
-	Label  string
-	Module string
-	Rule   string
-	RuleID int64
-	Config string
-	Source string
+	Label        string
+	Module       string
+	SourceModule string
+	Rule         string
+	RuleID       int64
+	Config       string
+	Condition    string
+	Source       string
 }
 
 func parseBlockMeta(status int, sourceRaw string) blockMeta {
@@ -423,6 +460,8 @@ func parseBlockMeta(status int, sourceRaw string) blockMeta {
 		moduleKey = strings.ToLower(sourceRaw)
 	}
 	rule := firstBlockPair(pairs, "rule")
+	sourceModule := firstBlockPair(pairs, "module")
+	condition := firstBlockPair(pairs, "condition")
 	config := firstBlockPair(pairs, "config")
 	if config == "" {
 		config = firstBlockPair(pairs, "config_id")
@@ -440,6 +479,9 @@ func parseBlockMeta(status int, sourceRaw string) blockMeta {
 
 	module := moduleName(moduleKey, status)
 	parts := []string{module}
+	if sourceModule != "" {
+		parts = append(parts, "模块:"+sourceModule)
+	}
 	if rule != "" {
 		parts = append(parts, "规则:"+rule)
 	}
@@ -449,17 +491,22 @@ func parseBlockMeta(status int, sourceRaw string) blockMeta {
 	if config != "" {
 		parts = append(parts, "配置:"+config)
 	}
+	if condition != "" {
+		parts = append(parts, "条件:"+condition)
+	}
 	if status > 0 {
 		parts = append(parts, "HTTP_"+strconv.Itoa(status))
 	}
 
 	return blockMeta{
-		Label:  strings.Join(parts, " | "),
-		Module: module,
-		Rule:   rule,
-		RuleID: ruleID,
-		Config: config,
-		Source: sourceRaw,
+		Label:        strings.Join(parts, " | "),
+		Module:       module,
+		SourceModule: sourceModule,
+		Rule:         rule,
+		RuleID:       ruleID,
+		Config:       config,
+		Condition:    condition,
+		Source:       sourceRaw,
 	}
 }
 

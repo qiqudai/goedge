@@ -13,6 +13,7 @@ local cjson = require "cjson.safe"
 local function build_reason(source_type, rule, extras)
     local parts = {
         "type=" .. tostring(source_type or "local_protection"),
+        "module=lua.access_guard",
         "rule=" .. tostring(rule or source_type or "unknown"),
         "rule_id=0"
     }

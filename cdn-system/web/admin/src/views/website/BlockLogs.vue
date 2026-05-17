@@ -234,7 +234,7 @@ const handleUnblockBatch = async () => {
   loading.value = true
   try {
     await request.post('/logs/block/unblock_batch', {
-      items: currentSelections.value.map(r => ({ ip: r.ip }))
+      items: currentSelections.value.map(r => ({ ip: r.ip, domain: r.domain }))
     })
     ElMessage.success('\u6279\u91cf\u89e3\u5c01\u6210\u529f')
     await fetchCurrentList()
@@ -278,7 +278,7 @@ const handleUnblock = async row => {
   }
   loading.value = true
   try {
-    await request.post('/logs/block/unblock_ip', { ip })
+    await request.post('/logs/block/unblock_ip', { ip, domain: row?.domain })
     ElMessage.success(`\u89e3\u5c01\u6210\u529f IP: ${ip}`)
     await fetchCurrentList()
   } catch (error) {

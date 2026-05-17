@@ -12,7 +12,7 @@ end
 
 local function block(reason, status)
     status = status or 403
-    ngx.header["X-Block-Source"] = reason or "type=local_protection;rule=filter_req_local;rule_id=0"
+    ngx.header["X-Block-Source"] = reason or "type=local_protection;module=lua.resty.filter_req;rule=filter_req_local;rule_id=0"
     ngx.log(ngx.WARN, "filter_req blocking request (", reason, ") status=", status)
     ngx.exit(status)
 end
@@ -22,14 +22,14 @@ function _M.run()
 
     if ok_ip_block and ip_block and ip then
         if ip_block.is_blocked(ip) then
-            block("type=ip_block;rule=ip_block;rule_id=0;condition=ip_in_blacklist", 418)
+            block("type=ip_block;module=lua.resty.filter_req;rule=ip_block;rule_id=0;condition=ip_in_blacklist", 418)
             return
         end
     end
 
     if ok_anti_cc and anti_cc and ip then
         if anti_cc.check_limit(ip) then
-            block("type=cc;rule=anti_cc;rule_id=0;condition=legacy_rate_limit", 418)
+            block("type=cc;module=lua.resty.filter_req;rule=anti_cc;rule_id=0;condition=legacy_rate_limit", 418)
             return
         end
     end

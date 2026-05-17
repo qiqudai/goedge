@@ -6,13 +6,13 @@ local _M = {}
 local store = ngx.shared.cc_req_rate
 
 local function block_request(reason, status)
-    local source = reason or "type=cc;rule=cc_rate_limit;rule_id=0;condition=unknown"
+    local source = reason or "type=cc;module=lua.cc;rule=cc_rate_limit;rule_id=0;condition=unknown"
     ngx.header["X-Block-Source"] = source
     ngx.exit(status or 429)
 end
 
 local function build_cc_reason(rule_name, rule_id, rule, filter, extra)
-    local parts = {"type=cc", "rule=" .. tostring(rule_name or "cc"), "rule_id=" .. tostring(rule_id or 0)}
+    local parts = {"type=cc", "module=lua.cc", "rule=" .. tostring(rule_name or "cc"), "rule_id=" .. tostring(rule_id or 0)}
     if rule and rule.filter_id then
         table.insert(parts, "filter_id=" .. tostring(rule.filter_id))
     end

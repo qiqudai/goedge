@@ -12,7 +12,7 @@ local geo_country = require "lua.geo_country"
 local guard = require "lua.guard"
 
 local function build_waf_reason(rule, extras)
-    local parts = {"type=waf", "rule=" .. tostring(rule or "unknown"), "rule_id=0"}
+    local parts = {"type=waf", "module=lua.waf", "rule=" .. tostring(rule or "unknown"), "rule_id=0"}
     if type(extras) == "table" then
         for _, item in ipairs(extras) do
             if item and item ~= "" then
