@@ -25,6 +25,8 @@ type rawAccessLog struct {
 	ClientISP            string  `json:"client_isp"`
 	SiteName             string  `json:"site_name"`
 	Host                 string  `json:"host"`
+	HTTPHost             string  `json:"http_host"`
+	SSLServerName        string  `json:"ssl_server_name"`
 	Request              string  `json:"request"`
 	Status               int     `json:"status"`
 	BodyBytesSent        int64   `json:"body_bytes_sent"`
@@ -37,6 +39,7 @@ type rawAccessLog struct {
 	BlockSource          string  `json:"block_source"`
 	HttpReferer          string  `json:"http_referer"`
 	HttpUserAgent        string  `json:"http_user_agent"`
+	CDNReqHeaders        string  `json:"cdn_req_headers"`
 	Scheme               string  `json:"scheme"`
 	SSLProtocol          string  `json:"ssl_protocol"`
 	SSLCipher            string  `json:"ssl_cipher"`
@@ -90,6 +93,7 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			upstreamRT := parseFloatFirst(raw.UpstreamResponseTime)
 			cacheStatus := normalizeCacheStatus(raw.UpstreamCacheStatus)
 			blockSource := normalizeBlockSource(raw)
+			host := effectiveAccessHost(raw)
 			slowReason, slowAdvice := DiagnoseAccessLogSlowReason(DiagnoseInput{
 				RequestTime:          raw.RequestTime,
 				UpstreamConnectTime:  upstreamCT,
@@ -110,7 +114,7 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 				"client_city":            raw.ClientCity,
 				"client_isp":             raw.ClientISP,
 				"site_name":              raw.SiteName,
-				"host":                   raw.Host,
+				"host":                   host,
 				"method":                 method,
 				"uri":                    uri,
 				"status":                 raw.Status,
@@ -163,6 +167,7 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 		upstreamRT := parseFloatFirst(raw.UpstreamResponseTime)
 		cacheStatus := normalizeCacheStatus(raw.UpstreamCacheStatus)
 		blockSource := normalizeBlockSource(raw)
+		host := effectiveAccessHost(raw)
 		slowReason, slowAdvice := DiagnoseAccessLogSlowReason(DiagnoseInput{
 			RequestTime:          raw.RequestTime,
 			UpstreamConnectTime:  upstreamCT,
@@ -183,7 +188,7 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 			raw.ClientCity,
 			raw.ClientISP,
 			raw.SiteName,
-			raw.Host,
+			host,
 			method,
 			uri,
 			raw.Status,
@@ -213,7 +218,7 @@ func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
 }
 
 func isInternalMetricsAccess(raw rawAccessLog) bool {
-	host := strings.TrimSpace(strings.ToLower(raw.Host))
+	host := strings.TrimSpace(strings.ToLower(effectiveAccessHost(raw)))
 	site := strings.TrimSpace(strings.ToLower(raw.SiteName))
 	if !(host == "127.0.0.1" || host == "localhost" || strings.HasPrefix(site, "localhost:9100")) {
 		return false
@@ -223,6 +228,55 @@ func isInternalMetricsAccess(raw rawAccessLog) bool {
 		return false
 	}
 	return strings.HasPrefix(uri, "/metrics")
+}
+
+func effectiveAccessHost(raw rawAccessLog) string {
+	for _, value := range []string{
+		raw.HTTPHost,
+		hostFromReqHeaders(raw.CDNReqHeaders),
+		raw.SSLServerName,
+		raw.Host,
+	} {
+		if host := normalizeAccessHost(value); host != "" {
+			return host
+		}
+	}
+	return strings.TrimSpace(raw.Host)
+}
+
+func hostFromReqHeaders(rawHeaders string) string {
+	rawHeaders = strings.TrimSpace(rawHeaders)
+	if rawHeaders == "" {
+		return ""
+	}
+	var headers map[string]interface{}
+	if err := json.Unmarshal([]byte(rawHeaders), &headers); err != nil {
+		return ""
+	}
+	for key, value := range headers {
+		if strings.EqualFold(strings.TrimSpace(key), "host") {
+			return strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	return ""
+}
+
+func normalizeAccessHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" || host == "-" {
+		return ""
+	}
+	if strings.HasPrefix(host, "[") {
+		if idx := strings.Index(host, "]"); idx > 0 {
+			return strings.ToLower(host[1:idx])
+		}
+	}
+	if strings.Count(host, ":") == 1 {
+		if idx := strings.LastIndex(host, ":"); idx > 0 {
+			host = host[:idx]
+		}
+	}
+	return strings.ToLower(strings.TrimSuffix(host, "."))
 }
 
 func InsertStreamLogs(nodeID, nodeIP string, lines []string) int {
