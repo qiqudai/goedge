@@ -62,3 +62,5 @@ release/
 /cnn.net/**/access/
 /cnn.net/docs/**/node_modules/
 /cnn.net/docs/**/test-results/
+
+/cnn.net
