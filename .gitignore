@@ -28,6 +28,8 @@
 /cdnfly-agent-v5.3.5
 /cdnfly-master-v5.3.6
 node_modules/
+dist-publish/
+release/
 .cache/
 .tmp/
 /acme/accounts/account_letsencrypt.key
