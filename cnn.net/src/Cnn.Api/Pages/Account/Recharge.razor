@@ -1,0 +1,170 @@
+@page "/account/recharge"
+@using Cnn.Common.Contracts
+@using global::System.Text.Json
+@inject ApiClient Api
+
+<div class="page-container">
+    <div class="page-title">账户充值</div>
+
+    <div class="card config-card p-4 mb-3" style="max-width:640px;">
+        <div class="d-flex gap-3 mb-4">
+            <span class="text-muted">余额</span>
+            <span class="fw-semibold">@FormatBalance(_balance)</span>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">充值金额</label>
+            <input class="form-control" type="number" min="0" step="0.01"
+                   @bind="_amount" placeholder="请输入充值金额" style="max-width:240px;" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">支付方式</label>
+            <select class="form-select" @bind="_payType" style="max-width:240px;">
+                <option value="usdt_trc20">USDT-TRC20</option>
+                <option value="online">其他(待扩展)</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">备注</label>
+            <input class="form-control" @bind="_remark" placeholder="请输入备注" style="max-width:360px;" />
+        </div>
+        <div>
+            <button class="btn btn-primary" @onclick="RechargeAsync" disabled="@_saving">提交充值</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_payInfoText))
+        {
+            <div class="alert alert-success mt-3">@_payInfoText</div>
+        }
+
+        @if (_lastOrder != null)
+        {
+            <div class="mt-4">
+                <div class="fw-semibold mb-2">最新订单</div>
+                <table class="table table-bordered table-sm" style="max-width:480px;">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted" style="width:130px;">订单号</td>
+                            <td>@(_lastOrder.OrderNo ?? "-")</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">支付方式</td>
+                            <td>@(_lastOrder.PayType ?? "-")</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">收款地址</td>
+                            <td>@(_wallet ?? "-")</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">预计支付币额</td>
+                            <td>@(_expectedAmount ?? "-")</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">汇率</td>
+                            <td>@(_exchangeRate ?? "-")</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger mt-2" style="max-width:640px;">@_errorMessage</div>
+    }
+</div>
+
+@code {
+    private long _balance;
+    private decimal _amount;
+    private string _remark = string.Empty;
+    private string _payType = "usdt_trc20";
+    private bool _saving;
+    private string _payInfoText = string.Empty;
+    private string _errorMessage = string.Empty;
+
+    private OrderCreateResult? _lastOrder;
+    private string? _wallet;
+    private string? _expectedAmount;
+    private string? _exchangeRate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBalanceAsync();
+    }
+
+    private async Task LoadBalanceAsync()
+    {
+        var response = await Api.GetAsync<UserProfileDto>("profile", ApiScope.User);
+        _balance = response?.Data?.Balance ?? 0;
+    }
+
+    private async Task RechargeAsync()
+    {
+        _errorMessage = string.Empty;
+        _payInfoText = string.Empty;
+
+        if (_saving) return;
+        if (_amount <= 0)
+        {
+            _errorMessage = "请输入充值金额";
+            return;
+        }
+
+        _saving = true;
+        var request = new UserRechargeRequest
+        {
+            Amount = _amount,
+            Remark = string.IsNullOrWhiteSpace(_remark) ? null : _remark.Trim(),
+            PayType = _payType
+        };
+
+        var response = await Api.PostAsync<OrderCreateResult>("recharge", request, ApiScope.User);
+        _saving = false;
+
+        if (response?.Data != null)
+        {
+            _lastOrder = response.Data;
+            ExtractPayInfo(_lastOrder);
+
+            if (!string.IsNullOrWhiteSpace(_wallet))
+            {
+                _payInfoText = $"订单已创建，请向地址 {_wallet} 支付 {_expectedAmount ?? "-"}";
+            }
+            else
+            {
+                _payInfoText = "订单已创建，请等待支付渠道处理";
+            }
+
+            _amount = 0;
+            _remark = string.Empty;
+            await LoadBalanceAsync();
+        }
+        else
+        {
+            _errorMessage = response?.Message ?? "充值提交失败";
+        }
+    }
+
+    private void ExtractPayInfo(OrderCreateResult order)
+    {
+        _wallet = null;
+        _expectedAmount = null;
+        _exchangeRate = null;
+
+        if (order.PayInfo == null) return;
+
+        if (order.PayInfo.TryGetValue("wallet", out var w) && w is JsonElement we)
+            _wallet = we.GetString();
+        if (order.PayInfo.TryGetValue("expected_amount", out var ea) && ea is JsonElement eae)
+            _expectedAmount = eae.GetString() ?? eae.ToString();
+        if (order.PayInfo.TryGetValue("exchange_rate", out var er) && er is JsonElement ere)
+            _exchangeRate = ere.GetString() ?? ere.ToString();
+    }
+
+    private static string FormatBalance(long balance)
+    {
+        return $"{balance / 100m:F2} 元";
+    }
+}

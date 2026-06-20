@@ -1,0 +1,13 @@
+@page "/website/resolve"
+@inject NavigationManager Nav
+
+<div class="page-container">
+    <div class="tab-bar">
+        <button class="tab-button" @onclick='@(() => Nav.NavigateTo("/website/list"))'>网站列表</button>
+        <button class="tab-button" @onclick='@(() => Nav.NavigateTo("/website/list?tab=default"))'>默认设置</button>
+        <button class="tab-button" @onclick='@(() => Nav.NavigateTo("/website/list?tab=dns"))'>DNS 接口</button>
+        <button class="tab-button active">解析检测</button>
+    </div>
+
+    <SiteResolvePanel />
+</div>

@@ -1,0 +1,816 @@
+﻿@page "/system/users"
+@using Cnn.Common.Contracts
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services
+@inject ApiClient Api
+@inject IJSRuntime Js
+@inject NavigationManager Navigation
+
+<div class="page-container">
+    <div class="page-title">用户管理</div>
+
+    <div class="tab-bar mb-3">
+        <button class='tab-button @(IsMainTab("users") ? "active" : "")' @onclick='@(() => SetMainTab("users"))'>用户列表</button>
+        <button class='tab-button @(IsMainTab("groups") ? "active" : "")' @onclick='@(() => SetMainTab("groups"))'>用户分组</button>
+    </div>
+
+    @if (IsMainTab("users"))
+    {
+        <div class="filter-bar">
+            <InputText class="form-control" style="max-width: 220px" @bind-Value="_keyword" placeholder="用户名/邮箱/手机号" />
+            <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+            <button class="btn btn-outline-primary" @onclick="OpenCreate">添加用户</button>
+            <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+                @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="filter-bar">
+            <InputText class="form-control" style="max-width: 280px" @bind-Value="_newGroupName" placeholder="新分组名称" />
+            <button class="btn btn-primary" @onclick="CreateGroupAsync" disabled="@_groupSaving">新增分组</button>
+            <button class="btn btn-outline-secondary" @onclick="LoadUserGroupsAsync">刷新</button>
+        </div>
+    }
+
+    @if (IsMainTab("users") && _showPagingDiagnostics)
+    {
+        <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+            <div><strong>分页诊断</strong></div>
+            <div>stateKey: <code>system:users:table</code></div>
+            <div>pagingEnabled: <code>@(_pageQuery.PagingEnabled ? "true" : "false")</code></div>
+            <div>page: <code>@_pageQuery.Page</code>, pageSize: <code>@_pageQuery.PageSize</code></div>
+            <div>loaded: <code>@_items.Count</code>, total: <code>@_total</code></div>
+        </div>
+    }
+
+    @if (IsMainTab("users"))
+    {
+        <TablePager @ref="_tablePager"
+                    StateKey="system:users:table"
+                    Total="_total"
+                    DefaultPageSize="20"
+                    UnpagedLimit="1000"
+                    QueryChanged="OnPageQueryChangedAsync">
+            <ChildContent>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>手机</th>
+                                <th>QQ</th>
+                                <th>余额</th>
+                                <th>状态</th>
+                                <th>备注</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading)
+                            {
+                                <tr><td colspan="9">加载中...</td></tr>
+                            }
+                            else if (_items.Count == 0)
+                            {
+                                <tr><td colspan="9">暂无数据</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in _items)
+                                {
+                                    <tr>
+                                        <td>@row.Id</td>
+                                        <td>
+                                            <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Name</span>
+                                            @if (row.Type == 1)
+                                            {
+                                                <span class="badge bg-danger ms-2">管理员</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Email</span>
+                                        </td>
+                                        <td>
+                                            <span class="text-primary" style="cursor: pointer" @onclick="() => OpenEdit(row)">@row.Phone</span>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(row.Qq) ? "-" : row.Qq)</td>
+                                        <td>@(row.Balance?.ToString() ?? "0")</td>
+                                        <td>
+                                            <div class="form-check form-switch">
+                                                <InputCheckbox class="form-check-input" @bind-Value="row.Status" @onchange="() => ChangeStatusAsync(row)" />
+                                            </div>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(row.Des) ? "-" : row.Des)</td>
+                                        <td class="d-flex flex-wrap gap-2">
+                                            <button class="btn btn-sm btn-primary" @onclick="() => OpenEdit(row)">编辑</button>
+                                            <button class="btn btn-sm btn-success" @onclick="() => ImpersonateAsync(row)">切换登录</button>
+                                            <button class="btn btn-sm btn-warning" @onclick="() => ResetPurgeAsync(row)">重置缓存次数</button>
+                                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveAsync(row)">删除</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </TablePager>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>分组名称</th>
+                        <th>描述</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_groupLoading)
+                    {
+                        <tr><td colspan="4">加载中...</td></tr>
+                    }
+                    else if (_userGroups.Count == 0)
+                    {
+                        <tr><td colspan="4">暂无分组</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var group in _userGroups)
+                        {
+                            <tr>
+                                <td>@group.Id</td>
+                                <td>@group.Name</td>
+                                <td>@(string.IsNullOrWhiteSpace(group.Des) ? "-" : group.Des)</td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteGroupAsync(group)">删除</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (_editorVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_createMode ? "添加用户" : "编辑用户")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="modal-body">
+                <div class="tab-bar">
+                    <button class='tab-button @(IsEditTab("basic") ? "active" : "")' @onclick='@(() => SetEditTab("basic"))'>基本信息</button>
+                    @if (!_createMode)
+                    {
+                        <button class='tab-button @(IsEditTab("cert") ? "active" : "")' @onclick='@(() => SetEditTab("cert"))'>实名认证</button>
+                    }
+                    <button class='tab-button @(IsEditTab("security") ? "active" : "")' @onclick='@(() => SetEditTab("security"))'>登录安全</button>
+                </div>
+
+                @if (_editTab == "basic")
+                {
+                    <div class="mt-3">
+                        @if (!_createMode)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label">ID</label>
+                                <div>@_editor.Id</div>
+                            </div>
+                        }
+                        <div class="mb-3">
+                            <label class="form-label">邮箱</label>
+                            <InputText class="form-control" @bind-Value="_editor.Email" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">用户名</label>
+                            <InputText class="form-control" @bind-Value="_editor.Name" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <InputTextArea class="form-control" rows="2" @bind-Value="_editor.Des" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">手机</label>
+                            <InputText class="form-control" @bind-Value="_editor.Phone" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">QQ</label>
+                            <InputText class="form-control" @bind-Value="_editor.Qq" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">用户分组</label>
+                            <select class="form-select" @bind="_editor.GroupId">
+                                <option value="0">默认分组</option>
+                                @foreach (var group in _userGroups)
+                                {
+                                    <option value="@group.Id">@group.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">密码</label>
+                            <InputText class="form-control" type="password" @bind-Value="_editor.Password" placeholder="@(_createMode ? "必填" : "留空则不修改")" />
+                        </div>
+                        <div class="form-check form-switch">
+                            <InputCheckbox class="form-check-input" @bind-Value="_editor.Enable" />
+                            <label class="form-check-label">启用</label>
+                        </div>
+                    </div>
+                }
+                else if (_editTab == "cert")
+                {
+                    <div class="mt-3">
+                        <div class="mb-3">
+                            <label class="form-label">姓名</label>
+                            <InputText class="form-control" @bind-Value="_editor.CertName" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">身份证</label>
+                            <InputText class="form-control" @bind-Value="_editor.CertNo" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">公司名称</label>
+                            <InputText class="form-control" @bind-Value="_editor.Company" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">统一社会信用代码</label>
+                            <InputText class="form-control" @bind-Value="_editor.TeaCode" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">认证状态</label>
+                            <div class="d-flex gap-3">
+                                <span>个人实名: <span class="badge @(string.IsNullOrWhiteSpace(_editor.CertName) ? "bg-secondary" : "bg-success")">@(string.IsNullOrWhiteSpace(_editor.CertName) ? "未认证" : "已认证")</span></span>
+                                <span>企业实名: <span class="badge @(string.IsNullOrWhiteSpace(_editor.Company) ? "bg-secondary" : "bg-success")">@(string.IsNullOrWhiteSpace(_editor.Company) ? "未认证" : "已认证")</span></span>
+                            </div>
+                        </div>
+                        <hr />
+                        <div class="section-title mb-2">二次实名</div>
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="_editor.SecondaryAuth" />
+                                <label class="form-check-label">开启二次实名</label>
+                            </div>
+                        </div>
+                        @if (_editor.SecondaryAuth)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label">截止时间</label>
+                                <InputText class="form-control" @bind-Value="_editor.SecondaryAuthDeadline" placeholder="yyyy-MM-dd HH:mm:ss" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">认证过期处理</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="secAuthAction"
+                                           checked="@(string.IsNullOrEmpty(_editor.SecondaryAuthAction))"
+                                           @onchange="@(() => _editor.SecondaryAuthAction = "")" />
+                                    <label class="form-check-label">不处理</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="secAuthAction"
+                                           checked="@(_editor.SecondaryAuthAction == "lock")"
+                                           @onchange="@(() => _editor.SecondaryAuthAction = "lock")" />
+                                    <label class="form-check-label">锁定网站</label>
+                                </div>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_editor.SecondaryAuthStatus))
+                        {
+                            <div class="mb-2">
+                                <span class="badge bg-info">认证状态: @_editor.SecondaryAuthStatus</span>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (_editTab == "security")
+                {
+                    <div class="mt-3">
+                        <div class="mb-3">
+                            <label class="form-label">登录验证码</label>
+                            <select class="form-select" @bind="_editor.LoginCaptcha">
+                                <option value="">无</option>
+                                <option value="sms">短信</option>
+                                <option value="email">邮件</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">登录白名单</label>
+                            <InputTextArea class="form-control" rows="4" @bind-Value="_editor.WhiteIp" placeholder="多个IP空格分隔" />
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseEditor">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">@(_createMode ? "创建" : "保存")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<UserRow> _items = new();
+    private bool _loading;
+    private bool _statusLocked;
+    private bool _showPagingDiagnostics;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private int _total;
+    private string _keyword = string.Empty;
+    private TablePager? _tablePager;
+    private readonly List<UserGroupOption> _userGroups = new();
+    private string _mainTab = "users";
+    private bool _groupLoading;
+    private bool _groupSaving;
+    private string _newGroupName = string.Empty;
+
+    private bool _editorVisible;
+    private bool _saving;
+    private bool _createMode;
+    private string _editTab = "basic";
+    private UserEditModel _editor = new();
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
+    private bool IsMainTab(string tab) => string.Equals(_mainTab, tab, StringComparison.OrdinalIgnoreCase);
+    private async Task SetMainTab(string tab)
+    {
+        _mainTab = tab;
+        if (IsMainTab("groups"))
+        {
+            await LoadUserGroupsAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        _statusLocked = true;
+
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _pageQuery.Page.ToString(),
+            ["pageSize"] = _pageQuery.PageSize.ToString(),
+            ["keyword"] = _keyword
+        };
+
+        var response = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, query);
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            foreach (var item in response.Data.List)
+            {
+                _items.Add(new UserRow(item));
+            }
+            _total = response.Data.Total;
+        }
+        else
+        {
+            _total = 0;
+        }
+
+        _loading = false;
+        _statusLocked = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadAsync();
+    }
+
+    private Task RefreshAsync()
+    {
+        if (_tablePager != null)
+        {
+            return _tablePager.RefreshAsync();
+        }
+
+        return LoadAsync();
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+
+    private async Task ChangeStatusAsync(UserRow row)
+    {
+        if (_statusLocked)
+        {
+            return;
+        }
+
+        var status = row.Status ? 1 : 0;
+        var response = await Api.PutAsync<bool>($"users/{row.Id}/status", new UserStatusUpdateRequest { Status = status }, ApiScope.Admin);
+        if (response?.Data != true)
+        {
+            row.Status = !row.Status;
+        }
+    }
+
+    private void OpenEdit(UserRow row)
+    {
+        _createMode = false;
+        _editTab = "basic";
+        _editor = UserEditModel.FromRow(row);
+        _ = LoadUserGroupsAsync();
+        _editorVisible = true;
+    }
+
+    private void OpenCreate()
+    {
+        _createMode = true;
+        _editTab = "basic";
+        _editor = new UserEditModel
+        {
+            Enable = true
+        };
+        _ = LoadUserGroupsAsync();
+        _editorVisible = true;
+    }
+
+    private bool IsEditTab(string tab) => string.Equals(_editTab, tab, StringComparison.OrdinalIgnoreCase);
+    private void SetEditTab(string tab) => _editTab = tab;
+
+    private void CloseEditor()
+    {
+        _editorVisible = false;
+        _createMode = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        if (_createMode)
+        {
+            if (string.IsNullOrWhiteSpace(_editor.Name))
+            {
+                await Js.InvokeVoidAsync("alert", "用户名不能为空");
+                _saving = false;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_editor.Password))
+            {
+                await Js.InvokeVoidAsync("alert", "密码不能为空");
+                _saving = false;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_editor.Email))
+            {
+                await Js.InvokeVoidAsync("alert", "邮箱不能为空");
+                _saving = false;
+                return;
+            }
+
+            var createRequest = new UserCreateRequest
+            {
+                Email = _editor.Email,
+                Name = _editor.Name,
+                Des = _editor.Des,
+                Phone = _editor.Phone,
+                Qq = _editor.Qq,
+                Password = _editor.Password,
+                GroupId = _editor.GroupId,
+                Enable = _editor.Enable,
+                CertName = _editor.CertName,
+                CertNo = _editor.CertNo,
+                Company = _editor.Company,
+                TeaCode = _editor.TeaCode,
+                LoginCaptcha = _editor.LoginCaptcha,
+                WhiteIp = _editor.WhiteIp
+            };
+
+            var createResponse = await Api.PostAsync<UserItemDto>("users", createRequest, ApiScope.Admin);
+            if (createResponse?.Code != ErrorCodes.Success)
+            {
+                await Js.InvokeVoidAsync("alert", createResponse?.Message ?? "添加用户失败");
+                _saving = false;
+                return;
+            }
+
+            _saving = false;
+            _editorVisible = false;
+            _createMode = false;
+            await RefreshAsync();
+            return;
+        }
+
+        var request = new UserUpdateRequest
+        {
+            Email = _editor.Email,
+            Name = _editor.Name,
+            Des = _editor.Des,
+            Phone = _editor.Phone,
+            Qq = _editor.Qq,
+            GroupId = _editor.GroupId,
+            Enable = _editor.Enable,
+            CertName = _editor.CertName,
+            CertNo = _editor.CertNo,
+            Company = _editor.Company,
+            TeaCode = _editor.TeaCode,
+            SecondaryAuth = _editor.SecondaryAuth,
+            SecondaryAuthDeadline = _editor.SecondaryAuthDeadline,
+            SecondaryAuthAction = _editor.SecondaryAuthAction,
+            LoginCaptcha = _editor.LoginCaptcha,
+            WhiteIp = _editor.WhiteIp
+        };
+
+        if (!string.IsNullOrWhiteSpace(_editor.Password))
+        {
+            request.Password = _editor.Password;
+        }
+
+        await Api.PutAsync<bool>($"users/{_editor.Id}", request, ApiScope.Admin);
+        _saving = false;
+        _editorVisible = false;
+        await RefreshAsync();
+    }
+
+    private async Task LoadUserGroupsAsync()
+    {
+        if (_groupLoading)
+        {
+            return;
+        }
+
+        _groupLoading = true;
+        var response = await Api.GetAsync<UserGroupListResult>("user_groups", ApiScope.Admin);
+        _userGroups.Clear();
+        if (response?.Data?.List == null)
+        {
+            _groupLoading = false;
+            return;
+        }
+
+        foreach (var item in response.Data.List)
+        {
+            _userGroups.Add(new UserGroupOption
+            {
+                Id = (int)item.Id,
+                Name = string.IsNullOrWhiteSpace(item.Name) ? $"用户组#{item.Id}" : item.Name.Trim(),
+                Des = item.Des ?? string.Empty
+            });
+        }
+        _groupLoading = false;
+    }
+
+    private async Task CreateGroupAsync()
+    {
+        if (_groupSaving)
+        {
+            return;
+        }
+
+        var name = _newGroupName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            await Js.InvokeVoidAsync("alert", "分组名称不能为空");
+            return;
+        }
+
+        _groupSaving = true;
+        var response = await Api.PostAsync<UserGroupDto>("user_groups", new UserGroupUpsertRequest
+        {
+            Name = name
+        }, ApiScope.Admin);
+        _groupSaving = false;
+
+        if (response?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "新增分组失败");
+            return;
+        }
+
+        _newGroupName = string.Empty;
+        await LoadUserGroupsAsync();
+    }
+
+    private async Task DeleteGroupAsync(UserGroupOption group)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", $"确认删除分组【{group.Name}】？");
+        if (!ok)
+        {
+            return;
+        }
+
+        var response = await Api.DeleteAsync<bool>($"user_groups/{group.Id}", ApiScope.Admin);
+        if (response?.Code != ErrorCodes.Success)
+        {
+            await Js.InvokeVoidAsync("alert", response?.Message ?? "删除分组失败");
+            return;
+        }
+
+        await LoadUserGroupsAsync();
+    }
+
+    private async Task RemoveAsync(UserRow row)
+    {
+        var result = await DeleteWorkflowHelper.ConfirmAndRequestAsync(
+            Api,
+            Js,
+            $"users/{row.Id}",
+            ApiScope.Admin,
+            "确认删除该用户？",
+            "用户删除任务已提交");
+        if (!result.Success)
+        {
+            if (!result.Cancelled)
+            {
+                await Js.InvokeVoidAsync("alert", result.Message);
+            }
+
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", result.Message);
+        await RefreshAsync();
+        if (result.TaskId > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private async Task ResetPurgeAsync(UserRow row)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", "确认重置该用户的刷新/预热次数？");
+        if (!ok)
+        {
+            return;
+        }
+
+        await Api.PostAsync<object>($"users/{row.Id}/purge/reset", null, ApiScope.Admin);
+    }
+
+    private async Task ImpersonateAsync(UserRow row)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", "确认切换为该用户登录吗？");
+        if (!ok)
+        {
+            return;
+        }
+
+        var response = await Api.PostAsync<LoginResponse>($"users/{row.Id}/impersonate", null, ApiScope.Admin);
+        var token = response?.Data?.Token;
+        var role = response?.Data?.Role ?? "user";
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            await Js.InvokeVoidAsync("alert", "切换失败");
+            return;
+        }
+
+        var redirect = "/dashboard";
+        var url = $"/login?token={Uri.EscapeDataString(token)}&role={Uri.EscapeDataString(role)}&redirect={Uri.EscapeDataString(redirect)}";
+        await Js.InvokeVoidAsync("open", url, "_blank");
+    }
+
+    private async Task RefreshAfterDeleteTaskAsync()
+    {
+        await Task.Delay(1200);
+        await RefreshAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private sealed class UserRow
+    {
+        public UserRow(UserItemDto dto)
+        {
+            Id = dto.Id;
+            Email = dto.Email ?? string.Empty;
+            Name = dto.Name ?? string.Empty;
+            Des = dto.Des ?? string.Empty;
+            Phone = dto.Phone ?? string.Empty;
+            Qq = dto.Qq ?? string.Empty;
+            Balance = dto.Balance;
+            Enable = dto.Enable ?? false;
+            Type = dto.Type ?? 0;
+            CertName = dto.CertName ?? string.Empty;
+            CertNo = dto.CertNo ?? string.Empty;
+            Company = dto.Company ?? string.Empty;
+            TeaCode = dto.TeaCode ?? string.Empty;
+            SecondaryAuth = dto.SecondaryAuth;
+            SecondaryAuthDeadline = dto.SecondaryAuthDeadline ?? string.Empty;
+            SecondaryAuthAction = dto.SecondaryAuthAction ?? string.Empty;
+            SecondaryAuthStatus = dto.SecondaryAuthStatus ?? string.Empty;
+            LoginCaptcha = dto.LoginCaptcha ?? string.Empty;
+            WhiteIp = dto.WhiteIp ?? string.Empty;
+            GroupId = dto.GroupId;
+            Status = Enable;
+        }
+
+        public long Id { get; }
+        public string Email { get; }
+        public string Name { get; }
+        public string Des { get; }
+        public string Phone { get; }
+        public string Qq { get; }
+        public long? Balance { get; }
+        public bool Enable { get; }
+        public int Type { get; }
+        public string CertName { get; }
+        public string CertNo { get; }
+        public string Company { get; }
+        public string TeaCode { get; }
+        public bool SecondaryAuth { get; }
+        public string SecondaryAuthDeadline { get; }
+        public string SecondaryAuthAction { get; }
+        public string SecondaryAuthStatus { get; }
+        public string LoginCaptcha { get; }
+        public string WhiteIp { get; }
+        public int GroupId { get; }
+        public bool Status { get; set; }
+    }
+
+    private sealed class UserEditModel
+    {
+        public long Id { get; set; }
+        public string Email { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Des { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string Qq { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public bool Enable { get; set; }
+        public string CertName { get; set; } = string.Empty;
+        public string CertNo { get; set; } = string.Empty;
+        public string Company { get; set; } = string.Empty;
+        public string TeaCode { get; set; } = string.Empty;
+        public bool SecondaryAuth { get; set; }
+        public string SecondaryAuthDeadline { get; set; } = string.Empty;
+        public string SecondaryAuthAction { get; set; } = string.Empty;
+        public string SecondaryAuthStatus { get; set; } = string.Empty;
+        public string LoginCaptcha { get; set; } = string.Empty;
+        public string WhiteIp { get; set; } = string.Empty;
+        public int GroupId { get; set; }
+
+        public static UserEditModel FromRow(UserRow row)
+        {
+            return new UserEditModel
+            {
+                Id = row.Id,
+                Email = row.Email,
+                Name = row.Name,
+                Des = row.Des,
+                Phone = row.Phone,
+                Qq = row.Qq,
+                Enable = row.Status,
+                CertName = row.CertName,
+                CertNo = row.CertNo,
+                Company = row.Company,
+                TeaCode = row.TeaCode,
+                SecondaryAuth = row.SecondaryAuth,
+                SecondaryAuthDeadline = row.SecondaryAuthDeadline,
+                SecondaryAuthAction = row.SecondaryAuthAction,
+                SecondaryAuthStatus = row.SecondaryAuthStatus,
+                LoginCaptcha = row.LoginCaptcha,
+                WhiteIp = row.WhiteIp,
+                GroupId = row.GroupId
+            };
+        }
+    }
+
+    private sealed class UserGroupOption
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Des { get; set; } = string.Empty;
+    }
+}

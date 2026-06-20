@@ -45,14 +45,14 @@
     </el-table-column>
   </AppTable>
 
-  <el-dialog :title="dialogMode === 'create' ? '新增匹配器' : (isSystemRuleEdit ? '查看匹配器（系统规则只读）' : '编辑匹配器')" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
-    <el-alert v-if="isSystemRuleEdit" type="info" :closable="false" show-icon title="系统规则为只读，管理员也不可修改" style="margin-bottom: 12px;" />
-    <el-form :model="form" label-width="100px" :disabled="isSystemRuleEdit">
+  <el-dialog :title="dialogMode === 'create' ? '新增匹配器' : '编辑匹配器'" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
+    <el-form :model="form" label-width="100px">
       <el-form-item label="类型" v-if="isAdmin">
-        <el-radio-group v-model="form.type" :disabled="isSystemRuleEdit">
+        <el-radio-group v-model="form.type" :disabled="isSystemRule">
           <el-radio value="system">系统规则</el-radio>
           <el-radio value="user">用户规则</el-radio>
         </el-radio-group>
+        <div v-if="isSystemRule" class="form-helper">系统规则的类型不可修改，其他配置可正常编辑</div>
       </el-form-item>
       <el-form-item label="用户" v-if="isAdmin && form.type === 'user'">
         <el-select
@@ -112,13 +112,13 @@
        </el-form-item>
        
       <el-form-item label="启用">
-        <el-switch v-model="form.is_on" :disabled="isSystemRuleEdit || cannotDisable" />
+        <el-switch v-model="form.is_on" :disabled="cannotDisable" />
         <div v-if="cannotDisable" class="form-helper">该匹配器正在使用中，无法禁用</div>
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">{{ isSystemRuleEdit ? '关闭' : '取消' }}</el-button>
-      <el-button v-if="!isSystemRuleEdit" type="primary" @click="submitForm">确定</el-button>
+      <el-button @click="dialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="submitForm">确定</el-button>
     </template>
   </el-dialog>
 </template>
@@ -137,7 +137,7 @@ const dialogMode = ref('create')
 const isAdmin = ref(localStorage.getItem('role') === 'admin')
 const form = reactive({ id: 0, type: 'system', user_id: null, name: '', remark: '', rules: [], is_on: true, is_system: false, in_use: false })
 
-const isSystemRuleEdit = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
+const isSystemRule = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
 const cannotDisable = computed(() => !!form.in_use && !!form.is_on)
 
 const userLoading = ref(false)
@@ -271,10 +271,6 @@ const moveRule = (index, direction) => {
 }
 
 const submitForm = async () => {
-    if (isSystemRuleEdit.value) {
-      dialogVisible.value = false
-      return
-    }
     try {
       if (isAdmin.value && form.type === 'user' && !form.user_id) {
         ElMessage.warning('请选择用户')

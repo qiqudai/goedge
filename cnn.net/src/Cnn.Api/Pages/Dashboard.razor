@@ -1,0 +1,504 @@
+@page "/dashboard"
+@using Cnn.Common.Contracts
+@using Cnn.Api.Services.Common
+@using Cnn.Api.Services.Stats
+@inject IDashboardService DashboardService
+@inject ClientSession Session
+@inject IJSRuntime Js
+
+<MudStack Spacing="2" Class="dashboard-container">
+    @if (_loading)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">加载中...</MudAlert>
+    }
+
+    <MudGrid Spacing="3" Class="dashboard-row">
+        <MudItem xs="12" md="9">
+            <MudStack Spacing="2">
+                @if (IsAdmin)
+                {
+                    <MudPaper Class="dashboard-card ops-card" Elevation="0">
+                        <div class="card-header">
+                            <span>运营数据</span>
+                            <MudButtonGroup Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                                <MudButton Variant="@RangeVariant(_opsRange == "7d")" OnClick="@(() => SetOpsRangeAsync("7d"))">近7日</MudButton>
+                                <MudButton Variant="@RangeVariant(_opsRange == "30d")" OnClick="@(() => SetOpsRangeAsync("30d"))">近30日</MudButton>
+                                <MudButton Variant="@RangeVariant(_opsRange == "last_month")" OnClick="@(() => SetOpsRangeAsync("last_month"))">上个月</MudButton>
+                            </MudButtonGroup>
+                        </div>
+                        <MudGrid Spacing="2" Class="pa-4">
+                            <MudItem xs="12" md="4">
+                                <div class="ops-item">
+                                    <div class="ops-title">注册用户</div>
+                                    <div class="ops-value">@GetOpsCount(OpsSummary.Users)</div>
+                                </div>
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <div class="ops-item">
+                                    <div class="ops-title">开通套餐</div>
+                                    <div class="ops-value">@GetOpsCount(OpsSummary.Packages)</div>
+                                </div>
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <div class="ops-item">
+                                    <div class="ops-title">充值金额</div>
+                                    <div class="ops-value">@GetOpsText(OpsSummary.Recharge)</div>
+                                </div>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
+                }
+                else
+                {
+                    <MudPaper Class="dashboard-card user-card" Elevation="0">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+                            <MudAvatar Size="Size.Large" Class="user-avatar">
+                                <img src="@UserAvatar" alt="avatar" class="avatar-image" />
+                            </MudAvatar>
+                            <MudStack Spacing="0">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudText Typo="Typo.body1" Class="user-name">@((User.Username ?? "-"))</MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(User.Level ?? "V0")</MudChip>
+                                </MudStack>
+                                <MudText Typo="Typo.caption">账号ID：@(User.Id > 0 ? User.Id.ToString() : "-") | 实名认证：@(User.AuthState ?? "-")</MudText>
+                                <MudText Typo="Typo.caption">最后登录：@(User.LastLogin ?? "-") | 登录IP：@(User.LoginIp ?? "-")</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudPaper>
+                }
+
+                <MudPaper Class="dashboard-card overview-card" Elevation="0">
+                    <div class="card-header">
+                        <span>网络概览</span>
+                        <MudButtonGroup Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                            <MudButton Variant="@RangeVariant(_overviewRange == "today")" OnClick="@(() => SetOverviewRangeAsync("today"))">今日</MudButton>
+                            <MudButton Variant="@RangeVariant(_overviewRange == "yesterday")" OnClick="@(() => SetOverviewRangeAsync("yesterday"))">昨日</MudButton>
+                            <MudButton Variant="@RangeVariant(_overviewRange == "7d")" OnClick="@(() => SetOverviewRangeAsync("7d"))">近7日</MudButton>
+                            <MudButton Variant="@RangeVariant(_overviewRange == "30d")" OnClick="@(() => SetOverviewRangeAsync("30d"))">近30日</MudButton>
+                        </MudButtonGroup>
+                    </div>
+                    <div class="overview-grid">
+                        <div class="overview-item">
+                            <div class="overview-title">业务带宽峰值</div>
+                            <div class="overview-value">@(Overview.BandwidthPeak ?? "-")</div>
+                        </div>
+                        @if (IsAdmin)
+                        {
+                            <div class="overview-item">
+                                <div class="overview-title">节点带宽峰值</div>
+                                <div class="overview-value">@(Overview.NodeBandwidthPeak ?? "-")</div>
+                            </div>
+                        }
+                        <div class="overview-item">
+                            <div class="overview-title">请求数</div>
+                            <div class="overview-value">@(Overview.Requests ?? "-")</div>
+                        </div>
+                        <div class="overview-item">
+                            <div class="overview-title">总流量</div>
+                            <div class="overview-value">@(Overview.Traffic ?? "-")</div>
+                        </div>
+                        <div class="overview-item">
+                            <div class="overview-title">拉黑IP数</div>
+                            <div class="overview-value">@(Overview.BlockedIps ?? "-")</div>
+                        </div>
+                    </div>
+                </MudPaper>
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="8">
+                        <MudPaper Class="dashboard-card chart-card" Elevation="0">
+                            <div class="card-header">
+                                <span>监控趋势</span>
+                                <MudButtonGroup Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                                    <MudButton Variant="@RangeVariant(_chartRange == "today")" OnClick="@(() => SetChartRangeAsync("today"))">今日</MudButton>
+                                    <MudButton Variant="@RangeVariant(_chartRange == "yesterday")" OnClick="@(() => SetChartRangeAsync("yesterday"))">昨日</MudButton>
+                                    <MudButton Variant="@RangeVariant(_chartRange == "7d")" OnClick="@(() => SetChartRangeAsync("7d"))">近7日</MudButton>
+                                    <MudButton Variant="@RangeVariant(_chartRange == "30d")" OnClick="@(() => SetChartRangeAsync("30d"))">近30日</MudButton>
+                                </MudButtonGroup>
+                            </div>
+                            <MudStack Spacing="1" Class="pa-4">
+                                <MudButtonGroup Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                                    <MudButton Variant="@RangeVariant(_chartType == "bandwidth")" OnClick="@(() => SetChartType("bandwidth"))">带宽</MudButton>
+                                    <MudButton Variant="@RangeVariant(_chartType == "requests")" OnClick="@(() => SetChartType("requests"))">请求数</MudButton>
+                                    <MudButton Variant="@RangeVariant(_chartType == "traffic")" OnClick="@(() => SetChartType("traffic"))">流量</MudButton>
+                                    <MudButton Variant="@RangeVariant(_chartType == "blocked")" OnClick="@(() => SetChartType("blocked"))">拉黑IP数</MudButton>
+                                </MudButtonGroup>
+                                <div id="dashboardTrendChart" class="trend-chart"></div>
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudPaper Class="dashboard-card top-card" Elevation="0">
+                            <div class="card-header">
+                                <span>TOP10 数据(近30分钟)</span>
+                            </div>
+                            <MudStack Spacing="1" Class="pa-4">
+                                <MudButtonGroup Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                                    <MudButton Variant="@RangeVariant(_topTab == "domain")" OnClick="@(() => SetTopTab("domain"))">域名</MudButton>
+                                    <MudButton Variant="@RangeVariant(_topTab == "url")" OnClick="@(() => SetTopTab("url"))">URL</MudButton>
+                                    <MudButton Variant="@RangeVariant(_topTab == "ip")" OnClick="@(() => SetTopTab("ip"))">IP</MudButton>
+                                    <MudButton Variant="@RangeVariant(_topTab == "country")" OnClick="@(() => SetTopTab("country"))">国家</MudButton>
+                                </MudButtonGroup>
+                                <MudTable Items="TopRows" Dense="true" Hover="true" Striped="true" FixedHeader="true" Height="320px">
+                                    <HeaderContent>
+                                        <MudTh>名称</MudTh>
+                                        <MudTh Style="text-align:right;">次数</MudTh>
+                                        <MudTh Style="text-align:right;">流量</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd>@(string.IsNullOrWhiteSpace(context.Name) ? "-" : context.Name)</MudTd>
+                                        <MudTd Style="text-align:right;">@context.Count</MudTd>
+                                        <MudTd Style="text-align:right;">@(string.IsNullOrWhiteSpace(context.Traffic) ? "-" : context.Traffic)</MudTd>
+                                    </RowTemplate>
+                                    <NoRecordsContent>
+                                        <MudText Typo="Typo.caption" Class="pa-2">暂无数据</MudText>
+                                    </NoRecordsContent>
+                                </MudTable>
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            </MudStack>
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <MudStack Spacing="2">
+                @if (IsAdmin)
+                {
+                    <MudPaper Class="dashboard-card admin-card" Elevation="0">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="pa-4">
+                            <MudAvatar Size="Size.Large" Class="user-avatar">
+                                <img src="@UserAvatar" alt="avatar" class="avatar-image" />
+                            </MudAvatar>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2" Class="admin-user-name">@((User.Username ?? "-"))</MudText>
+                                <MudText Typo="Typo.caption">账号ID：@(User.Id > 0 ? User.Id.ToString() : "-")</MudText>
+                                <MudText Typo="Typo.caption">最后登录：@(User.LastLogin ?? "-")</MudText>
+                                <MudText Typo="Typo.caption">登录IP：@(User.LoginIp ?? "-")</MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudPaper>
+
+                    <MudPaper Class="dashboard-card admin-card" Elevation="0">
+                        <div class="card-header"><span>系统状态</span></div>
+                        <MudStack Spacing="0" Class="pa-4 status-list">
+                            <div class="status-row">
+                                <span>主控状态</span>
+                                <span class="status-right"><span class="status-dot @StatusDot(SystemStatus.Master)"></span></span>
+                            </div>
+                            <div class="status-row">
+                                <span>CK</span>
+                                <span class="status-right">
+                                    @if (!string.IsNullOrWhiteSpace(CkErrorTip))
+                                    {
+                                        <MudTooltip Text="@CkErrorTip">
+                                            <span class="status-dot @StatusDot(CkStatus)"></span>
+                                        </MudTooltip>
+                                    }
+                                    else
+                                    {
+                                        <span class="status-dot @StatusDot(CkStatus)"></span>
+                                    }
+                                </span>
+                            </div>
+                            <div class="status-row">
+                                <span>Agent状态</span>
+                                <span class="status-right">
+                                    <span class="status-dot @StatusDot(SystemStatus.Agent)"></span>
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="CheckAgentStatusAsync">立即检查</MudButton>
+                                </span>
+                            </div>
+                            <div class="status-tip">Agent状态上次检查时间 @(SystemStatus.CheckedAt ?? "-")</div>
+                        </MudStack>
+                    </MudPaper>
+
+                    <MudPaper Class="dashboard-card admin-card" Elevation="0">
+                        <div class="card-header"><span>系统授权</span></div>
+                        <MudStack Spacing="0" Class="pa-4 status-list">
+                            <div class="status-row"><span>授权节点</span><span>@(License.TotalNodes > 0 ? License.TotalNodes : "-")</span></div>
+                            <div class="status-row"><span>当前节点</span><span>@(License.CurrentNodes > 0 ? License.CurrentNodes : "-")</span></div>
+                            <div class="status-row"><span>到期时间</span><span>@(License.ExpireAt ?? "-")</span></div>
+                            <div class="status-row"><span>操作</span><MudButton Variant="Variant.Text" Size="Size.Small" OnClick="RefreshLicenseAsync">刷新授权</MudButton></div>
+                        </MudStack>
+                    </MudPaper>
+                }
+                else
+                {
+                    <MudPaper Class="dashboard-card sidebar-card" Elevation="0">
+                        <div class="card-header"><span>系统公告</span></div>
+                        <MudList T="string" Dense="true" Class="announcement-list">
+                            @if (Announcements.Count == 0)
+                            {
+                                <MudListItem T="string">暂无公告</MudListItem>
+                            }
+                            else
+                            {
+                                @foreach (var item in Announcements)
+                                {
+                                    <MudListItem T="string">
+                                        <div class="announcement-row">
+                                            <span class="title">@(string.IsNullOrWhiteSpace(item.Title) ? "-" : item.Title)</span>
+                                            <span class="time">@(string.IsNullOrWhiteSpace(item.Time) ? "-" : item.Time)</span>
+                                        </div>
+                                    </MudListItem>
+                                }
+                            }
+                        </MudList>
+                    </MudPaper>
+
+                    <MudPaper Class="dashboard-card sidebar-card" Elevation="0">
+                        <div class="card-header"><span>套餐流量</span></div>
+                        <MudStack Spacing="1" Class="pa-4 package-info">
+                            <MudText Typo="Typo.body2" Class="pkg-name">@(Package.Name ?? "-")</MudText>
+                            <MudText Typo="Typo.caption" Class="pkg-desc">@(string.IsNullOrWhiteSpace(Package.Desc) ? "不限, 已用0GB" : Package.Desc)</MudText>
+                            <MudProgressLinear Value="@Math.Clamp(Package.Percent, 0, 100)"
+                                               Color="@(Package.Percent > 90 ? Color.Error : Color.Primary)"
+                                               Rounded="true"
+                                               BufferValue="100" />
+                        </MudStack>
+                    </MudPaper>
+
+                    <MudPaper Class="dashboard-card sidebar-card" Elevation="0">
+                        <div class="card-header"><span>使用统计</span></div>
+                        <MudStack Spacing="0" Class="pa-4 status-list">
+                            <div class="status-row"><span>域名数</span><span>@Resources.Domains</span></div>
+                            <div class="status-row"><span>转发数</span><span>@Resources.Forward</span></div>
+                            <div class="status-row"><span>证书</span><span>@Resources.Certs</span></div>
+                            <div class="status-row"><span>已购套餐</span><span>@Resources.Packages</span></div>
+                        </MudStack>
+                    </MudPaper>
+                }
+            </MudStack>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private const string DefaultAvatar = "https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png";
+
+    private bool _loading;
+    private string _overviewRange = "today";
+    private string _chartRange = "today";
+    private string _opsRange = "7d";
+    private string _chartType = "bandwidth";
+    private string _topTab = "domain";
+    private bool _chartDirty = true;
+
+    private DashboardResultDto _data = new();
+
+    private bool IsAdmin
+        => string.Equals(User.Role, "admin", StringComparison.OrdinalIgnoreCase) || Session.IsAdmin;
+
+    private DashboardUserDto User => _data.User ?? new DashboardUserDto();
+    private DashboardOverviewDto Overview => _data.Stats ?? new DashboardOverviewDto();
+    private DashboardOpsSummaryDto OpsSummary => _data.Ops?.Summary ?? new DashboardOpsSummaryDto();
+    private DashboardSystemStatusDto SystemStatus => _data.SystemStatus ?? new DashboardSystemStatusDto();
+    private DashboardLicenseDto License => _data.License ?? new DashboardLicenseDto();
+    private DashboardPackageDto Package => _data.Package ?? new DashboardPackageDto();
+    private DashboardResourceDto Resources => _data.Resources ?? new DashboardResourceDto();
+
+    private bool? CkStatus => SystemStatus.Ck ?? SystemStatus.Elastic;
+    private string CkErrorTip => string.Join("；",
+        (SystemStatus.CkTips ?? Array.Empty<string>())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim()));
+
+    private string UserAvatar => string.IsNullOrWhiteSpace(User.Avatar) ? DefaultAvatar : User.Avatar!;
+
+    private IReadOnlyList<DashboardAnnouncementDto> Announcements => _data.Announcements ?? Array.Empty<DashboardAnnouncementDto>();
+
+    private IReadOnlyList<DashboardTopItemDto> TopRows => _topTab switch
+    {
+        "url" => _data.TopUrls ?? Array.Empty<DashboardTopItemDto>(),
+        "ip" => _data.TopIps ?? Array.Empty<DashboardTopItemDto>(),
+        "country" => _data.TopCountries ?? Array.Empty<DashboardTopItemDto>(),
+        _ => _data.TopDomains ?? Array.Empty<DashboardTopItemDto>()
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_chartDirty)
+        {
+            await RenderChartAsync();
+            _chartDirty = false;
+        }
+        else if (firstRender)
+        {
+            await RenderChartAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var scope = Session.IsAdmin ? AccessScope.Admin(Session.UserId ?? 0) : AccessScope.User(Session.UserId ?? 0);
+        var result = await DashboardService.GetAsync(
+            scope,
+            _overviewRange,
+            _chartRange,
+            _opsRange,
+            null,
+            "zh-CN",
+            CancellationToken.None);
+            
+        _data = result.Success && result.Data != null ? result.Data : new DashboardResultDto();
+        _loading = false;
+        _chartDirty = true;
+        StateHasChanged();
+    }
+
+    private Task SetOpsRangeAsync(string range)
+    {
+        if (_opsRange == range)
+        {
+            return Task.CompletedTask;
+        }
+
+        _opsRange = range;
+        return LoadAsync();
+    }
+
+    private Task SetOverviewRangeAsync(string range)
+    {
+        if (_overviewRange == range)
+        {
+            return Task.CompletedTask;
+        }
+
+        _overviewRange = range;
+        return LoadAsync();
+    }
+
+    private Task SetChartRangeAsync(string range)
+    {
+        if (_chartRange == range)
+        {
+            return Task.CompletedTask;
+        }
+
+        _chartRange = range;
+        return LoadAsync();
+    }
+
+    private void SetChartType(string chartType)
+    {
+        if (_chartType == chartType)
+        {
+            return;
+        }
+
+        _chartType = chartType;
+        _chartDirty = true;
+        StateHasChanged();
+    }
+
+    private void SetTopTab(string tab)
+    {
+        if (_topTab == tab)
+        {
+            return;
+        }
+
+        _topTab = tab;
+    }
+
+    private async Task RenderChartAsync()
+    {
+        var chart = _data.Charts ?? new DashboardChartDto();
+        var series = BuildSeries(chart);
+        var payload = new DashboardChartPayload
+        {
+            XAxis = chart.XAxis ?? Array.Empty<string>(),
+            Series = series
+        };
+        await Js.InvokeVoidAsync("cnn.dashboard.render", "dashboardTrendChart", payload);
+    }
+
+    private Task CheckAgentStatusAsync()
+    {
+        return LoadAsync();
+    }
+
+    private Task RefreshLicenseAsync()
+    {
+        return LoadAsync();
+    }
+
+    private DashboardSeriesPayload BuildSeries(DashboardChartDto chart)
+    {
+        return _chartType switch
+        {
+            "requests" => new DashboardSeriesPayload("请求数", "次", "#409eff", chart.Requests),
+            "traffic" => new DashboardSeriesPayload("流量", "MB", "#67c23a", chart.Traffic),
+            "blocked" => new DashboardSeriesPayload("拉黑IP数", "个", "#e6a23c", chart.Blocked),
+            _ => new DashboardSeriesPayload("带宽", "Mbps", "#3a7bff", chart.Bandwidth)
+        };
+    }
+
+    private static Variant RangeVariant(bool active)
+    {
+        return active ? Variant.Filled : Variant.Text;
+    }
+
+    private static string GetOpsCount(long value)
+    {
+        return value > 0 ? value.ToString() : "无数据";
+    }
+
+    private static string GetOpsText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "无数据" : value;
+    }
+
+    private static string StatusDot(bool? value)
+    {
+        if (value == true)
+        {
+            return "status-success";
+        }
+
+        if (value == false)
+        {
+            return "status-failed";
+        }
+
+        return "status-default";
+    }
+
+    private sealed class DashboardChartPayload
+    {
+        public IReadOnlyList<string> XAxis { get; set; } = Array.Empty<string>();
+        public DashboardSeriesPayload Series { get; set; } = new();
+    }
+
+    private sealed class DashboardSeriesPayload
+    {
+        public DashboardSeriesPayload()
+        {
+        }
+
+        public DashboardSeriesPayload(string name, string unit, string color, IReadOnlyList<double> data)
+        {
+            Name = name;
+            Unit = unit;
+            Color = color;
+            Data = data ?? Array.Empty<double>();
+        }
+
+        public string Name { get; set; } = string.Empty;
+        public string Unit { get; set; } = string.Empty;
+        public string Color { get; set; } = "#3a7bff";
+        public IReadOnlyList<double> Data { get; set; } = Array.Empty<double>();
+    }
+}

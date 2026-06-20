@@ -213,7 +213,7 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		return
 	}
 
-	if msgKey := services.GuardCCRuleGroupModify(ccRule); msgKey != "" {
+	if msgKey := services.GuardCCRuleTypeChange(services.IsCCRuleInternal(ccRule), req.Type); msgKey != "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
 		return
 	}
@@ -227,6 +227,10 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		}
 		// User can't change type or assign to other users
 		req.Type = "user"
+	} else if services.IsCCRuleInternal(ccRule) {
+		req.Type = "system"
+		ccRule.Internal = true
+		ccRule.UserID = 0
 	} else {
 		// Admin can potentially change/reassign, but sticking to logic:
 		if req.Type == "system" {
@@ -548,7 +552,7 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		return
 	}
 
-	if msgKey := services.GuardCCMatcherModify(matcher); msgKey != "" {
+	if msgKey := services.GuardCCMatcherTypeChange(services.IsCCMatcherInternal(matcher), req.Type); msgKey != "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
 		return
 	}
@@ -560,6 +564,10 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else if services.IsCCMatcherInternal(matcher) {
+		req.Type = "system"
+		matcher.Internal = true
+		matcher.UserID = 0
 	} else {
 		// Admin logic
 		if req.Type == "system" {
@@ -896,7 +904,7 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 		return
 	}
 
-	if msgKey := services.GuardCCFilterModify(filter); msgKey != "" {
+	if msgKey := services.GuardCCFilterTypeChange(services.IsCCFilterInternal(filter), req.Type); msgKey != "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
 		return
 	}
@@ -908,6 +916,10 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else if services.IsCCFilterInternal(filter) {
+		req.Type = "system"
+		filter.Internal = true
+		filter.UserID = 0
 	} else if req.Type == "system" {
 		filter.Internal = true
 		filter.UserID = 0

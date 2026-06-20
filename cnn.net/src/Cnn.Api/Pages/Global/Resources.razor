@@ -1,0 +1,270 @@
+@page "/global/resources"
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+
+<div class="page-container resources-page">
+    <div class="page-title">资源限制配置</div>
+
+    <div class="tab-bar">
+        <button class='tab-button @(IsTab("website") ? "active" : "")' @onclick='@(() => SetTab("website"))'>网站 (Website)</button>
+        <button class='tab-button @(IsTab("forward") ? "active" : "")' @onclick='@(() => SetTab("forward"))'>转发 (Forwarding)</button>
+        <button class='tab-button @(IsTab("public") ? "active" : "")' @onclick='@(() => SetTab("public"))'>公共 (Public)</button>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="card config-card">加载中...</div>
+    }
+    else
+    {
+        <div class="card config-card">
+            <div class="card-body">
+                @if (_activeTab == "website")
+                {
+                    <div class="section">
+                        <div class="section-title">配置限制</div>
+                        <div class="form-row">
+                            <label class="form-label">相关配置限制不低于</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MinLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">相关配置限制的最大倍数</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MaxLimitMultiplier" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">黑白名单</div>
+                        <div class="form-row">
+                            <label class="form-label">黑名单 IP 数量限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MaxBlacklistIps" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">白名单 IP 数量限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MaxWhitelistIps" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">清缓存及解锁</div>
+                        <div class="form-row">
+                            <label class="form-label">日清 URL 缓存次数限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.DailyUrlPurgeLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">日清目录缓存次数限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.DailyDirPurgeLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">日预热 URL 次数限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.DailyPreloadLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">日解锁 IP 次数限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.DailyUnlockIpLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">每次解锁 IP 个数限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.UnlockIpBatchLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">规则数限制</div>
+                        <div class="form-row">
+                            <label class="form-label">单个 CC 规则数量</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MaxCcRulesPerGroup" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">单个 ACL 规则数量</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MaxAclRules" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">下载日志</div>
+                        <div class="form-row">
+                            <label class="form-label">每天允许下载日志次数</label>
+                            <InputNumber class="form-control" @bind-Value="Website.DailyLogDownloadLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">日志文件存放目录</label>
+                            <InputText class="form-control" @bind-Value="Website.LogStorageDir" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">日志文件存放时长 (小时)</label>
+                            <InputNumber class="form-control" @bind-Value="Website.LogStorageHours" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">其它</div>
+                        <div class="form-row">
+                            <label class="form-label">单个站点最大域名数限制</label>
+                            <InputNumber class="form-control" @bind-Value="Website.MaxDomainsPerSite" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-check form-switch">
+                            <InputCheckbox class="form-check-input" @bind-Value="Website.DefaultListen80" @onchange="QueueSaveAsync" />
+                            <label class="form-check-label">默认监听 80 端口</label>
+                        </div>
+                    </div>
+                }
+                else if (_activeTab == "forward")
+                {
+                    <div class="section">
+                        <div class="section-title">转发端口</div>
+                        <div class="form-row">
+                            <label class="form-label">禁用的端口</label>
+                            <InputText class="form-control" @bind-Value="Forward.DisabledPorts" @onblur="QueueSaveAsync" />
+                            <div class="form-text">空格分隔，例如 "80 443"。</div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">配置限制</div>
+                        <div class="form-row">
+                            <label class="form-label">相关配置限制不低于</label>
+                            <InputNumber class="form-control" @bind-Value="Forward.MinLimit" @onblur="QueueSaveAsync" />
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">相关配置限制的最大倍数</label>
+                            <InputNumber class="form-control" @bind-Value="Forward.MaxLimitMultiplier" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-title">规则数限制</div>
+                        <div class="form-row">
+                            <label class="form-label">ACL 规则数量限制</label>
+                            <InputNumber class="form-control" @bind-Value="Forward.MaxAclRules" @onblur="QueueSaveAsync" />
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="section">
+                        <div class="section-title">自定义端口</div>
+                        <div class="form-row">
+                            <label class="form-label">禁用的自定义端口</label>
+                            <InputText class="form-control" @bind-Value="Public.DisabledCustomPorts" @onblur="QueueSaveAsync" />
+                            <div class="form-text">空格分隔，例如 "22"。</div>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">允许的自定义端口</label>
+                            <InputText class="form-control" @bind-Value="Public.AllowedCustomPorts" @onblur="QueueSaveAsync" />
+                            <div class="form-text">范围或列表，例如 "1-65535"。</div>
+                        </div>
+                    </div>
+                }
+
+                <div class="mt-3 d-flex align-items-center gap-2">
+                    <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+                    @if (_saving)
+                    {
+                        <span class="text-muted">保存中...</span>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_message))
+                {
+                    <div class="alert @_messageClass mt-3">@_message</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading;
+    private bool _saving;
+    private bool _saveQueued;
+    private string _activeTab = "website";
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    private GlobalConfigDto _config = new();
+
+    private WebsiteResourceConfigDto Website => EnsureResources().Website!;
+    private ForwardResourceConfigDto Forward => EnsureResources().Forward!;
+    private PublicResourceConfigDto Public => EnsureResources().Public!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private bool IsTab(string tab) => string.Equals(_activeTab, tab, StringComparison.OrdinalIgnoreCase);
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private GlobalResourceConfigDto EnsureResources()
+    {
+        _config.Resources ??= new GlobalResourceConfigDto();
+        _config.Resources.Website ??= new WebsiteResourceConfigDto();
+        _config.Resources.Forward ??= new ForwardResourceConfigDto();
+        _config.Resources.Public ??= new PublicResourceConfigDto();
+        return _config.Resources;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _message = null;
+
+        var response = await Api.GetAsync<GlobalConfigDto>("global_config", ApiScope.Admin);
+        _config = response?.Data ?? new GlobalConfigDto();
+        EnsureResources();
+        _loading = false;
+    }
+
+    private async Task QueueSaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        await SaveAsync();
+
+        if (_saveQueued)
+        {
+            _saveQueued = false;
+            await SaveAsync();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+
+        var response = await Api.PostAsync<object>("global_config", _config, ApiScope.Admin);
+        _saving = false;
+
+        if (response != null && (response.Code == 0 || response.Code == 200))
+        {
+            SetMessage(true, "资源配置已保存");
+        }
+        else
+        {
+            SetMessage(false, response?.Message ?? "保存失败");
+        }
+    }
+
+    private void SetMessage(bool success, string message)
+    {
+        _message = message;
+        _messageClass = success ? "alert-success" : "alert-danger";
+    }
+}
+

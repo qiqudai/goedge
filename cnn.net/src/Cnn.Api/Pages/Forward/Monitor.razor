@@ -1,0 +1,229 @@
+@page "/forward/monitor"
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject ClientSession Session
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+<div class="page-container">
+    @* 顶部导航 tabs *@
+    <ul class="nav nav-tabs page-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/forward/list">转发列表</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/forward/default">默认设置</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/forward/monitor">实时监控</a>
+        </li>
+    </ul>
+
+    @* 内层 tabs：带宽流量 / 端口排行 *@
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <button class='nav-link @(_innerTab == "traffic" ? "active" : "")' @onclick='@(() => SwitchInnerTab("traffic"))'>带宽流量</button>
+        </li>
+        <li class="nav-item">
+            <button class='nav-link @(_innerTab == "ranking" ? "active" : "")' @onclick='@(() => SwitchInnerTab("ranking"))'>端口排行</button>
+        </li>
+    </ul>
+
+    @if (_innerTab == "traffic")
+    {
+        <div class="filter-bar mb-3">
+            <input class="form-control" style="max-width:200px;" @bind="_keyword" @onkeyup="OnTrafficKeywordKeyUp" placeholder="端口检索 (如: 88/TCP)" />
+            <div class="btn-group ms-2">
+                <button class='btn btn-outline-primary @(_range == "1h" ? "active" : "")' @onclick='@(() => SetRange("1h"))'>1h</button>
+                <button class='btn btn-outline-primary @(_range == "6h" ? "active" : "")' @onclick='@(() => SetRange("6h"))'>6h</button>
+                <button class='btn btn-outline-primary @(_range == "24h" ? "active" : "")' @onclick='@(() => SetRange("24h"))'>24h</button>
+            </div>
+            <button class="btn btn-primary ms-2" @onclick="LoadTrafficAsync">刷新</button>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <div class="card config-card p-3">
+                    <div class="fw-semibold mb-2 text-muted">带宽占用 (Mbps)</div>
+                    @if (_trafficLoading)
+                    {
+                        <div class="text-muted small mb-2">加载中...</div>
+                    }
+                    <div id="forwardBandwidthChart" style="height:300px;"></div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="card config-card p-3">
+                    <div class="fw-semibold mb-2 text-muted">流量统计 (GB)</div>
+                    @if (_trafficLoading)
+                    {
+                        <div class="text-muted small mb-2">加载中...</div>
+                    }
+                    <div id="forwardTrafficChart" style="height:300px;"></div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="filter-bar mb-3">
+            <button class="btn btn-primary btn-sm" @onclick="LoadRankingAsync">即时刷新</button>
+        </div>
+
+        <div class="card config-card p-3">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width:80px;text-align:center;">排名</th>
+                            <th>业务端口</th>
+                            <th style="text-align:right;">当前连接数</th>
+                            <th style="text-align:right;">累计流量</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_rankingLoading)
+                        {
+                            <tr><td colspan="4" class="text-muted text-center py-3">加载中...</td></tr>
+                        }
+                        else if (_ranking.Count == 0)
+                        {
+                            <tr><td colspan="4" class="text-muted text-center py-3">暂无数据</td></tr>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < _ranking.Count; i++)
+                            {
+                                var row = _ranking[i];
+                                var rank = i + 1;
+                                var badgeClass = rank <= 3 ? "badge bg-danger" : "badge bg-secondary";
+                                <tr>
+                                    <td style="text-align:center;">
+                                        <span class="@badgeClass rounded-pill">@rank</span>
+                                    </td>
+                                    <td>@row.Port</td>
+                                    <td style="text-align:right;">@row.Connections</td>
+                                    <td style="text-align:right;">@row.Traffic</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string _innerTab = "traffic";
+    private string _range = "1h";
+    private string _keyword = string.Empty;
+    private readonly List<ForwardRankingItemDto> _ranking = new();
+    private ForwardTrafficResult? _traffic;
+    private bool _trafficLoading;
+    private bool _rankingLoading;
+    private bool _pendingTrafficRender;
+
+    protected override Task OnInitializedAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ReloadAllAsync();
+            return;
+        }
+
+        if (_innerTab == "traffic" && _pendingTrafficRender && _traffic != null)
+        {
+            _pendingTrafficRender = false;
+            await RenderChartAsync("forwardBandwidthChart", "带宽 (Mbps)", _traffic.XAxis, _traffic.Bandwidth, "#409eff");
+            await RenderChartAsync("forwardTrafficChart", "流量 (GB)", _traffic.XAxis, _traffic.Traffic, "#67c23a");
+        }
+    }
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private async Task SwitchInnerTab(string tab)
+    {
+        _innerTab = tab;
+        if (tab == "traffic")
+        {
+            await InvokeAsync(StateHasChanged);
+            await LoadTrafficAsync();
+        }
+        else
+        {
+            await LoadRankingAsync();
+        }
+    }
+
+    private async Task SetRange(string range)
+    {
+        _range = range;
+        if (_innerTab == "traffic")
+        {
+            await LoadTrafficAsync();
+            return;
+        }
+
+        await LoadRankingAsync();
+    }
+
+    private async Task LoadTrafficAsync()
+    {
+        _trafficLoading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["range"] = _range,
+            ["keyword"] = _keyword
+        };
+
+        var response = await Api.GetAsync<ForwardTrafficResult>("forward/traffic", Scope, query);
+        _traffic = response?.Data ?? new ForwardTrafficResult();
+        _trafficLoading = false;
+        _pendingTrafficRender = _innerTab == "traffic";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadRankingAsync()
+    {
+        _rankingLoading = true;
+        var response = await Api.GetAsync<ForwardRankingResult>("forward/ranking", Scope, new Dictionary<string, string?> { ["range"] = _range });
+        _ranking.Clear();
+        if (response?.Data?.List != null)
+        {
+            _ranking.AddRange(response.Data.List);
+        }
+        _rankingLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        await LoadTrafficAsync();
+        await LoadRankingAsync();
+    }
+
+    private async Task OnTrafficKeywordKeyUp(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await LoadTrafficAsync();
+        }
+    }
+
+    private async Task RenderChartAsync(string domId, string name, IReadOnlyList<string>? xAxis, IReadOnlyList<double>? values, string color)
+    {
+        var payload = new
+        {
+            xAxis = xAxis ?? Array.Empty<string>(),
+            series = new { name, data = values ?? Array.Empty<double>(), color },
+            smooth = true
+        };
+        await Js.InvokeVoidAsync("cnn.dashboard.render", domId, payload);
+    }
+}

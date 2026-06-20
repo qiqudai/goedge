@@ -1,0 +1,206 @@
+﻿@page "/system/messages"
+@using Cnn.Common.Contracts
+@using Cnn.Api.Services
+@inject ApiClient Api
+
+<div class="page-container">
+    <div class="page-title">消息查询</div>
+
+    <div class="filter-bar">
+        <select class="form-select" style="max-width: 180px" @bind="_filters.Type">
+            <option value="">全部</option>
+            <option value="package-expire">套餐到期</option>
+            <option value="traffic-exceed">流量超限</option>
+            <option value="connection-exceed">连接数超限</option>
+            <option value="bandwidth-exceed">带宽超限</option>
+            <option value="cc-switch">防护规则切换</option>
+            <option value="cert-expire">证书到期</option>
+        </select>
+        <InputText class="form-control" style="max-width: 260px" @bind-Value="_filters.Keyword" placeholder="标题/用户/网站ID" />
+        <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+        <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+            @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+        </button>
+    </div>
+
+    @if (_showPagingDiagnostics)
+    {
+        <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+            <div><strong>分页诊断</strong></div>
+            <div>stateKey: <code>system:messages:table</code></div>
+            <div>pagingEnabled: <code>@(_pageQuery.PagingEnabled ? "true" : "false")</code></div>
+            <div>page: <code>@_pageQuery.Page</code>, pageSize: <code>@_pageQuery.PageSize</code></div>
+            <div>loaded: <code>@_items.Count</code>, total: <code>@_total</code></div>
+        </div>
+    }
+
+    <TablePager @ref="_tablePager"
+                StateKey="system:messages:table"
+                Total="_total"
+                DefaultPageSize="20"
+                UnpagedLimit="1000"
+                QueryChanged="OnPageQueryChangedAsync">
+        <ChildContent>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>类型</th>
+                            <th>标题</th>
+                            <th>网站ID</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_loading)
+                        {
+                            <tr><td colspan="6">加载中...</td></tr>
+                        }
+                        else if (_items.Count == 0)
+                        {
+                            <tr><td colspan="6">暂无数据</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in _items)
+                            {
+                                <tr>
+                                    <td>@item.Id</td>
+                                    <td>@(item.TypeLabel ?? item.Type)</td>
+                                    <td>@item.Title</td>
+                                    <td>@(item.SiteId?.ToString() ?? "-")</td>
+                                    <td>@item.CreatedAt</td>
+                                    <td>
+                                        <button class="btn btn-link btn-sm" @onclick="() => OpenDetail(item)">详情</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ChildContent>
+    </TablePager>
+</div>
+
+@if (_detailVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>消息详情</h5>
+                <button class="btn-close" @onclick="CloseDetail"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">标题</label>
+                    <div>@_detail.Title</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">邮件内容</label>
+                    <div class="p-2 bg-light rounded">@((MarkupString)(_detail.Content ?? string.Empty))</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">短信内容</label>
+                    <div class="p-2 bg-light rounded">@((MarkupString)(_detail.Phone ?? string.Empty))</div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end">
+                <button class="btn btn-primary" @onclick="CloseDetail">关闭</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<MessageItemDto> _items = new();
+    private bool _loading;
+    private bool _showPagingDiagnostics;
+    private long _total;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private MessageFilters _filters = new();
+    private TablePager? _tablePager;
+
+    private bool _detailVisible;
+    private MessageItemDto _detail = new();
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
+
+    private async Task LoadAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _pageQuery.Page.ToString(),
+            ["pageSize"] = _pageQuery.PageSize.ToString(),
+            ["type"] = _filters.Type,
+            ["keyword"] = _filters.Keyword
+        };
+
+        var response = await Api.GetAsync<MessageListResult>("messages", ApiScope.Admin, query);
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            _items.AddRange(response.Data.List);
+            _total = response.Data.Total;
+        }
+        else
+        {
+            _total = 0;
+        }
+
+        _loading = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadAsync();
+    }
+
+    private void OpenDetail(MessageItemDto item)
+    {
+        _detail = item;
+        _detailVisible = true;
+    }
+
+    private void CloseDetail()
+    {
+        _detailVisible = false;
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+
+    private sealed class MessageFilters
+    {
+        public string Type { get; set; } = string.Empty;
+        public string Keyword { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,122 @@
+.common-layout {
+    height: 100vh;
+    background-color: var(--content-bg);
+    color: var(--text-color);
+}
+
+.app-drawer {
+    width: 200px;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+}
+
+.drawer-header {
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-logo-bg);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.drawer-title {
+    color: var(--sidebar-text);
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.drawer-logo {
+    max-width: 140px;
+    max-height: 40px;
+    object-fit: contain;
+}
+
+.app-header {
+    border-bottom: 1px solid var(--border-color);
+    background: var(--header-bg);
+    color: var(--text-color);
+}
+
+.header-title {
+    font-weight: 600;
+}
+
+.theme-switch {
+    position: relative;
+    width: 56px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: linear-gradient(135deg, #fef3c7, #dbeafe);
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.theme-switch.dark {
+    background: linear-gradient(135deg, #0f172a, #1f2937);
+}
+
+.theme-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #f59e0b;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: transform 0.28s ease, color 0.28s ease;
+}
+
+.theme-switch.dark .theme-thumb {
+    transform: translateX(28px);
+    color: #111827;
+}
+
+.content-wrap {
+    padding: 16px 20px 24px;
+    background: var(--content-bg);
+    min-height: calc(100vh - 100px);
+}
+
+.app-footer {
+    background: var(--header-bg);
+    border-top: 1px solid var(--border-color);
+    color: var(--muted-text);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+}
+
+.footer-links {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.footer-links a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.footer-links a:hover {
+    color: var(--text-color);
+}
+
+.footer-copy {
+    white-space: nowrap;
+}
+
+@media (max-width: 960px) {
+    .content-wrap {
+        padding: 14px;
+    }
+}

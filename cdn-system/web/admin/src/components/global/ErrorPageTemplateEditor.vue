@@ -1,11 +1,11 @@
 <template>
   <div class="template-editor">
     <div class="editor-toolbar">
-      <span class="tip">使用 {{key}} 占位符，运行时变量：{client_ip}、{node_ip}</span>
+      <span class="tip">使用 &#123;&#123;key&#125;&#125; 占位符，运行时变量：{client_ip}、{node_ip}</span>
     </div>
     <div class="key-list" v-if="templateKeys.length">
       <span class="key-label">可用变量：</span>
-      <el-tag v-for="key in templateKeys" :key="key" size="small" class="key-tag">{{ '{{' + key + '}}' }}</el-tag>
+      <el-tag v-for="key in templateKeys" :key="key" size="small" class="key-tag">{{ formatTemplateKey(key) }}</el-tag>
     </div>
     <el-input
       :model-value="modelValue"
@@ -32,6 +32,7 @@ const props = defineProps({
 defineEmits(['update:modelValue'])
 
 const templateKeys = computed(() => extractTemplateKeys(props.modelValue))
+const formatTemplateKey = key => `{{${key}}}`
 </script>
 
 <style scoped>

@@ -8,7 +8,9 @@ export function extractTemplateKeys(template: string): string[] {
   let match
   const re = new RegExp(PLACEHOLDER_RE)
   while ((match = re.exec(template || '')) !== null) {
-    keys.add(match[1])
+    if (match[1]) {
+      keys.add(match[1])
+    }
   }
   return Array.from(keys).sort()
 }
@@ -28,11 +30,12 @@ export function resolvePreviewStrings(
 ): Record<string, string> {
   const candidates = [lang, lang.split('-')[0], defaultLang]
   for (const candidate of candidates) {
-    if (candidate && def.strings?.[candidate]) {
-      return def.strings[candidate]
+    const strings = candidate ? def.strings?.[candidate] : undefined
+    if (strings) {
+      return strings
     }
   }
-  const first = Object.values(def.strings || {})[0]
+  const first = Object.values(def.strings || {})[0] as Record<string, string> | undefined
   return first || {}
 }
 
@@ -54,13 +57,14 @@ export function ensureErrorPageStructure(
   const nextPages: ErrorPageMap = {}
   ERROR_PAGE_CODES.forEach(({ key }) => {
     const existing = pages?.[key]
-    nextPages[key] = {
+    const page: ErrorPageDefinition = {
       template: existing?.template || '<h1>{{title}}</h1><p>{{subtitle}}</p>',
       strings: { ...(existing?.strings || {}) }
     }
+    nextPages[key] = page
     settings.enabled_langs.forEach(lang => {
-      if (!nextPages[key].strings[lang]) {
-        nextPages[key].strings[lang] = {}
+      if (!page.strings[lang]) {
+        page.strings[lang] = {}
       }
     })
   })
@@ -73,7 +77,7 @@ export function buildGlobalConfigPayload(
   i18n: ErrorPageI18nSettings
 ): GlobalConfigPayload {
   return {
-    ...(fullConfig as GlobalConfigPayload),
+    ...(fullConfig as unknown as GlobalConfigPayload),
     error_page_i18n: i18n,
     error_pages: pages
   }
@@ -84,9 +88,12 @@ export function normalizeLocaleTag(lang: string): string {
   if (!value) return ''
   const parts = value.replace(/_/g, '-').split('-')
   if (!parts.length) return ''
-  parts[0] = parts[0].toLowerCase()
+  const head = parts[0]
+  if (!head) return ''
+  parts[0] = head.toLowerCase()
   for (let i = 1; i < parts.length; i += 1) {
-    parts[i] = parts[i].length === 2 ? parts[i].toUpperCase() : parts[i].toLowerCase()
+    const part = parts[i] || ''
+    parts[i] = part.length === 2 ? part.toUpperCase() : part.toLowerCase()
   }
   return parts.join('-')
 }

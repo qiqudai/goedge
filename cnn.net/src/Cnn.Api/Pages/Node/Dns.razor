@@ -1,0 +1,911 @@
+﻿﻿
+@page "/node/dns"
+@using global::System.Text.Json
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services
+@inject ApiClient Api
+@inject IJSRuntime Js
+
+<MudStack Spacing="2" Class="page-container">
+    <MudText Typo="Typo.h5">DNS设置</MudText>
+
+    <MudStack Row="true" Spacing="1">
+        <MudButton Variant="@TabVariant("dns")"
+                   Color="Color.Primary"
+                   OnClick="@(() => SetTab("dns"))">
+            DNS配置
+        </MudButton>
+        <MudButton Variant="@TabVariant("cname")"
+                   Color="Color.Primary"
+                   OnClick="@(() => SetTab("cname"))">
+            CNAME域名
+        </MudButton>
+    </MudStack>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <MudAlert Severity="@_messageSeverity" Variant="Variant.Filled" Dense="true">
+            @_message
+        </MudAlert>
+    }
+
+    @if (_activeTab == "dns")
+    {
+        <MudPaper Elevation="1" Class="pa-4">
+            <MudStack Spacing="2">
+                <MudSelect T="string"
+                           Label="DNS Provider"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Value="_form.Type"
+                           ValueChanged="OnProviderTypeValueChangedAsync"
+                           Style="max-width: 360px">
+                    <MudSelectItem Value="@string.Empty">请选择</MudSelectItem>
+                    @foreach (var type in _providerTypes)
+                    {
+                        <MudSelectItem Value="@type.Type">@GetProviderLabel(type)</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (CurrentFields.Count > 0)
+                {
+                    @foreach (var field in CurrentFields)
+                    {
+                        <MudTextField Label="@GetFieldLabel(_form.Type, field)"
+                                      T="string"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Value="@GetCredential(field)"
+                                      ValueChanged="value => SetCredential(field, value)"
+                                      Style="max-width: 360px" />
+                    }
+                }
+
+                <MudTextField Label="TTL"
+                              T="string"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              @bind-Value="_form.Ttl"
+                              Style="max-width: 200px" />
+
+                <MudSwitch T="bool"
+                           Color="Color.Primary"
+                           Label="开启IP权重"
+                           @bind-Value="_form.IpWeight" />
+
+                <MudAlert Severity="@DnsStatusSeverity" Variant="Variant.Outlined">
+                    DNS状态: @_dnsError
+                </MudAlert>
+
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDnsAsync">保存</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="FixRecordsAsync">记录修复</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="CleanupRecordsAsync">清理无关解析</MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCnameCreate">添加域名</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@(!_selectedCnameIds.Any())" OnClick="BatchDeleteCnameAsync">批量删除</MudButton>
+            <MudTextField Variant="Variant.Outlined"
+                          T="string"
+                          Margin="Margin.Dense"
+                          Placeholder="搜索域名"
+                          @bind-Value="_cnameKeyword"
+                          Style="max-width: 220px" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FilterCname">搜索</MudButton>
+        </MudStack>
+
+        <MudTable Items="FilteredCnames"
+                  Dense="true"
+                  Hover="true"
+                  Striped="true"
+                  Loading="@_cnameLoading">
+            <HeaderContent>
+                <MudTh Style="width:56px">
+                    <MudCheckBox T="bool" Value="@AllCnameSelected" ValueChanged="ToggleCnameAllChecked" />
+                </MudTh>
+                <MudTh Style="width:88px">ID</MudTh>
+                <MudTh>域名</MudTh>
+                <MudTh Style="width:240px">DNS Provider</MudTh>
+                <MudTh>备注</MudTh>
+                <MudTh Style="width:180px">操作</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="选择">
+                    <MudCheckBox T="bool"
+                                 Value="@_selectedCnameIds.Contains(context.Id)"
+                                 ValueChanged="value => ToggleCnameChecked(context.Id, value)" />
+                </MudTd>
+                <MudTd DataLabel="ID">@context.Id</MudTd>
+                <MudTd DataLabel="域名">@context.Domain</MudTd>
+                <MudTd DataLabel="DNS Provider">@ResolveProviderName(context.DnsProviderId)</MudTd>
+                <MudTd DataLabel="备注">@(string.IsNullOrWhiteSpace(context.Note) ? "-" : context.Note)</MudTd>
+                <MudTd DataLabel="操作">
+                    <MudStack Row="true" Spacing="1">
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Color="Color.Primary"
+                                   OnClick="@(() => OpenCnameEdit(context))">
+                            编辑
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="@(() => DeleteCnameAsync(context))">
+                            删除
+                        </MudButton>
+                    </MudStack>
+                </MudTd>
+            </RowTemplate>
+            <LoadingContent>
+                <MudText Typo="Typo.body2" Class="pa-3">加载中...</MudText>
+            </LoadingContent>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2" Class="pa-3">暂无数据</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    }
+</MudStack>
+
+<MudOverlay Visible="@_cnameEditorVisible" DarkBackground="true" AutoClose="false" ZIndex="1200">
+    <MudPaper Elevation="8" Class="pa-4 mx-auto my-8" Style="width:min(600px,96vw);">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h6">@(_cnameEditor.Id > 0 ? "编辑CNAME域名" : "添加CNAME域名")</MudText>
+            <MudTextField T="string" Label="域名" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="_cnameEditor.Domain" />
+            <MudSelect T="long"
+                       Label="DNS Provider"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense"
+                       @bind-Value="_cnameEditor.DnsProviderId">
+                <MudSelectItem Value="0">请选择</MudSelectItem>
+                @foreach (var provider in _providers)
+                {
+                    <MudSelectItem Value="@provider.Id">@GetProviderLabel(provider)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField T="string" Label="备注" Variant="Variant.Outlined" Margin="Margin.Dense" @bind-Value="_cnameEditor.Note" />
+            <MudStack Row="true" Spacing="1" Justify="Justify.FlexEnd">
+                <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="CloseCnameEditor">取消</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCnameAsync">保存</MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+</MudOverlay>
+
+@code {
+    private string _activeTab = "dns";
+    private readonly List<DnsProviderItem> _providers = new();
+    private readonly List<DnsProviderTypeItem> _providerTypes = new();
+    private long _currentProviderId;
+    private string _dnsError = "没有错误";
+    private string? _message;
+    private Severity _messageSeverity = Severity.Success;
+
+    private readonly DnsProviderForm _form = new();
+
+    private readonly List<CnameDomainItem> _cnameList = new();
+    private readonly HashSet<long> _selectedCnameIds = new();
+    private string _cnameKeyword = string.Empty;
+    private bool _cnameLoading;
+
+    private bool _cnameEditorVisible;
+    private CnameEditor _cnameEditor = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProvidersAsync(true);
+        await LoadProviderTypesAsync();
+        await TestDnsAsync();
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+        _message = null;
+        if (_activeTab == "dns")
+        {
+            _ = LoadProvidersAsync(true);
+            _ = LoadProviderTypesAsync();
+            _ = TestDnsAsync();
+        }
+        else
+        {
+            _ = LoadProvidersAsync(false);
+            _ = LoadCnameListAsync();
+        }
+    }
+
+    private Variant TabVariant(string tab)
+    {
+        return _activeTab == tab ? Variant.Filled : Variant.Outlined;
+    }
+
+    private Severity DnsStatusSeverity =>
+        string.Equals(_dnsError, "ok", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(_dnsError, "没有错误", StringComparison.OrdinalIgnoreCase)
+            ? Severity.Success
+            : Severity.Warning;
+
+    private IReadOnlyList<string> CurrentFields
+    {
+        get
+        {
+            var match = _providerTypes.FirstOrDefault(t => string.Equals(t.Type, _form.Type, StringComparison.OrdinalIgnoreCase));
+            return match?.Fields ?? Array.Empty<string>();
+        }
+    }
+
+    private async Task LoadProvidersAsync(bool applyFirst)
+    {
+        var response = await Api.GetAsync<DnsProviderListResult>("dns/providers", ApiScope.Admin);
+        _providers.Clear();
+        if (response?.Data?.List != null)
+        {
+            _providers.AddRange(response.Data.List);
+        }
+
+        if (applyFirst)
+        {
+            if (_providers.Count > 0)
+            {
+                ApplyProvider(_providers[0]);
+            }
+            else
+            {
+                _currentProviderId = 0;
+                _form.Reset();
+            }
+        }
+    }
+
+    private async Task LoadProviderTypesAsync()
+    {
+        var response = await Api.GetAsync<DnsProviderTypesResult>("dns/providers/types", ApiScope.Admin);
+        _providerTypes.Clear();
+        if (response?.Data?.Types != null)
+        {
+            _providerTypes.AddRange(response.Data.Types);
+        }
+    }
+
+    private void OnProviderTypeChanged()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Type))
+        {
+            _currentProviderId = 0;
+            _form.Reset();
+            return;
+        }
+
+        var match = _providers.FirstOrDefault(item => string.Equals(item.Type, _form.Type, StringComparison.OrdinalIgnoreCase));
+        if (match != null)
+        {
+            ApplyProvider(match);
+            return;
+        }
+
+        _currentProviderId = 0;
+        _form.Credentials.Clear();
+    }
+
+    private Task OnProviderTypeValueChangedAsync(string? value)
+    {
+        _form.Type = value ?? string.Empty;
+        OnProviderTypeChanged();
+        return Task.CompletedTask;
+    }
+
+    private void ApplyProvider(DnsProviderItem item)
+    {
+        _currentProviderId = item.Id;
+        _form.Type = item.Type ?? string.Empty;
+        _form.Name = item.Name ?? string.Empty;
+        _form.Credentials.Clear();
+        _form.Ttl = "600";
+        _form.IpWeight = false;
+
+        if (string.IsNullOrWhiteSpace(item.Auth))
+        {
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(item.Auth);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.NameEquals("ttl"))
+                {
+                    _form.Ttl = prop.Value.ToString();
+                    continue;
+                }
+
+                if (prop.NameEquals("ip_weight"))
+                {
+                    _form.IpWeight = prop.Value.ValueKind == JsonValueKind.True || prop.Value.ToString() == "1";
+                    continue;
+                }
+
+                _form.Credentials[prop.Name] = prop.Value.ToString();
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task SaveDnsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Type))
+        {
+            await Js.InvokeVoidAsync("alert", "请选择DNS Provider");
+            return;
+        }
+
+        foreach (var field in CurrentFields)
+        {
+            if (!_form.Credentials.TryGetValue(field, out var value) || string.IsNullOrWhiteSpace(value))
+            {
+                await Js.InvokeVoidAsync("alert", $"请填写 {GetFieldLabel(_form.Type, field)}");
+                return;
+            }
+        }
+
+        var payload = new Dictionary<string, object>();
+        foreach (var field in _form.Credentials)
+        {
+            payload[field.Key] = field.Value;
+        }
+        payload["ttl"] = int.TryParse(_form.Ttl, out var ttl) ? ttl : 600;
+        payload["ip_weight"] = _form.IpWeight;
+
+        var request = new DnsProviderCreateRequest
+        {
+            Name = GetProviderLabel(_form.Type),
+            Type = _form.Type,
+            Credentials = JsonSerializer.Serialize(payload)
+        };
+
+        if (_currentProviderId > 0)
+        {
+            var update = new DnsProviderUpdateRequest
+            {
+                Name = request.Name,
+                Type = request.Type,
+                Credentials = request.Credentials
+            };
+            var result = await Api.PutAsync<object>($"dns/providers/{_currentProviderId}", update, ApiScope.Admin);
+            if (result?.Code != ErrorCodes.Success)
+            {
+                SetMessage(false, result?.Message ?? "DNS配置保存失败");
+                return;
+            }
+
+            SetMessage(true, "DNS配置已更新");
+        }
+        else
+        {
+            var result = await Api.PostAsync<object>("dns/providers", request, ApiScope.Admin);
+            if (result?.Code != ErrorCodes.Success)
+            {
+                SetMessage(false, result?.Message ?? "DNS配置保存失败");
+                return;
+            }
+
+            SetMessage(true, "DNS配置已创建");
+        }
+
+        await LoadProvidersAsync(true);
+        await TestDnsAsync();
+    }
+
+    private async Task TestDnsAsync()
+    {
+        var response = await Api.GetAsync<DnsTestResult>("dns/test", ApiScope.Admin);
+        if (response?.Code == ErrorCodes.Success)
+        {
+            _dnsError = response.Data?.Status ?? "ok";
+        }
+        else
+        {
+            _dnsError = string.IsNullOrWhiteSpace(response?.Message) ? "没有错误" : response!.Message;
+        }
+    }
+
+    private async Task FixRecordsAsync()
+    {
+        var confirm = await Js.InvokeAsync<bool>("confirm", "确认修复DNS记录？");
+        if (!confirm)
+        {
+            return;
+        }
+
+        var result = await Api.PostAsync<object>("dns/records/fix", null, ApiScope.Admin);
+        if (result?.Code != ErrorCodes.Success)
+        {
+            SetMessage(false, result?.Message ?? "DNS记录修复失败");
+            return;
+        }
+
+        SetMessage(true, "DNS记录修复任务已执行");
+        await TestDnsAsync();
+    }
+
+    private async Task CleanupRecordsAsync()
+    {
+        var confirm = await Js.InvokeAsync<bool>("confirm", "确认清理无关解析？");
+        if (!confirm)
+        {
+            return;
+        }
+
+        var result = await Api.PostAsync<object>("dns/records/cleanup", null, ApiScope.Admin);
+        if (result?.Code != ErrorCodes.Success)
+        {
+            SetMessage(false, result?.Message ?? "DNS无关解析清理失败");
+            return;
+        }
+
+        SetMessage(true, "DNS无关解析清理任务已执行");
+        await TestDnsAsync();
+    }
+
+    private async Task LoadCnameListAsync()
+    {
+        _cnameLoading = true;
+        var response = await Api.GetAsync<CnameDomainListResult>("cname_domains", ApiScope.Admin);
+        _cnameList.Clear();
+        if (response?.Code == ErrorCodes.Success && response.Data?.List != null)
+        {
+            _cnameList.AddRange(response.Data.List);
+        }
+        else if (response != null)
+        {
+            SetMessage(false, response.Message);
+        }
+
+        _selectedCnameIds.RemoveWhere(id => _cnameList.All(item => item.Id != id));
+        _cnameLoading = false;
+    }
+
+    private IEnumerable<CnameDomainItem> FilteredCnames => string.IsNullOrWhiteSpace(_cnameKeyword)
+        ? _cnameList
+        : _cnameList.Where(item => item.Domain.Contains(_cnameKeyword, StringComparison.OrdinalIgnoreCase));
+
+    private Task FilterCname()
+    {
+        return LoadCnameListAsync();
+    }
+
+    private bool AllCnameSelected => FilteredCnames.Any() && FilteredCnames.All(item => _selectedCnameIds.Contains(item.Id));
+
+    private void ToggleCnameAllChecked(bool value)
+    {
+        if (value)
+        {
+            foreach (var item in FilteredCnames)
+            {
+                _selectedCnameIds.Add(item.Id);
+            }
+        }
+        else
+        {
+            _selectedCnameIds.Clear();
+        }
+    }
+
+    private void ToggleCnameChecked(long id, bool value)
+    {
+        if (value)
+        {
+            _selectedCnameIds.Add(id);
+        }
+        else
+        {
+            _selectedCnameIds.Remove(id);
+        }
+    }
+
+    private void ToggleCnameAll(ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            foreach (var item in FilteredCnames)
+            {
+                _selectedCnameIds.Add(item.Id);
+            }
+        }
+        else
+        {
+            _selectedCnameIds.Clear();
+        }
+    }
+
+    private void ToggleCname(long id, ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true" || args.Value?.ToString() == "on";
+        if (isChecked)
+        {
+            _selectedCnameIds.Add(id);
+        }
+        else
+        {
+            _selectedCnameIds.Remove(id);
+        }
+    }
+
+    private void OpenCnameCreate()
+    {
+        _cnameEditor = new CnameEditor
+        {
+            DnsProviderId = _providers.FirstOrDefault()?.Id ?? 0
+        };
+        _cnameEditorVisible = true;
+    }
+
+    private void OpenCnameEdit(CnameDomainItem item)
+    {
+        _cnameEditor = new CnameEditor
+        {
+            Id = item.Id,
+            Domain = item.Domain,
+            Note = item.Note ?? string.Empty,
+            DnsProviderId = item.DnsProviderId
+        };
+        _cnameEditorVisible = true;
+    }
+
+    private void CloseCnameEditor()
+    {
+        _cnameEditorVisible = false;
+    }
+
+    private void NormalizeCnameDomain()
+    {
+        _cnameEditor.Domain = NormalizeDomainInput(_cnameEditor.Domain);
+    }
+
+    private async Task SaveCnameAsync()
+    {
+        var normalized = NormalizeDomainInput(_cnameEditor.Domain);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            await Js.InvokeVoidAsync("alert", "请输入域名");
+            return;
+        }
+
+        if (!IsValidDomain(normalized))
+        {
+            await Js.InvokeVoidAsync("alert", "域名格式不正确");
+            return;
+        }
+
+        if (_cnameEditor.DnsProviderId <= 0)
+        {
+            await Js.InvokeVoidAsync("alert", "请选择DNS Provider");
+            return;
+        }
+
+        var payload = new CnameDomainUpsertRequest
+        {
+            Domain = normalized,
+            Note = _cnameEditor.Note,
+            DnsProviderId = _cnameEditor.DnsProviderId
+        };
+
+        if (_cnameEditor.Id > 0)
+        {
+            var result = await Api.PutAsync<object>($"cname_domains/{_cnameEditor.Id}", payload, ApiScope.Admin);
+            if (result?.Code != ErrorCodes.Success)
+            {
+                SetMessage(false, result?.Message ?? "CNAME域名保存失败");
+                return;
+            }
+
+            SetMessage(true, "CNAME域名已更新");
+        }
+        else
+        {
+            var result = await Api.PostAsync<object>("cname_domains", payload, ApiScope.Admin);
+            if (result?.Code != ErrorCodes.Success)
+            {
+                SetMessage(false, result?.Message ?? "CNAME域名添加失败");
+                return;
+            }
+
+            SetMessage(true, "CNAME域名已添加");
+        }
+
+        NormalizeCnameDomain();
+        _cnameEditorVisible = false;
+        await LoadCnameListAsync();
+    }
+
+    private async Task DeleteCnameAsync(CnameDomainItem item)
+    {
+        var confirm = await Js.InvokeAsync<bool>("confirm", "确认删除该域名？");
+        if (!confirm)
+        {
+            return;
+        }
+
+        var result = await Api.DeleteAsync<object>($"cname_domains/{item.Id}", null, ApiScope.Admin);
+        if (result?.Code != ErrorCodes.Success)
+        {
+            SetMessage(false, result?.Message ?? "删除失败");
+            return;
+        }
+
+        SetMessage(true, "CNAME域名已删除");
+        await LoadCnameListAsync();
+    }
+
+    private async Task BatchDeleteCnameAsync()
+    {
+        if (!_selectedCnameIds.Any())
+        {
+            return;
+        }
+
+        var confirm = await Js.InvokeAsync<bool>("confirm", $"确认删除选中的 {_selectedCnameIds.Count} 个域名？");
+        if (!confirm)
+        {
+            return;
+        }
+
+        foreach (var id in _selectedCnameIds.ToList())
+        {
+            var result = await Api.DeleteAsync<object>($"cname_domains/{id}", null, ApiScope.Admin);
+            if (result?.Code != ErrorCodes.Success)
+            {
+                SetMessage(false, result?.Message ?? $"删除失败，ID={id}");
+                return;
+            }
+        }
+        _selectedCnameIds.Clear();
+        SetMessage(true, "批量删除完成");
+        await LoadCnameListAsync();
+    }
+
+    private string ResolveProviderName(long providerId)
+    {
+        var match = _providers.FirstOrDefault(item => item.Id == providerId);
+        return match == null ? "-" : GetProviderLabel(match);
+    }
+
+    private static string NormalizeDomainInput(string? value)
+    {
+        var v = (value ?? string.Empty).Trim().ToLowerInvariant();
+        if (v.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            v = v[7..];
+        }
+        else if (v.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            v = v[8..];
+        }
+
+        var slashIndex = v.IndexOf('/');
+        if (slashIndex >= 0)
+        {
+            v = v[..slashIndex];
+        }
+        var hashIndex = v.IndexOf('#');
+        if (hashIndex >= 0)
+        {
+            v = v[..hashIndex];
+        }
+        var queryIndex = v.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            v = v[..queryIndex];
+        }
+        var colonIndex = v.IndexOf(':');
+        if (colonIndex >= 0)
+        {
+            v = v[..colonIndex];
+        }
+
+        return v.TrimEnd('.');
+    }
+
+    private static bool IsValidDomain(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 253)
+        {
+            return false;
+        }
+
+        var parts = value.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            return false;
+        }
+
+        foreach (var part in parts)
+        {
+            if (part.Length == 0 || part.Length > 63)
+            {
+                return false;
+            }
+            if (part.StartsWith('-') || part.EndsWith('-'))
+            {
+                return false;
+            }
+            if (!part.All(ch => char.IsLetterOrDigit(ch) || ch == '-'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string GetProviderLabel(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return string.Empty;
+        }
+
+        return ProviderLabelMap.TryGetValue(type, out var label) ? label : type;
+    }
+
+    private static string GetProviderLabel(DnsProviderTypeItem item)
+    {
+        return ProviderLabelMap.TryGetValue(item.Type, out var label) ? label : item.Name;
+    }
+
+    private static string GetProviderLabel(DnsProviderItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.Type) && ProviderLabelMap.TryGetValue(item.Type, out var label))
+        {
+            return label;
+        }
+
+        return item.Name ?? item.Type ?? string.Empty;
+    }
+
+    private string GetCredential(string field)
+    {
+        return _form.Credentials.TryGetValue(field, out var value) ? value : string.Empty;
+    }
+
+    private void SetCredential(string field, string? value)
+    {
+        _form.Credentials[field] = value ?? string.Empty;
+    }
+
+    private void SetMessage(bool success, string? message)
+    {
+        _messageSeverity = success ? Severity.Success : Severity.Error;
+        _message = string.IsNullOrWhiteSpace(message) ? (success ? "操作成功" : "操作失败") : message;
+    }
+
+    private static string GetFieldLabel(string type, string field)
+    {
+        if (FieldLabelMap.TryGetValue(type, out var fields) && fields.TryGetValue(field, out var label))
+        {
+            return label;
+        }
+
+        return field.Replace("_", " ").ToUpperInvariant();
+    }
+
+    private static readonly Dictionary<string, string> ProviderLabelMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["aliyun"] = "Aliyun (aliyun.com, alidns.aliyun.com)",
+        ["huawei"] = "Huawei Cloud (huaweicloud.com)",
+        ["dnsla"] = "DNS.LA (dns.la)",
+        ["dnspod"] = "DNSPod (dnspod.cn)",
+        ["dnspod_intl"] = "DNSPod Intl (dnspod.com)",
+        ["51dns"] = "51DNS (51dns.com)",
+        ["cloudflare"] = "Cloudflare (cloudflare.com)",
+        ["godaddy"] = "GoDaddy (godaddy.com)",
+        ["cloudns"] = "ClouDNS (cloudns.net)",
+        ["namecom"] = "Name.com (name.com)",
+        ["namecheap"] = "Namecheap (namecheap.com)",
+        ["jdcloud"] = "JD Cloud (jdcloud.com)",
+        ["namesilo"] = "Namesilo (namesilo.com)"
+    };
+
+    private static readonly Dictionary<string, Dictionary<string, string>> FieldLabelMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["aliyun"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["access_key_id"] = "AccessKey ID",
+            ["access_key_secret"] = "AccessKey Secret"
+        },
+        ["huawei"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = "Access Key ID",
+            ["secret"] = "Secret Access Key"
+        },
+        ["dnsla"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = "API ID",
+            ["secret"] = "API Password"
+        },
+        ["dnspod"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = "ID",
+            ["token"] = "Token"
+        },
+        ["dnspod_intl"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["secret_id"] = "SecretId",
+            ["secret_key"] = "SecretKey"
+        },
+        ["51dns"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = "App ID",
+            ["secret"] = "App Secret"
+        },
+        ["cloudflare"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["email"] = "Email",
+            ["key"] = "API Key"
+        },
+        ["godaddy"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["key"] = "API Key",
+            ["secret"] = "API Secret"
+        },
+        ["cloudns"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["auth_id"] = "Auth ID",
+            ["auth_password"] = "Auth Password"
+        },
+        ["namecom"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["username"] = "Username",
+            ["api_token"] = "API Token"
+        },
+        ["namecheap"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["user"] = "User",
+            ["api_key"] = "API Key",
+            ["ip"] = "Client IP"
+        },
+        ["jdcloud"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["access_key"] = "Access Key",
+            ["secret_key"] = "Secret Key"
+        },
+        ["namesilo"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["api_key"] = "API Key"
+        }
+    };
+
+    private sealed class DnsProviderForm
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public Dictionary<string, string> Credentials { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public string Ttl { get; set; } = "600";
+        public bool IpWeight { get; set; } = true;
+
+        public void Reset()
+        {
+            Name = string.Empty;
+            Type = string.Empty;
+            Credentials.Clear();
+            Ttl = "600";
+            IpWeight = false;
+        }
+    }
+
+    private sealed class CnameEditor
+    {
+        public long Id { get; set; }
+        public string Domain { get; set; } = string.Empty;
+        public string Note { get; set; } = string.Empty;
+        public long DnsProviderId { get; set; }
+    }
+}

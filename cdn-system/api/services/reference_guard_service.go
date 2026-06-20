@@ -270,23 +270,32 @@ func GuardACLDelete(item models.ACL) (string, error) {
 	return "", nil
 }
 
-func GuardCCRuleGroupModify(rule models.CCRule) string {
-	if IsCCRuleInternal(rule) {
-		return "cc_rule.system_readonly"
+func GuardCCRuleTypeChange(isSystem bool, reqType string) string {
+	if !isSystem {
+		return ""
+	}
+	if strings.TrimSpace(reqType) == "user" {
+		return "cc_rule.system_type_locked"
 	}
 	return ""
 }
 
-func GuardCCMatcherModify(matcher models.CCMatch) string {
-	if IsCCMatcherInternal(matcher) {
-		return "cc_match.system_readonly"
+func GuardCCMatcherTypeChange(isSystem bool, reqType string) string {
+	if !isSystem {
+		return ""
+	}
+	if strings.TrimSpace(reqType) == "user" {
+		return "cc_match.system_type_locked"
 	}
 	return ""
 }
 
-func GuardCCFilterModify(filter models.CCFilter) string {
-	if IsCCFilterInternal(filter) {
-		return "cc_filter.system_readonly"
+func GuardCCFilterTypeChange(isSystem bool, reqType string) string {
+	if !isSystem {
+		return ""
+	}
+	if strings.TrimSpace(reqType) == "user" {
+		return "cc_filter.system_type_locked"
 	}
 	return ""
 }

@@ -1,0 +1,126 @@
+@page "/system/logs/operation"
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject ClientSession Session
+
+<PageTitle>操作日志</PageTitle>
+
+@if (!Session.IsAdmin)
+{
+    <p class="text-danger">无权限</p>
+    return;
+}
+
+<div class="page-header">
+    <h5 class="page-title">操作日志</h5>
+</div>
+
+<div class="filter-bar">
+    <InputText class="form-control" style="max-width:240px" @bind-Value="_keyword" placeholder="用户名/动作" />
+    <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+</div>
+
+<TablePager @ref="_tablePager"
+            StateKey="system:operation_logs:table"
+            Total="_total"
+            DefaultPageSize="20"
+            UnpagedLimit="1000"
+            QueryChanged="OnPageQueryChangedAsync">
+    <ChildContent>
+        <div class="table-responsive mt-3">
+            <table class="table table-bordered table-sm table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>用户</th>
+                        <th>动作</th>
+                        <th>描述</th>
+                        <th>IP</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted">加载中...</td></tr>
+                    }
+                    else if (_items.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted">暂无数据</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in _items)
+                        {
+                            <tr>
+                                <td>@item.Id</td>
+                                <td>@(item.Username ?? item.UserId.ToString())</td>
+                                <td>@(item.Action ?? "-")</td>
+                                <td class="text-break" style="max-width:300px">@(item.Description ?? item.Content ?? "-")</td>
+                                <td>@(item.Ip ?? "-")</td>
+                                <td>@(item.CreatedAt ?? "-")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </ChildContent>
+</TablePager>
+
+@code {
+    private bool _loading;
+    private string _keyword = string.Empty;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private long _total;
+    private readonly List<OperationLogItem> _items = new();
+    private TablePager? _tablePager;
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var query = new Dictionary<string, string?>
+        {
+            ["keyword"]  = string.IsNullOrWhiteSpace(_keyword) ? null : _keyword,
+            ["page"]     = _pageQuery.Page.ToString(),
+            ["pageSize"] = _pageQuery.PageSize.ToString()
+        };
+
+        var response = await Api.GetAsync<OperationLogListResult>("logs/operation", ApiScope.Admin, query);
+        _items.Clear();
+        _total = 0;
+        if (response?.Data != null)
+        {
+            _items.AddRange(response.Data.List);
+            _total = response.Data.Total;
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadAsync();
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadAsync();
+    }
+}

@@ -1,0 +1,367 @@
+﻿@page "/forward/groups"
+@using Cnn.Common.Contracts
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject ClientSession Session
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">分组设置</div>
+
+    <div class="filter-bar">
+        @if (Session.IsAdmin)
+        {
+            <select class="form-select" style="max-width: 280px" @bind="_selectedUserId" @bind:after="OnSelectedUserChangedAsync">
+                <option value="0">请选择用户</option>
+                @foreach (var user in _users)
+                {
+                    <option value="@user.Id">@FormatUserOption(user)</option>
+                }
+            </select>
+        }
+        <button class="btn btn-primary" @onclick="OpenCreate">新增分组</button>
+        <button class="btn btn-outline-danger" disabled="@(!_selectedIds.Any())" @onclick="BatchDeleteAsync">删除分组</button>
+        <InputText class="form-control" style="max-width: 220px" @bind-Value="_keyword" placeholder="搜索分组名称" />
+        <button class="btn btn-outline-secondary" @onclick="ApplyFilter">搜索</button>
+        <button class="btn btn-outline-secondary" @onclick="RefreshAsync">刷新</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th style="width:50px"><input type="checkbox" class="form-check-input" checked="@AllSelected" @onchange="ToggleSelectAll" /></th>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_loading)
+                {
+                    <tr><td colspan="5">加载中...</td></tr>
+                }
+                else if (_filtered.Count == 0)
+                {
+                    <tr><td colspan="5">暂无数据</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _filtered)
+                    {
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" checked="@_selectedIds.Contains(item.Id)" @onchange="e => ToggleRow(item.Id, e)" /></td>
+                            <td>@item.Id</td>
+                            <td>@item.Name</td>
+                            <td>@item.Remark</td>
+                            <td class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEdit(item)">编辑</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(item)">删除</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_editorVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_editing.Id > 0 ? "编辑分组" : "新增分组")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="modal-body">
+                @if (Session.IsAdmin)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">用户</label>
+                        <select class="form-select" @bind="_editing.UserId">
+                            <option value="0">请选择用户</option>
+                            @foreach (var user in _users)
+                            {
+                                <option value="@user.Id">@FormatUserOption(user)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="mb-3">
+                    <label class="form-label">名称</label>
+                    <InputText class="form-control" @bind-Value="_editing.Name" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">备注</label>
+                    <InputTextArea class="form-control" rows="2" @bind-Value="_editing.Remark" />
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseEditor">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<ForwardGroupDto> _items = new();
+    private readonly List<ForwardGroupDto> _filtered = new();
+    private readonly HashSet<long> _selectedIds = new();
+    private readonly List<UserItemDto> _users = new();
+    private bool _loading;
+    private bool _saving;
+    private bool _editorVisible;
+    private string _keyword = string.Empty;
+    private long _selectedUserId;
+    private ForwardGroupDto _editing = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAdmin)
+        {
+            await LoadUsersAsync();
+        }
+
+        await LoadAsync();
+    }
+
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        if (Session.IsAdmin && _selectedUserId <= 0)
+        {
+            _items.Clear();
+            _filtered.Clear();
+            _selectedIds.Clear();
+            _loading = false;
+            return;
+        }
+
+        var query = Session.IsAdmin && _selectedUserId > 0
+            ? new Dictionary<string, string?>
+            {
+                ["user_id"] = _selectedUserId.ToString(),
+                ["keyword"] = string.IsNullOrWhiteSpace(_keyword) ? null : _keyword.Trim()
+            }
+            : new Dictionary<string, string?>
+            {
+                ["keyword"] = string.IsNullOrWhiteSpace(_keyword) ? null : _keyword.Trim()
+            };
+        var response = await Api.GetAsync<ForwardGroupListResult>("forward_groups", Scope, query);
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            _items.AddRange(response.Data.List);
+        }
+        ApplyFilter();
+        _loading = false;
+    }
+
+    private Task RefreshAsync()
+    {
+        return LoadAsync();
+    }
+
+    private void ApplyFilter()
+    {
+        _filtered.Clear();
+        _filtered.AddRange(_items);
+        _selectedIds.Clear();
+    }
+
+    private Task OnSelectedUserChangedAsync()
+    {
+        _selectedIds.Clear();
+        return LoadAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["pageSize"] = "200"
+        };
+        var response = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, query);
+        _users.Clear();
+        if (response?.Data?.List != null)
+        {
+            _users.AddRange(response.Data.List.OrderBy(x => x.Name ?? string.Empty).ThenBy(x => x.Id));
+        }
+    }
+
+    private bool AllSelected => _filtered.Count > 0 && _filtered.All(x => _selectedIds.Contains(x.Id));
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var isChecked = args.Value?.ToString() == "true";
+        if (isChecked) foreach (var item in _filtered) _selectedIds.Add(item.Id);
+        else _selectedIds.Clear();
+    }
+
+    private void ToggleRow(long id, ChangeEventArgs args)
+    {
+        if (args.Value?.ToString() == "true") _selectedIds.Add(id);
+        else _selectedIds.Remove(id);
+    }
+
+    private async Task BatchDeleteAsync()
+    {
+        if (!_selectedIds.Any()) return;
+        var ok = await Js.InvokeAsync<bool>("confirm", "确认删除选中的分组？");
+        if (!ok) return;
+
+        var taskIds = new List<long>();
+        foreach (var id in _selectedIds.ToList())
+        {
+            var previewResult = await DeleteWorkflowHelper.PreviewAsync(Api, $"forward_groups/{id}", Scope);
+            if (!previewResult.Success)
+            {
+                await Js.InvokeVoidAsync("alert", previewResult.Message);
+                return;
+            }
+        }
+
+        foreach (var id in _selectedIds.ToList())
+        {
+            var requestResult = await DeleteWorkflowHelper.RequestAsync(Api, $"forward_groups/{id}", Scope, "转发分组删除任务已提交");
+            if (!requestResult.Success)
+            {
+                await Js.InvokeVoidAsync("alert", requestResult.Message);
+                return;
+            }
+
+            if (requestResult.TaskId > 0)
+            {
+                taskIds.Add(requestResult.TaskId);
+            }
+        }
+
+        await Js.InvokeVoidAsync("alert", taskIds.Count > 0
+            ? $"转发分组删除任务已提交，共 {taskIds.Count} 个任务"
+            : "转发分组删除任务已提交");
+        _selectedIds.Clear();
+        await LoadAsync();
+        if (taskIds.Count > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private void OpenCreate()
+    {
+        if (Session.IsAdmin && _selectedUserId <= 0)
+        {
+            _ = Js.InvokeVoidAsync("alert", "请先选择用户");
+            return;
+        }
+
+        _editing = new ForwardGroupDto
+        {
+            UserId = Session.IsAdmin ? _selectedUserId : 0
+        };
+        _editorVisible = true;
+    }
+
+    private void OpenEdit(ForwardGroupDto item)
+    {
+        _editing = new ForwardGroupDto
+        {
+            Id = item.Id,
+            UserId = item.UserId,
+            Name = item.Name,
+            Remark = item.Remark
+        };
+        _editorVisible = true;
+    }
+
+    private void CloseEditor()
+    {
+        _editorVisible = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        var request = new ForwardGroupUpsertRequest
+        {
+            Id = _editing.Id,
+            UserId = _editing.UserId,
+            Name = _editing.Name,
+            Remark = _editing.Remark
+        };
+
+        if (Session.IsAdmin && request.UserId <= 0)
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", "请选择用户");
+            return;
+        }
+
+        if (_editing.Id > 0)
+        {
+            await Api.PutAsync<object>($"forward_groups/{_editing.Id}", request, Scope);
+        }
+        else
+        {
+            await Api.PostAsync<object>("forward_groups", request, Scope);
+        }
+        _saving = false;
+        _editorVisible = false;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(ForwardGroupDto item)
+    {
+        var result = await DeleteWorkflowHelper.ConfirmAndRequestAsync(
+            Api,
+            Js,
+            $"forward_groups/{item.Id}",
+            Scope,
+            "确认删除该分组？",
+            "转发分组删除任务已提交");
+        if (!result.Success)
+        {
+            if (!result.Cancelled)
+            {
+                await Js.InvokeVoidAsync("alert", result.Message);
+            }
+
+            return;
+        }
+
+        await Js.InvokeVoidAsync("alert", result.Message);
+        await LoadAsync();
+        if (result.TaskId > 0)
+        {
+            await RefreshAfterDeleteTaskAsync();
+        }
+    }
+
+    private async Task RefreshAfterDeleteTaskAsync()
+    {
+        await Task.Delay(1200);
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatUserOption(UserItemDto user)
+    {
+        var name = string.IsNullOrWhiteSpace(user.Name) ? $"用户 {user.Id}" : user.Name.Trim();
+        var secondary = !string.IsNullOrWhiteSpace(user.Email)
+            ? user.Email!.Trim()
+            : !string.IsNullOrWhiteSpace(user.Phone)
+                ? user.Phone!.Trim()
+                : user.Id.ToString();
+        return $"{name} ({secondary})";
+    }
+}

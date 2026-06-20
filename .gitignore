@@ -41,10 +41,22 @@ node_modules/
 /cdn-system/web/admin/tests
 /cdn-system/web/admin/test-results
 /cdn-system/cnn.net
-/cnn.net
 /build
 .DS_Store
 **/.DS_Store
 
 # local temp
 .DS_Store
+
+# cnn.net local build and runtime outputs
+/cnn.net/**/bin/
+/cnn.net/**/obj/
+/cnn.net/**/.vs/
+/cnn.net/**/.vscode/
+/cnn.net/**/.idea/
+/cnn.net/**/.logs/
+/cnn.net/**/.runtime/
+/cnn.net/**/preprocessed_configs/
+/cnn.net/**/access/
+/cnn.net/docs/**/node_modules/
+/cnn.net/docs/**/test-results/

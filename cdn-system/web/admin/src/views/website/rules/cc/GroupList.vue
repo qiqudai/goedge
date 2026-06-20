@@ -56,14 +56,14 @@
   </AppTable>
 
   <!-- Group Form Dialog -->
-  <el-dialog :title="dialogMode === 'create' ? '新增规则组' : (isSystemRuleEdit ? '查看规则组（系统规则只读）' : '编辑规则组')" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
-    <el-alert v-if="isSystemRuleEdit" type="info" :closable="false" show-icon title="系统规则为只读，管理员也不可修改" style="margin-bottom: 12px;" />
-    <el-form :model="form" label-width="100px" :disabled="isSystemRuleEdit">
+  <el-dialog :title="dialogMode === 'create' ? '新增规则组' : '编辑规则组'" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
+    <el-form :model="form" label-width="100px">
       <el-form-item label="类型" v-if="isAdmin">
-        <el-radio-group v-model="form.type" :disabled="isSystemRuleEdit">
+        <el-radio-group v-model="form.type" :disabled="isSystemRule">
           <el-radio value="system">系统规则</el-radio>
           <el-radio value="user">用户规则</el-radio>
         </el-radio-group>
+        <div v-if="isSystemRule" class="form-helper">系统规则的类型不可修改，其他配置可正常编辑</div>
       </el-form-item>
       <el-form-item label="用户" v-if="isAdmin && form.type === 'user'">
         <el-select
@@ -95,7 +95,7 @@
       
       <el-form-item label="规则列表">
         <div style="width: 100%">
-          <el-button v-if="!isSystemRuleEdit" type="primary" plain size="small" @click="openRuleDialog" style="margin-bottom: 8px;">新增规则</el-button>
+          <el-button type="primary" plain size="small" @click="openRuleDialog" style="margin-bottom: 8px;">新增规则</el-button>
           <el-table :data="form.rules" border size="small">
             <el-table-column label="匹配器" min-width="100">
               <template #default="{row}">{{ getMatcherName(row.matcher_id) }}</template>
@@ -165,13 +165,13 @@
 
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">{{ isSystemRuleEdit ? '关闭' : '取消' }}</el-button>
-      <el-button v-if="!isSystemRuleEdit" type="primary" @click="submitForm">确定</el-button>
+      <el-button @click="dialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="submitForm">确定</el-button>
     </template>
 
     <!-- Inner Rule Dialog -->
     <el-dialog v-model="ruleDialogVisible" title="规则设置" width="550px" append-to-body :close-on-click-modal="false">
-      <el-form :model="ruleForm" label-width="100px" :disabled="isSystemRuleEdit">
+      <el-form :model="ruleForm" label-width="100px">
         <el-form-item label="匹配器" required>
           <el-select v-model="ruleForm.matcher_id" style="width: 100%" placeholder="选择匹配器">
             <el-option v-for="m in filteredMatchers" :key="m.id" :label="m.name" :value="m.id" />
@@ -210,7 +210,7 @@
       </el-form>
       <template #footer>
         <el-button @click="ruleDialogVisible = false">取消</el-button>
-        <el-button v-if="!isSystemRuleEdit" type="primary" @click="addRule">确定</el-button>
+        <el-button type="primary" @click="addRule">确定</el-button>
       </template>
     </el-dialog>
   </el-dialog>
@@ -244,7 +244,7 @@ const form = reactive({
   rules: [] 
 })
 
-const isSystemRuleEdit = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
+const isSystemRule = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
 const cannotDisable = computed(() => !!form.in_use && !!form.is_on)
 
 const matchers = ref([])
@@ -347,10 +347,6 @@ const handleEdit = async (row) => {
 }
 
 const submitForm = async () => {
-  if (isSystemRuleEdit.value) {
-    dialogVisible.value = false
-    return
-  }
   try {
     if (form.id) {
       await request.put(`/rules/cc/groups/${form.id}`, form)

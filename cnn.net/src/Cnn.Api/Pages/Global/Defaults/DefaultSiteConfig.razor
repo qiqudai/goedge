@@ -1,0 +1,1301 @@
+@using global::System.Text.Json
+@using global::System.Text.Json.Serialization
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+@inject ClientSession Session
+
+<div class="card config-card default-site">
+    <div class="card-header">网站默认配置</div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <div>加载中...</div>
+        }
+        else
+        {
+            <div class="section">
+                <div class="section-title">HTTP</div>
+                <div class="form-row">
+                    <label class="form-label">监听端口</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.HttpListen" @onblur="QueueSaveAsync" />
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">HTTPS</div>
+                <div class="form-row">
+                    <label class="form-label">监听端口</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.HttpsListen" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-check form-switch">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.HttpsHsts" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">开启 HSTS</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.HttpsHttp2" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">开启 HTTP2</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.HttpsHttp3" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">开启 HTTP3</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.HttpsForce" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">强制 HTTPS</label>
+                </div>
+
+                <div class="form-row mt-2">
+                    <label class="form-label">SSL 协议</label>
+                    <div class="option-list">
+                        @foreach (var protocol in SslProtocolOptions)
+                        {
+                            <label class="form-check">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       checked="@_form.SslProtocols.Contains(protocol)"
+                                       @onchange="e => ToggleProtocol(_form.SslProtocols, protocol, e.Value is bool b && b)" />
+                                <span class="form-check-label">@protocol</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">SSL 加密套件</label>
+                    <InputTextArea class="form-control" rows="2" @bind-Value="_form.SslCiphers" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.SslPreferServerCiphers" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">优先服务器加密套件</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.OcspStapling" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">OCSP 装订</label>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">回源设置</div>
+                <div class="form-row">
+                    <label class="form-label">回源协议</label>
+                    <InputRadioGroup @bind-Value="_form.BackendProtocol" @bind-Value:after="QueueSaveAsync">
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("http")' />
+                            <span class="form-check-label">HTTP</span>
+                        </label>
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("https")' />
+                            <span class="form-check-label">HTTPS</span>
+                        </label>
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("follow")' />
+                            <span class="form-check-label">跟随协议</span>
+                        </label>
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("follow_port")' />
+                            <span class="form-check-label">跟随端口和协议</span>
+                        </label>
+                    </InputRadioGroup>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">回源 HTTP 端口</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.BackendHttpPort" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">回源 HTTPS 端口</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.BackendHttpsPort" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">回源超时</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.ProxyTimeout" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">连接超时</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.ConnectTimeout" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">回源 SSL 协议</label>
+                    <div class="option-list">
+                        @foreach (var protocol in SslProtocolOptions)
+                        {
+                            <label class="form-check">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       checked="@_form.ProxySslProtocols.Contains(protocol)"
+                                       @onchange="e => ToggleProtocol(_form.ProxySslProtocols, protocol, e.Value is bool b && b)" />
+                                <span class="form-check-label">@protocol</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">缓存</div>
+                <div class="toolbar-row">
+                    <button class="btn btn-outline-primary btn-sm" type="button" @onclick='@(() => OpenCacheRuleDialog("create"))'>新增规则</button>
+                    <div class="form-row" style="margin-bottom: 0;">
+                        <label class="form-label">快速添加</label>
+                        <select class="form-select" style="width: 180px;" @bind="_cachePreset" @bind:after="ApplyCachePreset">
+                            <option value="">选择预设</option>
+                            <option value="index">首页缓存</option>
+                            <option value="all">全站缓存</option>
+                            <option value="static">静态资源缓存</option>
+                            <option value="video">视频文件缓存</option>
+                            <option value="wordpress">WordPress 缓存</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped config-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 120px;">类型</th>
+                                <th>内容</th>
+                                <th style="width: 120px;">有效期</th>
+                                <th style="width: 120px;">忽略参数</th>
+                                <th style="width: 120px;">强制缓存</th>
+                                <th style="width: 180px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_form.CacheRules.Count == 0)
+                            {
+                                <tr><td colspan="6">暂无规则</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < _form.CacheRules.Count; i++)
+                                {
+                                    var rule = _form.CacheRules[i];
+                                    <tr>
+                                        <td>@CacheTypeLabel(rule.Type)</td>
+                                        <td>@rule.Value</td>
+                                        <td>@FormatTtl(rule.Ttl)</td>
+                                        <td>@(rule.IgnoreQuery ? "是" : "否")</td>
+                                        <td>@(rule.ForceCache ? "是" : "否")</td>
+                                        <td>
+                                            <button class="btn btn-link btn-sm" type="button" @onclick='@(() => OpenCacheRuleDialog("edit", rule, i))'>编辑</button>
+                                            <button class="btn btn-link btn-sm text-danger" type="button" @onclick='@(() => RemoveCacheRule(i))'>删除</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="form-text">缓存规则由上到下匹配，匹配到即停止。</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">源站请求头</div>
+                <div class="toolbar-row">
+                    <button class="btn btn-outline-primary btn-sm" type="button" @onclick='@(() => OpenHeaderDialog("create"))'>新增请求头</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped config-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 220px;">名称</th>
+                                <th>值</th>
+                                <th style="width: 140px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_form.OriginHeaders.Count == 0)
+                            {
+                                <tr><td colspan="3">暂无请求头</td></tr>
+                            }
+                            else
+                            {
+                                @for (var i = 0; i < _form.OriginHeaders.Count; i++)
+                                {
+                                    var header = _form.OriginHeaders[i];
+                                    <tr>
+                                        <td>@header.Name</td>
+                                        <td>@header.Value</td>
+                                        <td>
+                                            <button class="btn btn-link btn-sm" type="button" @onclick='@(() => OpenHeaderDialog("edit", header, i))'>编辑</button>
+                                            <button class="btn btn-link btn-sm text-danger" type="button" @onclick='@(() => RemoveHeader(i))'>删除</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="form-text">这里添加的是节点请求源站时附带的请求头。</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">访问日志</div>
+                <div class="form-check form-switch">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.LogRequestHeader" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">记录请求头</label>
+                    <div class="form-text">开启后会增加硬盘空间占用。</div>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.LogResponseHeader" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">记录响应头</label>
+                    <div class="form-text">建议只在调试时开启。</div>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.LogRequestBody" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">记录请求体</label>
+                    <div class="form-text">建议只在调试时开启。</div>
+                </div>
+                <div class="form-row mt-2">
+                    <label class="form-label">请求体大小限制 (KB)</label>
+                    <InputText class="form-control" style="max-width: 240px;" @bind-Value="_form.PostSizeLimit" @onblur="QueueSaveAsync" />
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">其它</div>
+                <div class="form-row">
+                    <label class="form-label">负载方式</label>
+                    <InputRadioGroup @bind-Value="_form.BalanceWay" @bind-Value:after="QueueSaveAsync">
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("rr")' />
+                            <span class="form-check-label">轮询</span>
+                        </label>
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("ip_hash")' />
+                            <span class="form-check-label">定源</span>
+                        </label>
+                    </InputRadioGroup>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">默认 CC 规则</label>
+                    <InputSelect TValue="long" class="form-select" style="max-width: 240px;" @bind-Value="_form.CcDefaultRule" @bind-Value:after="QueueSaveAsync">
+                        @foreach (var item in _ccRules)
+                        {
+                            <option value="@item.Value">@item.Label</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">搜索引擎爬虫</label>
+                    <InputRadioGroup @bind-Value="_form.SecurityBot" @bind-Value:after="QueueSaveAsync">
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@(string.Empty)' />
+                            <span class="form-check-label">不设置</span>
+                        </label>
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("allow")' />
+                            <span class="form-check-label">放行</span>
+                        </label>
+                        <label class="form-check">
+                            <InputRadio class="form-check-input" Value='@("block")' />
+                            <span class="form-check-label">拦截</span>
+                        </label>
+                    </InputRadioGroup>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.GzipEnable" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">开启 Gzip</label>
+                </div>
+                <div class="form-row mt-2">
+                    <label class="form-label">Gzip 类型</label>
+                    <InputText class="form-control" @bind-Value="_form.GzipTypes" @onblur="QueueSaveAsync" />
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.WebsocketEnable" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">开启 WebSocket</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.SecurityShieldProxy" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">屏蔽透明代理</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.RealtimeReturn" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">数据实时返回</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.RealtimeSend" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">数据实时发送</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_form.Ipv6Enable" @onchange="QueueSaveAsync" />
+                    <label class="form-check-label">开启 IPv6</label>
+                </div>
+            </div>
+        }
+
+        <div class="mt-3 d-flex align-items-center gap-2">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            @if (_saving)
+            {
+                <span class="text-muted">保存中...</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="alert @_messageClass mt-3">@_message</div>
+        }
+        }
+    </div>
+</div>
+
+@if (_cacheDialog.Visible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_cacheDialog.Mode == "create" ? "新增缓存规则" : "编辑缓存规则")</h5>
+                <button class="btn-close" type="button" @onclick="CloseCacheRuleDialog"></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <label class="form-label">类型</label>
+                    <select class="form-select" @bind="_cacheDialog.Form.Type">
+                        <option value="index">首页</option>
+                        <option value="all">全站</option>
+                        <option value="dir">目录</option>
+                        <option value="suffix">后缀</option>
+                        <option value="path">单个路径</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">内容</label>
+                    <InputText class="form-control" @bind-Value="_cacheDialog.Form.Value" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">有效期</label>
+                    <div class="ttl-input">
+                        <InputText class="form-control" @bind-Value="_cacheDialog.Form.TtlValue" />
+                        <select class="form-select" @bind="_cacheDialog.Form.TtlUnit">
+                            <option value="day">天</option>
+                            <option value="hour">小时</option>
+                            <option value="minute">分钟</option>
+                            <option value="second">秒</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_cacheDialog.Form.IgnoreQuery" />
+                    <label class="form-check-label">忽略参数</label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="_cacheDialog.Form.ForceCache" />
+                    <label class="form-check-label">强制缓存</label>
+                </div>
+
+                <div class="more-settings">
+                    <div class="more-toggle" @onclick="ToggleMoreSettings">
+                        更多设置 @(_moreSettingsVisible ? "▲" : "▼")
+                    </div>
+                </div>
+
+                @if (_moreSettingsVisible)
+                {
+                    <div class="form-check form-switch mt-2">
+                        <InputCheckbox class="form-check-input" @bind-Value="_cacheDialog.Form.EnableRange" />
+                        <label class="form-check-label">分片回源</label>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                        <InputCheckbox class="form-check-input" @bind-Value="_cacheDialog.Form.IgnoreVary" />
+                        <label class="form-check-label">忽略 Vary</label>
+                    </div>
+                    <div class="mt-2">
+                        <div class="form-label">不缓存条件</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped config-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 140px;">匹配项</th>
+                                        <th>匹配值</th>
+                                        <th style="width: 80px;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (_cacheDialog.Form.SkipConditions.Count == 0)
+                                    {
+                                        <tr><td colspan="3">暂无条件</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @for (var i = 0; i < _cacheDialog.Form.SkipConditions.Count; i++)
+                                        {
+                                            var cond = _cacheDialog.Form.SkipConditions[i];
+                                            <tr>
+                                                <td>@MatchTypeLabel(cond.Type)</td>
+                                                <td>@cond.Value</td>
+                                                <td>
+                                                    <button class="btn btn-link btn-sm text-danger" type="button" @onclick='@(() => RemoveCondition(i))'>删除</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="condition-row">
+                            <select class="form-select" style="width: 160px;" @bind="_newCondition.Type">
+                                <option value="request_uri">请求URI</option>
+                                <option value="uri">请求URI(不带参数)</option>
+                                <option value="remote_addr">客户端IP地址</option>
+                                <option value="scheme">请求协议</option>
+                                <option value="args">请求参数</option>
+                                <option value="host">域名</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <InputText class="form-control" @bind-Value="_newCondition.Value" />
+                            <button class="btn btn-outline-primary btn-sm" type="button" @onclick="AddCondition">添加</button>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" @onclick="CloseCacheRuleDialog">取消</button>
+                <button class="btn btn-primary" type="button" @onclick="SaveCacheRule">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_headerDialog.Visible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>@(_headerDialog.Mode == "create" ? "新增请求头" : "编辑请求头")</h5>
+                <button class="btn-close" type="button" @onclick="CloseHeaderDialog"></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <label class="form-label">名称</label>
+                    <InputText class="form-control" @bind-Value="_headerDialog.Form.Name" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">值</label>
+                    <InputText class="form-control" @bind-Value="_headerDialog.Form.Value" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" @onclick="CloseHeaderDialog">取消</button>
+                <button class="btn btn-primary" type="button" @onclick="SaveHeader">确定</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ApiScope Scope => Session.IsAdmin ? ApiScope.Admin : ApiScope.User;
+
+    private const string DefaultSslCiphers =
+        "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:" +
+        "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:" +
+        "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:" +
+        "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:" +
+        "DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:" +
+        "ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:" +
+        "ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:" +
+        "ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:" +
+        "ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:" +
+        "DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:" +
+        "AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA";
+
+    private const string DefaultGzipTypes =
+        "text/plain text/css text/xml text/javascript " +
+        "application/javascript application/x-javascript application/json";
+
+    private static readonly string[] SslProtocolOptions = { "SSLv2", "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3" };
+
+    private bool _loading;
+    private bool _saving;
+    private bool _saveQueued;
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    private readonly SiteDefaultForm _form = new();
+    private readonly List<CcRuleOption> _ccRules = new(DefaultCcRules());
+
+    private string _cachePreset = string.Empty;
+    private CacheRuleDialogState _cacheDialog = new();
+    private bool _moreSettingsVisible;
+    private ConditionForm _newCondition = new();
+
+    private HeaderDialogState _headerDialog = new();
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        try
+        {
+            await Task.WhenAll(LoadConfigAsync(), LoadCcRulesAsync());
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadConfigAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["scope_name"] = "global",
+            ["scope_id"] = "0"
+        };
+
+        var response = await Api.GetAsync<SiteDefaultListResult>("site_defaults", Scope, query);
+        var list = response?.Data?.List ?? Array.Empty<SiteDefaultItemDto>();
+        var map = list
+            .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+            .ToDictionary(item => item.Name!, item => item.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+        _form.HttpListen = ReadString(map, "http_listen-port", _form.HttpListen);
+        _form.HttpsListen = ReadString(map, "https_listen-port", _form.HttpsListen);
+        _form.HttpsHsts = ParseBool(map.GetValueOrDefault("https_listen-hsts"), _form.HttpsHsts);
+        _form.HttpsHttp2 = ParseBool(map.GetValueOrDefault("https_listen-http2"), _form.HttpsHttp2);
+        _form.HttpsHttp3 = ParseBool(map.GetValueOrDefault("https_listen-http3"), _form.HttpsHttp3);
+        _form.HttpsForce = ParseBool(map.GetValueOrDefault("https_listen-force_ssl_enable"), _form.HttpsForce);
+
+        var sslProtocols = ReadString(map, "https_listen-ssl_protocols", string.Empty);
+        if (!string.IsNullOrWhiteSpace(sslProtocols))
+        {
+            _form.SslProtocols = SplitProtocols(sslProtocols);
+        }
+
+        _form.SslCiphers = ReadString(map, "https_listen-ssl_ciphers", _form.SslCiphers);
+        _form.SslPreferServerCiphers = ParseBool(map.GetValueOrDefault("https_listen-ssl_prefer_server_ciphers"), _form.SslPreferServerCiphers);
+        _form.OcspStapling = ParseBool(map.GetValueOrDefault("https_listen-ocsp_stapling"), _form.OcspStapling);
+
+        _form.BackendProtocol = ReadString(map, "backend_protocol", _form.BackendProtocol);
+        _form.BackendHttpPort = ReadString(map, "backend_http_port", _form.BackendHttpPort);
+        _form.BackendHttpsPort = ReadString(map, "backend_https_port", _form.BackendHttpsPort);
+        _form.ProxyTimeout = ReadString(map, "proxy_timeout", _form.ProxyTimeout);
+        _form.ConnectTimeout = ReadString(map, "connect_timeout", _form.ConnectTimeout);
+
+        var proxySslProtocols = ReadString(map, "proxy_ssl_protocols", string.Empty);
+        if (!string.IsNullOrWhiteSpace(proxySslProtocols))
+        {
+            _form.ProxySslProtocols = SplitProtocols(proxySslProtocols);
+        }
+
+        _form.CacheRules = ParseCacheRules(map.GetValueOrDefault("proxy_cache"));
+        _form.OriginHeaders = ParseOriginHeaders(map.GetValueOrDefault("origin_headers"));
+
+        _form.LogRequestHeader = ParseBool(map.GetValueOrDefault("log_request_header"), _form.LogRequestHeader);
+        _form.LogResponseHeader = ParseBool(map.GetValueOrDefault("log_response_header"), _form.LogResponseHeader);
+        _form.LogRequestBody = ParseBool(map.GetValueOrDefault("log_request_body"), _form.LogRequestBody);
+        _form.PostSizeLimit = ReadString(map, "post_size_limit", _form.PostSizeLimit);
+
+        _form.BalanceWay = ReadString(map, "balance_way", _form.BalanceWay);
+        _form.CcDefaultRule = ParseLong(map.GetValueOrDefault("cc_default_rule"), _form.CcDefaultRule);
+        _form.SecurityBot = ReadString(map, "security_bot", _form.SecurityBot);
+        _form.GzipEnable = ParseBool(map.GetValueOrDefault("gzip_enable"), _form.GzipEnable);
+        _form.GzipTypes = ReadString(map, "gzip_types", _form.GzipTypes);
+        _form.WebsocketEnable = ParseBool(map.GetValueOrDefault("websocket_enable"), _form.WebsocketEnable);
+        _form.SecurityShieldProxy = ParseBool(map.GetValueOrDefault("security_shield_proxy"), _form.SecurityShieldProxy);
+        _form.RealtimeSend = ParseBool(map.GetValueOrDefault("realtime_send"), _form.RealtimeSend);
+        _form.RealtimeReturn = ParseBool(map.GetValueOrDefault("realtime_return"), _form.RealtimeReturn);
+        _form.Ipv6Enable = ParseBool(map.GetValueOrDefault("ipv6_enable"), _form.Ipv6Enable);
+    }
+
+    private async Task LoadCcRulesAsync()
+    {
+        var response = await Api.GetAsync<CcListResult<CcRuleGroupListItem>>("rules/cc/groups", Scope);
+        var list = response?.Data?.List ?? Array.Empty<CcRuleGroupListItem>();
+        if (list.Count == 0)
+        {
+            return;
+        }
+
+        _ccRules.Clear();
+        foreach (var item in list)
+        {
+            if (item.Id <= 0)
+            {
+                continue;
+            }
+            _ccRules.Add(new CcRuleOption(item.Id, item.Name ?? $"规则 {item.Id}"));
+        }
+    }
+
+    private void ToggleProtocol(List<string> list, string protocol, bool enabled)
+    {
+        if (enabled)
+        {
+            if (!list.Contains(protocol))
+            {
+                list.Add(protocol);
+            }
+        }
+        else
+        {
+            list.Remove(protocol);
+        }
+
+        _ = QueueSaveAsync();
+    }
+
+    private async Task QueueSaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        await SaveAsync();
+
+        if (_saveQueued)
+        {
+            _saveQueued = false;
+            await SaveAsync();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            _saveQueued = true;
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["http_listen-port"] = _form.HttpListen,
+            ["https_listen-port"] = _form.HttpsListen,
+            ["https_listen-hsts"] = _form.HttpsHsts,
+            ["https_listen-http2"] = _form.HttpsHttp2,
+            ["https_listen-http3"] = _form.HttpsHttp3,
+            ["https_listen-force_ssl_enable"] = _form.HttpsForce,
+            ["https_listen-ssl_protocols"] = string.Join(' ', _form.SslProtocols),
+            ["https_listen-ssl_ciphers"] = _form.SslCiphers,
+            ["https_listen-ssl_prefer_server_ciphers"] = _form.SslPreferServerCiphers ? "on" : "off",
+            ["https_listen-ocsp_stapling"] = _form.OcspStapling,
+            ["backend_protocol"] = _form.BackendProtocol,
+            ["backend_http_port"] = _form.BackendHttpPort,
+            ["backend_https_port"] = _form.BackendHttpsPort,
+            ["proxy_timeout"] = _form.ProxyTimeout,
+            ["connect_timeout"] = _form.ConnectTimeout,
+            ["proxy_ssl_protocols"] = string.Join(' ', _form.ProxySslProtocols),
+            ["proxy_cache"] = JsonSerializer.Serialize(_form.CacheRules, JsonOptions),
+            ["origin_headers"] = JsonSerializer.Serialize(_form.OriginHeaders, JsonOptions),
+            ["log_request_header"] = _form.LogRequestHeader,
+            ["log_response_header"] = _form.LogResponseHeader,
+            ["log_request_body"] = _form.LogRequestBody,
+            ["post_size_limit"] = _form.PostSizeLimit,
+            ["balance_way"] = _form.BalanceWay,
+            ["cc_default_rule"] = _form.CcDefaultRule,
+            ["security_bot"] = _form.SecurityBot,
+            ["gzip_enable"] = _form.GzipEnable,
+            ["gzip_types"] = _form.GzipTypes,
+            ["websocket_enable"] = _form.WebsocketEnable,
+            ["security_shield_proxy"] = _form.SecurityShieldProxy,
+            ["realtime_send"] = _form.RealtimeSend,
+            ["realtime_return"] = _form.RealtimeReturn,
+            ["ipv6_enable"] = _form.Ipv6Enable
+        };
+
+        var request = new SiteDefaultCreateRequest
+        {
+            ScopeName = "global",
+            ScopeId = 0,
+            Data = payload
+        };
+
+        var response = await Api.PostAsync<object>("site_defaults", request, Scope);
+        _saving = false;
+
+        if (response != null && (response.Code == 0 || response.Code == 200))
+        {
+            SetMessage(true, "保存成功");
+        }
+        else
+        {
+            SetMessage(false, response?.Message ?? "保存失败");
+        }
+    }
+
+    private void OpenCacheRuleDialog(string mode, CacheRule? rule = null, int index = -1)
+    {
+        _cacheDialog = new CacheRuleDialogState
+        {
+            Visible = true,
+            Mode = mode,
+            Index = index,
+            Form = rule == null ? new CacheRuleForm() : CacheRuleForm.FromRule(rule)
+        };
+        _moreSettingsVisible = _cacheDialog.Form.EnableRange || _cacheDialog.Form.IgnoreVary || _cacheDialog.Form.SkipConditions.Count > 0;
+    }
+
+    private void CloseCacheRuleDialog()
+    {
+        _cacheDialog.Visible = false;
+    }
+
+    private void ToggleMoreSettings()
+    {
+        _moreSettingsVisible = !_moreSettingsVisible;
+    }
+
+    private void SaveCacheRule()
+    {
+        var form = _cacheDialog.Form;
+        var ttl = ConvertUnitToSeconds(form.TtlValue, form.TtlUnit);
+        var rule = new CacheRule
+        {
+            Type = form.Type,
+            Value = form.Value ?? string.Empty,
+            Ttl = ttl.ToString(),
+            IgnoreQuery = form.IgnoreQuery,
+            ForceCache = form.ForceCache,
+            EnableRange = form.EnableRange,
+            IgnoreVary = form.IgnoreVary,
+            SkipConditions = form.SkipConditions.Select(item => new CacheSkipCondition(item.Type, item.Value)).ToList()
+        };
+
+        if (_cacheDialog.Mode == "edit" && _cacheDialog.Index >= 0)
+        {
+            _form.CacheRules[_cacheDialog.Index] = rule;
+        }
+        else
+        {
+            _form.CacheRules.Add(rule);
+        }
+
+        _cacheDialog.Visible = false;
+        _ = QueueSaveAsync();
+    }
+
+    private void RemoveCacheRule(int index)
+    {
+        if (index < 0 || index >= _form.CacheRules.Count)
+        {
+            return;
+        }
+
+        _form.CacheRules.RemoveAt(index);
+        _ = QueueSaveAsync();
+    }
+
+    private void ApplyCachePreset()
+    {
+        if (string.IsNullOrWhiteSpace(_cachePreset))
+        {
+            return;
+        }
+
+        CacheRule? rule = _cachePreset switch
+        {
+            "index" => new CacheRule { Type = "index", Value = string.Empty, Ttl = "86400" },
+            "all" => new CacheRule { Type = "all", Value = string.Empty, Ttl = "259200" },
+            "static" => new CacheRule { Type = "suffix", Value = "jpg|jpeg|png|gif|ico|css|js|svg|bmp|webp|woff|woff2", Ttl = "604800", IgnoreQuery = true },
+            "video" => new CacheRule { Type = "suffix", Value = "mp4|avi|mov|webm|m3u8|ts", Ttl = "2592000" },
+            "wordpress" => new CacheRule { Type = "all", Value = string.Empty, Ttl = "259200" },
+            _ => null
+        };
+
+        if (rule != null)
+        {
+            _form.CacheRules.Add(rule);
+            _ = QueueSaveAsync();
+        }
+
+        _cachePreset = string.Empty;
+    }
+
+    private void AddCondition()
+    {
+        if (string.IsNullOrWhiteSpace(_newCondition.Value))
+        {
+            return;
+        }
+
+        _cacheDialog.Form.SkipConditions.Add(new ConditionForm
+        {
+            Type = _newCondition.Type,
+            Value = _newCondition.Value
+        });
+        _newCondition.Value = string.Empty;
+    }
+
+    private void RemoveCondition(int index)
+    {
+        if (index < 0 || index >= _cacheDialog.Form.SkipConditions.Count)
+        {
+            return;
+        }
+
+        _cacheDialog.Form.SkipConditions.RemoveAt(index);
+    }
+
+    private void OpenHeaderDialog(string mode, OriginHeader? header = null, int index = -1)
+    {
+        _headerDialog = new HeaderDialogState
+        {
+            Visible = true,
+            Mode = mode,
+            Index = index,
+            Form = header == null ? new HeaderForm() : new HeaderForm { Name = header.Name, Value = header.Value }
+        };
+    }
+
+    private void CloseHeaderDialog()
+    {
+        _headerDialog.Visible = false;
+    }
+
+    private void SaveHeader()
+    {
+        if (string.IsNullOrWhiteSpace(_headerDialog.Form.Name))
+        {
+            return;
+        }
+
+        var header = new OriginHeader(_headerDialog.Form.Name, _headerDialog.Form.Value);
+        if (_headerDialog.Mode == "edit" && _headerDialog.Index >= 0)
+        {
+            _form.OriginHeaders[_headerDialog.Index] = header;
+        }
+        else
+        {
+            _form.OriginHeaders.Add(header);
+        }
+
+        _headerDialog.Visible = false;
+        _ = QueueSaveAsync();
+    }
+
+    private void RemoveHeader(int index)
+    {
+        if (index < 0 || index >= _form.OriginHeaders.Count)
+        {
+            return;
+        }
+
+        _form.OriginHeaders.RemoveAt(index);
+        _ = QueueSaveAsync();
+    }
+
+    private static string CacheTypeLabel(string type)
+    {
+        return type switch
+        {
+            "index" => "首页",
+            "all" => "全站",
+            "dir" => "目录",
+            "suffix" => "后缀",
+            "path" => "单个路径",
+            _ => type
+        };
+    }
+
+    private static string MatchTypeLabel(string type)
+    {
+        return type switch
+        {
+            "request_uri" => "请求URI",
+            "uri" => "请求URI(不带参数)",
+            "remote_addr" => "客户端IP地址",
+            "scheme" => "请求协议",
+            "args" => "请求参数",
+            "host" => "域名",
+            "custom" => "自定义",
+            _ => type
+        };
+    }
+
+    private static string FormatTtl(string ttl)
+    {
+        if (!int.TryParse(ttl, out var seconds))
+        {
+            return ttl;
+        }
+        if (seconds <= 0)
+        {
+            return "0 秒";
+        }
+        if (seconds % 86400 == 0)
+        {
+            return (seconds / 86400) + " 天";
+        }
+        if (seconds % 3600 == 0)
+        {
+            return (seconds / 3600) + " 小时";
+        }
+        if (seconds % 60 == 0)
+        {
+            return (seconds / 60) + " 分钟";
+        }
+        return seconds + " 秒";
+    }
+
+    private static string ReadString(Dictionary<string, string> map, string key, string fallback)
+    {
+        return map.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : fallback;
+    }
+
+    private static long ParseLong(string? value, long fallback)
+    {
+        return long.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static bool ParseBool(string? value, bool fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var text = value.Trim().ToLowerInvariant();
+        if (text is "1" or "true" or "on" or "yes")
+        {
+            return true;
+        }
+        if (text is "0" or "false" or "off" or "no")
+        {
+            return false;
+        }
+
+        return fallback;
+    }
+
+    private static List<string> SplitProtocols(string value)
+    {
+        return value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<CacheRule> ParseCacheRules(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new List<CacheRule>();
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return new List<CacheRule>();
+            }
+
+            var list = new List<CacheRule>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                var rule = NormalizeCacheRule(item);
+                if (rule != null)
+                {
+                    list.Add(rule);
+                }
+            }
+            return list;
+        }
+        catch
+        {
+            return new List<CacheRule>();
+        }
+    }
+
+    private static CacheRule? NormalizeCacheRule(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var ttl = GetString(element, "ttl") ?? GetString(element, "expire") ?? GetString(element, "cache_time") ?? "86400";
+        var value = GetString(element, "value") ?? GetString(element, "content") ?? string.Empty;
+        var rule = new CacheRule
+        {
+            Type = GetString(element, "type") ?? "index",
+            Value = value,
+            Ttl = string.IsNullOrWhiteSpace(ttl) ? "86400" : ttl,
+            IgnoreQuery = GetBool(element, "ignore_query"),
+            ForceCache = GetBool(element, "force_cache"),
+            EnableRange = GetBool(element, "enable_range"),
+            IgnoreVary = GetBool(element, "ignore_vary")
+        };
+
+        if (element.TryGetProperty("skip_conditions", out var conditions) && conditions.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var cond in conditions.EnumerateArray())
+            {
+                var type = GetString(cond, "type") ?? string.Empty;
+                var val = GetString(cond, "value") ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(type) && !string.IsNullOrWhiteSpace(val))
+                {
+                    rule.SkipConditions.Add(new CacheSkipCondition(type, val));
+                }
+            }
+        }
+
+        return rule;
+    }
+
+    private static List<OriginHeader> ParseOriginHeaders(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new List<OriginHeader>();
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<OriginHeader>>(raw, JsonOptions);
+            return parsed ?? new List<OriginHeader>();
+        }
+        catch
+        {
+            return new List<OriginHeader>();
+        }
+    }
+
+    private static string? GetString(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (element.TryGetProperty(key, out var property))
+        {
+            return property.ValueKind switch
+            {
+                JsonValueKind.String => property.GetString(),
+                JsonValueKind.Number => property.ToString(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => property.ToString()
+            };
+        }
+
+        return null;
+    }
+
+    private static bool GetBool(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (!element.TryGetProperty(key, out var property))
+        {
+            return false;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number => property.GetInt32() != 0,
+            JsonValueKind.String => ParseBool(property.GetString(), false),
+            _ => false
+        };
+    }
+
+    private static (string Value, string Unit) ConvertSecondsToUnit(string ttl)
+    {
+        if (!int.TryParse(ttl, out var seconds) || seconds <= 0)
+        {
+            return ("0", "second");
+        }
+        if (seconds % 86400 == 0)
+        {
+            return ((seconds / 86400).ToString(), "day");
+        }
+        if (seconds % 3600 == 0)
+        {
+            return ((seconds / 3600).ToString(), "hour");
+        }
+        if (seconds % 60 == 0)
+        {
+            return ((seconds / 60).ToString(), "minute");
+        }
+        return (seconds.ToString(), "second");
+    }
+
+    private static int ConvertUnitToSeconds(string value, string unit)
+    {
+        if (!int.TryParse(value, out var v))
+        {
+            return 0;
+        }
+
+        return unit switch
+        {
+            "day" => v * 86400,
+            "hour" => v * 3600,
+            "minute" => v * 60,
+            "second" => v,
+            _ => v
+        };
+    }
+
+    private static IEnumerable<CcRuleOption> DefaultCcRules()
+    {
+        return new List<CcRuleOption>
+        {
+            new(10002, "关闭"),
+            new(10003, "宽松"),
+            new(10004, "JS验证"),
+            new(10005, "5秒盾"),
+            new(10006, "点击验证"),
+            new(10007, "滑块验证"),
+            new(10008, "验证码"),
+            new(10009, "旋转图片"),
+            new(10010, "点击验证(简单)"),
+            new(10011, "滑块验证(简单)"),
+            new(10012, "临时白名单")
+        };
+    }
+
+    private void SetMessage(bool success, string message)
+    {
+        _message = message;
+        _messageClass = success ? "alert-success" : "alert-danger";
+    }
+
+    private sealed class SiteDefaultForm
+    {
+        public string HttpListen { get; set; } = "80";
+        public string HttpsListen { get; set; } = "443";
+        public bool HttpsHsts { get; set; }
+        public bool HttpsHttp2 { get; set; }
+        public bool HttpsHttp3 { get; set; }
+        public bool HttpsForce { get; set; }
+        public List<string> SslProtocols { get; set; } = new() { "TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3" };
+        public string SslCiphers { get; set; } = DefaultSslCiphers;
+        public bool SslPreferServerCiphers { get; set; } = true;
+        public bool OcspStapling { get; set; } = true;
+        public string BackendProtocol { get; set; } = "http";
+        public string BackendHttpPort { get; set; } = "80";
+        public string BackendHttpsPort { get; set; } = "443";
+        public string ProxyTimeout { get; set; } = "60";
+        public string ConnectTimeout { get; set; } = "10";
+        public List<string> ProxySslProtocols { get; set; } = new() { "TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3" };
+        public List<CacheRule> CacheRules { get; set; } = new();
+        public List<OriginHeader> OriginHeaders { get; set; } = new();
+        public bool LogRequestHeader { get; set; } = true;
+        public bool LogResponseHeader { get; set; }
+        public bool LogRequestBody { get; set; }
+        public string PostSizeLimit { get; set; } = "16";
+        public string BalanceWay { get; set; } = "rr";
+        public long CcDefaultRule { get; set; } = 10002;
+        public string SecurityBot { get; set; } = "allow";
+        public bool GzipEnable { get; set; } = true;
+        public string GzipTypes { get; set; } = DefaultGzipTypes;
+        public bool WebsocketEnable { get; set; }
+        public bool SecurityShieldProxy { get; set; }
+        public bool RealtimeReturn { get; set; }
+        public bool RealtimeSend { get; set; }
+        public bool Ipv6Enable { get; set; }
+    }
+
+    private sealed record CcRuleOption(long Value, string Label);
+
+    private sealed class CacheRuleDialogState
+    {
+        public bool Visible { get; set; }
+        public string Mode { get; set; } = "create";
+        public int Index { get; set; } = -1;
+        public CacheRuleForm Form { get; set; } = new();
+    }
+
+    private sealed class CacheRuleForm
+    {
+        public string Type { get; set; } = "index";
+        public string Value { get; set; } = string.Empty;
+        public string TtlValue { get; set; } = "1";
+        public string TtlUnit { get; set; } = "day";
+        public bool IgnoreQuery { get; set; }
+        public bool ForceCache { get; set; }
+        public bool EnableRange { get; set; }
+        public bool IgnoreVary { get; set; }
+        public List<ConditionForm> SkipConditions { get; set; } = new();
+
+        public static CacheRuleForm FromRule(CacheRule rule)
+        {
+            var (value, unit) = ConvertSecondsToUnit(rule.Ttl);
+            return new CacheRuleForm
+            {
+                Type = rule.Type,
+                Value = rule.Value,
+                TtlValue = value,
+                TtlUnit = unit,
+                IgnoreQuery = rule.IgnoreQuery,
+                ForceCache = rule.ForceCache,
+                EnableRange = rule.EnableRange,
+                IgnoreVary = rule.IgnoreVary,
+                SkipConditions = rule.SkipConditions.Select(item => new ConditionForm { Type = item.Type, Value = item.Value }).ToList()
+            };
+        }
+    }
+
+    private sealed class ConditionForm
+    {
+        public string Type { get; set; } = "request_uri";
+        public string Value { get; set; } = string.Empty;
+    }
+
+    private sealed class HeaderDialogState
+    {
+        public bool Visible { get; set; }
+        public string Mode { get; set; } = "create";
+        public int Index { get; set; } = -1;
+        public HeaderForm Form { get; set; } = new();
+    }
+
+    private sealed class HeaderForm
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    private sealed class CacheRule
+    {
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = "index";
+
+        [JsonPropertyName("value")]
+        public string Value { get; set; } = string.Empty;
+
+        [JsonPropertyName("ttl")]
+        public string Ttl { get; set; } = "86400";
+
+        [JsonPropertyName("ignore_query")]
+        public bool IgnoreQuery { get; set; }
+
+        [JsonPropertyName("force_cache")]
+        public bool ForceCache { get; set; }
+
+        [JsonPropertyName("enable_range")]
+        public bool EnableRange { get; set; }
+
+        [JsonPropertyName("ignore_vary")]
+        public bool IgnoreVary { get; set; }
+
+        [JsonPropertyName("skip_conditions")]
+        public List<CacheSkipCondition> SkipConditions { get; set; } = new();
+    }
+
+    private sealed record CacheSkipCondition(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("value")] string Value
+    );
+
+    private sealed record OriginHeader(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("value")] string Value
+    );
+}

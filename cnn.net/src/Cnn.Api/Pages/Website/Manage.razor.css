@@ -1,0 +1,123 @@
+.site-manage .manage-header {
+    margin-bottom: 12px;
+}
+
+.site-manage .manage-card {
+    margin-bottom: 12px;
+}
+
+.site-manage .section {
+    margin-bottom: 20px;
+}
+
+.site-manage .section-title {
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    padding-left: 10px;
+    border-left: 4px solid #1b6ec2;
+}
+
+.site-manage .divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 24px 0;
+}
+
+.site-manage .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.site-manage .form-row .form-label {
+    min-width: 120px;
+    margin-bottom: 0;
+}
+
+.site-manage .form-text {
+    color: var(--muted-text);
+    font-size: 12px;
+}
+
+.site-manage .group-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.site-manage .condition-origin-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.site-manage .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    margin-right: 6px;
+}
+
+.site-manage .cc-rule-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.site-manage .matcher-box {
+    border: 1px solid var(--border-color);
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--card-bg);
+}
+
+.site-manage .matcher-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: var(--hover-bg);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.site-manage .matcher-add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.site-manage .toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.site-manage .cache-advanced {
+    background: var(--hover-bg);
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.site-manage .skip-conditions {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    padding: 10px;
+    border-radius: 6px;
+}
+
+.site-manage .unit {
+    color: var(--muted-text);
+    font-size: 12px;
+}

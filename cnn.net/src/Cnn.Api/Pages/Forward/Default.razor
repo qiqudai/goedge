@@ -1,0 +1,391 @@
+@page "/forward/default"
+@using global::System.Text.Json
+@using Cnn.Common.Contracts
+@using Cnn.Common.Contracts.Admin
+@using Cnn.Api.Services.Admin
+@inject ApiClient Api
+@inject IForwardDefaultService DefaultService
+@inject IForwardGroupService GroupService
+@inject ClientSession Session
+@inject IJSRuntime Js
+
+<div class="page-container">
+    <div class="page-title">默认设置</div>
+
+    <div class="filter-bar">
+        @if (Session.IsAdmin)
+        {
+            <select class="form-select" style="max-width: 280px" @bind="_selectedUserId" @bind:after="OnSelectedUserChangedAsync">
+                <option value="0">请选择用户</option>
+                @foreach (var user in _users)
+                {
+                    <option value="@user.Id">@FormatUserOption(user)</option>
+                }
+            </select>
+        }
+        <button class="btn btn-primary" @onclick="OpenCreate">新增默认项</button>
+        <button class="btn btn-outline-secondary" @onclick="RefreshAsync">刷新</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>设置项</th>
+                    <th>范围</th>
+                    <th>分组</th>
+                    <th>值</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_loading)
+                {
+                    <tr><td colspan="6">加载中...</td></tr>
+                }
+                else if (_items.Count == 0)
+                {
+                    <tr><td colspan="6">暂无数据</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _items)
+                    {
+                        <tr>
+                            <td>@item.Id</td>
+                            <td>@KeyLabel(item.Key)</td>
+                            <td>@(item.Scope == "group" ? "转发分组" : "全局")</td>
+                            <td>@item.GroupName</td>
+                            <td>@ValueLabel(item.Key, item.Value?.ToString() ?? "")</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(item)">删除</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_editorVisible)
+{
+    <div class="modal-backdrop">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h5>新增默认项</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="modal-body">
+                @if (Session.IsAdmin)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">所属用户</label>
+                        <select class="form-select" @bind="_create.UserId">
+                            <option value="0">请选择用户</option>
+                            @foreach (var user in _users)
+                            {
+                                <option value="@user.Id">@FormatUserOption(user)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="mb-3">
+                    <label class="form-label">设置项</label>
+                    <select class="form-select" @bind="_create.Key" @bind:after="OnKeyChangedAsync">
+                        <option value="proxy_protocol">开启 proxy_protocol</option>
+                        <option value="listen_protocol">监听协议</option>
+                        <option value="balance_way">负载方式</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">设置值</label>
+                    @if (_create.Key == "proxy_protocol")
+                    {
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="fwVal" id="fwValYes" value="true"
+                                       checked="@(_create.ValueBool)" @onchange="@(() => _create.ValueBool = true)" />
+                                <label class="form-check-label" for="fwValYes">是</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="fwVal" id="fwValNo" value="false"
+                                       checked="@(!_create.ValueBool)" @onchange="@(() => _create.ValueBool = false)" />
+                                <label class="form-check-label" for="fwValNo">否</label>
+                            </div>
+                        </div>
+                    }
+                    else if (_create.Key == "listen_protocol")
+                    {
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="fwVal" id="fwValTcp" value="tcp"
+                                       checked="@(_create.ValueStr == "tcp")" @onchange="@(() => _create.ValueStr = "tcp")" />
+                                <label class="form-check-label" for="fwValTcp">TCP</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="fwVal" id="fwValUdp" value="udp"
+                                       checked="@(_create.ValueStr == "udp")" @onchange="@(() => _create.ValueStr = "udp")" />
+                                <label class="form-check-label" for="fwValUdp">UDP</label>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="fwVal" id="fwValRr" value="rr"
+                                       checked="@(_create.ValueStr == "rr")" @onchange="@(() => _create.ValueStr = "rr")" />
+                                <label class="form-check-label" for="fwValRr">轮循</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="fwVal" id="fwValHash" value="ip_hash"
+                                       checked="@(_create.ValueStr == "ip_hash")" @onchange="@(() => _create.ValueStr = "ip_hash")" />
+                                <label class="form-check-label" for="fwValHash">定源</label>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">生效范围</label>
+                    <div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="fwScope" id="fwScopeGlobal" value="global"
+                                   checked="@(_create.Scope == "global")" @onchange="@(() => _create.Scope = "global")" />
+                            <label class="form-check-label" for="fwScopeGlobal">全局</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="fwScope" id="fwScopeGroup" value="group"
+                                   checked="@(_create.Scope == "group")" @onchange="@(() => _create.Scope = "group")" />
+                            <label class="form-check-label" for="fwScopeGroup">转发分组</label>
+                        </div>
+                    </div>
+                    @if (_create.Scope == "group")
+                    {
+                        <select class="form-select mt-2" @bind="_create.GroupId">
+                            <option value="0">请选择</option>
+                            @foreach (var group in _groups)
+                            {
+                                <option value="@group.Id">@group.Name</option>
+                            }
+                        </select>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" @onclick="CloseEditor">取消</button>
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<ForwardDefaultItemDto> _items = new();
+    private readonly List<ForwardGroupDto> _groups = new();
+    private readonly List<UserItemDto> _users = new();
+    private bool _loading;
+    private bool _saving;
+    private bool _editorVisible;
+    private long _selectedUserId;
+    private DefaultCreateModel _create = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAdmin)
+        {
+            await LoadUsersAsync();
+        }
+
+        await LoadAsync();
+        await LoadGroupsAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Session.IsAdmin && _selectedUserId <= 0)
+        {
+            _items.Clear();
+            return;
+        }
+
+        _loading = true;
+        var targetUserId = Session.IsAdmin ? _selectedUserId : Session.UserId;
+        var result = await DefaultService.ListAsync(targetUserId, Session.IsAdmin, CancellationToken.None);
+        _items.Clear();
+        if (result.Success && result.Data?.List != null)
+        {
+            _items.AddRange(result.Data.List);
+        }
+        _loading = false;
+    }
+
+    private Task RefreshAsync()
+    {
+        return LoadAsync();
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        if (Session.IsAdmin && _selectedUserId <= 0)
+        {
+            _groups.Clear();
+            return;
+        }
+
+        var targetUserId = Session.IsAdmin ? _selectedUserId : Session.UserId;
+        var result = await GroupService.ListAsync(null, targetUserId, Session.IsAdmin, CancellationToken.None);
+        _groups.Clear();
+        if (result.Success && result.Data?.List != null)
+        {
+            _groups.AddRange(result.Data.List);
+        }
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        var response = await Api.GetAsync<UserListResult>("users", ApiScope.Admin, new Dictionary<string, string?>
+        {
+            ["pageSize"] = "200"
+        });
+        _users.Clear();
+        if (response?.Data?.List != null)
+        {
+            _users.AddRange(response.Data.List.OrderBy(x => x.Name ?? string.Empty).ThenBy(x => x.Id));
+        }
+    }
+
+    private void OpenCreate()
+    {
+        if (Session.IsAdmin && _selectedUserId <= 0)
+        {
+            _ = Js.InvokeVoidAsync("alert", "请先选择用户");
+            return;
+        }
+
+        _create = new DefaultCreateModel
+        {
+            UserId = Session.IsAdmin ? _selectedUserId : 0,
+            Key = "proxy_protocol",
+            Scope = "global",
+            GroupId = 0,
+            ValueBool = true,
+            ValueStr = "tcp"
+        };
+        _editorVisible = true;
+    }
+
+    private void CloseEditor()
+    {
+        _editorVisible = false;
+    }
+
+    private Task OnKeyChangedAsync()
+    {
+        _create.ValueStr = _create.Key == "balance_way" ? "rr" : "tcp";
+        _create.ValueBool = true;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+
+        JsonElement value;
+        if (_create.Key == "proxy_protocol")
+        {
+            using var doc = JsonDocument.Parse(_create.ValueBool ? "true" : "false");
+            value = doc.RootElement.Clone();
+        }
+        else
+        {
+            using var doc = JsonDocument.Parse($"\"{_create.ValueStr}\"");
+            value = doc.RootElement.Clone();
+        }
+
+        var request = new ForwardDefaultCreateRequest
+        {
+            UserId = _create.UserId,
+            Key = _create.Key,
+            Scope = _create.Scope,
+            GroupId = _create.GroupId,
+            Value = value
+        };
+
+        if (Session.IsAdmin && request.UserId <= 0)
+        {
+            _saving = false;
+            await Js.InvokeVoidAsync("alert", "请选择用户");
+            return;
+        }
+
+        var targetUserId = Session.IsAdmin ? request.UserId : Session.UserId;
+        await DefaultService.CreateAsync(request, targetUserId, Session.IsAdmin, CancellationToken.None);
+        _saving = false;
+        _editorVisible = false;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(ForwardDefaultItemDto item)
+    {
+        var ok = await Js.InvokeAsync<bool>("confirm", "确认删除该默认项？");
+        if (!ok)
+        {
+            return;
+        }
+
+        var targetUserId = Session.IsAdmin ? _selectedUserId : (Session.UserId ?? 0);
+        var request = new ForwardDefaultDeleteRequest { Id = item.Id, IdStr = item.IdStr, UserId = targetUserId };
+        await DefaultService.DeleteAsync(request, targetUserId, Session.IsAdmin, CancellationToken.None);
+        await LoadAsync();
+    }
+
+    private async Task OnSelectedUserChangedAsync()
+    {
+        await LoadAsync();
+        await LoadGroupsAsync();
+    }
+
+    private static string FormatUserOption(UserItemDto user)
+    {
+        var name = string.IsNullOrWhiteSpace(user.Name) ? $"用户 {user.Id}" : user.Name.Trim();
+        var secondary = !string.IsNullOrWhiteSpace(user.Email)
+            ? user.Email!.Trim()
+            : !string.IsNullOrWhiteSpace(user.Phone)
+                ? user.Phone!.Trim()
+                : user.Id.ToString();
+        return $"{name} ({secondary})";
+    }
+
+    private static string KeyLabel(string? key) => key switch
+    {
+        "proxy_protocol" => "开启 proxy_protocol",
+        "listen_protocol" => "监听协议",
+        "balance_way" => "负载方式",
+        _ => key ?? string.Empty
+    };
+
+    private static string ValueLabel(string? key, string? raw) => key switch
+    {
+        "proxy_protocol" => raw is "true" or "True" ? "是" : "否",
+        "listen_protocol" => raw?.Trim('"') == "tcp" ? "TCP" : "UDP",
+        "balance_way" => raw?.Trim('"') == "rr" ? "轮循" : "定源",
+        _ => raw?.Trim('"') ?? string.Empty
+    };
+
+    private sealed class DefaultCreateModel
+    {
+        public long UserId { get; set; }
+        public string Key { get; set; } = "proxy_protocol";
+        public string Scope { get; set; } = "global";
+        public long GroupId { get; set; }
+        public bool ValueBool { get; set; } = true;
+        public string ValueStr { get; set; } = "tcp";
+    }
+}

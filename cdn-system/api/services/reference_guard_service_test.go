@@ -17,13 +17,14 @@ func TestIsCCRuleInternal(t *testing.T) {
 	}
 }
 
-func TestGuardCCRuleGroupDeleteSystemProtected(t *testing.T) {
-	rule := models.CCRule{ID: 1, Internal: true, Enable: true, UserID: 0}
-	msg, err := GuardCCRuleGroupDelete(rule)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
+func TestGuardCCRuleTypeChange(t *testing.T) {
+	if msg := GuardCCRuleTypeChange(true, "user"); msg != "cc_rule.system_type_locked" {
+		t.Fatalf("msg = %q, want cc_rule.system_type_locked", msg)
 	}
-	if msg != "cc_rule.system_protected" {
-		t.Fatalf("msg = %q, want cc_rule.system_protected", msg)
+	if msg := GuardCCRuleTypeChange(true, "system"); msg != "" {
+		t.Fatalf("system type should be allowed, got %q", msg)
+	}
+	if msg := GuardCCRuleTypeChange(false, "user"); msg != "" {
+		t.Fatalf("user rule type change should be allowed, got %q", msg)
 	}
 }

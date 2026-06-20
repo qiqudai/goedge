@@ -1,0 +1,269 @@
+﻿﻿@using global::System.Net.Http.Headers
+@using Cnn.Api.Services
+@using global::System.Text.Json
+@using global::System.Text.Json.Nodes
+@using Cnn.Common.Contracts.Admin
+@inject Cnn.Api.Services.ConfigItemClient ConfigClient
+@inject Cnn.Api.Services.ApiClient Api
+
+<div class="card config-card">
+    <div class="card-header">基本信息</div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label">系统名称</label>
+            <InputText class="form-control" @bind-Value="_form.SysName" />
+        </div>
+
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">网站图标</label>
+                <div class="upload-box">
+                    @if (!string.IsNullOrWhiteSpace(_form.FaviconFile))
+                    {
+                        <img src="@_form.FaviconFile" alt="favicon" class="upload-preview" />
+                    }
+                    <InputFile OnChange='e => UploadImageAsync(e, "favicon_file")' accept=".ico,.png" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">站点标志</label>
+                <div class="upload-box">
+                    @if (!string.IsNullOrWhiteSpace(_form.LogoFile))
+                    {
+                        <img src="@_form.LogoFile" alt="logo" class="upload-preview" />
+                    }
+                    <InputFile OnChange='e => UploadImageAsync(e, "logo_file")' accept=".png,.jpg,.jpeg,.svg" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Login Ad</label>
+                <div class="upload-box">
+                    @if (!string.IsNullOrWhiteSpace(_form.LoginAdFile))
+                    {
+                        <img src="@_form.LoginAdFile" alt="login ad" class="upload-preview" />
+                    }
+                    <InputFile OnChange='e => UploadImageAsync(e, "login_ad_file")' accept=".jpg,.jpeg,.png" />
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <label class="form-label">User Console Title</label>
+            <InputText class="form-control" @bind-Value="_form.UserConsoleTitle" />
+        </div>
+
+        <div class="mt-3">
+            <label class="form-label">Admin Console Title</label>
+            <InputText class="form-control" @bind-Value="_form.AdminConsoleTitle" />
+        </div>
+
+        <div class="mt-3">
+            <label class="form-label">底部链接</label>
+            <InputTextArea class="form-control" rows="3" @bind-Value="_form.FooterLink" />
+            <div class="form-text">名称|URL（换行分隔）</div>
+        </div>
+
+        <div class="mt-3">
+            <label class="form-label">底部版权</label>
+            <InputTextArea class="form-control" rows="2" @bind-Value="_form.FooterCopyright" />
+        </div>
+
+        <div class="mt-3">
+            <label class="form-label">主控主机</label>
+            <InputText class="form-control" @bind-Value="_bindMasterHost" />
+            <div class="form-text">Bind master host for node communication.</div>
+        </div>
+
+        <div class="mt-3 d-flex align-items-center gap-2">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">保存</button>
+            @if (_saving)
+            {
+                <span class="text-muted">保存中...</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="alert @_messageClass mt-3">@_message</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ConfigItemDto> Items { get; set; } = Array.Empty<ConfigItemDto>();
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private readonly SystemInfoForm _form = new();
+    private JsonObject _systemInfoRaw = new();
+    private string _bindMasterHost = string.Empty;
+    private bool _saving;
+    private string? _message;
+    private string _messageClass = "alert-success";
+
+    protected override void OnParametersSet()
+    {
+        if (Items.Count == 0)
+        {
+            return;
+        }
+
+        LoadFromItems();
+    }
+
+    private void LoadFromItems()
+    {
+        var infoValue = Items.FirstOrDefault(i => i.Name == "system_info")?.Value;
+        _systemInfoRaw = ParseJson(infoValue);
+
+        _form.SysName = ReadString(_systemInfoRaw, "sys_name");
+        _form.UserConsoleTitle = ReadString(_systemInfoRaw, "user_console_title");
+        _form.AdminConsoleTitle = ReadString(_systemInfoRaw, "admin_console_title");
+        _form.FooterLink = ReadString(_systemInfoRaw, "footer_link");
+        _form.FooterCopyright = ReadString(_systemInfoRaw, "footer_copyright");
+        _form.FaviconFile = ReadString(_systemInfoRaw, "favicon_file");
+        _form.LogoFile = ReadString(_systemInfoRaw, "logo_file");
+        _form.LoginAdFile = ReadString(_systemInfoRaw, "login_ad_file");
+
+        _bindMasterHost = Items.FirstOrDefault(i => i.Name == "bind-master-host")?.Value ?? string.Empty;
+    }
+
+    private async Task UploadImageAsync(InputFileChangeEventArgs args, string field)
+    {
+        var file = args.File;
+        if (file == null)
+        {
+            return;
+        }
+
+        _message = null;
+
+        using var content = new MultipartFormDataContent();
+        await using var stream = file.OpenReadStream(10 * 1024 * 1024);
+        using var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+        content.Add(fileContent, "file", file.Name);
+
+        var response = await Api.PostFormAsync<UploadImageResult>("upload/image", content, ApiScope.Admin);
+        var url = response?.Data?.Url;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            SetMessage(false, "上传失败");
+            return;
+        }
+
+        SetImage(field, url);
+        await SaveAsync();
+    }
+
+    private void SetImage(string field, string url)
+    {
+        switch (field)
+        {
+            case "favicon_file":
+                _form.FaviconFile = url;
+                break;
+            case "logo_file":
+                _form.LogoFile = url;
+                break;
+            case "login_ad_file":
+                _form.LoginAdFile = url;
+                break;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+
+        _systemInfoRaw["sys_name"] = _form.SysName ?? string.Empty;
+        _systemInfoRaw["user_console_title"] = _form.UserConsoleTitle ?? string.Empty;
+        _systemInfoRaw["admin_console_title"] = _form.AdminConsoleTitle ?? string.Empty;
+        _systemInfoRaw["footer_link"] = _form.FooterLink ?? string.Empty;
+        _systemInfoRaw["footer_copyright"] = _form.FooterCopyright ?? string.Empty;
+        _systemInfoRaw["favicon_file"] = _form.FaviconFile ?? string.Empty;
+        _systemInfoRaw["logo_file"] = _form.LogoFile ?? string.Empty;
+        _systemInfoRaw["login_ad_file"] = _form.LoginAdFile ?? string.Empty;
+
+        var payload = new List<ConfigItemPayloadDto>
+        {
+            new()
+            {
+                Name = "system_info",
+                Value = _systemInfoRaw.ToJsonString()
+            },
+            new()
+            {
+                Name = "bind-master-host",
+                Value = _bindMasterHost
+            }
+        };
+
+        var ok = await ConfigClient.SaveAsync("system", "global", 0, payload);
+        _saving = false;
+
+        if (ok)
+        {
+            SetMessage(true, "保存成功");
+            if (OnSaved.HasDelegate)
+            {
+                await OnSaved.InvokeAsync();
+            }
+        }
+        else
+        {
+            SetMessage(false, "保存失败");
+        }
+    }
+
+    private static JsonObject ParseJson(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new JsonObject();
+        }
+
+        try
+        {
+            return JsonNode.Parse(raw) as JsonObject ?? new JsonObject();
+        }
+        catch
+        {
+            return new JsonObject();
+        }
+    }
+
+    private static string ReadString(JsonObject obj, string key)
+    {
+        if (obj.TryGetPropertyValue(key, out var node) && node != null)
+        {
+            return node.ToString();
+        }
+
+        return string.Empty;
+    }
+
+    private void SetMessage(bool success, string message)
+    {
+        _message = message;
+        _messageClass = success ? "alert-success" : "alert-danger";
+    }
+
+    private sealed class SystemInfoForm
+    {
+        public string SysName { get; set; } = string.Empty;
+        public string UserConsoleTitle { get; set; } = string.Empty;
+        public string AdminConsoleTitle { get; set; } = string.Empty;
+        public string FooterLink { get; set; } = string.Empty;
+        public string FooterCopyright { get; set; } = string.Empty;
+        public string FaviconFile { get; set; } = string.Empty;
+        public string LogoFile { get; set; } = string.Empty;
+        public string LoginAdFile { get; set; } = string.Empty;
+    }
+}
+

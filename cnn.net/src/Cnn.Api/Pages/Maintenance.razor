@@ -1,0 +1,38 @@
+@page "/maintenance"
+@layout LoginLayout
+@inject LocalStorageService Storage
+@inject NavigationManager Navigation
+
+<div class="maintenance">
+    <div class="maintenance-card">
+        <div class="maintenance-title">系统维护中</div>
+        <div class="maintenance-message">@_message</div>
+        <button class="btn btn-primary" @onclick="Reload">刷新</button>
+    </div>
+</div>
+
+@code {
+    private string _message = "系统维护中，请稍后再试。";
+    private bool _loadedFromStorage;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loadedFromStorage)
+        {
+            return;
+        }
+
+        _loadedFromStorage = true;
+        var stored = await Storage.GetItemAsync("maintenance_msg");
+        if (!string.IsNullOrWhiteSpace(stored))
+        {
+            _message = stored;
+            StateHasChanged();
+        }
+    }
+
+    private void Reload()
+    {
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+}

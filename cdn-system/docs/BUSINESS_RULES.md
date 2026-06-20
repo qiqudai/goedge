@@ -129,16 +129,16 @@
 
 | 实体 | 删除规则 | 修改规则 | 禁用规则 |
 |------|----------|----------|----------|
-| CC 规则组 | 不能被站点 `cc_default_rule` 引用；系统内置不可删 | **系统规则管理员也不可修改** | 被站点引用时不可禁用 |
-| CC 匹配器 | 不能被 `cc_rule.data` 或站点 `custom_rules` 引用；系统内置不可删 | **系统规则管理员也不可修改** | 被引用时不可禁用 |
-| CC 过滤器 | 不能被 `cc_rule.data`（filter1/filter2）或站点 `custom_rules` 引用；系统内置不可删 | **系统规则管理员也不可修改** | 被引用时不可禁用 |
+| CC 规则组 | 不能被站点 `cc_default_rule` 引用；系统内置不可删 | **系统规则仅类型不可改** | 被站点引用时不可禁用 |
+| CC 匹配器 | 不能被 `cc_rule.data` 或站点 `custom_rules` 引用；系统内置不可删 | **系统规则仅类型不可改** | 被引用时不可禁用 |
+| CC 过滤器 | 不能被 `cc_rule.data`（filter1/filter2）或站点 `custom_rules` 引用；系统内置不可删 | **系统规则仅类型不可改** | 被引用时不可禁用 |
 
 前端约定：
 - 列表「类型」列显示：`系统规则` / `用户规则`
-- **仅编辑模式**下，系统规则弹窗为只读（无保存按钮）
+- **编辑系统规则时**：仅「类型」单选框禁用，其余字段可编辑保存
 - 使用中（`in_use=true`）时，启用开关不可关闭
 
-错误码：`cc_rule.system_readonly`, `cc_match.system_readonly`, `cc_filter.system_readonly`, `cc_rule.in_use_disable`, `cc_match.in_use_disable`, `cc_filter.in_use_disable`
+错误码：`cc_rule.system_type_locked`, `cc_match.system_type_locked`, `cc_filter.system_type_locked`, `cc_rule.in_use_disable`, `cc_match.in_use_disable`, `cc_filter.in_use_disable`
 
 ### 2.8 ACL 规则
 

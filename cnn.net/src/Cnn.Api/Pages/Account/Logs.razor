@@ -1,0 +1,141 @@
+﻿@page "/account/logs"
+@using Cnn.Common.Contracts.Admin
+@inject ApiClient Api
+
+<div class="page-container">
+    <div class="page-title">日志查询</div>
+
+    <div class="filter-bar">
+        <InputText class="form-control" style="max-width: 220px" @bind-Value="_keyword" placeholder="操作/内容/IP" />
+        <button class="btn btn-primary" @onclick="SearchAsync">搜索</button>
+        <button class="btn btn-outline-secondary" @onclick="TogglePagingDiagnostics">
+            @(_showPagingDiagnostics ? "隐藏分页诊断" : "显示分页诊断")
+        </button>
+    </div>
+
+    @if (_showPagingDiagnostics)
+    {
+        <div class="alert alert-light py-2 px-3 mt-2 mb-2 small">
+            <div><strong>分页诊断</strong></div>
+            <div>stateKey: <code>account:logs:table</code></div>
+            <div>pagingEnabled: <code>@(_pageQuery.PagingEnabled ? "true" : "false")</code></div>
+            <div>page: <code>@_pageQuery.Page</code>, pageSize: <code>@_pageQuery.PageSize</code></div>
+            <div>loaded: <code>@_items.Count</code>, total: <code>@_total</code></div>
+        </div>
+    }
+
+    <TablePager @ref="_tablePager"
+                StateKey="account:logs:table"
+                Total="_total"
+                DefaultPageSize="20"
+                UnpagedLimit="1000"
+                QueryChanged="OnPageQueryChangedAsync">
+        <ChildContent>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>操作</th>
+                            <th>内容</th>
+                            <th>IP</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_loading)
+                        {
+                            <tr><td colspan="5">加载中...</td></tr>
+                        }
+                        else if (_items.Count == 0)
+                        {
+                            <tr><td colspan="5">暂无数据</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in _items)
+                            {
+                                <tr>
+                                    <td>@row.Id</td>
+                                    <td>@row.Action</td>
+                                    <td>@row.Content</td>
+                                    <td>@row.Ip</td>
+                                    <td>@row.CreatedAt</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ChildContent>
+    </TablePager>
+</div>
+
+@code {
+    private readonly List<OperationLogItem> _items = new();
+    private bool _loading;
+    private bool _showPagingDiagnostics;
+    private string _keyword = string.Empty;
+    private TablePageQuery _pageQuery = new() { PagingEnabled = true, Page = 1, PageSize = 20 };
+    private int _total;
+    private TablePager? _tablePager;
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
+
+    private async Task LoadAsync()
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = _pageQuery.Page.ToString(),
+            ["pageSize"] = _pageQuery.PageSize.ToString(),
+            ["keyword"] = _keyword
+        };
+
+        var response = await Api.GetAsync<OperationLogListResult>("logs/operation", ApiScope.User, query);
+        _items.Clear();
+        if (response?.Data?.List != null)
+        {
+            _items.AddRange(response.Data.List);
+            _total = (int)response.Data.Total;
+        }
+        else
+        {
+            _total = 0;
+        }
+        _loading = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_tablePager != null)
+        {
+            await _tablePager.SearchAsync();
+            return;
+        }
+
+        _pageQuery = new TablePageQuery
+        {
+            PagingEnabled = _pageQuery.PagingEnabled,
+            Page = 1,
+            PageSize = _pageQuery.PageSize
+        };
+        await LoadAsync();
+    }
+
+    private Task OnPageQueryChangedAsync(TablePageQuery query)
+    {
+        _pageQuery = query;
+        return LoadAsync();
+    }
+
+    private void TogglePagingDiagnostics()
+    {
+        _showPagingDiagnostics = !_showPagingDiagnostics;
+    }
+}
