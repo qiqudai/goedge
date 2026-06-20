@@ -129,8 +129,10 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	if req.EndAt != "" {
 		if t, err := time.Parse(time.DateTime, req.EndAt); err == nil {
 			updates["end_at"] = t
+			updates["is_expired"] = !time.Now().Before(t)
 		} else if t, err := time.Parse("2006-01-02 15:04:05", req.EndAt); err == nil {
 			updates["end_at"] = t
+			updates["is_expired"] = !time.Now().Before(t)
 		}
 	}
 
@@ -231,6 +233,7 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		// Log error but don't fail request? Or warning?
 		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
+	resyncSitesForUserPackage(id)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
@@ -289,7 +292,10 @@ func (ctr *UserPackageController) RenewUserPackage(c *gin.Context) {
 		base = now
 	}
 	newEnd := base.AddDate(0, months, 0)
-	if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", pack.ID).Update("end_at", newEnd).Error; err != nil {
+	if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", pack.ID).Updates(map[string]interface{}{
+		"end_at":     newEnd,
+		"is_expired": false,
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Renew Failed")})
 		return
 	}
@@ -298,6 +304,7 @@ func (ctr *UserPackageController) RenewUserPackage(c *gin.Context) {
 	if err := services.NewUserPackageService().SyncUserPackage(pack.ID, "renew"); err != nil {
 		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
+	resyncSitesForUserPackage(pack.ID)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"end_at": newEnd}})
 }
@@ -419,6 +426,14 @@ func resyncSitesForUserPackage(userPackageID int64) {
 		log.Printf("[WARN] resyncSitesForUserPackage load failed package=%d err=%v", userPackageID, err)
 		return
 	}
+	if len(sites) == 0 {
+		return
+	}
+	siteIDs := make([]int64, 0, len(sites))
+	for _, site := range sites {
+		siteIDs = append(siteIDs, site.ID)
+	}
+	services.BumpConfigVersion("site", siteIDs)
 	for _, site := range sites {
 		resyncSiteCnameForSite(site)
 	}

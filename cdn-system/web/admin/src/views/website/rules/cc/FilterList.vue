@@ -31,13 +31,12 @@
       </template>
     </el-table-column>
     <el-table-column prop="name" label="名称" min-width="150" />
-    <el-table-column label="系统规则" width="100" align="center">
+    <el-table-column label="规则类型" width="100" align="center">
       <template #default="{row}">
-        <el-icon v-if="row.is_system" color="#67C23A"><Check /></el-icon>
-        <el-icon v-else><Close /></el-icon>
+        <span>{{ row.type_label || (row.is_system ? '系统规则' : '用户规则') }}</span>
       </template>
     </el-table-column>
-    <el-table-column prop="type" label="类型" width="150">
+    <el-table-column prop="type" label="过滤器类型" width="150">
        <template #default="{row}">{{ getActionLabel(row.action || row.type) }}</template>
     </el-table-column>
     <el-table-column label="状态" width="80" align="center">
@@ -56,7 +55,7 @@
             <el-button type="primary" link size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
+                <el-dropdown-item v-if="!row.is_system" command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -65,10 +64,11 @@
     </el-table-column>
   </AppTable>
 
-  <el-dialog :title="dialogMode === 'create' ? '添加过滤器' : '编辑过滤器'" v-model="dialogVisible" width="600px" :close-on-click-modal="false">
-    <el-form :model="form" label-width="120px">
+  <el-dialog :title="dialogMode === 'create' ? '添加过滤器' : (isSystemRuleEdit ? '查看过滤器（系统规则只读）' : '编辑过滤器')" v-model="dialogVisible" width="600px" :close-on-click-modal="false">
+    <el-alert v-if="isSystemRuleEdit" type="info" :closable="false" show-icon title="系统规则为只读，管理员也不可修改" style="margin-bottom: 12px;" />
+    <el-form :model="form" label-width="120px" :disabled="isSystemRuleEdit">
       <el-form-item label="类型" v-if="isAdmin">
-        <el-radio-group v-model="form.type">
+        <el-radio-group v-model="form.type" :disabled="isSystemRuleEdit">
           <el-radio value="system">系统规则</el-radio>
           <el-radio value="user">用户规则</el-radio>
         </el-radio-group>
@@ -189,18 +189,19 @@
       </template>
 
       <el-form-item label="启用">
-        <el-switch v-model="form.enable" />
+        <el-switch v-model="form.enable" :disabled="isSystemRuleEdit || cannotDisable" />
+        <div v-if="cannotDisable" class="form-helper">该过滤器正在使用中，无法禁用</div>
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitForm">确定</el-button>
+      <el-button @click="dialogVisible = false">{{ isSystemRuleEdit ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!isSystemRuleEdit" type="primary" @click="submitForm">确定</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { Search, Check, Close, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
@@ -215,8 +216,18 @@ const userLoading = ref(false)
 const userOptions = ref([])
 const selection = ref([])
 
-const form = reactive({ 
-  id: 0, 
+const defaultAuth = () => ({
+  method: 'A',
+  ip_auth: false,
+  key: '',
+  sign_param: 'sign',
+  time_param: 't',
+  max_time_diff: 180,
+  max_sign_usage: 10
+})
+
+const form = reactive({
+  id: 0,
   name: '', 
   type: 'system', // system or user
   user_id: null,
@@ -225,18 +236,14 @@ const form = reactive({
   within_second: 10,
   max_req: 0,
   max_req_per_uri: 0,
-  auth: {
-    method: 'A',
-    ip_auth: false,
-    key: '',
-    sign_param: 'sign',
-    time_param: 't',
-    max_time_diff: 180,
-    max_sign_usage: 10
-  },
+  auth: defaultAuth(),
   enable: true,
-  is_system: false 
+  is_system: false,
+  in_use: false
 })
+
+const isSystemRuleEdit = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
+const cannotDisable = computed(() => !!form.in_use && !!form.enable)
 
 const fetchData = async () => {
   loading.value = true
@@ -273,45 +280,48 @@ const handleCreate = () => {
     within_second: 10,
     max_req: 0,
     max_req_per_uri: 0,
-    auth: {
-       method: 'A',
-       ip_auth: false,
-       key: '',
-       sign_param: 'sign',
-       time_param: 't',
-       max_time_diff: 180,
-       max_sign_usage: 10
-    },
+    auth: defaultAuth(),
     enable: true
   })
   dialogVisible.value = true
 }
 
-const handleEdit = (row) => {
+const handleEdit = async (row) => {
   dialogMode.value = 'update'
-  Object.assign(form, row)
-  // Fix naming mapping from API if needed. API returns 'action' in 'action' field or 'type'?
-  // Backend ListFilters: "action": filter.Type. 
-  // In our form we use 'action'. row.action should be correct.
-  // Ensure auth object is populated
+  const { data } = await request.get(`/rules/cc/filters/${row.id}`)
+  Object.assign(form, {
+    ...data,
+    action: data.action || row.action || row.type || 'req_rate',
+    type: data.type === 'user' ? 'user' : 'system',
+    user_id: data.type === 'user' ? (data.user_id || row.user_id || null) : null,
+    enable: data.enable ?? data.is_on ?? true,
+    in_use: !!data.in_use
+  })
   if (!form.auth) {
-     form.auth = { method: 'A', ip_auth: false, key: '', sign_param: 'sign', time_param: 't', max_time_diff: 180, max_sign_usage: 10 }
+     form.auth = defaultAuth()
   }
-  // Setup form.type based on is_system
-  form.type = row.is_system ? 'system' : 'user'
-  
-  if (row.user_id && isAdmin.value) {
+
+  if (form.user_id && isAdmin.value) {
      searchUsers('')
   }
   dialogVisible.value = true
 }
 
 const submitForm = async () => {
+  if (isSystemRuleEdit.value) {
+    dialogVisible.value = false
+    return
+  }
   try {
+    if (isAdmin.value && form.type === 'user' && !form.user_id) {
+      ElMessage.warning('请选择用户')
+      return
+    }
+    const payload = { ...form, user_id: form.type === 'system' ? null : form.user_id }
     if (form.id) {
-       await request.put(`/rules/cc/filters/${form.id}`, form)
+       await request.put(`/rules/cc/filters/${form.id}`, payload)
     } else {
-       await request.post('/rules/cc/filters', form)
+       await request.post('/rules/cc/filters', payload)
     }
     ElMessage.success('保存成功')
     dialogVisible.value = false
@@ -324,6 +334,10 @@ const handleCommand = (cmd, row) => {
 }
 
 const handleDelete = (row) => {
+  if (row.is_system) {
+    ElMessage.warning('系统规则不可删除')
+    return
+  }
   ElMessageBox.confirm('确定删除过滤器?', '提示', { type: 'warning' }).then(async () => {
     await request.delete(`/rules/cc/filters/${row.id}`)
     ElMessage.success('删除成功')
@@ -338,6 +352,12 @@ const handleSelectionChange = (val) => {
 const handleBatchCommand = () => {
   // Implement batch delete if supported by backend
 }
+
+watch(() => form.type, (type) => {
+  if (type === 'system') {
+    form.user_id = null
+  }
+})
 
 const getActionLabel = (act) => {
   const map = {
@@ -372,6 +392,12 @@ onMounted(() => {
 }
 .text-success { color: #67C23A; }
 .text-danger { color: #F56C6C; }
+.form-helper {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  margin-top: 5px;
+}
 .action-cell {
   display: inline-flex;
   align-items: center;

@@ -462,14 +462,29 @@ type edgeDomain struct {
 	SSLCertPath           string                   `json:"ssl_cert_path"`
 	SSLKeyPath            string                   `json:"ssl_key_path"`
 	WAFEnable             *bool                    `json:"waf_enable"`
-	ACLDefaultAction      string                   `json:"acl_default_action"`
+	ACLDefaultAction      string `json:"acl_default_action"`
+	ACLDefaultDenyStatus  int    `json:"acl_default_deny_status"`
+	ACLDefaultRedirectURL string `json:"acl_default_redirect_url"`
 	ACLRules              []struct {
-		IP     string `json:"ip"`
-		Action string `json:"action"`
+		Conditions  []struct {
+			Item     string `json:"item"`
+			Operator string `json:"operator"`
+			Value    string `json:"value"`
+		} `json:"conditions,omitempty"`
+		Action      string `json:"action"`
+		DenyStatus  int    `json:"deny_status,omitempty"`
+		RedirectURL string `json:"redirect_url,omitempty"`
+		IP          string `json:"ip,omitempty"`
 	} `json:"acl_rules"`
 	BlackIPs                       []string         `json:"black_ips"`
 	WhiteIPs                       []string         `json:"white_ips"`
-	CCRuleID                       int64            `json:"cc_rule_id"`
+	CCRuleID                       int64                    `json:"cc_rule_id"`
+	CCAutoSwitch                   *struct {
+		Enable bool  `json:"enable"`
+		QPS    int   `json:"qps"`
+		RuleID int64 `json:"rule_id"`
+	} `json:"cc_auto_switch,omitempty"`
+	CustomCCRules                  []map[string]interface{} `json:"custom_cc_rules,omitempty"`
 	OriginProtocol                 string           `json:"origin_protocol"`
 	OriginHTTPPort                 string           `json:"origin_http_port"`
 	OriginHTTPSPort                string           `json:"origin_https_port"`
@@ -517,6 +532,7 @@ type edgeDomain struct {
 	UpstreamKeepalive              bool             `json:"upstream_keepalive"`
 	UpstreamKeepaliveConn          int              `json:"upstream_keepalive_conn"`
 	UpstreamKeepaliveTimeout       int              `json:"upstream_keepalive_timeout"`
+	ErrorPageLang                  string           `json:"error_page_lang"`
 }
 
 type edgeNginxConfig struct {
@@ -542,11 +558,16 @@ type edgeConfig struct {
 	FallbackKeyData    string                      `json:"fallback_key_data"`
 	WAF                *edgeWAFConfig              `json:"waf,omitempty"`
 	Resources          *edgeResources              `json:"resources,omitempty"`
-	ErrorPages         map[string]string           `json:"error_pages,omitempty"`
+	ErrorPageI18n      errorPageI18nSettings           `json:"error_page_i18n"`
+	ErrorPages         map[string]errorPageDefinition  `json:"error_pages"`
 	DefaultConfig      *edgeDefaultConfig          `json:"default_config,omitempty"`
 	CCRules            map[string][]edgeCCRuleItem `json:"cc_rules,omitempty"`
 	CCMatchers         map[string]edgeCCMatcher    `json:"cc_matchers,omitempty"`
 	CCFilters          map[string]edgeCCFilter     `json:"cc_filters,omitempty"`
+	IPUnblock          *struct {
+		Rev int64    `json:"rev"`
+		IPs []string `json:"ips,omitempty"`
+	} `json:"ip_unblock,omitempty"`
 }
 
 type edgeWAFConfig struct {
@@ -693,8 +714,8 @@ func generateDynamicConfigs(payload []byte) error {
 	if len(payload) == 0 {
 		return nil
 	}
-	var cfg edgeConfig
-	if err := json.Unmarshal(payload, &cfg); err != nil {
+	cfg, err := parseEdgeConfigPayload(payload)
+	if err != nil {
 		return err
 	}
 	cfg.Domains = normalizeEdgeDomains(cfg.Domains)
@@ -709,7 +730,7 @@ func generateDynamicConfigs(payload []byte) error {
 	if err := persistResources(cfg.Resources); err != nil {
 		return err
 	}
-	if err := persistErrorPages(cfg.ErrorPages); err != nil {
+	if err := persistErrorPages(cfg.ErrorPageI18n, cfg.ErrorPages); err != nil {
 		return err
 	}
 	if err := persistCCRules(cfg.CCRules, cfg.CCMatchers, cfg.CCFilters); err != nil {
@@ -822,16 +843,29 @@ func persistResources(resources *edgeResources) error {
 	return nil
 }
 
-func persistErrorPages(pages map[string]string) error {
+func persistErrorPages(i18n errorPageI18nSettings, pages map[string]errorPageDefinition) error {
 	if len(pages) == 0 {
 		return nil
 	}
 	rootDir := runtimeRoot()
+	bundle := errorPageBundle{
+		I18n:  i18n,
+		Pages: pages,
+	}
 	path := filepath.Join(rootDir, "conf", "error_pages.json")
-	if err := fsutil.WriteJSONAtomic(path, pages, true); err != nil {
+	if err := fsutil.WriteJSONAtomic(path, bundle, true); err != nil {
 		return err
 	}
-	setLocalErrorPages(pages)
+	i18nPath := filepath.Join(rootDir, "conf", "error_page_i18n.json")
+	if err := fsutil.WriteJSONAtomic(i18nPath, i18n, true); err != nil {
+		return err
+	}
+	rendered := renderAllAgentErrorPages(pages, i18n)
+	errorPageDir := filepath.Join(rootDir, "conf", "error_pages")
+	if err := writeRenderedErrorPageFiles(errorPageDir, rendered); err != nil {
+		return err
+	}
+	setLocalErrorPageBundle(&bundle)
 	return nil
 }
 
@@ -971,16 +1005,19 @@ func setLocalResources(resources *edgeResources) {
 	localConfigMu.Unlock()
 }
 
-func setLocalErrorPages(pages map[string]string) {
-	if len(pages) == 0 {
+func setLocalErrorPageBundle(bundle *errorPageBundle) {
+	if bundle == nil || len(bundle.Pages) == 0 {
 		return
 	}
-	copyPages := make(map[string]string, len(pages))
-	for key, value := range pages {
-		copyPages[key] = value
+	copyBundle := errorPageBundle{
+		I18n:  bundle.I18n,
+		Pages: make(map[string]errorPageDefinition, len(bundle.Pages)),
+	}
+	for key, def := range bundle.Pages {
+		copyBundle.Pages[key] = def
 	}
 	localConfigMu.Lock()
-	LocalErrorPages = copyPages
+	LocalErrorPageBundle = &copyBundle
 	localConfigMu.Unlock()
 }
 
@@ -1043,9 +1080,9 @@ func loadPersistedConfigs() {
 		log.Printf("[Warn] Load resources.json failed: %v", err)
 	}
 
-	var pages map[string]string
-	if err := fsutil.ReadJSONFile(filepath.Join(rootDir, "conf", "error_pages.json"), &pages); err == nil {
-		setLocalErrorPages(pages)
+	var bundle errorPageBundle
+	if err := fsutil.ReadJSONFile(filepath.Join(rootDir, "conf", "error_pages.json"), &bundle); err == nil {
+		setLocalErrorPageBundle(&bundle)
 	} else if !os.IsNotExist(err) {
 		log.Printf("[Warn] Load error_pages.json failed: %v", err)
 	}

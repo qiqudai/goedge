@@ -7,7 +7,7 @@ import (
 
 func TestBlockedStatusConditionExcludesOriginResponses(t *testing.T) {
 	condition := blockedStatusCondition()
-	if !strings.Contains(condition, "status IN (403,418,429,451,410)") {
+	if !strings.Contains(condition, "status IN (403,418,429,451,410,515)") {
 		t.Fatalf("blocked status condition missing blocked codes: %s", condition)
 	}
 	if !strings.Contains(condition, "block_source != 'origin'") {

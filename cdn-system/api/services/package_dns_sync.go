@@ -109,11 +109,6 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 				targetGroupSet[info.PrimaryGroup] = struct{}{}
 			}
 		}
-		if info.EnableBackup && info.BackupGroup != 0 {
-			if _, ok := groupLineNodes[info.BackupGroup]; ok {
-				targetGroupSet[info.BackupGroup] = struct{}{}
-			}
-		}
 		if len(targetGroupSet) == 0 && info.PrimaryGroup == 0 && info.BackupGroup == 0 {
 			for gid := range groupLineNodes {
 				targetGroupSet[gid] = struct{}{}
@@ -186,12 +181,8 @@ func SyncPackageCnameForLineChange(groupID int64, lineID, lineName string, nodeI
 		if info.Hostname == "" || info.DomainKey == "" {
 			continue
 		}
-		if info.PrimaryGroup != groupID && !(info.EnableBackup && info.BackupGroup == groupID) {
-			if info.PrimaryGroup == 0 && info.BackupGroup == 0 {
-				// Fallback: no group binding, allow.
-			} else {
-				continue
-			}
+		if !shouldSyncPackageCnameForGroup(info, groupID) {
+			continue
 		}
 		domainInfo, ok := domainMap[info.DomainKey]
 		if !ok {
@@ -228,6 +219,18 @@ func loadLineNodeIDs(groupID int64, lineID string) []int64 {
 		}
 	}
 	return uniquePackageIDs(nodeIDs)
+}
+
+func shouldSyncPackageCnameForGroup(info siteCnameInfo, groupID int64) bool {
+	if groupID == 0 {
+		return false
+	}
+	if info.PrimaryGroup == 0 && info.BackupGroup == 0 {
+		return true
+	}
+	// Normal line/node/package resync must not move package CNAME to the backup
+	// group. Backup activation is controlled by backup_group_switch.go.
+	return info.PrimaryGroup == groupID
 }
 
 func resyncPackageHostname(domain models.CnameDomain, hostname string, groupID int64) error {

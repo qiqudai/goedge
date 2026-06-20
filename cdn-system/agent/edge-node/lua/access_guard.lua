@@ -3,6 +3,7 @@ local ip_block = require "lua.ip_block"
 local waf = require "lua.waf"
 local quota = require "lua.quota"
 local cc = require "lua.cc"
+local acl = require "lua.acl"
 local balancer = require "lua.balancer"
 local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
@@ -991,13 +992,16 @@ local domain_conf = lookup_domain_conf()
 if domain_conf then
     normalize_domain_conf(domain_conf)
     apply_realtime_send(domain_conf)
-    if domain_conf.waf_enable ~= false then
-        waf.check()
-    end
     apply_request_logging(domain_conf)
     local client_ip = ngx.var.remote_addr
     apply_geo_logging(client_ip)
     local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
+    if not whitelisted and domain_conf.waf_enable ~= false then
+        waf.check()
+    end
+    if not whitelisted then
+        acl.check(domain_conf, client_ip, ngx.var.uri)
+    end
     local crawler_allowed = false
     local crawler_action = domain_conf.crawler_action or ""
     if crawler_action ~= "" then
@@ -1044,9 +1048,8 @@ if domain_conf then
         return
     end
 
-    local rule_id = tonumber(ngx.var.cc_rule_id or 0) or 0
-    if rule_id > 0 and not crawler_allowed then
-        cc.check_rule_id(rule_id, domain_conf.name or "", client_ip, ngx.var.uri)
+    if not whitelisted and not crawler_allowed then
+        cc.check(domain_conf, client_ip, ngx.var.uri)
     end
 
     local bypass, ttl = cache.resolve(domain_conf, ngx.var.uri)

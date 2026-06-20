@@ -45,7 +45,11 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 
 	// 2. Increment Version
 	up.Version++
-	if err := db.DB.Model(&up).Update("version", up.Version).Error; err != nil {
+	isExpired := isUserPackageExpired(up, time.Now())
+	if err := db.DB.Model(&up).Updates(map[string]interface{}{
+		"version":    up.Version,
+		"is_expired": isExpired,
+	}).Error; err != nil {
 		return err
 	}
 
@@ -88,21 +92,8 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 		agentConfig.EnableBackup = 1
 	}
 
-	// Expiry Check
-	expireCloseEnabled := true
-	if cfg, err := LoadSystemConfig(); err == nil {
-		if val, ok := cfg["package_expire_close_site"]; ok {
-			expireCloseEnabled = ParseBoolFlag(val)
-		}
-	}
-	if expireCloseEnabled {
-		if trigger == "expire" {
-			agentConfig.Status = "expired"
-		} else if time.Now().After(up.EndAt) {
-			agentConfig.Status = "expired"
-			// If explicit expire trigger wasn't sent but it is expired, maybe set trigger?
-			// But for now follow input.
-		}
+	if trigger == "expire" || isExpired {
+		agentConfig.Status = "expired"
 	}
 
 	// 4. Identify Nodes
@@ -171,4 +162,8 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 
 	TriggerDispatchPending()
 	return nil
+}
+
+func isUserPackageExpired(up models.UserPackage, now time.Time) bool {
+	return !up.EndAt.IsZero() && !now.Before(up.EndAt)
 }

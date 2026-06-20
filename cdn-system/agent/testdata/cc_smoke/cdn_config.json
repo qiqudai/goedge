@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "cc_rules": {
+    "10001": [
+      {
+        "matcher_id": 10027,
+        "filter_id": 10025,
+        "action": "block",
+        "mode": "stop",
+        "enabled": true
+      }
+    ]
+  },
+  "cc_matchers": {
+    "10027": {
+      "id": 10027,
+      "data": "{\"rules\":[{\"key\":\"uri\",\"operator\":\"equals\",\"value\":\"/\"}]}"
+    }
+  },
+  "cc_filters": {
+    "10025": {
+      "id": 10025,
+      "type": "req_rate",
+      "within_second": 60,
+      "max_req": 2,
+      "max_req_per_uri": 0,
+      "extra": "{}"
+    }
+  },
+  "domains": [
+    {
+      "name": "cc-test.local",
+      "cc_rule_id": 10001,
+      "custom_cc_rules": [
+        {
+          "on": true,
+          "breakMatch": true,
+          "action": "allow",
+          "matchers": [
+            {"key": "uri", "operator": "eq", "value": "/api/health"}
+          ]
+        }
+      ],
+      "upstream_key": "origin"
+    }
+  ],
+  "upstreams": [
+    {
+      "key": "origin",
+      "targets": [{"addr": "127.0.0.1:18080", "weight": 1}]
+    }
+  ]
+}

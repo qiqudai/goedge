@@ -1,0 +1,6 @@
+port: "8080"
+db_dsn: "root:cc_test_root@tcp(mysql:3306)/cdnfy?charset=utf8mb4&parseTime=True&loc=Local"
+debug: false
+agent_token: "cc-e2e-agent-token"
+clickhouse_enabled: false
+secret_key: "0123456789abcdef0123456789abcdef"

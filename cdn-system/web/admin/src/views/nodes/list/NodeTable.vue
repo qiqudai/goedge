@@ -149,7 +149,7 @@
             <span class="link-more">{{ NODE_T.more }}<el-icon><ArrowDown /></el-icon></span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="install" :disabled="!row.ssh_user">{{ NODE_T.reinstall }}</el-dropdown-item>
+                <el-dropdown-item command="install" :disabled="isInstallRunning(row)">{{ NODE_T.reinstall }}</el-dropdown-item>
                 <el-dropdown-item command="delete">{{ NODE_T.delete }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -196,6 +196,10 @@ const resolveInstallStatus = (status) => {
 
 const hasReportedAntiBlocking = (row) => {
   return row?.reported_anti_blocking === true || row?.reported_anti_blocking === false
+}
+
+const isInstallRunning = (row) => {
+  return String(row?.install_status || '').toLowerCase() === 'running'
 }
 </script>
 

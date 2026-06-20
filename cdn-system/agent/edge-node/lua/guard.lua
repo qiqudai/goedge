@@ -18,6 +18,8 @@ local _M = {}
 local COOKIE_GUARD = "guard"
 local COOKIE_GUARD_RET = "guardret"
 local COOKIE_GUARD_PASS = "__cdn_guard_pass"
+local COOKIE_GUARD_BROWSER_ID = "__cdn_guard_bid"
+local COOKIE_GUARD_FINGERPRINT = "__cdn_guard_fp"
 
 local STATE_TTL = 10 * 60
 local PASS_TTL = 30 * 60
@@ -99,6 +101,32 @@ end
 
 local function cookie(name)
     return ngx.var["cookie_" .. name]
+end
+
+local function normalize_cookie_token(value, max_len)
+    if type(value) ~= "string" then
+        return ""
+    end
+    local token = string.match(value, "^([%w_%-]+)") or ""
+    if max_len and #token > max_len then
+        token = string.sub(token, 1, max_len)
+    end
+    return token
+end
+
+local function cookie_values(name)
+    local header = ngx.var.http_cookie
+    local values = {}
+    if type(header) ~= "string" or header == "" then
+        return values
+    end
+    for item in string.gmatch(header, "([^;]+)") do
+        local k, v = string.match(item, "^%s*([^=]+)=([^;]*)")
+        if k == name then
+            table.insert(values, v)
+        end
+    end
+    return values
 end
 
 local function add_set_cookie(value)
@@ -241,25 +269,28 @@ end
 
 local function normalize_type(filter_type)
     local t = string.lower(tostring(filter_type or ""))
-    if t == "5s" or t == "5s_shield" or t == "shield_5s" or t == "five_seconds" then
+    if t == "5s" or t == "5s_shield" or t == "shield_5s" or t == "five_seconds" or t == "delay_jump" or t == "delay_jump_filter" then
         return "five_seconds"
     end
-    if t == "invisible" or t == "silent_captcha" then
+    if t == "invisible" or t == "silent_captcha" or t == "browser_verify_auto" or t == "302" or t == "302_challenge" then
         return "silent_captcha"
     end
-    if t == "click" or t == "click_captcha" then
+    if t == "click" or t == "click_captcha" or t == "click_filter" then
         return "click_captcha"
     end
     if t == "click_simple" or t == "click_captcha_simple" then
         return "click_captcha_simple"
     end
-    if t == "slide" or t == "slide_captcha" then
+    if t == "slide" or t == "slide_captcha" or t == "slide_filter" then
         return "slide_captcha"
     end
     if t == "slide_simple" or t == "slide_captcha_simple" then
         return "slide_captcha_simple"
     end
-    if t == "rotate" or t == "rotate_captcha" then
+    if t == "captcha_filter" then
+        return "captcha"
+    end
+    if t == "rotate" or t == "rotate_captcha" or t == "rotate_filter" then
         return "rotate_captcha"
     end
     return t
@@ -282,6 +313,41 @@ function _M.is_guard_request(uri)
         return false
     end
     return string.sub(uri, 1, 7) == "/_guard"
+end
+
+local COMMON_NON_BROWSER_UA = {
+    "curl",
+    "wget",
+    "python-requests",
+    "python-urllib",
+    "go-http-client",
+    "httpie",
+    "postmanruntime",
+    "okhttp",
+    "apache-httpclient",
+    "libwww-perl",
+    "scrapy",
+    "aiohttp",
+    "node-fetch",
+    "undici",
+    "axios/",
+    "java/",
+    "ruby",
+    "php/",
+    "powershell",
+}
+
+function _M.is_common_non_browser_request()
+    local ua = string.lower(tostring(ngx.var.http_user_agent or ""))
+    if ua == "" then
+        return true, "ua=empty"
+    end
+    for _, token in ipairs(COMMON_NON_BROWSER_UA) do
+        if string.find(ua, token, 1, true) then
+            return true, "ua=" .. token
+        end
+    end
+    return false, ""
 end
 
 local cached_secret
@@ -335,18 +401,42 @@ local function constant_time_eq(a, b)
     return diff == 0
 end
 
-local function verify_pass_cookie(value, host, ip, filter_type, filter_id)
+local function browser_binding()
+    local browser_id = normalize_cookie_token(cookie(COOKIE_GUARD_BROWSER_ID), 64)
+    local fingerprint = normalize_cookie_token(cookie(COOKIE_GUARD_FINGERPRINT), 128)
+    local ua_sig = string.sub(hmac_hex("ua|" .. tostring(ngx.var.http_user_agent or "")), 1, 24)
+    return browser_id, fingerprint, ua_sig
+end
+
+local function pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig)
+    local raw = table.concat({
+        host or "",
+        ip or "",
+        normalize_type(filter_type),
+        tostring(filter_id or 0),
+        browser_id or "",
+        fingerprint or "",
+        ua_sig or "",
+    }, "|")
+    local digest = md5_bin(raw)
+    if digest then
+        return "guard:pass:" .. str.to_hex(digest)
+    end
+    return "guard:pass:" .. hmac_hex(raw)
+end
+
+local function verify_pass_cookie_value(value, host, ip, filter_type, filter_id)
     if type(value) ~= "string" or value == "" then
         return false
     end
     local parts = {}
     for item in string.gmatch(value, "([^|]+)") do
         table.insert(parts, item)
-        if #parts > 8 then
+        if #parts > 12 then
             break
         end
     end
-    if #parts < 6 then
+    if #parts < 11 or parts[1] ~= "v3" then
         return false
     end
     local exp = tonumber(parts[2]) or 0
@@ -359,34 +449,103 @@ local function verify_pass_cookie(value, host, ip, filter_type, filter_id)
     if parts[5] ~= normalize_type(filter_type) then
         return false
     end
-
-    if parts[1] == "v1" then
-        local payload = table.concat({ parts[1], parts[2], parts[3], parts[4], parts[5] }, "|")
-        local expected = hmac_hex(payload)
-        return constant_time_eq(parts[6], expected)
-    end
-
-    if parts[1] ~= "v2" then
-        return false
-    end
-    if #parts < 7 then
-        return false
-    end
     if parts[6] ~= tostring(filter_id or 0) then
         return false
     end
-    local payload = table.concat({ parts[1], parts[2], parts[3], parts[4], parts[5], parts[6] }, "|")
+    local browser_id, fingerprint, ua_sig = browser_binding()
+    if browser_id == "" or fingerprint == "" then
+        return false
+    end
+    if parts[7] ~= browser_id or parts[8] ~= fingerprint or parts[9] ~= ua_sig then
+        return false
+    end
+    local token_id = parts[10]
+    if token_id == "" then
+        return false
+    end
+    local payload = table.concat({ parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8], parts[9], parts[10] }, "|")
     local expected = hmac_hex(payload)
-    return constant_time_eq(parts[7], expected)
+    if not constant_time_eq(parts[11], expected) then
+        return false
+    end
+
+    local s = store()
+    if not s then
+        return false
+    end
+    local raw = s:get(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig))
+    if type(raw) ~= "string" or raw == "" then
+        return false
+    end
+    local record = cjson.decode(raw)
+    if type(record) == "table" then
+        return record.token == token_id
+            and record.browser_id == browser_id
+            and record.fingerprint == fingerprint
+            and record.ua_sig == ua_sig
+    end
+    return raw == token_id
+end
+
+local function verify_pass_cookie(host, ip, filter_type, filter_id)
+    local values = cookie_values(COOKIE_GUARD_PASS)
+    if #values == 0 then
+        local value = cookie(COOKIE_GUARD_PASS)
+        if value then
+            table.insert(values, value)
+        end
+    end
+    for _, value in ipairs(values) do
+        if verify_pass_cookie_value(value, host, ip, filter_type, filter_id) then
+            return true
+        end
+    end
+    return false
 end
 
 local function build_pass_cookie(host, ip, filter_type, filter_id, ttl)
-    local exp = now() + (ttl or PASS_TTL)
+    local s = store()
+    if not s then
+        return nil, "guard store unavailable"
+    end
+    local browser_id, fingerprint, ua_sig = browser_binding()
+    if browser_id == "" then
+        return nil, "browser id missing"
+    end
+    if fingerprint == "" then
+        return nil, "fingerprint missing"
+    end
+    local pass_ttl = ttl or PASS_TTL
+    local exp = now() + pass_ttl
+    local token_id = rand_hex(16)
     local payload = table.concat(
-        { "v2", tostring(exp), host or "", ip or "", normalize_type(filter_type), tostring(filter_id or 0) },
+        {
+            "v3",
+            tostring(exp),
+            host or "",
+            ip or "",
+            normalize_type(filter_type),
+            tostring(filter_id or 0),
+            browser_id,
+            fingerprint,
+            ua_sig,
+            token_id,
+        },
         "|"
     )
     local sig = hmac_hex(payload)
+    local record = cjson.encode({
+        token = token_id,
+        browser_id = browser_id,
+        fingerprint = fingerprint,
+        ua_sig = ua_sig,
+        host = host or "",
+        ip = ip or "",
+        type = normalize_type(filter_type),
+        filter_id = tostring(filter_id or 0),
+        issued = now(),
+    })
+    s:set(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig), record or token_id, pass_ttl)
     return payload .. "|" .. sig
 end
 
@@ -536,8 +695,7 @@ function _M.ensure_passed(filter, host, ip)
     local filter_type = normalize_type(filter.type or filter.Type or "")
     local filter_id = filter.id or filter.ID or 0
 
-    local pass_value = cookie(COOKIE_GUARD_PASS)
-    if verify_pass_cookie(pass_value, host, ip, filter_type, filter_id) then
+    if verify_pass_cookie(host, ip, filter_type, filter_id) then
         return true
     end
 
@@ -556,7 +714,13 @@ function _M.ensure_passed(filter, host, ip)
     if ok == true then
         guard_debug_log("guard passed host=", host or "", " ip=", ip or "", " type=", filter_type)
         local pass_ttl = guard_pass_ttl()
-        set_cookie(COOKIE_GUARD_PASS, build_pass_cookie(host, ip, filter_type, filter_id, pass_ttl), {
+        local pass_value, pass_err = build_pass_cookie(host, ip, filter_type, filter_id, pass_ttl)
+        if not pass_value then
+            guard_debug_log("guard pass build failed host=", host or "", " ip=", ip or "", " type=", filter_type, " err=", pass_err or "")
+            clear_cookie(COOKIE_GUARD_RET, false)
+            return false
+        end
+        set_cookie(COOKIE_GUARD_PASS, pass_value, {
             path = "/",
             max_age = pass_ttl,
             http_only = true,

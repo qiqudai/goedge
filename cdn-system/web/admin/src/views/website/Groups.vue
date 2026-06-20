@@ -232,7 +232,7 @@ const submitForm = () => {
 }
 
 const removeGroup = row => {
-  ElMessageBox.confirm('确认删除该分组?', {
+  ElMessageBox.confirm('仅当分组内没有任何网站时才能删除。确认删除该分组?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -250,7 +250,7 @@ const handleSelectionChange = rows => {
 
 const batchDelete = () => {
   if (selectedRows.value.length === 0) return
-  ElMessageBox.confirm(`确认删除选中的 ${selectedRows.value.length} 个分组?`, '提示', {
+  ElMessageBox.confirm(`仅当分组内没有任何网站时才能删除。确认删除选中的 ${selectedRows.value.length} 个分组?`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'

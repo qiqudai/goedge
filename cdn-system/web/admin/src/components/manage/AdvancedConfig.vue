@@ -148,6 +148,17 @@
           <el-radio value="custom">自定义L2配置</el-radio>
         </el-radio-group>
       </el-form-item>
+      <el-form-item label="错误页语言">
+        <el-select v-model="advancedSettings.errorPageLang" style="width: 280px" @change="handleSave">
+          <el-option
+            v-for="item in siteErrorLangOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+        <div class="form-helper">站点设置优先于全局；留空表示继承全局语言策略</div>
+      </el-form-item>
     </el-form>
 
     <!-- 转向规则弹窗 -->
@@ -160,12 +171,14 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
 import { dedupeUrlRedirects } from '@/utils/siteHelpers'
+import { fetchGlobalConfig } from '@/api/globalConfig'
+import { SITE_ERROR_PAGE_LANG_OPTIONS } from '@/constants/errorPageLocales'
 
 const { saveSettings } = useSiteSettings()
 
@@ -211,7 +224,26 @@ const localSettings = ref({
   realtimeIdentify: props.modelValue?.realtimeIdentify || false,
   realtimeSend: props.modelValue?.realtimeSend || false,
   defaultSite: props.modelValue?.defaultSite || false,
-  l2Config: props.modelValue?.l2Config || 'current'
+  l2Config: props.modelValue?.l2Config || 'current',
+  errorPageLang: props.modelValue?.errorPageLang || ''
+})
+
+const enabledGlobalLangs = ref([])
+
+const siteErrorLangOptions = computed(() => {
+  const dynamic = enabledGlobalLangs.value.map(lang => ({ value: lang, label: `指定语言：${lang}` }))
+  return [...SITE_ERROR_PAGE_LANG_OPTIONS, ...dynamic]
+})
+
+onMounted(async () => {
+  try {
+    const res = await fetchGlobalConfig()
+    if (res.code === 0 || res.code === 200) {
+      enabledGlobalLangs.value = res.data?.error_page_i18n?.enabled_langs || []
+    }
+  } catch {
+    enabledGlobalLangs.value = []
+  }
 })
 
 let isInternalUpdate = false
@@ -246,7 +278,8 @@ watch(() => props.modelValue, (newVal) => {
       realtimeIdentify: newVal.realtimeIdentify || false,
       realtimeSend: newVal.realtimeSend || false,
       defaultSite: newVal.defaultSite || false,
-      l2Config: newVal.l2Config || 'current'
+      l2Config: newVal.l2Config || 'current',
+      errorPageLang: newVal.errorPageLang || ''
     }
   }
   isInternalUpdate = false

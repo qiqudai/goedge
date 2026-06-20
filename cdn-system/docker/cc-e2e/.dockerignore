@@ -1,0 +1,10 @@
+.git
+.tools
+**/node_modules
+**/openresty
+**/*.zip
+**/*.tar.gz
+agent/assets/openresty*
+web/
+ui/
+admin/

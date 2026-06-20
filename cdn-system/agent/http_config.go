@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,10 +52,10 @@ func effectiveConnLimit(domain edgeDomain) int {
 	if domain.ConnLimit <= 0 {
 		return 0
 	}
-	// HTTP/3 multiplexes concurrent requests on a single transport connection,
-	// and nginx counts each concurrent request toward limit_conn. Extremely low
-	// limits such as 1 break normal page loads and external H3 checks.
-	if domain.HTTPSHTTP3 && nginxSupportsHTTP3() && domain.ConnLimit < 10 {
+	// Browsers open multiple concurrent requests for one page load. Very low
+	// per-IP limits turn a normal visit into a false positive, especially with
+	// HTTP/2 or HTTP/3 multiplexing.
+	if domain.ConnLimit < 10 {
 		return 10
 	}
 	return domain.ConnLimit
@@ -131,16 +132,7 @@ func writeHTTPConfig(cfg edgeConfig) error {
 		return ioutil.WriteFile(confPath, []byte(""), 0644)
 	}
 
-	errorPageDir := filepath.Join(rootDir, "conf", "error_pages")
-	if absDir, err := filepath.Abs(errorPageDir); err == nil {
-		errorPageDir = absDir
-	}
-	errorPages := normalizeErrorPages(cfg.ErrorPages)
-	if len(errorPages) > 0 {
-		if err := writeErrorPageFiles(errorPageDir, errorPages); err != nil {
-			return err
-		}
-	}
+	errorCtx := newErrorPageContext(cfg)
 
 	defaults := cfg.DefaultConfig
 	if defaults == nil {
@@ -211,7 +203,7 @@ func writeHTTPConfig(cfg edgeConfig) error {
 			continue
 		}
 		isDefault := defaultDomain != nil && domain.Name == defaultDomain.Name
-		writeDomainServers(&b, domain, errorPages, errorPageDir, defaultListen80, isDefault)
+		writeDomainServers(&b, domain, errorCtx, defaultListen80, isDefault)
 	}
 
 	if blockUnbound {
@@ -225,16 +217,16 @@ func writeHTTPConfig(cfg edgeConfig) error {
 			httpPorts = appendUniquePort(httpPorts, "80")
 		}
 		for _, port := range httpPorts {
-			writeDefaultServer(&b, port, false, errorPages, errorPageDir, blockedStatus, ipv6Enabled)
+			writeDefaultServer(&b, port, false, errorCtx, blockedStatus, ipv6Enabled)
 		}
 
 		for _, port := range collectHTTPSPorts(processedDomains) {
-			writeDefaultServer(&b, port, true, errorPages, errorPageDir, blockedStatus, ipv6Enabled)
+			writeDefaultServer(&b, port, true, errorCtx, blockedStatus, ipv6Enabled)
 		}
 	} else if defaultDomain == nil && shouldBindDefaultHTTP(processedDomains, defaultListen80) {
 		httpPorts := collectHTTPPorts(processedDomains, defaultListen80)
 		for _, port := range httpPorts {
-			writeDefaultServer(&b, port, false, errorPages, errorPageDir, 404, ipv6Enabled)
+			writeDefaultServer(&b, port, false, errorCtx, 404, ipv6Enabled)
 		}
 	}
 
@@ -399,7 +391,7 @@ func siteTLSPaths(domain edgeDomain) (string, string) {
 	return fallbackCertPath(), fallbackKeyPath()
 }
 
-func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages map[string]string, errorPageDir string, status int, ipv6Enable bool) {
+func writeDefaultServer(b *strings.Builder, port string, tls bool, errorCtx errorPageContext, status int, ipv6Enable bool) {
 	port = strings.TrimSpace(port)
 	if port == "" {
 		return
@@ -420,8 +412,8 @@ func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages ma
 	}
 	b.WriteString("    server_name _;\n")
 	b.WriteString("    add_header X-Block-Source 'type=local_protection;module=nginx.default_server;rule=unbound_domain;rule_id=0;condition=direct_ip_or_unbound_host' always;\n")
-	writeErrorPageServerDirectives(b, errorPages)
-	writeErrorPageDirectives(b, errorPages, errorPageDir)
+	writeErrorPageLangDirective(b, "")
+	writeErrorPageDirectives(b, errorCtx)
 	if !tls {
 		writeAcmeLocation(b)
 	}
@@ -440,38 +432,38 @@ func writeDefaultServer(b *strings.Builder, port string, tls bool, errorPages ma
 	b.WriteString("}\n")
 }
 
-func writeDomainServers(b *strings.Builder, domain edgeDomain, errorPages map[string]string, errorPageDir string, defaultListen80 bool, defaultServer bool) {
+func writeDomainServers(b *strings.Builder, domain edgeDomain, errorCtx errorPageContext, defaultListen80 bool, defaultServer bool) {
 	httpPorts := domain.HttpListen
 	if len(httpPorts) == 0 && defaultListen80 {
 		httpPorts = []string{"80"}
 	}
 	httpsPorts := domain.HttpsListen
 
-	blockedCode := blockedStatusCode(domain, errorPages)
+	blockedCode := blockedStatusCode(domain, errorCtx)
 	if blockedCode > 0 {
 		for _, port := range httpPorts {
-			writeHTTPServer(b, domain, port, false, errorPages, errorPageDir, blockedCode, defaultServer)
+			writeHTTPServer(b, domain, port, false, errorCtx, blockedCode, defaultServer)
 		}
 		for _, port := range httpsPorts {
-			writeHTTPServer(b, domain, port, true, errorPages, errorPageDir, blockedCode, defaultServer)
+			writeHTTPServer(b, domain, port, true, errorCtx, blockedCode, defaultServer)
 		}
 		return
 	}
 
 	if domain.HTTPSForce && len(httpsPorts) > 0 {
-		writeHTTPSRedirectServer(b, domain, httpPorts, httpsPorts, errorPages, errorPageDir, defaultServer)
+		writeHTTPSRedirectServer(b, domain, httpPorts, httpsPorts, errorCtx, defaultServer)
 	} else {
 		for _, port := range httpPorts {
-			writeHTTPServer(b, domain, port, false, errorPages, errorPageDir, 0, defaultServer)
+			writeHTTPServer(b, domain, port, false, errorCtx, 0, defaultServer)
 		}
 	}
 
 	for _, port := range httpsPorts {
-		writeHTTPServer(b, domain, port, true, errorPages, errorPageDir, 0, defaultServer)
+		writeHTTPServer(b, domain, port, true, errorCtx, 0, defaultServer)
 	}
 }
 
-func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts []string, httpsPorts []string, errorPages map[string]string, errorPageDir string, defaultServer bool) {
+func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts []string, httpsPorts []string, errorCtx errorPageContext, defaultServer bool) {
 	redirectPort := domain.HTTPSRedirectPort
 	if redirectPort == "" {
 		redirectPort = "443"
@@ -490,8 +482,8 @@ func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts [
 			b.WriteString("    listen [::]:" + port + listenSuffix + ";\n")
 		}
 		b.WriteString("    server_name " + domain.Name + ";\n")
-		writeErrorPageServerDirectives(b, errorPages)
-		writeErrorPageDirectives(b, errorPages, errorPageDir)
+		writeErrorPageLangDirective(b, domain.ErrorPageLang)
+		writeErrorPageDirectives(b, errorCtx)
 		writeAcmeLocation(b)
 		b.WriteString("    location / {\n")
 		b.WriteString("        return 301 https://$host:" + redirectPort + "$request_uri;\n")
@@ -500,7 +492,7 @@ func writeHTTPSRedirectServer(b *strings.Builder, domain edgeDomain, httpPorts [
 	}
 }
 
-func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls bool, errorPages map[string]string, errorPageDir string, blockedCode int, defaultServer bool) {
+func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls bool, errorCtx errorPageContext, blockedCode int, defaultServer bool) {
 	port = strings.TrimSpace(port)
 	if port == "" {
 		return
@@ -552,8 +544,8 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 	}
 	b.WriteString("    server_name " + domain.Name + ";\n")
 	if blockedCode > 0 {
-		writeErrorPageServerDirectives(b, errorPages)
-		writeErrorPageDirectives(b, errorPages, errorPageDir)
+		writeErrorPageLangDirective(b, domain.ErrorPageLang)
+		writeErrorPageDirectives(b, errorCtx)
 		b.WriteString("    location / {\n")
 		b.WriteString(fmt.Sprintf("        return %d;\n", blockedCode))
 		b.WriteString("    }\n")
@@ -576,12 +568,12 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 		b.WriteString(fmt.Sprintf("    limit_conn addr_conn %d;\n", connLimit))
 	}
 
-	if _, ok := errorPages["conn_limit"]; ok {
-		b.WriteString("    limit_conn_status 429;\n")
+	if _, ok := errorCtx.pages["conn_limit"]; ok && strings.TrimSpace(errorCtx.pages["conn_limit"].Template) != "" {
+		b.WriteString("    limit_conn_status 515;\n")
 	}
 
-	writeErrorPageServerDirectives(b, errorPages)
-	writeErrorPageDirectives(b, errorPages, errorPageDir)
+	writeErrorPageLangDirective(b, domain.ErrorPageLang)
+	writeErrorPageDirectives(b, errorCtx)
 
 	b.WriteString("    set $cc_rule_id " + fmt.Sprintf("%d", domain.CCRuleID) + ";\n")
 
@@ -590,40 +582,52 @@ func writeHTTPServer(b *strings.Builder, domain edgeDomain, port string, tls boo
 	b.WriteString("}\n")
 }
 
-func normalizeErrorPages(pages map[string]string) map[string]string {
-	if len(pages) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(pages))
-	for code, content := range pages {
-		key := strings.TrimSpace(code)
-		val := strings.TrimSpace(content)
-		if key == "" || val == "" {
-			continue
-		}
-		out[key] = val
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+type errorPageContext struct {
+	pages map[string]errorPageDefinition
+	i18n  errorPageI18nSettings
 }
 
-func writeErrorPageFiles(dir string, pages map[string]string) error {
-	if len(pages) == 0 {
-		return nil
+func newErrorPageContext(cfg edgeConfig) errorPageContext {
+	return errorPageContext{
+		pages: cfg.ErrorPages,
+		i18n:  normalizeAgentErrorPageI18n(cfg.ErrorPageI18n),
 	}
-	if err := fsutil.EnsureDir(dir); err != nil {
-		return err
+}
+
+func writeErrorPageLangDirective(b *strings.Builder, lang string) {
+	lang = strings.TrimSpace(lang)
+	b.WriteString(fmt.Sprintf("    set $cdn_error_lang %q;\n", lang))
+}
+
+func writeErrorPageDirectives(b *strings.Builder, ctx errorPageContext) {
+	if !hasErrorPageDefinitions(ctx.pages) {
+		return
 	}
-	for _, code := range sortedStringKeys(pages) {
-		content := pages[code]
-		filename := filepath.Join(dir, code+".html")
-		if err := fsutil.WriteFileAtomic(filename, []byte(content), 0o644); err != nil {
-			return err
+	for _, key := range sortedAgentErrorPageKeys(ctx.pages) {
+		def := ctx.pages[key]
+		if strings.TrimSpace(def.Template) == "" {
+			continue
 		}
+		status := errorPageStatusForKey(key)
+		if status == 0 {
+			continue
+		}
+		fileName := key + ".html"
+		uri := "/__cdn_error/" + fileName
+		b.WriteString(fmt.Sprintf("    error_page %d %s;\n", status, uri))
+		b.WriteString("    location = " + uri + " {\n")
+		b.WriteString("        internal;\n")
+		b.WriteString("        default_type text/html;\n")
+		b.WriteString("        set $cdn_client_ip $remote_addr;\n")
+		b.WriteString("        if ($realip_remote_addr != \"\") {\n")
+		b.WriteString("            set $cdn_client_ip $realip_remote_addr;\n")
+		b.WriteString("        }\n")
+		b.WriteString("        content_by_lua_block {\n")
+		b.WriteString("            local ep = require \"lua.error_page_serve\"\n")
+		b.WriteString("            ep.serve()\n")
+		b.WriteString("        }\n")
+		b.WriteString("    }\n")
 	}
-	return nil
 }
 
 func isNumericStatus(code string) bool {
@@ -636,41 +640,6 @@ func isNumericStatus(code string) bool {
 		}
 	}
 	return true
-}
-
-func writeErrorPageDirectives(b *strings.Builder, pages map[string]string, dir string) {
-	if len(pages) == 0 {
-		return
-	}
-	for _, key := range sortedStringKeys(pages) {
-		status := errorPageStatusForKey(key)
-		if status == 0 {
-			continue
-		}
-		fileName := key + ".html"
-		uri := "/__cdn_error/" + fileName
-		filePath := filepath.ToSlash(filepath.Join(dir, fileName))
-		b.WriteString(fmt.Sprintf("    error_page %d %s;\n", status, uri))
-		b.WriteString("    location = " + uri + " {\n")
-		b.WriteString("        internal;\n")
-		b.WriteString("        default_type text/html;\n")
-		b.WriteString("        set $cdn_client_ip $remote_addr;\n")
-		b.WriteString("        if ($realip_remote_addr != \"\") {\n")
-		b.WriteString("            set $cdn_client_ip $realip_remote_addr;\n")
-		b.WriteString("        }\n")
-		b.WriteString("        sub_filter '{client_ip}' '$cdn_client_ip';\n")
-		b.WriteString("        sub_filter '{node_ip}' '$server_addr';\n")
-		b.WriteString("        sub_filter_once off;\n")
-		b.WriteString("        alias " + filePath + ";\n")
-		b.WriteString("    }\n")
-	}
-}
-
-func writeErrorPageServerDirectives(b *strings.Builder, pages map[string]string) {
-	if len(pages) == 0 {
-		return
-	}
-	b.WriteString("    sub_filter_types *;\n")
 }
 
 func errorPageStatusForKey(key string) int {
@@ -688,7 +657,7 @@ func errorPageStatusForKey(key string) int {
 	case "domain_invalid":
 		return 404
 	case "conn_limit":
-		return 429
+		return 515
 	case "timeout":
 		return 410
 	case "ip":
@@ -698,7 +667,7 @@ func errorPageStatusForKey(key string) int {
 	}
 }
 
-func blockedStatusCode(domain edgeDomain, pages map[string]string) int {
+func blockedStatusCode(domain edgeDomain, ctx errorPageContext) int {
 	status := strings.ToLower(strings.TrimSpace(domain.Status))
 	var key string
 	switch status {
@@ -713,7 +682,8 @@ func blockedStatusCode(domain edgeDomain, pages map[string]string) int {
 	default:
 		return 0
 	}
-	if _, ok := pages[key]; !ok {
+	def, ok := ctx.pages[key]
+	if !ok || strings.TrimSpace(def.Template) == "" {
 		return 0
 	}
 	return errorPageStatusForKey(key)
@@ -808,10 +778,49 @@ func writeAcmeLocation(b *strings.Builder) {
 		acmeRoot = abs
 	}
 	acmeChallengeRoot := filepath.ToSlash(filepath.Join(acmeRoot, ".well-known", "acme-challenge")) + "/"
+	masterBase := acmeMasterProxyBase()
 	b.WriteString("    location ^~ /.well-known/acme-challenge/ {\n")
 	b.WriteString("        alias " + acmeChallengeRoot + ";\n")
 	b.WriteString("        default_type text/plain;\n")
+	if masterBase != "" {
+		b.WriteString("        error_page 404 = @acme_master;\n")
+	}
 	b.WriteString("    }\n")
+	if masterBase == "" {
+		return
+	}
+	b.WriteString("    location @acme_master {\n")
+	b.WriteString("        internal;\n")
+	b.WriteString("        proxy_http_version 1.1;\n")
+	b.WriteString("        proxy_set_header Host $http_host;\n")
+	b.WriteString("        proxy_set_header X-Real-IP $remote_addr;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-For $remote_addr;\n")
+	b.WriteString("        proxy_set_header X-Forwarded-Proto $scheme;\n")
+	b.WriteString("        proxy_connect_timeout 3s;\n")
+	b.WriteString("        proxy_read_timeout 10s;\n")
+	b.WriteString("        proxy_pass " + masterBase + ";\n")
+	b.WriteString("    }\n")
+}
+
+func acmeMasterProxyBase() string {
+	raw := strings.TrimRight(strings.TrimSpace(API_BaseURL), "/")
+	if raw == "" || strings.ContainsAny(raw, "\r\n;{}") {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed == nil {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return ""
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func buildRuleLocation(rule edgeCacheRule) string {
@@ -1128,15 +1137,50 @@ func writeProxyHeaderIfMissing(b *strings.Builder, customHeaderSet map[string]st
 }
 
 func writeProxyHiddenResponseHeaders(b *strings.Builder, domain edgeDomain) {
-	if domain.EnableWebsocket {
-		return
+	if !domain.EnableWebsocket {
+		// Some origins incorrectly emit hop-by-hop or protocol upgrade headers on
+		// normal page responses. Hiding them at the edge avoids client-side protocol
+		// errors, especially on HTTP/2 and HTTP/3 connections.
+		for _, name := range []string{"Upgrade", "Connection", "Keep-Alive", "Proxy-Connection"} {
+			b.WriteString("        proxy_hide_header " + name + ";\n")
+		}
 	}
 
-	// Some origins incorrectly emit hop-by-hop or protocol upgrade headers on
-	// normal page responses. Hiding them at the edge avoids client-side protocol
-	// errors, especially on HTTP/2 and HTTP/3 connections.
-	for _, name := range []string{"Upgrade", "Connection", "Keep-Alive", "Proxy-Connection"} {
+	for _, name := range []string{
+		"X-Origin-IP",
+		"X-Origin-Addr",
+		"X-Origin-Server",
+		"X-Backend-IP",
+		"X-Backend-Addr",
+		"X-Backend-Server",
+		"X-Server-IP",
+		"X-Upstream-Addr",
+		"X-Upstream-Server",
+		"X-Real-IP",
+		"X-Forwarded-For",
+		"Via",
+	} {
 		b.WriteString("        proxy_hide_header " + name + ";\n")
+	}
+}
+
+func isOriginLeakResponseHeaderName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "x-origin-ip",
+		"x-origin-addr",
+		"x-origin-server",
+		"x-backend-ip",
+		"x-backend-addr",
+		"x-backend-server",
+		"x-server-ip",
+		"x-upstream-addr",
+		"x-upstream-server",
+		"x-real-ip",
+		"x-forwarded-for",
+		"via":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -1195,6 +1239,9 @@ func writeProxyCustomHeaders(b *strings.Builder, headers map[string]string, resp
 		if name == "" || value == "" {
 			continue
 		}
+		if isOriginLeakResponseHeaderName(name) {
+			continue
+		}
 		b.WriteString("        add_header " + name + " " + quoteNginxValue(value) + " always;\n")
 	}
 }
@@ -1215,33 +1262,10 @@ func hasResponseHeader(headers map[string]string, target string) bool {
 }
 
 func writeProxyAccessRules(b *strings.Builder, domain edgeDomain) {
-	wroteRule := false
 	for _, ip := range domain.WhiteIPs {
 		if ip = sanitizeNginxToken(ip); ip != "" {
 			b.WriteString("        allow " + ip + ";\n")
-			wroteRule = true
 		}
-	}
-	for _, rule := range domain.ACLRules {
-		ip := sanitizeNginxToken(rule.IP)
-		if ip == "" {
-			continue
-		}
-		switch strings.ToLower(strings.TrimSpace(rule.Action)) {
-		case "allow":
-			b.WriteString("        allow " + ip + ";\n")
-			wroteRule = true
-		case "deny":
-			b.WriteString("        deny " + ip + ";\n")
-			wroteRule = true
-		}
-	}
-	if strings.EqualFold(strings.TrimSpace(domain.ACLDefaultAction), "deny") {
-		b.WriteString("        deny all;\n")
-		return
-	}
-	if wroteRule {
-		b.WriteString("        allow all;\n")
 	}
 }
 

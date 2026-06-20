@@ -26,6 +26,8 @@ type NodeController struct {
 
 var errNodeSubIPChangeBlocked = errors.New("node.subip_change_blocked")
 
+const defaultNodeSSHUser = "root"
+
 type nodeRequest struct {
 	ID             int64              `json:"id"`
 	RegionID       *int64             `json:"region_id"`
@@ -474,6 +476,7 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
 	}
+	normalizeNodeSSHDefaults(&req)
 	req.WorkDir = "/www/node"
 
 	token := strings.TrimSpace(config.App.AgentToken)
@@ -601,6 +604,7 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
 	}
+	normalizeNodeSSHDefaults(&req)
 	req.WorkDir = "/www/node"
 
 	var existing models.Node
@@ -894,6 +898,10 @@ func (ctr *NodeController) InstallNode(c *gin.Context) {
 		return
 	}
 	apiBase := services.ResolveAPIBaseURL(c.Request)
+	if err := services.ValidateNodeInstallConfig(&node, apiBase); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(err.Error())})
+		return
+	}
 	if err := updateInstallStatus(node.ID, "running", "", time.Now()); err != nil {
 		log.Printf("[Install] update running status failed node=%d err=%v", node.ID, err)
 	}
@@ -938,6 +946,17 @@ func resolveInitialInstallStatus(autoInstall bool) string {
 		return "running"
 	}
 	return "idle"
+}
+
+func normalizeNodeSSHDefaults(req *nodeRequest) {
+	if strings.TrimSpace(req.SSHUser) == "" {
+		req.SSHUser = defaultNodeSSHUser
+	} else {
+		req.SSHUser = strings.TrimSpace(req.SSHUser)
+	}
+	if req.SSHPort <= 0 {
+		req.SSHPort = 22
+	}
 }
 
 func hasLineBindings(tx *gorm.DB, nodeIDs []int64) (bool, error) {

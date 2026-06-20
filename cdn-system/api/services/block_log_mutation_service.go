@@ -1,6 +1,8 @@
 package services
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,8 +26,9 @@ func DeleteBlockedLogsByIPs(ips []string) error {
 		return nil
 	}
 	query := fmt.Sprintf(
-		"ALTER TABLE node_access_logs DELETE WHERE remote_addr IN (%s) AND status IN (403,410,418,429,451) SETTINGS mutations_sync = 1",
+		"ALTER TABLE node_access_logs DELETE WHERE remote_addr IN (%s) AND status IN (%s) SETTINGS mutations_sync = 1",
 		strings.Join(quoted, ","),
+		blockedStatusSQLList(),
 	)
 	if err := execClickHouseMutation(query); err != nil {
 		return err
@@ -39,13 +42,73 @@ func DeleteBlockedLogsByHostIPs(items []BlockedLogKey) error {
 		return nil
 	}
 	query := fmt.Sprintf(
-		"ALTER TABLE node_access_logs DELETE WHERE (host, remote_addr) IN (%s) AND status IN (403,410,418,429,451) SETTINGS mutations_sync = 1",
+		"ALTER TABLE node_access_logs DELETE WHERE (host, remote_addr) IN (%s) AND status IN (%s) SETTINGS mutations_sync = 1",
 		strings.Join(tuples, ","),
+		blockedStatusSQLList(),
 	)
 	if err := execClickHouseMutation(query); err != nil {
 		return err
 	}
 	return verifyBlockedLogPairsDeleted(tuples)
+}
+
+func ListDistinctBlockedIPsForHosts(hosts []string) ([]string, error) {
+	quoted := quoteValues(hosts)
+	if len(quoted) == 0 {
+		return nil, nil
+	}
+	query := fmt.Sprintf(
+		"SELECT DISTINCT remote_addr FROM node_access_logs WHERE host IN (%s) AND status IN (%s) LIMIT 5000",
+		strings.Join(quoted, ","),
+		blockedStatusSQLList(),
+	)
+	return queryDistinctBlockedIPs(query)
+}
+
+func queryDistinctBlockedIPs(query string) ([]string, error) {
+	if db.ClickHouseEnabled() && db.CK != nil {
+		rows, err := db.CK.Query(query)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		ips := make([]string, 0, 32)
+		for rows.Next() {
+			var ip string
+			if err := rows.Scan(&ip); err != nil {
+				return nil, err
+			}
+			ip = strings.TrimSpace(ip)
+			if ip != "" {
+				ips = append(ips, ip)
+			}
+		}
+		return normalizeUnblockIPs(ips), rows.Err()
+	}
+	if cfg := buildHTTPConfig(); cfg != nil {
+		body, err := queryClickHouseHTTP(cfg, query+" FORMAT JSONEachRow")
+		if err != nil {
+			return nil, err
+		}
+		ips := make([]string, 0, 32)
+		scanner := bufio.NewScanner(bytes.NewReader(body))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			var row map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				continue
+			}
+			ip := strings.TrimSpace(fmt.Sprintf("%v", row["remote_addr"]))
+			if ip != "" && ip != "<nil>" {
+				ips = append(ips, ip)
+			}
+		}
+		return normalizeUnblockIPs(ips), scanner.Err()
+	}
+	return nil, nil
 }
 
 func DeleteBlockedLogsByHosts(hosts []string) error {
@@ -54,8 +117,9 @@ func DeleteBlockedLogsByHosts(hosts []string) error {
 		return nil
 	}
 	query := fmt.Sprintf(
-		"ALTER TABLE node_access_logs DELETE WHERE host IN (%s) AND status IN (403,410,418,429,451) SETTINGS mutations_sync = 1",
+		"ALTER TABLE node_access_logs DELETE WHERE host IN (%s) AND status IN (%s) SETTINGS mutations_sync = 1",
 		strings.Join(quoted, ","),
+		blockedStatusSQLList(),
 	)
 	if err := execClickHouseMutation(query); err != nil {
 		return err
@@ -157,16 +221,16 @@ func verifyBlockedLogPairsDeleted(tuples []string) error {
 
 func countBlockedLogs(field string, quotedValues []string) (int64, error) {
 	query := fmt.Sprintf(
-		"SELECT count() FROM node_access_logs WHERE %s IN (%s) AND status IN (403,410,418,429,451)",
-		field, strings.Join(quotedValues, ","),
+		"SELECT count() FROM node_access_logs WHERE %s IN (%s) AND status IN (%s)",
+		field, strings.Join(quotedValues, ","), blockedStatusSQLList(),
 	)
 	return countClickHouseRows(query)
 }
 
 func countBlockedLogPairs(tuples []string) (int64, error) {
 	query := fmt.Sprintf(
-		"SELECT count() FROM node_access_logs WHERE (host, remote_addr) IN (%s) AND status IN (403,410,418,429,451)",
-		strings.Join(tuples, ","),
+		"SELECT count() FROM node_access_logs WHERE (host, remote_addr) IN (%s) AND status IN (%s)",
+		strings.Join(tuples, ","), blockedStatusSQLList(),
 	)
 	return countClickHouseRows(query)
 }

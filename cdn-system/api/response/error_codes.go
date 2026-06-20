@@ -11,6 +11,7 @@ const (
 	CodeInternalError      = 50001
 	CodeBadGateway         = 50201
 	CodeServiceUnavailable = 50301
+	CodeConnectionLimit    = 51501
 )
 
 // NormalizeCode converts legacy code/http status into unified business code.
@@ -59,6 +60,8 @@ func FromHTTPStatus(status int) int {
 		return CodeBadGateway
 	case 503:
 		return CodeServiceUnavailable
+	case 515:
+		return CodeConnectionLimit
 	default:
 		if status >= 500 {
 			return CodeInternalError

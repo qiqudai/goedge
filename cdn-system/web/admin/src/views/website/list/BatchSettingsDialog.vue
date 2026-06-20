@@ -583,8 +583,6 @@
         <div class="toolbar-row">
           <el-checkbox v-model="selected.security.customRules">规则列表</el-checkbox>
           <el-button size="small" type="primary" :disabled="!selected.security.customRules" @click="openRuleDialog('create')">新增规则</el-button>
-          <el-button size="small" :disabled="!selected.security.customRules" @click="toggleAllRules(true)">启用所有规则</el-button>
-          <el-button size="small" :disabled="!selected.security.customRules" @click="toggleAllRules(false)">关闭所有规则</el-button>
         </div>
         <el-table :data="form.security.cc.customRules" border size="small" style="margin-bottom: 10px;">
           <el-table-column label="匹配条件" min-width="200">
@@ -602,11 +600,6 @@
             <template #default="{ row }">{{ row.breakMatch ? '停止匹配' : '继续下一条' }}</template>
           </el-table-column>
           <el-table-column prop="remark" label="备注" />
-          <el-table-column label="状态" width="80" align="center">
-            <template #default="{ row }">
-              <el-switch v-model="row.on" size="small" :disabled="!selected.security.customRules" />
-            </template>
-          </el-table-column>
           <el-table-column label="操作" width="120" align="center">
             <template #default="{ $index }">
               <el-button link type="primary" size="small" :disabled="!selected.security.customRules" @click="editRule($index)">编辑</el-button>
@@ -1004,6 +997,22 @@
               <el-radio value="custom">自定义 L2 配置</el-radio>
             </el-radio-group>
           </div>
+          <div class="batch-row">
+            <el-checkbox v-model="selected.advanced.errorPageLang">错误页语言</el-checkbox>
+            <el-select
+              v-model="form.advanced.errorPageLang"
+              placeholder="继承全局"
+              :disabled="!selected.advanced.errorPageLang"
+              style="width: 360px"
+            >
+              <el-option
+                v-for="item in siteErrorLangOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </div>
         </el-form>
         <div class="section-footer">
           <el-button
@@ -1106,10 +1115,6 @@
         <el-form-item label="备注">
           <el-input v-model="ruleForm.remark" placeholder="请输入备注" />
         </el-form-item>
-
-        <el-form-item label="状态">
-          <el-switch v-model="ruleForm.on" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button size="small" @click="ruleDialog.visible = false">取消</el-button>
@@ -1144,6 +1149,8 @@ import {
   getCachePreset
 } from '@/utils/siteHelpers'
 import { originConditionItems, originConditionOperators, cacheTypeLabelMap } from '@/constants/origin'
+import { fetchGlobalConfig } from '@/api/globalConfig'
+import { SITE_ERROR_PAGE_LANG_OPTIONS } from '@/constants/errorPageLocales'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -1157,6 +1164,24 @@ const activeSection = ref('basic')
 const submittingSection = ref('')
 
 const hasIds = computed(() => Array.isArray(props.ids) && props.ids.length > 0)
+
+const enabledGlobalLangs = ref([])
+
+const siteErrorLangOptions = computed(() => {
+  const dynamic = enabledGlobalLangs.value.map(lang => ({ value: lang, label: `指定语言：${lang}` }))
+  return [...SITE_ERROR_PAGE_LANG_OPTIONS, ...dynamic]
+})
+
+const loadErrorPageLangOptions = async () => {
+  try {
+    const res = await fetchGlobalConfig()
+    if (res.code === 0 || res.code === 200) {
+      enabledGlobalLangs.value = res.data?.error_page_i18n?.enabled_langs || []
+    }
+  } catch {
+    enabledGlobalLangs.value = []
+  }
+}
 
 const defaultForm = () => ({
   basic: {
@@ -1270,7 +1295,8 @@ const defaultForm = () => ({
     realtimeIdentify: false,
     realtimeSend: false,
     defaultSite: false,
-    l2Config: 'current'
+    l2Config: 'current',
+    errorPageLang: ''
   }
 })
 
@@ -1347,7 +1373,8 @@ const defaultSelected = () => ({
     realtimeIdentify: false,
     realtimeSend: false,
     defaultSite: false,
-    l2Config: false
+    l2Config: false,
+    errorPageLang: false
   }
 })
 
@@ -1944,6 +1971,9 @@ const buildSectionPayload = (section) => {
     if (selected.advanced.l2Config) {
       settings.l2_config = form.advanced.l2Config
     }
+    if (selected.advanced.errorPageLang) {
+      settings.error_page_lang = form.advanced.errorPageLang || ''
+    }
   }
 
   if (Object.keys(settings).length > 0) {
@@ -2139,6 +2169,9 @@ const removeMatcher = (idx) => {
 
 const saveRule = () => {
   const newRule = JSON.parse(JSON.stringify(ruleForm))
+  if (ruleDialog.mode === 'create' && newRule.on === undefined) {
+    newRule.on = true
+  }
   if (ruleDialog.mode === 'create') {
     form.security.cc.customRules.push(newRule)
   } else {
@@ -2153,12 +2186,6 @@ const deleteRule = (idx) => {
 
 const editRule = (idx) => {
   openRuleDialog('update', idx)
-}
-
-const toggleAllRules = (enable) => {
-  form.security.cc.customRules.forEach(r => {
-    r.on = enable
-  })
 }
 
 const getMatcherText = (m) => {
@@ -2177,6 +2204,7 @@ const isVerificationAction = (val) => {
 }
 
 onMounted(() => {
+  loadErrorPageLangOptions()
   if (props.modelValue) {
     resetForm()
     loadDependencies()
@@ -2244,7 +2272,7 @@ onMounted(() => {
 
 .divider {
   height: 1px;
-  background-color: #ebeef5;
+  background-color: var(--el-border-color-lighter);
   margin: 20px 0;
 }
 
@@ -2255,9 +2283,11 @@ onMounted(() => {
 }
 
 .matcher-config {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--control-border);
   padding: 10px;
   border-radius: 4px;
+  background: var(--control-bg);
+  color: var(--control-text);
 }
 
 .matcher-row {
@@ -2265,9 +2295,15 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 5px;
-  background: #f5f7fa;
+  background: var(--control-bg-hover);
+  color: var(--control-text);
   padding: 5px 10px;
   border-radius: 4px;
+}
+
+.matcher-text {
+  color: var(--control-text);
+  font-size: 13px;
 }
 
 .matcher-add {
@@ -2285,9 +2321,11 @@ onMounted(() => {
 
 .rule-params {
   margin-top: 10px;
-  background: #f5f7fa;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
   padding: 10px;
   border-radius: 4px;
+  color: var(--control-text);
 }
 
 .disabled-block {

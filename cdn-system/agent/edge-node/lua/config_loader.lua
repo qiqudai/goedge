@@ -13,6 +13,74 @@ end
 -- Config file path (relative to nginx prefix)
 local CONFIG_FILE = resolve_config_path()
 local CHECK_INTERVAL = 1 -- seconds
+local IP_UNBLOCK_REV_KEY = "ip_unblock:last_rev"
+
+local function resolve_pending_unblock_path()
+    local prefix = ngx.config.prefix() or ""
+    if prefix ~= "" and prefix ~= "/" then
+        prefix = prefix .. "/"
+    end
+    return prefix .. "conf/ip_unblock_pending.json"
+end
+
+local function apply_ip_unblocks(ips, rev)
+    if type(ips) ~= "table" or #ips == 0 then
+        return
+    end
+    local ip_block = require "lua.ip_block"
+    for _, ip in ipairs(ips) do
+        if ip and ip ~= "" then
+            ip_block.unblock(ip)
+        end
+    end
+    if rev and rev > 0 then
+        local store = ngx.shared.config_store
+        if store then
+            store:set(IP_UNBLOCK_REV_KEY, rev, 86400)
+        end
+    end
+    ngx.log(ngx.INFO, "ip_unblock applied count=", #ips, " rev=", tostring(rev or 0))
+end
+
+local function apply_pending_ip_unblock_file()
+    local path = resolve_pending_unblock_path()
+    local f = io.open(path, "r")
+    if not f then
+        return
+    end
+    local content = f:read("*a")
+    f:close()
+    os.remove(path)
+    if not content or content == "" then
+        return
+    end
+    local data, err = cjson.decode(content)
+    if not data then
+        ngx.log(ngx.ERR, "ip_unblock pending decode failed: ", err or "unknown")
+        return
+    end
+    apply_ip_unblocks(data.ips, tonumber(data.rev) or 0)
+end
+
+local function apply_config_ip_unblock(config)
+    local directive = config and config.ip_unblock
+    if type(directive) ~= "table" then
+        return
+    end
+    local rev = tonumber(directive.rev) or 0
+    if rev <= 0 or type(directive.ips) ~= "table" or #directive.ips == 0 then
+        return
+    end
+    local store = ngx.shared.config_store
+    local last_rev = 0
+    if store then
+        last_rev = tonumber(store:get(IP_UNBLOCK_REV_KEY)) or 0
+    end
+    if rev <= last_rev then
+        return
+    end
+    apply_ip_unblocks(directive.ips, rev)
+end
 
 -- Shared dictionary to store config version/metadata if needed
 -- For worker-level cache, we use a local module variable (upvalue)
@@ -244,6 +312,9 @@ function _M.load_config()
     
     -- 3. Export to _G for access.lua access
     _G.cdn_config = current_config
+
+    apply_config_ip_unblock(current_config)
+    apply_pending_ip_unblock_file()
     
     ngx.log(ngx.INFO, "CDN Config Reloaded. Version: ", version)
     

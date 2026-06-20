@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"net/http"
 	"strconv"
 	"strings"
@@ -135,6 +136,15 @@ func (ctr *SiteGroupController) Delete(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": T("Not Found")})
 			return
 		}
+	}
+	memberCount, err := services.CountSiteGroupMembers(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
+		return
+	}
+	if memberCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("site_group.has_members")})
+		return
 	}
 	if err := db.DB.Where("group_id = ?", id).Delete(&models.SiteGroupRelation{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete Failed")})

@@ -404,7 +404,7 @@ const handleEdit = (row) => {
 }
 
 const handleDelete = (row) => {
-    ElMessageBox.confirm('确认删除该套餐吗?', '提示', {
+    ElMessageBox.confirm('若该套餐已有用户购买记录则无法删除。确认删除该套餐吗?', '提示', {
         type: 'warning'
     }).then(() => {
         request.delete(`/plans/${row.id}`).then(() => {

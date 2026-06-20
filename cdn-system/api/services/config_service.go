@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"gorm.io/gorm"
 )
 
 type ConfigService struct{}
@@ -51,6 +53,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	if globalCfg := loadGlobalConfig(); globalCfg != nil {
 		payload.WAF = &globalCfg.WAF
 		payload.Resources = &globalCfg.Resources
+		payload.ErrorPageI18n = globalCfg.ErrorPageI18n
 		payload.ErrorPages = globalCfg.ErrorPages
 		payload.DefaultConfig = &globalCfg.DefaultConfig
 	}
@@ -119,12 +122,12 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	}
 
 	// 2. Find Sites assigned to these Node Groups
-	var sites []models.Site
 	siteDB := db.DB
 	if omitColumns := siteMissingColumnsForTask(siteDB); len(omitColumns) > 0 {
 		siteDB = siteDB.Omit(omitColumns...)
 	}
-	if err := siteDB.Where("node_group_id IN ?", groupIDs).Find(&sites).Error; err != nil {
+	sites, err := loadSitesForConfigGroups(siteDB, groupIDs)
+	if err != nil {
 		return nil, err
 	}
 	nodeGroupCounts := loadNodeGroupCounts(groupIDs)
@@ -137,6 +140,14 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	// Preload certs for HTTPS mapping
 	var certs []models.Cert
 	_ = db.DB.Where("enable = ?", true).Find(&certs).Error
+
+	siteIDs := make([]int64, 0, len(sites))
+	for _, site := range sites {
+		if site.ID != 0 {
+			siteIDs = append(siteIDs, site.ID)
+		}
+	}
+	siteDefaultGroupMap := LoadSiteDefaultGroupMap(siteIDs)
 
 	usedRuleIDs := make([]int64, 0)
 	now := time.Now()
@@ -158,7 +169,8 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		}
 
 		effectiveSite := cloneSiteForConfig(site)
-		if defaults, err := GetSiteDefaultMap(site.UserID); err == nil {
+		defaultGroupID := siteDefaultGroupMap[site.ID]
+		if defaults, err := GetSiteDefaultMapWithGroup(site.UserID, defaultGroupID); err == nil {
 			ApplySiteDefaults(effectiveSite, defaults)
 		}
 
@@ -224,7 +236,8 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			}
 		}
 
-		aclDefault, aclRules := buildACLForSite(*effectiveSite)
+		aclDefault, aclDenyStatus, aclRedirectURL, aclRules := buildACLForSite(*effectiveSite)
+		ccAutoSwitch := extractCCAutoSwitch(effectiveSite.Settings)
 		regionBlock := extractRegionBlock(*effectiveSite)
 		hotlinkCfg := extractHotlinkConfig(effectiveSite.Settings)
 		corsCfg := extractCorsConfig(effectiveSite.Settings)
@@ -236,12 +249,16 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		urlRedirects := extractURLRedirects(effectiveSite.Settings)
 		urlRewrites := extractURLRewrites(effectiveSite.Settings)
 		originConditions := extractOriginConditions(effectiveSite.Settings)
+		customCCRules := extractCustomCCRules(effectiveSite.Settings)
 		siteType := strings.ToLower(strings.TrimSpace(parseString(effectiveSite.Settings["site_type"])))
 		if siteType == "" {
 			siteType = "website"
 		}
 		if effectiveSite.CcDefaultRule > 0 {
 			usedRuleIDs = append(usedRuleIDs, effectiveSite.CcDefaultRule)
+		}
+		if ccAutoSwitch != nil && ccAutoSwitch.Enable && ccAutoSwitch.RuleID > 0 {
+			usedRuleIDs = append(usedRuleIDs, ccAutoSwitch.RuleID)
 		}
 		for _, domain := range effectiveSite.Domains {
 			normalizedDomain := normalizeDomainHostForEdge(domain)
@@ -280,11 +297,15 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				Status:                         status,
 				WAFEnable:                      wafEnable,
 				ACLDefaultAction:               aclDefault,
+				ACLDefaultDenyStatus:           aclDenyStatus,
+				ACLDefaultRedirectURL:          aclRedirectURL,
 				ACLRules:                       aclRules,
 				BlackIPs:                       parseIPList(effectiveSite.BlackIPRaw),
 				WhiteIPs:                       parseIPList(effectiveSite.WhiteIPRaw),
 				RegionBlock:                    regionBlock,
 				CCRuleID:                       effectiveSite.CcDefaultRule,
+				CCAutoSwitch:                   ccAutoSwitch,
+				CustomCCRules:                  customCCRules,
 				OriginProtocol:                 originProtocol,
 				OriginHTTPPort:                 originHTTPPort,
 				OriginHTTPSPort:                originHTTPSPort,
@@ -333,6 +354,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				UpstreamKeepalive:              advCfg.keepalive,
 				UpstreamKeepaliveConn:          advCfg.keepaliveConn,
 				UpstreamKeepaliveTimeout:       advCfg.keepaliveTimeout,
+				ErrorPageLang:                  extractErrorPageLang(effectiveSite.Settings),
 			}
 			if hasHTTPS {
 				cert := findCertForSiteDomain(selectedCertID, normalizedDomain, certs)
@@ -374,8 +396,130 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		payload.CCFilters = ccFilters
 	}
 
+	payload.IPUnblock = SnapshotIPUnblock()
+
 	payload.Version = hashConfigVersion(payload)
 	return payload, nil
+}
+
+func loadSitesForConfigGroups(siteDB *gorm.DB, groupIDs []int64) ([]models.Site, error) {
+	groupIDs = uniqueInt64(groupIDs)
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+	groupSet := int64Set(groupIDs)
+	siteByID := map[int64]models.Site{}
+	appendSites := func(rows []models.Site) {
+		for _, site := range rows {
+			if site.ID == 0 {
+				continue
+			}
+			if _, ok := siteByID[site.ID]; ok {
+				continue
+			}
+			siteByID[site.ID] = site
+		}
+	}
+
+	var direct []models.Site
+	if err := siteDB.Where("node_group_id IN ? OR (enable_backup_group = ? AND backup_node_group IN ?)", groupIDs, true, groupIDs).Find(&direct).Error; err != nil {
+		return nil, err
+	}
+	appendSites(direct)
+
+	packageIDs := loadConfigPackageIDsByGroups(groupIDs)
+	if len(packageIDs) > 0 {
+		var byPackage []models.Site
+		if err := siteDB.Where("user_package IN ?", packageIDs).Find(&byPackage).Error; err != nil {
+			return nil, err
+		}
+		appendSites(byPackage)
+	}
+
+	if len(siteByID) == 0 {
+		return nil, nil
+	}
+	candidates := make([]models.Site, 0, len(siteByID))
+	for _, site := range siteByID {
+		candidates = append(candidates, site)
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
+
+	packMap, err := loadUserPackageMap(candidates)
+	if err != nil {
+		return nil, err
+	}
+	planIDSet := map[int64]struct{}{}
+	for _, pkg := range packMap {
+		if pkg.PackageID != 0 {
+			planIDSet[int64(pkg.PackageID)] = struct{}{}
+		}
+	}
+	planIDs := make([]int64, 0, len(planIDSet))
+	for id := range planIDSet {
+		planIDs = append(planIDs, id)
+	}
+	planMap := loadPlanGroupMap(planIDs)
+
+	sites := make([]models.Site, 0, len(candidates))
+	for _, site := range candidates {
+		pkg := packMap[site.UserPackageID]
+		primary, backup, enableBackup := resolveSiteGroups(site, pkg, planMap[int64(pkg.PackageID)])
+		if siteConfigGroupMatches(primary, backup, enableBackup, groupSet) {
+			sites = append(sites, site)
+		}
+	}
+	return sites, nil
+}
+
+func loadConfigPackageIDsByGroups(groupIDs []int64) []int64 {
+	groupIDs = uniqueInt64(groupIDs)
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0)
+	var direct []int64
+	_ = db.DB.Model(&models.UserPackage{}).
+		Where("node_group_id IN ? OR (enable_backup_group = ? AND backup_node_group IN ?)", groupIDs, true, groupIDs).
+		Pluck("id", &direct).Error
+	ids = append(ids, direct...)
+
+	planIDs := loadPlanIDsByGroups(groupIDs)
+	if len(planIDs) > 0 {
+		var byPlan []int64
+		_ = db.DB.Model(&models.UserPackage{}).
+			Where("package IN ?", planIDs).
+			Pluck("id", &byPlan).Error
+		ids = append(ids, byPlan...)
+	}
+	return uniqueInt64(ids)
+}
+
+func siteConfigGroupMatches(primary int64, backup int64, enableBackup bool, groupSet map[int64]struct{}) bool {
+	if len(groupSet) == 0 {
+		return false
+	}
+	if primary != 0 {
+		if _, ok := groupSet[primary]; ok {
+			return true
+		}
+	}
+	if enableBackup && backup != 0 {
+		if _, ok := groupSet[backup]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func int64Set(items []int64) map[int64]struct{} {
+	out := make(map[int64]struct{}, len(items))
+	for _, item := range items {
+		if item != 0 {
+			out[item] = struct{}{}
+		}
+	}
+	return out
 }
 
 func hashConfigVersion(cfg *models.EdgeConfig) int64 {
@@ -410,24 +554,36 @@ func findNode(nodeID string) (*models.Node, error) {
 }
 
 func loadGlobalConfig() *models.GlobalConfig {
-	var sys models.SysConfig
-	if err := db.DB.First(&sys, "name = ?", "global_config").Error; err != nil {
-		return nil
-	}
-	if sys.Value == "" {
-		return nil
-	}
-	var cfg models.GlobalConfig
-	if err := json.Unmarshal([]byte(sys.Value), &cfg); err != nil {
-		return nil
-	}
-	if len(cfg.ErrorPages) > 0 {
-		cfg.ErrorPages = normalizeErrorPages(cfg.ErrorPages)
+	cfg := LoadGlobalConfigNormalized()
+	if cfg == nil {
+		cfg = &models.GlobalConfig{}
 	}
 	if len(cfg.ErrorPages) == 0 {
-		cfg.ErrorPages = normalizeErrorPages(loadErrorPagesFromConfig())
+		cfg.ErrorPages = DefaultErrorPageDefinitions()
 	}
-	return &cfg
+	NormalizeGlobalConfigErrorPages(cfg)
+	return cfg
+}
+
+func extractErrorPageLang(settings map[string]interface{}) string {
+	if settings == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(parseString(settings["error_page_lang"]))
+	if raw == "" {
+		if adv := getMap(settings, "advanced"); adv != nil {
+			raw = strings.TrimSpace(parseString(adv["error_page_lang"]))
+		}
+	}
+	raw = strings.ToLower(raw)
+	switch raw {
+	case "", "inherit", "default":
+		return ""
+	case "browser":
+		return "browser"
+	default:
+		return normalizeLocaleTag(raw)
+	}
 }
 
 func GetGlobalDefaultConfig() *models.DefaultSiteConfig {
@@ -437,87 +593,29 @@ func GetGlobalDefaultConfig() *models.DefaultSiteConfig {
 	return nil
 }
 
-func normalizeErrorPages(pages map[string]string) map[string]string {
-	if len(pages) == 0 {
-		return pages
-	}
-	normalized := make(map[string]string)
-	copyIfPresent := func(key string) {
-		if val, ok := pages[key]; ok && val != "" {
-			normalized[key] = val
-		}
-	}
-	for _, key := range []string{"400", "403", "502", "504", "traffic_limit", "site_locked", "domain_invalid", "conn_limit", "timeout", "ip"} {
-		copyIfPresent(key)
-	}
-	fallbacks := map[string]string{
-		"p400":                "400",
-		"p403":                "403",
-		"p502":                "502",
-		"p504":                "504",
-		"p512":                "timeout",
-		"p513":                "traffic_limit",
-		"p514":                "site_locked",
-		"p515":                "conn_limit",
-		"access_ip_not_allow": "ip",
-		"host_not_found":      "domain_invalid",
-	}
-	for legacy, mapped := range fallbacks {
-		if _, ok := normalized[mapped]; ok {
-			continue
-		}
-		if val, ok := pages[legacy]; ok && val != "" {
-			normalized[mapped] = val
-		}
-	}
-	return normalized
-}
-
-func loadErrorPagesFromConfig() map[string]string {
-	var cfgItem models.ConfigItem
-	if err := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "error-page", "error_page", "global", 0).
-		First(&cfgItem).Error; err == nil && cfgItem.Value != "" {
-		var pages map[string]string
-		if json.Unmarshal([]byte(cfgItem.Value), &pages) == nil && len(pages) > 0 {
-			return pages
-		}
-	}
-	return map[string]string{
-		"400":            "<html><body><h1>400 Bad Request</h1><p>Our systems have detected unusual traffic.</p></body></html>",
-		"403":            "<html><body><h1>403 Forbidden</h1><p>Access Denied.</p></body></html>",
-		"502":            "<html><body><h1>502 Bad Gateway</h1><p>The server is busy.</p></body></html>",
-		"504":            "<html><body><h1>504 Gateway Timeout</h1><p>The origin server did not respond.</p></body></html>",
-		"traffic_limit":  "<h1>Traffic Limit Exceeded</h1>",
-		"site_locked":    "<h1>Site Locked</h1>",
-		"domain_invalid": "<h1>Domain Not Configured</h1>",
-		"conn_limit":     "<h1>Connection Limit Exceeded</h1>",
-		"timeout":        "<h1>Package Expired</h1>",
-		"ip":             "<h1>IP Forbidden</h1>",
-	}
-}
-
-func buildACLForSite(site models.Site) (string, []models.EdgeACLRule) {
+func buildACLForSite(site models.Site) (string, int, string, []models.EdgeACLRule) {
 	if site.Settings == nil {
-		return "", nil
+		return "", 0, "", nil
 	}
 	access, ok := site.Settings["access"].(map[string]interface{})
 	if !ok {
-		return "", nil
+		return "", 0, "", nil
 	}
 	aclID := parseACLID(access["acl"])
 	if aclID == 0 {
-		return "", nil
+		return "", 0, "", nil
 	}
 	var acl models.ACL
-	if err := db.DB.Where("id = ?", aclID).First(&acl).Error; err != nil {
-		return "", nil
+	if err := db.DB.Where("id = ? AND enable = ?", aclID, true).First(&acl).Error; err != nil {
+		return "", 0, "", nil
 	}
-	defaultAction := strings.TrimSpace(acl.DefaultAction)
+	defaultAction := normalizeACLAction(acl.DefaultAction)
 	if defaultAction == "" {
 		defaultAction = "allow"
 	}
+	denyStatus, redirectURL := parseACLDefaultDenyMeta(acl.Data)
 	rules := parseACLRules(acl.Data)
-	return defaultAction, rules
+	return defaultAction, denyStatus, redirectURL, rules
 }
 
 type aclCondition struct {
@@ -527,87 +625,371 @@ type aclCondition struct {
 }
 
 type aclRule struct {
-	Conditions []aclCondition `json:"conditions"`
-	Action     string         `json:"action"`
+	Conditions  []aclCondition `json:"conditions"`
+	Action      string         `json:"action"`
+	DenyStatus  int            `json:"deny_status"`
+	RedirectURL string         `json:"redirect_url"`
+}
+
+type aclDataEnvelope struct {
+	Rules              []aclRule `json:"rules"`
+	DefaultDenyStatus  int       `json:"default_deny_status"`
+	DefaultRedirectURL string    `json:"default_redirect_url"`
+}
+
+type legacyACLAPIRule struct {
+	ACLAction  string                            `json:"acl_action"`
+	ACLMatcher map[string]map[string]interface{} `json:"acl_matcher"`
+	Action     string                            `json:"action"`
+}
+
+func normalizeACLAction(action string) string {
+	action = strings.ToLower(strings.TrimSpace(action))
+	switch action {
+	case "reject", "deny":
+		return "deny"
+	case "allow", "permit":
+		return "allow"
+	default:
+		return action
+	}
+}
+
+func normalizeACLConditionItem(item string) string {
+	item = strings.ToLower(strings.TrimSpace(item))
+	switch item {
+	case "host", "req_host":
+		return "domain"
+	case "user_agent", "ua":
+		return "user_agent"
+	case "req_uri", "request_uri":
+		return "uri"
+	case "uri_path", "request_path":
+		return "uri_path"
+	case "req_method", "method":
+		return "method"
+	case "country_iso_code", "country_code":
+		return "country"
+	case "as_number", "asn":
+		return "as_number"
+	case "accept_language", "header_accept_language":
+		return "accept_language"
+	default:
+		return item
+	}
+}
+
+func normalizeACLOperator(op string) string {
+	op = strings.TrimSpace(op)
+	switch op {
+	case "=":
+		return "eq"
+	case "!=":
+		return "neq"
+	case "contain":
+		return "contains"
+	case "!contain":
+		return "not_contains"
+	case "AC":
+		return "ip_range"
+	case "!AC":
+		return "not_ip_range"
+	default:
+		return op
+	}
+}
+
+func normalizeACLCondition(cond aclCondition) models.EdgeACLCondition {
+	return models.EdgeACLCondition{
+		Item:     normalizeACLConditionItem(cond.Item),
+		Operator: normalizeACLOperator(cond.Operator),
+		Value:    strings.TrimSpace(cond.Value),
+	}
+}
+
+func parseACLDefaultDenyMeta(raw string) (int, string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, ""
+	}
+	var envelope aclDataEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelope); err == nil {
+		return envelope.DefaultDenyStatus, strings.TrimSpace(envelope.DefaultRedirectURL)
+	}
+	return 0, ""
 }
 
 func parseACLRules(raw string) []models.EdgeACLRule {
-	if strings.TrimSpace(raw) == "" {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return nil
 	}
+
+	var envelope aclDataEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelope); err == nil && len(envelope.Rules) > 0 {
+		return convertACLRules(envelope.Rules)
+	}
+
+	var legacyAPI []legacyACLAPIRule
+	if err := json.Unmarshal([]byte(raw), &legacyAPI); err == nil && len(legacyAPI) > 0 && legacyAPI[0].ACLMatcher != nil {
+		return convertLegacyACLAPIRules(legacyAPI)
+	}
+
 	var items []models.EdgeACLRule
-	if err := json.Unmarshal([]byte(raw), &items); err == nil {
-		return items
+	if err := json.Unmarshal([]byte(raw), &items); err == nil && len(items) > 0 {
+		normalized := normalizeEdgeACLRules(items)
+		if len(normalized) > 0 {
+			return normalized
+		}
 	}
-	type aclData struct {
-		Rules []aclRule `json:"rules"`
-	}
-	var data aclData
-	if err := json.Unmarshal([]byte(raw), &data); err == nil && len(data.Rules) > 0 {
-		return extractACLIPRules(data.Rules)
-	}
+
 	var rules []aclRule
 	if err := json.Unmarshal([]byte(raw), &rules); err == nil && len(rules) > 0 {
-		return extractACLIPRules(rules)
+		converted := convertACLRules(rules)
+		if len(converted) > 0 {
+			return converted
+		}
 	}
-	// Try list of objects
+
 	var generic []map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &generic); err != nil {
 		return nil
 	}
+	out := make([]models.EdgeACLRule, 0, len(generic))
 	for _, item := range generic {
-		entry := models.EdgeACLRule{}
-		if v, ok := item["ip"].(string); ok {
-			entry.IP = v
-		}
-		if v, ok := item["action"].(string); ok {
-			entry.Action = v
-		}
-		if entry.IP != "" {
-			if entry.Action == "" {
-				entry.Action = "allow"
-			}
-			items = append(items, entry)
+		if entry := parseACLRuleMap(item); entry != nil {
+			out = append(out, *entry)
 		}
 	}
-	return items
+	return out
 }
 
-func extractACLIPRules(rules []aclRule) []models.EdgeACLRule {
+func convertACLRules(rules []aclRule) []models.EdgeACLRule {
 	if len(rules) == 0 {
 		return nil
 	}
-	out := make([]models.EdgeACLRule, 0)
+	out := make([]models.EdgeACLRule, 0, len(rules))
 	for _, rule := range rules {
-		action := strings.TrimSpace(rule.Action)
+		entry := models.EdgeACLRule{
+			Action:      normalizeACLAction(rule.Action),
+			DenyStatus:  rule.DenyStatus,
+			RedirectURL: strings.TrimSpace(rule.RedirectURL),
+		}
+		if entry.Action == "" {
+			entry.Action = "allow"
+		}
+		for _, cond := range rule.Conditions {
+			normalized := normalizeACLCondition(cond)
+			if normalized.Item == "" {
+				continue
+			}
+			entry.Conditions = append(entry.Conditions, normalized)
+		}
+		if len(entry.Conditions) == 0 {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func convertLegacyACLAPIRules(rules []legacyACLAPIRule) []models.EdgeACLRule {
+	out := make([]models.EdgeACLRule, 0, len(rules))
+	for _, rule := range rules {
+		action := normalizeACLAction(rule.ACLAction)
+		if action == "" {
+			action = normalizeACLAction(rule.Action)
+		}
 		if action == "" {
 			action = "allow"
 		}
-		ipOnly := true
-		for _, cond := range rule.Conditions {
-			if strings.ToLower(strings.TrimSpace(cond.Item)) != "ip" {
-				ipOnly = false
-				break
-			}
-			op := strings.ToLower(strings.TrimSpace(cond.Operator))
-			if op != "eq" && op != "=" {
-				ipOnly = false
-				break
-			}
-			ip := strings.TrimSpace(cond.Value)
-			if ip == "" {
+		entry := models.EdgeACLRule{Action: action}
+		for item, matcher := range rule.ACLMatcher {
+			if matcher == nil {
 				continue
 			}
-			out = append(out, models.EdgeACLRule{IP: ip, Action: action})
+			op := ""
+			if v, ok := matcher["operator"].(string); ok {
+				op = v
+			}
+			value := ""
+			switch v := matcher["value"].(type) {
+			case string:
+				value = v
+			case []interface{}:
+				parts := make([]string, 0, len(v))
+				for _, part := range v {
+					if s, ok := part.(string); ok {
+						parts = append(parts, s)
+					}
+				}
+				value = strings.Join(parts, "\n")
+			}
+			entry.Conditions = append(entry.Conditions, models.EdgeACLCondition{
+				Item:     normalizeACLConditionItem(item),
+				Operator: normalizeACLOperator(op),
+				Value:    value,
+			})
 		}
-		if !ipOnly {
-			continue
+		if len(entry.Conditions) > 0 {
+			out = append(out, entry)
 		}
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
+}
+
+func parseACLRuleMap(item map[string]interface{}) *models.EdgeACLRule {
+	if item == nil {
+		return nil
+	}
+	if _, ok := item["acl_matcher"]; ok {
+		b, _ := json.Marshal(item)
+		var legacy legacyACLAPIRule
+		if json.Unmarshal(b, &legacy) == nil {
+			converted := convertLegacyACLAPIRules([]legacyACLAPIRule{legacy})
+			if len(converted) > 0 {
+				return &converted[0]
+			}
+		}
+	}
+	entry := models.EdgeACLRule{
+		Action: normalizeACLAction(parseString(item["action"])),
+	}
+	if entry.Action == "" {
+		entry.Action = "allow"
+	}
+	if v, ok := item["deny_status"].(float64); ok {
+		entry.DenyStatus = int(v)
+	}
+	entry.RedirectURL = parseString(item["redirect_url"])
+	if ip := parseString(item["ip"]); ip != "" {
+		entry.IP = ip
+		entry.Conditions = []models.EdgeACLCondition{{
+			Item: "ip", Operator: "eq", Value: ip,
+		}}
+		return &entry
+	}
+	if rawConds, ok := item["conditions"].([]interface{}); ok {
+		for _, raw := range rawConds {
+			m, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			entry.Conditions = append(entry.Conditions, models.EdgeACLCondition{
+				Item:     normalizeACLConditionItem(parseString(m["item"])),
+				Operator: normalizeACLOperator(parseString(m["operator"])),
+				Value:    parseString(m["value"]),
+			})
+		}
+	}
+	if len(entry.Conditions) == 0 {
+		return nil
+	}
+	return &entry
+}
+
+func normalizeEdgeACLRules(items []models.EdgeACLRule) []models.EdgeACLRule {
+	out := make([]models.EdgeACLRule, 0, len(items))
+	for _, item := range items {
+		entry := item
+		entry.Action = normalizeACLAction(entry.Action)
+		if entry.Action == "" {
+			entry.Action = "allow"
+		}
+		if entry.IP != "" && len(entry.Conditions) == 0 {
+			entry.Conditions = []models.EdgeACLCondition{{
+				Item: "ip", Operator: "eq", Value: entry.IP,
+			}}
+		}
+		for i := range entry.Conditions {
+			entry.Conditions[i] = models.EdgeACLCondition{
+				Item:     normalizeACLConditionItem(entry.Conditions[i].Item),
+				Operator: normalizeACLOperator(entry.Conditions[i].Operator),
+				Value:    strings.TrimSpace(entry.Conditions[i].Value),
+			}
+		}
+		if len(entry.Conditions) == 0 {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+var ccAutoSwitchRuleAliases = map[string]int64{
+	"close":   10002,
+	"lenient": 6,
+	"normal":  5,
+	"strict":  7,
+	"js":      1,
+	"captcha": 4,
+}
+
+func extractCCAutoSwitch(settings map[string]interface{}) *models.EdgeCCAutoSwitch {
+	if settings == nil {
+		return nil
+	}
+	security, ok := settings["security"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	raw := security["auto_switch"]
+	if raw == nil {
+		return nil
+	}
+	var payload map[string]interface{}
+	switch v := raw.(type) {
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil
+		}
+		if err := json.Unmarshal([]byte(v), &payload); err != nil {
+			return nil
+		}
+	case map[string]interface{}:
+		payload = v
+	default:
+		return nil
+	}
+	enable := parseBool(payload["enable"], false)
+	if !enable {
+		return nil
+	}
+	qps := int(parseIntValue(payload["qps"], 0))
+	if qps <= 0 {
+		qps = int(parseIntValue(payload["QPS"], 200))
+	}
+	ruleID := resolveCCAutoSwitchRuleID(payload["rule"])
+	if ruleID <= 0 {
+		return nil
+	}
+	return &models.EdgeCCAutoSwitch{
+		Enable: true,
+		QPS:    qps,
+		RuleID: ruleID,
+	}
+}
+
+func resolveCCAutoSwitchRuleID(raw interface{}) int64 {
+	if raw == nil {
+		return 0
+	}
+	if id := parseACLID(raw); id > 0 {
+		return id
+	}
+	name := strings.ToLower(strings.TrimSpace(parseString(raw)))
+	if name == "" {
+		return 0
+	}
+	if id, ok := ccAutoSwitchRuleAliases[name]; ok {
+		return id
+	}
+	var rule models.CCRule
+	if err := db.DB.Where("enable = ? AND name LIKE ?", true, "%"+name+"%").Order("id asc").First(&rule).Error; err == nil {
+		return rule.ID
+	}
+	return 0
 }
 
 func parseACLID(value interface{}) int64 {
@@ -778,6 +1160,12 @@ func extractGuardTTLs(settings map[string]interface{}) (int, int) {
 	}
 	passTTL := parseIntValue(security["ip_white_timeout"], 0)
 	blockTTL := parseIntValue(security["ip_black_timeout"], 0)
+	if passTTL <= 0 {
+		passTTL = 21600
+	}
+	if blockTTL <= 0 {
+		blockTTL = 3600
+	}
 	return passTTL, blockTTL
 }
 
@@ -912,6 +1300,10 @@ func withSearchEngineOriginCondition(settings map[string]interface{}, conditions
 }
 
 func buildSearchEngineOriginCondition(settings map[string]interface{}) map[string]interface{} {
+	return buildSearchEngineOriginConditionWithAllowlist(settings, buildSpiderIPRangeValue())
+}
+
+func buildSearchEngineOriginConditionWithAllowlist(settings map[string]interface{}, allowlistValue string) map[string]interface{} {
 	if settings == nil {
 		return nil
 	}
@@ -922,7 +1314,7 @@ func buildSearchEngineOriginCondition(settings map[string]interface{}) map[strin
 	if originIP == "" {
 		return nil
 	}
-	if allowlistValue := buildSpiderIPRangeValue(); allowlistValue != "" {
+	if strings.TrimSpace(allowlistValue) != "" {
 		return map[string]interface{}{
 			"item":     "client_ip",
 			"operator": "ip_range",
@@ -930,13 +1322,7 @@ func buildSearchEngineOriginCondition(settings map[string]interface{}) map[strin
 			"origin":   originIP,
 		}
 	}
-	return map[string]interface{}{
-		"item":     "header",
-		"header":   "user-agent",
-		"operator": "contains",
-		"value":    strings.Join(searchEngineCrawlerTokens, "|"),
-		"origin":   originIP,
-	}
+	return nil
 }
 
 func buildSpiderIPRangeValue() string {
@@ -1605,11 +1991,34 @@ func buildResponseHeaderMap(settings map[string]interface{}) map[string]string {
 			name = sanitizeHeaderName(name)
 			value = sanitizeHeaderValue(value)
 			if name != "" && value != "" {
+				if isOriginLeakResponseHeaderName(name) {
+					continue
+				}
 				result[name] = value
 			}
 		}
 	}
 	return result
+}
+
+func isOriginLeakResponseHeaderName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "x-origin-ip",
+		"x-origin-addr",
+		"x-origin-server",
+		"x-backend-ip",
+		"x-backend-addr",
+		"x-backend-server",
+		"x-server-ip",
+		"x-upstream-addr",
+		"x-upstream-server",
+		"x-real-ip",
+		"x-forwarded-for",
+		"via":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeHostHeaderMapValue(value string, site models.Site) string {
@@ -2658,24 +3067,16 @@ func loadCCData(ruleIDs []int64) (map[int64][]models.EdgeCCRuleItem, map[int64]m
 			continue
 		}
 		for _, item := range items {
-			entry := models.EdgeCCRuleItem{
-				MatcherID: parseACLID(item["matcher"]),
-				FilterID:  parseACLID(item["filter1"]),
-				Action:    parseString(item["action"]),
-				Enabled:   parseBool(item["state"], true),
-			}
-			if entry.MatcherID == 0 {
-				entry.MatcherID = parseACLID(item["matcher_id"])
-			}
-			if entry.FilterID == 0 {
-				entry.FilterID = parseACLID(item["filter_id"])
-			}
+			entry := parseEdgeCCRuleItem(item)
 			ccRules[rule.ID] = append(ccRules[rule.ID], entry)
 			if entry.MatcherID > 0 {
 				matcherIDs = append(matcherIDs, entry.MatcherID)
 			}
 			if entry.FilterID > 0 {
 				filterIDs = append(filterIDs, entry.FilterID)
+			}
+			if entry.Filter2ID > 0 {
+				filterIDs = append(filterIDs, entry.Filter2ID)
 			}
 		}
 	}
@@ -2733,6 +3134,105 @@ func parseCCRuleData(raw string) []map[string]interface{} {
 	return nil
 }
 
+func parseEdgeCCRuleItem(item map[string]interface{}) models.EdgeCCRuleItem {
+	entry := models.EdgeCCRuleItem{
+		MatcherID: parseACLID(item["matcher"]),
+		FilterID:  parseACLID(item["filter1"]),
+		Filter2ID: parseACLID(item["filter2"]),
+		Action:    parseString(item["action"]),
+		Mode:      parseString(item["mode"]),
+		Enabled:   parseBool(item["state"], true),
+	}
+	if entry.MatcherID == 0 {
+		entry.MatcherID = parseACLID(item["matcher_id"])
+	}
+	if entry.FilterID == 0 {
+		entry.FilterID = parseACLID(item["filter1_id"])
+	}
+	if entry.FilterID == 0 {
+		entry.FilterID = parseACLID(item["filter_id"])
+	}
+	if entry.Filter2ID == 0 {
+		entry.Filter2ID = parseACLID(item["filter2_id"])
+	}
+	if v, ok := item["is_on"]; ok {
+		entry.Enabled = parseBool(v, entry.Enabled)
+	}
+	if v, ok := item["on"]; ok {
+		entry.Enabled = parseBool(v, entry.Enabled)
+	}
+	if v, ok := item["enabled"]; ok {
+		entry.Enabled = parseBool(v, entry.Enabled)
+	}
+	return entry
+}
+
+func normalizeCustomCCRulesRaw(raw interface{}) []map[string]interface{} {
+	if raw == nil {
+		return nil
+	}
+	switch list := raw.(type) {
+	case []map[string]interface{}:
+		if len(list) == 0 {
+			return nil
+		}
+		return list
+	case []interface{}:
+		out := make([]map[string]interface{}, 0, len(list))
+		for _, item := range list {
+			if m, ok := item.(map[string]interface{}); ok {
+				out = append(out, m)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		if b, err := json.Marshal(raw); err == nil {
+			var parsed []map[string]interface{}
+			if json.Unmarshal(b, &parsed) == nil && len(parsed) > 0 {
+				return parsed
+			}
+		}
+	}
+	return nil
+}
+
+func extractCustomCCRules(settings map[string]interface{}) []map[string]interface{} {
+	if settings == nil {
+		return nil
+	}
+	var rules []map[string]interface{}
+	if security, ok := settings["security"].(map[string]interface{}); ok {
+		if normalized := normalizeCustomCCRulesRaw(security["custom_rules"]); len(normalized) > 0 {
+			rules = normalized
+		} else if cc, ok := security["cc"].(map[string]interface{}); ok {
+			if normalized := normalizeCustomCCRulesRaw(cc["customRules"]); len(normalized) > 0 {
+				rules = normalized
+			}
+		}
+	}
+	if len(rules) == 0 {
+		return nil
+	}
+	for _, rule := range rules {
+		if rule == nil {
+			continue
+		}
+		if _, ok := rule["on"]; !ok {
+			if _, ok := rule["enabled"]; !ok {
+				if _, ok := rule["is_on"]; !ok {
+					if _, ok := rule["state"]; !ok {
+						rule["on"] = true
+					}
+				}
+			}
+		}
+	}
+	return rules
+}
+
 func uniqueInt64(input []int64) []int64 {
 	if len(input) == 0 {
 		return nil
@@ -2780,18 +3280,7 @@ func loadAllCCData() (map[int64][]models.EdgeCCRuleItem, map[int64]models.EdgeCC
 		}
 		items := make([]models.EdgeCCRuleItem, 0, len(entries))
 		for _, entry := range entries {
-			item := models.EdgeCCRuleItem{
-				MatcherID: parseACLID(entry["matcher"]),
-				FilterID:  parseACLID(entry["filter1"]),
-				Action:    parseString(entry["action"]),
-				Enabled:   parseBool(entry["state"], true),
-			}
-			if item.MatcherID == 0 {
-				item.MatcherID = parseACLID(entry["matcher_id"])
-			}
-			if item.FilterID == 0 {
-				item.FilterID = parseACLID(entry["filter_id"])
-			}
+			item := parseEdgeCCRuleItem(entry)
 			items = append(items, item)
 		}
 		ccRules[rule.ID] = items

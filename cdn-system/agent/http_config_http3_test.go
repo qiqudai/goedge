@@ -23,7 +23,7 @@ func TestWriteHTTPServer_HTTP3EnabledSkipsQuicListenForStability(t *testing.T) {
 	}
 
 	var b strings.Builder
-	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	writeHTTPServer(&b, domain, "443", true, errorPageContext{}, 0, false)
 	out := b.String()
 
 	if !strings.Contains(out, "listen 443 ssl;") {
@@ -52,7 +52,7 @@ func TestWriteHTTPServer_HTTP3DisabledSkipsQuicListen(t *testing.T) {
 	}
 
 	var b strings.Builder
-	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	writeHTTPServer(&b, domain, "443", true, errorPageContext{}, 0, false)
 	out := b.String()
 
 	if strings.Contains(out, " quic reuseport;") {
@@ -92,7 +92,7 @@ func TestWriteHTTPServer_HTTP3EnabledButNginxNoV3SkipsQuic(t *testing.T) {
 		HTTPSHTTP3: true,
 	}
 	var b strings.Builder
-	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	writeHTTPServer(&b, domain, "443", true, errorPageContext{}, 0, false)
 	out := b.String()
 
 	if strings.Contains(out, " quic reuseport;") {
@@ -119,7 +119,7 @@ func TestWriteHTTPServer_HTTP3RaisesLowConnLimit(t *testing.T) {
 	}
 
 	var b strings.Builder
-	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	writeHTTPServer(&b, domain, "443", true, errorPageContext{}, 0, false)
 	out := b.String()
 
 	if !strings.Contains(out, "limit_conn addr_conn 10;") {
@@ -130,7 +130,7 @@ func TestWriteHTTPServer_HTTP3RaisesLowConnLimit(t *testing.T) {
 	}
 }
 
-func TestWriteHTTPServer_HTTP2KeepsConfiguredConnLimit(t *testing.T) {
+func TestWriteHTTPServer_RaisesLowConnLimitForUsableWebTraffic(t *testing.T) {
 	prevNginxBin := NginxBinPath
 	t.Cleanup(func() {
 		NginxBinPath = prevNginxBin
@@ -146,10 +146,32 @@ func TestWriteHTTPServer_HTTP2KeepsConfiguredConnLimit(t *testing.T) {
 	}
 
 	var b strings.Builder
-	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	writeHTTPServer(&b, domain, "443", true, errorPageContext{}, 0, false)
 	out := b.String()
 
-	if !strings.Contains(out, "limit_conn addr_conn 1;") {
-		t.Fatalf("expected non-http3 domain to keep configured conn_limit")
+	if !strings.Contains(out, "limit_conn addr_conn 10;") {
+		t.Fatalf("expected low conn_limit to be raised for normal web traffic")
+	}
+}
+
+func TestWriteHTTPServer_ConnLimitUsesDedicatedStatus(t *testing.T) {
+	domain := edgeDomain{Name: "example.com", ConnLimit: 50}
+	pages := map[string]errorPageDefinition{
+		"conn_limit": {Template: "<html>{{title}}</html>", Strings: map[string]map[string]string{"zh-CN": {"title": "too many connections"}}},
+	}
+	ctx := errorPageContext{pages: pages, i18n: normalizeAgentErrorPageI18n(errorPageI18nSettings{DefaultLang: "zh-CN", LangMode: "browser", EnabledLangs: []string{"zh-CN"}})}
+
+	var b strings.Builder
+	writeHTTPServer(&b, domain, "80", false, ctx, 0, false)
+	out := b.String()
+
+	if !strings.Contains(out, "limit_conn_status 515;") {
+		t.Fatalf("expected conn_limit to use dedicated 515 status")
+	}
+	if !strings.Contains(out, "error_page 515 /__cdn_error/conn_limit.html;") {
+		t.Fatalf("expected conn_limit error page to bind to 515")
+	}
+	if strings.Contains(out, "error_page 429 /__cdn_error/conn_limit.html;") {
+		t.Fatalf("cc 429 must not be rendered as conn_limit")
 	}
 }

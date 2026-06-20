@@ -416,7 +416,20 @@ func (ctr *PlanController) UpdatePlan(c *gin.Context) {
 
 // DeletePlan - DELETE /api/v1/plans/:id
 func (ctr *PlanController) DeletePlan(c *gin.Context) {
-	id := c.Param("id")
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	if id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("invalid id")})
+		return
+	}
+	userPkgCount, err := services.CountUserPackagesReferencingPlan(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete Failed")})
+		return
+	}
+	if userPkgCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("plan.in_use")})
+		return
+	}
 	if err := db.DB.Delete(&models.Package{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete Failed")})
 		return
@@ -760,6 +773,7 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	if hasKey(payload, "end_at") {
 		if tm := getTimePtr(payload, "end_at"); tm != nil {
 			updates["end_at"] = tm
+			updates["is_expired"] = !time.Now().Before(*tm)
 		} else {
 			// If empty string, means no expiration? or error?
 			// Existing logic flagged error or ignored. Let's assume ignore if empty or error for now unless imperative.
@@ -885,6 +899,15 @@ func (ctr *PlanController) DeleteUserPlans(c *gin.Context) {
 	}
 	if len(payload.IDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("ids is required")})
+		return
+	}
+	siteCount, err := services.CountSitesReferencingUserPackages(payload.IDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Delete failed")})
+		return
+	}
+	if siteCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("user_package.in_use")})
 		return
 	}
 	if err := db.DB.Where("id IN ?", payload.IDs).Delete(&models.UserPackage{}).Error; err != nil {

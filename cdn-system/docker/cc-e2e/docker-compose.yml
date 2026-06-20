@@ -1,0 +1,64 @@
+name: cc-e2e
+
+services:
+  mysql:
+    build:
+      context: .
+      dockerfile: Dockerfile.mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: cc_test_root
+      MYSQL_DATABASE: cdnfy
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-pcc_test_root"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - ccnet
+
+  origin:
+    build:
+      context: ../..
+      dockerfile: docker/cc-e2e/Dockerfile.origin
+    networks:
+      - ccnet
+
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/cc-e2e/Dockerfile.api
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - ccnet
+
+  edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    depends_on:
+      api:
+        condition: service_healthy
+      origin:
+        condition: service_started
+    environment:
+      API_URL: http://api:8080
+      AGENT_TOKEN: cc-e2e-agent-token
+      NODE_ID: "1"
+      SYNC_INTERVAL: "3"
+    ports:
+      - "${CC_E2E_PORT:-18089}:18088"
+    networks:
+      - ccnet
+
+networks:
+  ccnet:
+    driver: bridge

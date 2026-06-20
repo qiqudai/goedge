@@ -1,10 +1,14 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
+	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -443,26 +447,35 @@ func buildIssuePayload(cert models.Cert) (IssueCertTaskPayload, error) {
 }
 
 func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
-	nodes, err := loadAvailableNodes()
-	if err != nil {
-		return err
-	}
-	if len(nodes) == 0 {
-		return errors.New("no available nodes for cert issue")
-	}
 	email := strings.TrimSpace(config.App.AcmeEmail)
 	if email == "" {
 		return errors.New("acme_email is required")
 	}
-
-	startIndex := int(batchID % int64(len(nodes)))
-	nodeIndex := startIndex
 
 	for _, cert := range certs {
 		domains := splitCertDomains(cert.Domain)
 		if len(domains) == 0 {
 			markCertIssueFailed(int64(cert.ID), "cert domain is empty")
 			continue
+		}
+		nodes, scoped, err := loadIssueCandidateNodesForCert(cert, domains)
+		if err != nil {
+			markCertIssueFailed(int64(cert.ID), err.Error())
+			continue
+		}
+		if len(nodes) == 0 {
+			reason := "no available nodes for cert issue"
+			if scoped {
+				reason = "no available package nodes for cert domains"
+			}
+			markCertIssueFailed(int64(cert.ID), reason)
+			continue
+		}
+		if scoped {
+			if err := validateCertHTTP01DNSForDomains(int64(cert.UserID), domains); err != nil {
+				markCertIssueFailed(int64(cert.ID), err.Error())
+				continue
+			}
 		}
 		ca := strings.ToLower(strings.TrimSpace(cert.Type))
 		ca = normalizeIssueCA(ca)
@@ -477,8 +490,7 @@ func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
 				},
 			},
 		}
-		target := nodes[nodeIndex%len(nodes)]
-		nodeIndex++
+		target := nodes[rand.Intn(len(nodes))]
 
 		taskName := fmt.Sprintf("Issue Cert %d", cert.ID)
 		task, err := createIssueTask(batchID, target.ID, taskName, payload)
@@ -496,6 +508,367 @@ func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
 		}
 	}
 	return nil
+}
+
+func loadIssueCandidateNodesForCert(cert models.Cert, domains []string) ([]models.Node, bool, error) {
+	nodeIDs, scoped, err := resolveCertIssueTaskNodeIDs(int64(cert.UserID), domains)
+	if err != nil {
+		return nil, scoped, err
+	}
+	if !scoped {
+		nodes, err := loadAvailableNodes()
+		return nodes, false, err
+	}
+	nodes, err := loadAvailableNodesByIDs(nodeIDs)
+	return nodes, true, err
+}
+
+func loadIssueSitesForUser(userID int64) ([]models.Site, error) {
+	var sites []models.Site
+	query := db.DB.Model(&models.Site{})
+	if userID > 0 {
+		query = query.Where("uid = ?", userID)
+	}
+	if err := query.Find(&sites).Error; err != nil {
+		return nil, err
+	}
+	return sites, nil
+}
+
+func resolveCertIssueTaskNodeIDs(userID int64, domains []string) ([]int64, bool, error) {
+	normalizedDomains := normalizeIssueDomains(domains)
+	if len(normalizedDomains) == 0 {
+		return nil, false, nil
+	}
+	sites, err := loadIssueSitesForUser(userID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	scoped := false
+	missingDomains := make([]string, 0)
+	var common []int64
+	for _, domain := range normalizedDomains {
+		matched := make([]models.Site, 0)
+		for _, site := range sites {
+			if siteMatchesCertDomain(site, domain) {
+				matched = append(matched, site)
+			}
+		}
+		if len(matched) == 0 {
+			missingDomains = append(missingDomains, domain)
+			continue
+		}
+		scoped = true
+		groupIDs, err := collectIssueNodeGroupIDs(matched)
+		if err != nil {
+			return nil, true, err
+		}
+		nodeIDs, err := loadTaskNodeIDsForGroups(groupIDs)
+		if err != nil {
+			return nil, true, err
+		}
+		if len(nodeIDs) == 0 {
+			return nil, true, nil
+		}
+		if common == nil {
+			common = nodeIDs
+			continue
+		}
+		common = intersectInt64s(common, nodeIDs)
+		if len(common) == 0 {
+			return nil, true, nil
+		}
+	}
+	if !scoped {
+		return nil, false, nil
+	}
+	if len(missingDomains) > 0 {
+		return nil, true, fmt.Errorf("cert domains not bound to any site: %s", strings.Join(missingDomains, ","))
+	}
+	return uniqueInt64List(common), true, nil
+}
+
+func validateCertHTTP01DNSForDomains(userID int64, domains []string) error {
+	normalizedDomains := normalizeIssueDomains(domains)
+	if len(normalizedDomains) == 0 {
+		return nil
+	}
+	sites, err := loadIssueSitesForUser(userID)
+	if err != nil {
+		return err
+	}
+	for _, domain := range normalizedDomains {
+		if strings.HasPrefix(domain, "*.") {
+			continue
+		}
+		matched := make([]models.Site, 0)
+		for _, site := range sites {
+			if siteMatchesCertDomain(site, domain) {
+				matched = append(matched, site)
+			}
+		}
+		if len(matched) == 0 {
+			continue
+		}
+		groupIDs, err := collectIssueNodeGroupIDs(matched)
+		if err != nil {
+			return err
+		}
+		expectedIPs, err := loadIssueLineIPsForGroups(groupIDs)
+		if err != nil {
+			return err
+		}
+		if len(expectedIPs) == 0 {
+			return fmt.Errorf("cert domain has no enabled package line IPs: domain=%s groups=%s", domain, joinInt64s(groupIDs))
+		}
+		resolvedIPs, err := resolveIssueDomainIPs(domain)
+		if err != nil {
+			return fmt.Errorf("cert domain DNS preflight failed: domain=%s err=%v", domain, err)
+		}
+		if len(resolvedIPs) == 0 {
+			return fmt.Errorf("cert domain DNS preflight failed: domain=%s has no A/AAAA records", domain)
+		}
+		if !issueResolvedIPsAllowed(resolvedIPs, expectedIPs) {
+			return fmt.Errorf("cert domain DNS mismatch: domain=%s resolved=[%s] expected_package_ips=[%s]", domain, strings.Join(resolvedIPs, ","), strings.Join(expectedIPs, ","))
+		}
+	}
+	return nil
+}
+
+func loadIssueLineIPsForGroups(groupIDs []int64) ([]string, error) {
+	groupIDs = uniqueInt64List(groupIDs)
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+	var lines []models.Line
+	if err := db.DB.Select("node_id", "node_ip_id").
+		Where("node_group_id IN ? AND enable = ?", groupIDs, true).
+		Find(&lines).Error; err != nil {
+		return nil, err
+	}
+	nodeIDs := make([]int64, 0, len(lines))
+	for _, line := range lines {
+		id := line.NodeIPID
+		if id == 0 {
+			id = line.NodeID
+		}
+		if id != 0 {
+			nodeIDs = append(nodeIDs, id)
+		}
+	}
+	nodeIDs = uniqueInt64List(nodeIDs)
+	if len(nodeIDs) == 0 {
+		return nil, nil
+	}
+	var nodes []models.Node
+	if err := db.DB.Select("id", "ip").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	ips := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if ip := normalizeIssueIP(node.IP); ip != "" {
+			ips = append(ips, ip)
+		}
+	}
+	return uniqueSortedStrings(ips), nil
+}
+
+func resolveIssueDomainIPs(domain string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	values, err := net.DefaultResolver.LookupHost(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+	ips := make([]string, 0, len(values))
+	for _, value := range values {
+		if ip := normalizeIssueIP(value); ip != "" {
+			ips = append(ips, ip)
+		}
+	}
+	return uniqueSortedStrings(ips), nil
+}
+
+func issueResolvedIPsAllowed(resolved []string, expected []string) bool {
+	resolved = uniqueSortedStrings(resolved)
+	expected = uniqueSortedStrings(expected)
+	if len(resolved) == 0 || len(expected) == 0 {
+		return false
+	}
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, ip := range expected {
+		expectedSet[ip] = struct{}{}
+	}
+	for _, ip := range resolved {
+		if _, ok := expectedSet[ip]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeIssueIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	ip := net.ParseIP(raw)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
+}
+
+func uniqueSortedStrings(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func joinInt64s(items []int64) string {
+	items = uniqueInt64List(items)
+	if len(items) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, strconv.FormatInt(item, 10))
+	}
+	return strings.Join(parts, ",")
+}
+
+func normalizeIssueDomains(domains []string) []string {
+	out := make([]string, 0, len(domains))
+	seen := map[string]struct{}{}
+	for _, domain := range domains {
+		host := normalizeDomainHostForEdge(domain)
+		if host == "" {
+			continue
+		}
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		out = append(out, host)
+	}
+	return out
+}
+
+func siteMatchesCertDomain(site models.Site, certDomain string) bool {
+	for _, siteDomain := range site.Domains {
+		if certDomainMatchesSiteDomain(certDomain, siteDomain) {
+			return true
+		}
+	}
+	return false
+}
+
+func certDomainMatchesSiteDomain(certDomain string, siteDomain string) bool {
+	certHost := normalizeDomainHostForEdge(certDomain)
+	if certHost == "" {
+		return false
+	}
+	certWildcard := false
+	if strings.HasPrefix(certHost, "*.") {
+		certWildcard = true
+		certHost = strings.TrimPrefix(certHost, "*.")
+	}
+	exact, wildcard := splitHostPattern(siteDomain)
+	if exact != "" {
+		return !certWildcard && certHost == exact
+	}
+	if wildcard == "" {
+		return false
+	}
+	if certWildcard {
+		return certHost == wildcard
+	}
+	return certHost != wildcard && strings.HasSuffix(certHost, "."+wildcard)
+}
+
+func collectIssueNodeGroupIDs(sites []models.Site) ([]int64, error) {
+	packageIDs := make([]int64, 0)
+	seenPackages := map[int64]struct{}{}
+	for _, site := range sites {
+		if site.UserPackageID == 0 {
+			continue
+		}
+		if _, ok := seenPackages[site.UserPackageID]; ok {
+			continue
+		}
+		seenPackages[site.UserPackageID] = struct{}{}
+		packageIDs = append(packageIDs, site.UserPackageID)
+	}
+
+	packages := map[int64]models.UserPackage{}
+	if len(packageIDs) > 0 {
+		var rows []models.UserPackage
+		if err := db.DB.Where("id IN ?", packageIDs).Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, pkg := range rows {
+			packages[pkg.ID] = pkg
+		}
+	}
+
+	groupIDs := make([]int64, 0)
+	for _, site := range sites {
+		if site.NodeGroupID > 0 {
+			groupIDs = append(groupIDs, site.NodeGroupID)
+		}
+		if pkg, ok := packages[site.UserPackageID]; ok {
+			if site.NodeGroupID == 0 && pkg.NodeGroupID > 0 {
+				groupIDs = append(groupIDs, pkg.NodeGroupID)
+			}
+		}
+	}
+	return uniqueInt64List(groupIDs), nil
+}
+
+func loadTaskNodeIDsForGroups(groupIDs []int64) ([]int64, error) {
+	groupIDs = uniqueInt64List(groupIDs)
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+	var nodeIDs []int64
+	if err := db.DB.Model(&models.Line{}).
+		Select("distinct node_id").
+		Where("node_group_id IN ? AND enable = ? AND node_id <> 0", groupIDs, true).
+		Pluck("node_id", &nodeIDs).Error; err != nil {
+		return nil, err
+	}
+	return uniqueInt64List(nodeIDs), nil
+}
+
+func loadAvailableNodesByIDs(nodeIDs []int64) ([]models.Node, error) {
+	nodeIDs = uniqueInt64List(nodeIDs)
+	if len(nodeIDs) == 0 {
+		return nil, nil
+	}
+	var nodes []models.Node
+	if err := db.DB.Where("id IN ? AND pid = 0 AND enable = ?", nodeIDs, true).Order("id asc").Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	return filterAvailableIssueNodes(nodes), nil
 }
 
 func groupCertsByCA(certs []models.Cert) map[string][]IssueCertItem {
@@ -526,16 +899,11 @@ func normalizeIssueCA(raw string) string {
 }
 
 func buildIssueCAFallbackList(primary string) []string {
-	all := []string{"letsencrypt", "zerossl", "google", "buypass"}
 	first := normalizeIssueCA(primary)
-	out := make([]string, 0, len(all))
-	out = append(out, first)
-	for _, ca := range all {
-		if ca != first {
-			out = append(out, ca)
-		}
+	if first == "letsencrypt" {
+		return []string{"letsencrypt"}
 	}
-	return out
+	return []string{first, "letsencrypt"}
 }
 
 func createIssueTask(batchID int64, nodeID int64, name string, payload IssueCertTaskPayload) (models.Task, error) {
@@ -570,6 +938,10 @@ func loadAvailableNodes() ([]models.Node, error) {
 	if err := db.DB.Where("pid = 0 AND enable = ?", true).Order("id asc").Find(&nodes).Error; err != nil {
 		return nil, err
 	}
+	return filterAvailableIssueNodes(nodes), nil
+}
+
+func filterAvailableIssueNodes(nodes []models.Node) []models.Node {
 	candidates := make([]models.Node, 0, len(nodes))
 	online := make([]models.Node, 0, len(nodes))
 	for _, node := range nodes {
@@ -582,9 +954,37 @@ func loadAvailableNodes() ([]models.Node, error) {
 		}
 	}
 	if len(online) > 0 {
-		return online, nil
+		return online
 	}
-	return candidates, nil
+	return candidates
+}
+
+func intersectInt64s(a []int64, b []int64) []int64 {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	set := make(map[int64]struct{}, len(b))
+	for _, id := range b {
+		if id != 0 {
+			set[id] = struct{}{}
+		}
+	}
+	out := make([]int64, 0, len(a))
+	seen := map[int64]struct{}{}
+	for _, id := range a {
+		if id == 0 {
+			continue
+		}
+		if _, ok := set[id]; !ok {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func loadCertsForIssue(ids []int64) ([]models.Cert, error) {

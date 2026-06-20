@@ -1,0 +1,40 @@
+---
+description: CDN 业务规则——配置优先级、删除约束、套餐关系。修改删除/配置/默认设置/CC/ACL/节点线路前必读。
+globs:
+  - api/**
+  - web/admin/**
+alwaysApply: true
+---
+
+# CDN 业务规则（强制）
+
+完整规则见 **[docs/BUSINESS_RULES.md](../../docs/BUSINESS_RULES.md)**。修改相关代码前必须先阅读该文档。
+
+## 核心约束（不可违反）
+
+### 配置优先级
+`站点已保存设置 > 网站分组默认 > 用户全局默认 > 平台全局模板`
+
+- 默认填充只用 `setIfMissing`
+- 边缘下发用 `GetSiteDefaultMapWithGroup(userID, groupID)`，groupID 来自站点网站分组
+- website/list「范围=全局」= 当前账号全局默认，不是 settings/Global.vue
+
+### 删除顺序（后端必须校验）
+| 资源 | 删除前要求 |
+|------|-----------|
+| 网站 | 先禁用 |
+| 网站分组 | 分组内无网站 |
+| 节点 | 无任何线路引用 |
+| 线路 | 先禁用 |
+| 证书 | 先禁用 + 无站点引用 |
+| CC 规则组/匹配器/过滤器 | 无引用；系统内置不可删 |
+| ACL | 先禁用 + 无站点引用 |
+| 套餐模板 | 无已购套餐 |
+| 已购套餐 | 无关联网站 |
+
+### 实现位置
+- 引用检查：`api/services/reference_guard_service.go`
+- 默认合并：`api/services/default_config_service.go`
+- i18n 错误：`common/i18n/messages.json`
+
+新增删除类 API 必须复用 `reference_guard_service`，并在前端给出准确预检提示。

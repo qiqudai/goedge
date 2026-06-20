@@ -575,7 +575,7 @@ func normalizeBlockSource(raw rawAccessLog) string {
 	if strings.TrimSpace(raw.UpstreamAddr) != "" || parseFloatFirst(raw.UpstreamResponseTime) > 0 {
 		return "origin"
 	}
-	if raw.Status == 418 || raw.Status == 429 || raw.Status == 403 {
+	if raw.Status == 418 || raw.Status == 429 || raw.Status == 403 || raw.Status == 515 {
 		return "local_protection"
 	}
 	if raw.Status == 503 && raw.RequestTime == 0 {

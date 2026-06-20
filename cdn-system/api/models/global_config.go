@@ -1,11 +1,12 @@
 package models
 
 type GlobalConfig struct {
-	WAF           WAFConfig            `json:"waf"`
-	Nginx         NginxConfig          `json:"nginx"`
-	DefaultConfig DefaultSiteConfig    `json:"default_config"`
-	ErrorPages    map[string]string    `json:"error_pages"` // code -> html
-	Resources     GlobalResourceConfig `json:"resources"`
+	WAF           WAFConfig                       `json:"waf"`
+	Nginx         NginxConfig                     `json:"nginx"`
+	DefaultConfig DefaultSiteConfig               `json:"default_config"`
+	ErrorPageI18n ErrorPageI18nSettings           `json:"error_page_i18n"`
+	ErrorPages    map[string]ErrorPageDefinition  `json:"error_pages"`
+	Resources     GlobalResourceConfig            `json:"resources"`
 }
 
 type WAFConfig struct {

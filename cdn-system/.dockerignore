@@ -1,0 +1,13 @@
+.git
+.tools
+**/node_modules
+agent/edge-node/openresty
+agent/assets/openresty*
+**/*.zip
+**/*.tar.gz
+**/*.tar
+**/*.tgz
+web/
+ui/
+admin/
+agent/testdata/cc_smoke/docker-build

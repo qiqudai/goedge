@@ -218,6 +218,10 @@ func (c *BlockLogController) UnblockIP(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
 		return
 	}
+	if _, err := services.EnqueueIPUnblock([]string{ip}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "edge unblock sync failed"})
+		return
+	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
 }
 
@@ -274,6 +278,14 @@ func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
 			return
 		}
 	}
+	edgeIPs := append([]string(nil), ips...)
+	for _, key := range keys {
+		edgeIPs = append(edgeIPs, key.IP)
+	}
+	if _, err := services.EnqueueIPUnblock(edgeIPs); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "edge unblock sync failed"})
+		return
+	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
 }
 
@@ -315,9 +327,16 @@ func (c *BlockLogController) UnblockSite(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
 		return
 	}
+	siteIPs, _ := services.ListDistinctBlockedIPsForHosts(hosts)
 	if err := services.DeleteBlockedLogsByHosts(hosts); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "unblock failed"})
 		return
+	}
+	if len(siteIPs) > 0 {
+		if _, err := services.EnqueueIPUnblock(siteIPs); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "edge unblock sync failed"})
+			return
+		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
 }
@@ -556,6 +575,8 @@ func moduleName(moduleKey string, status int) string {
 		return "WAF"
 	case "local_protection":
 		return "本地防护"
+	case "conn_limit":
+		return "连接数限制"
 	case "origin":
 		return "源站返回"
 	default:
@@ -575,6 +596,8 @@ func localProtectionLabel(status int) string {
 		return "CC防护"
 	case 429:
 		return "频控拦截"
+	case 515:
+		return "连接数限制"
 	case 451:
 		return "地区限制"
 	case 410:

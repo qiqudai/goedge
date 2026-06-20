@@ -1,31 +1,50 @@
 <template>
   <div class="app-container" @focusin="cacheInputValue">
+    <ErrorPageLangSettings v-model="errorPageI18n" />
+
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>Custom Error Pages</span>
+          <span>自定义错误页面</span>
+          <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
         </div>
       </template>
 
       <div class="error-page-container">
-        <el-tabs v-model="activeCode" tab-position="left" class="error-tabs" style="height: calc(100vh - 180px);">
+        <el-tabs v-model="activeCode" tab-position="left" class="error-tabs" style="height: calc(100vh - 360px);">
           <el-tab-pane v-for="code in errorCodes" :key="code.key" :label="code.label" :name="code.key">
             <div class="tab-content-scroll">
               <div class="editor-header">
                 <h3>{{ code.label }} ({{ code.key }})</h3>
-                <span class="tip">编辑内容:</span>
               </div>
 
-              <el-input
-                v-model="errorPages[code.key]"
-                type="textarea"
-                :rows="25"
-                placeholder="<!-- 请输入HTML 内容 -->"
-                font-family="monospace"
-                @blur="saveConfig"
-              />
-
-              <div class="preview" v-html="errorPages[code.key]"></div>
+              <el-tabs v-model="innerTabs[code.key]" class="inner-tabs">
+                <el-tab-pane label="HTML 模板" name="template">
+                  <ErrorPageTemplateEditor v-model="errorPages[code.key].template" />
+                </el-tab-pane>
+                <el-tab-pane label="多语言文案" name="strings">
+                  <ErrorPageTranslationTable
+                    :template="errorPages[code.key].template"
+                    :strings="errorPages[code.key].strings"
+                    :enabled-langs="errorPageI18n.enabled_langs"
+                    @update:strings="value => updateStrings(code.key, value)"
+                  />
+                </el-tab-pane>
+                <el-tab-pane label="预览" name="preview">
+                  <div class="preview-toolbar">
+                    <span>预览语言</span>
+                    <el-select v-model="previewLang[code.key]" style="width: 200px">
+                      <el-option
+                        v-for="lang in errorPageI18n.enabled_langs"
+                        :key="lang"
+                        :label="lang"
+                        :value="lang"
+                      />
+                    </el-select>
+                  </div>
+                  <div class="preview" v-html="previewHtml(code.key)"></div>
+                </el-tab-pane>
+              </el-tabs>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -35,74 +54,107 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, nextTick } from 'vue'
-import request from '@/utils/request'
+import { reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { cacheInputValue, shouldSkipBlurSave } from '@/utils/saveGuard'
+import { cacheInputValue } from '@/utils/saveGuard'
+import { fetchGlobalConfig, saveGlobalConfig } from '@/api/globalConfig'
+import { ERROR_PAGE_CODES } from '@/constants/errorPageLocales'
+import {
+  buildGlobalConfigPayload,
+  ensureErrorPageStructure,
+  renderErrorPagePreview,
+  resolvePreviewStrings
+} from '@/services/errorPageService'
+import ErrorPageLangSettings from '@/components/global/ErrorPageLangSettings.vue'
+import ErrorPageTemplateEditor from '@/components/global/ErrorPageTemplateEditor.vue'
+import ErrorPageTranslationTable from '@/components/global/ErrorPageTranslationTable.vue'
 
 const loading = ref(false)
+const saving = ref(false)
 const activeCode = ref('403')
-const errorPages = reactive({})
 const fullConfig = ref({})
+const errorPages = reactive({})
+const errorPageI18n = reactive({
+  default_lang: 'zh-CN',
+  lang_mode: 'browser',
+  enabled_langs: ['zh-CN', 'en']
+})
+const innerTabs = reactive({})
+const previewLang = reactive({})
+const errorCodes = ERROR_PAGE_CODES
 
-const errorCodes = [
-  { key: '400', label: '400 \u9519\u8bef\u9875\u9762' },
-  { key: '403', label: '403 \u9519\u8bef\u9875\u9762' },
-  { key: '502', label: '502 \u9519\u8bef\u9875\u9762' },
-  { key: '504', label: '504 \u9519\u8bef\u9875\u9762' },
-  { key: 'traffic_limit', label: '\u6d41\u91cf\u8d85\u9650' },
-  { key: 'site_locked', label: '\u7f51\u7ad9\u88ab\u9501' },
-  { key: 'domain_invalid', label: '\u57df\u540d\u65e0\u6548' },
-  { key: 'conn_limit', label: '\u8fde\u63a5\u6570\u8d85\u9650' },
-  { key: 'timeout', label: '\u5957\u9910\u5230\u671f' },
-  { key: 'ip', label: '\u9650\u5236IP\u8bbf\u95ee' }
-]
+const initTabState = () => {
+  errorCodes.forEach(code => {
+    if (!innerTabs[code.key]) innerTabs[code.key] = 'template'
+    if (!previewLang[code.key]) previewLang[code.key] = errorPageI18n.default_lang
+  })
+}
 
-const loadConfig = () => {
+const applyStructure = (pages, i18n) => {
+  const normalized = ensureErrorPageStructure(pages, i18n)
+  Object.keys(errorPages).forEach(key => delete errorPages[key])
+  Object.assign(errorPages, normalized.pages)
+  Object.assign(errorPageI18n, normalized.i18n)
+  initTabState()
+}
+
+const loadConfig = async () => {
   loading.value = true
-  request.get('/global_config').then(res => {
+  try {
+    const res = await fetchGlobalConfig()
     if (res.code === 0 || res.code === 200) {
       fullConfig.value = res.data || {}
-      if (res.data?.error_pages) {
-        Object.assign(errorPages, res.data.error_pages)
+      applyStructure(res.data?.error_pages, res.data?.error_page_i18n)
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const updateStrings = (code, value) => {
+  if (!errorPages[code]) return
+  errorPages[code].strings = value
+}
+
+const previewHtml = (code) => {
+  const def = errorPages[code]
+  if (!def) return ''
+  const lang = previewLang[code] || errorPageI18n.default_lang
+  const strings = resolvePreviewStrings(def, lang, errorPageI18n.default_lang)
+  return renderErrorPagePreview(def.template, strings)
+    .replaceAll('{client_ip}', '203.0.113.1')
+    .replaceAll('{node_ip}', '198.51.100.1')
+}
+
+const saveConfig = async () => {
+  saving.value = true
+  try {
+    const payload = buildGlobalConfigPayload(fullConfig.value, errorPages, errorPageI18n)
+    const res = await saveGlobalConfig(payload)
+    if (res.code === 0 || res.code === 200) {
+      ElMessage.success('保存成功')
+      fullConfig.value = payload
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+watch(
+  () => [...errorPageI18n.enabled_langs],
+  langs => {
+    errorCodes.forEach(({ key }) => {
+      if (!langs.includes(previewLang[key])) {
+        previewLang[key] = errorPageI18n.default_lang
       }
-      errorCodes.forEach(c => {
-        if (!errorPages[c.key]) {
-          errorPages[c.key] = `<h1>${c.label}</h1><p>系统默认页面</p>`
+      langs.forEach(lang => {
+        if (!errorPages[key].strings[lang]) {
+          errorPages[key].strings[lang] = {}
         }
       })
-    }
-  }).finally(() => {
-    loading.value = false
-  })
-}
-
-const saving = ref(false)
-let saveQueued = false
-
-const saveConfig = async (event) => {
-  if (shouldSkipBlurSave(event)) {
-    return
+    })
   }
-  if (saving.value) {
-    saveQueued = true
-    return
-  }
-  saving.value = true
-  await nextTick()
-  fullConfig.value.error_pages = errorPages
-  request.post('/global_config', fullConfig.value).then(res => {
-    if (res.code === 0 || res.code === 200) {
-      ElMessage.success('\u4fdd\u5b58\u6210\u529f')
-    }
-  }).finally(() => {
-    saving.value = false
-    if (saveQueued) {
-      saveQueued = false
-      saveConfig()
-    }
-  })
-}
+)
 
 onMounted(() => {
   loadConfig()
@@ -116,7 +168,7 @@ onMounted(() => {
   align-items: center;
 }
 .error-tabs {
-  border: 1px solid #eee;
+  border: 1px solid var(--el-border-color-light);
 }
 :deep(.el-tabs__content) {
   height: 100%;
@@ -130,17 +182,19 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-bottom: 12px;
+}
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .preview {
-  margin-top: 20px;
-  border: 1px dashed #ccc;
+  margin-top: 12px;
+  border: 1px dashed var(--el-border-color);
   padding: 10px;
-  background: #f9f9f9;
+  background: var(--el-fill-color-light);
   min-height: 100px;
 }
-.tip {
-  font-size: 12px;
-  color: #909399;
-}
 </style>
-

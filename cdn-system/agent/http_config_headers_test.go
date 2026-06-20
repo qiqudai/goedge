@@ -132,6 +132,50 @@ func TestWriteProxyBlock_DefaultXForwardedForNoAppend(t *testing.T) {
 	}
 }
 
+func TestWriteProxyBlock_HidesOriginLeakResponseHeaders(t *testing.T) {
+	domain := edgeDomain{}
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+
+	for _, name := range []string{
+		"X-Origin-IP",
+		"X-Origin-Addr",
+		"X-Origin-Server",
+		"X-Backend-IP",
+		"X-Backend-Addr",
+		"X-Backend-Server",
+		"X-Server-IP",
+		"X-Upstream-Addr",
+		"X-Upstream-Server",
+		"X-Real-IP",
+		"X-Forwarded-For",
+		"Via",
+	} {
+		if !strings.Contains(out, "proxy_hide_header "+name+";") {
+			t.Fatalf("expected %s to be hidden, got: %s", name, out)
+		}
+	}
+}
+
+func TestWriteProxyBlock_DoesNotAddCustomOriginLeakResponseHeaders(t *testing.T) {
+	domain := edgeDomain{
+		ResponseHeaders: map[string]string{
+			"X-Origin-IP": "10.0.0.10",
+			"X-Safe":      "ok",
+		},
+	}
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+	if strings.Contains(out, "add_header X-Origin-IP") {
+		t.Fatalf("origin leak response header must not be added, got: %s", out)
+	}
+	if !strings.Contains(out, "add_header X-Safe \"ok\" always;") {
+		t.Fatalf("safe response header should still be added, got: %s", out)
+	}
+}
+
 func TestWriteProxyBlock_CustomForwardedHeadersNoDuplicate(t *testing.T) {
 	domain := edgeDomain{
 		EnableWebsocket: true,
@@ -356,7 +400,7 @@ func TestWriteHTTPServer_HSTSDoesNotDuplicateCustomResponseHeader(t *testing.T) 
 	}
 
 	var b strings.Builder
-	writeHTTPServer(&b, domain, "443", true, nil, "", 0, false)
+	writeHTTPServer(&b, domain, "443", true, errorPageContext{}, 0, false)
 	out := b.String()
 
 	if count := strings.Count(strings.ToLower(out), "add_header strict-transport-security "); count != 1 {

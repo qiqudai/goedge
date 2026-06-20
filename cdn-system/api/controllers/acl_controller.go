@@ -291,6 +291,26 @@ func (ctr *ACLController) Delete(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
 			return
 		}
+		if msgKey, err := services.GuardACLDelete(item); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete")})
+			return
+		} else if msgKey != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+			return
+		}
+	} else {
+		var item models.ACL
+		if err := db.DB.Where("id = ?", id).First(&item).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": T("acl not found")})
+			return
+		}
+		if msgKey, err := services.GuardACLDelete(item); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete")})
+			return
+		} else if msgKey != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+			return
+		}
 	}
 	if err := db.DB.Delete(&models.ACL{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete")})

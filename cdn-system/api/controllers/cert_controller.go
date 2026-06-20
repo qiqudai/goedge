@@ -29,20 +29,7 @@ import (
 type CertController struct{}
 
 func countSitesReferencingCertIDs(certIDs []int64) (int64, error) {
-	if len(certIDs) == 0 {
-		return 0, nil
-	}
-
-	var siteCount int64
-	if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
-		err := db.DB.Table("site").Where("cert_id IN ?", certIDs).Count(&siteCount).Error
-		return siteCount, err
-	}
-
-	err := db.DB.Table("site").
-		Where("CAST(JSON_UNQUOTE(JSON_EXTRACT(settings, '$.https.certificate_id')) AS SIGNED) IN ?", certIDs).
-		Count(&siteCount).Error
-	return siteCount, err
+	return services.CountSitesReferencingCertIDs(certIDs)
 }
 
 // List returns the list of certificates for the current user
@@ -230,11 +217,20 @@ func (ctrl *CertController) Delete(c *gin.Context) {
 		return
 	}
 
-	// 1. Check if disabled
+	// 1. Check if disabled and not referenced by sites
 	var cert models.Cert
 	if err := db.DB.First(&cert, id).Error; err == nil {
 		if cert.Enable {
 			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": i18n.T("cert.in_use_disable_first")})
+			return
+		}
+		siteCount, err := countSitesReferencingCertIDs([]int64{int64(id)})
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": i18n.T("cert.action_failed")})
+			return
+		}
+		if siteCount > 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": i18n.T("cert.delete_site_ref_first")})
 			return
 		}
 	}
@@ -308,6 +304,15 @@ func (ctrl *CertController) BatchAction(c *gin.Context) {
 		db.DB.Model(&models.Cert{}).Where("id IN ? AND enable = ?", req.IDs, true).Count(&enabledCount)
 		if enabledCount > 0 {
 			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": i18n.T("cert.selected_enabled_disable_first")})
+			return
+		}
+		siteCount, err := countSitesReferencingCertIDs(req.IDs)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 500, "msg": i18n.T("cert.action_failed")})
+			return
+		}
+		if siteCount > 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 400, "msg": i18n.T("cert.delete_site_ref_first")})
 			return
 		}
 

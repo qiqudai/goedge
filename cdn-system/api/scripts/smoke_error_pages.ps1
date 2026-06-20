@@ -159,7 +159,7 @@ try {
     $results.domain_invalid = Invoke-WslCurl -Hostname "invalid.local"
 
     Assert-Status -Name "site_locked" -Actual $results.locked -Expected "451"
-    Assert-Status -Name "conn_limit" -Actual $results.conn_limit -Expected "429"
+    Assert-Status -Name "conn_limit" -Actual $results.conn_limit -Expected "515"
     Assert-Status -Name "timeout" -Actual $results.timeout -Expected "410"
     Assert-Status -Name "traffic_limit" -Actual $results.traffic_limit -Expected "509"
     Assert-Status -Name "running" -Actual $results.running -Expected "200"

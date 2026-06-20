@@ -1,0 +1,16 @@
+FROM openresty/openresty:1.25.3.1-0-alpine-fat
+
+RUN apk add --no-cache curl
+
+WORKDIR /opt/cc
+
+COPY stage/lua /opt/cc/lua
+COPY stage/conf/guard /opt/cc/conf/guard
+COPY stage/nginx.conf /opt/cc/nginx.conf
+COPY stage/entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh && mkdir -p /opt/cc/conf
+
+EXPOSE 18088
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -100,17 +99,23 @@ func TestRunHTTPSProbeTaskCertMismatchFails(t *testing.T) {
 	}
 }
 
-func TestRunHTTPSProbeTaskRejectsServerError(t *testing.T) {
+func TestRunHTTPSProbeTaskAllowsOriginServerErrorAfterTLSValidation(t *testing.T) {
 	port, cleanup := startHTTPSProbeTestServer(t, []string{"www.example.com"}, http.StatusBadGateway)
 	defer cleanup()
-	timeout := 2
 	payload, _ := json.Marshal(httpsProbePayload{
 		Domains:        []string{"www.example.com"},
 		Ports:          []string{port},
-		TimeoutSeconds: timeout,
+		TimeoutSeconds: 2,
 	})
 	ret, err := runHTTPSProbeTask(string(payload))
-	if err == nil {
-		t.Fatalf("expected server error probe failure, timeout=%s ret=%s", strconv.Itoa(timeout), ret)
+	if err != nil {
+		t.Fatalf("origin status must not fail TLS probe, err=%v ret=%s", err, ret)
+	}
+	var results []httpsProbeResult
+	if err := json.Unmarshal([]byte(ret), &results); err != nil {
+		t.Fatalf("invalid ret json: %v", err)
+	}
+	if len(results) != 1 || !results[0].OK || results[0].StatusCode != http.StatusBadGateway {
+		t.Fatalf("unexpected probe results: %+v", results)
 	}
 }

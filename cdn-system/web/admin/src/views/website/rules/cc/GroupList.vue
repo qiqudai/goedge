@@ -19,10 +19,9 @@
       </template>
     </el-table-column>
     <el-table-column prop="name" label="名称" min-width="150" />
-    <el-table-column label="系统规则" width="100" align="center">
+    <el-table-column label="类型" width="100" align="center">
       <template #default="{row}">
-        <el-icon v-if="row.is_system" color="#67C23A"><Check /></el-icon>
-        <el-icon v-else><Close /></el-icon>
+        <span>{{ row.type_label || (row.is_system ? '系统规则' : '用户规则') }}</span>
       </template>
     </el-table-column>
     <el-table-column label="显示" width="80" align="center">
@@ -47,7 +46,7 @@
             <el-button type="primary" link size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
+                <el-dropdown-item v-if="!row.is_system" command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -57,10 +56,11 @@
   </AppTable>
 
   <!-- Group Form Dialog -->
-  <el-dialog :title="dialogMode === 'create' ? '新增规则组' : '编辑规则组'" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
-    <el-form :model="form" label-width="100px">
+  <el-dialog :title="dialogMode === 'create' ? '新增规则组' : (isSystemRuleEdit ? '查看规则组（系统规则只读）' : '编辑规则组')" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
+    <el-alert v-if="isSystemRuleEdit" type="info" :closable="false" show-icon title="系统规则为只读，管理员也不可修改" style="margin-bottom: 12px;" />
+    <el-form :model="form" label-width="100px" :disabled="isSystemRuleEdit">
       <el-form-item label="类型" v-if="isAdmin">
-        <el-radio-group v-model="form.type">
+        <el-radio-group v-model="form.type" :disabled="isSystemRuleEdit">
           <el-radio value="system">系统规则</el-radio>
           <el-radio value="user">用户规则</el-radio>
         </el-radio-group>
@@ -87,10 +87,15 @@
       <el-form-item label="备注">
         <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" />
       </el-form-item>
+
+      <el-form-item label="启用">
+        <el-switch v-model="form.is_on" :disabled="cannotDisable" />
+        <div v-if="cannotDisable" class="form-helper">该规则组正在使用中，无法禁用</div>
+      </el-form-item>
       
       <el-form-item label="规则列表">
         <div style="width: 100%">
-          <el-button type="primary" plain size="small" @click="openRuleDialog" style="margin-bottom: 8px;">新增规则</el-button>
+          <el-button v-if="!isSystemRuleEdit" type="primary" plain size="small" @click="openRuleDialog" style="margin-bottom: 8px;">新增规则</el-button>
           <el-table :data="form.rules" border size="small">
             <el-table-column label="匹配器" min-width="100">
               <template #default="{row}">{{ getMatcherName(row.matcher_id) }}</template>
@@ -160,13 +165,13 @@
 
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitForm">确定</el-button>
+      <el-button @click="dialogVisible = false">{{ isSystemRuleEdit ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!isSystemRuleEdit" type="primary" @click="submitForm">确定</el-button>
     </template>
 
     <!-- Inner Rule Dialog -->
     <el-dialog v-model="ruleDialogVisible" title="规则设置" width="550px" append-to-body :close-on-click-modal="false">
-      <el-form :model="ruleForm" label-width="100px">
+      <el-form :model="ruleForm" label-width="100px" :disabled="isSystemRuleEdit">
         <el-form-item label="匹配器" required>
           <el-select v-model="ruleForm.matcher_id" style="width: 100%" placeholder="选择匹配器">
             <el-option v-for="m in filteredMatchers" :key="m.id" :label="m.name" :value="m.id" />
@@ -205,7 +210,7 @@
       </el-form>
       <template #footer>
         <el-button @click="ruleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="addRule">确定</el-button>
+        <el-button v-if="!isSystemRuleEdit" type="primary" @click="addRule">确定</el-button>
       </template>
     </el-dialog>
   </el-dialog>
@@ -234,8 +239,13 @@ const form = reactive({
   is_visible: true,
   visible_users: [],
   sort_order: 0,
+  is_on: true,
+  in_use: false,
   rules: [] 
 })
+
+const isSystemRuleEdit = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
+const cannotDisable = computed(() => !!form.in_use && !!form.is_on)
 
 const matchers = ref([])
 const filters = ref([])
@@ -305,7 +315,9 @@ const handleCreate = () => {
     user_id: null,
     is_visible: true,
     visible_users: [],
-    sort_order: 0
+    sort_order: 0,
+    is_on: true,
+    in_use: false
   })
   showMoreSettings.value = false
   dialogVisible.value = true
@@ -316,7 +328,9 @@ const handleEdit = async (row) => {
   try {
     const { data } = await request.get(`/rules/cc/groups/${row.id}`)
     Object.assign(form, data)
-    // ensure rules/users arrays init
+    form.type = data.type || (data.is_system ? 'system' : 'user')
+    form.is_system = !!data.is_system
+    form.in_use = !!data.in_use
     if (!form.rules) form.rules = []
     if (!form.visible_users) form.visible_users = []
     
@@ -333,6 +347,10 @@ const handleEdit = async (row) => {
 }
 
 const submitForm = async () => {
+  if (isSystemRuleEdit.value) {
+    dialogVisible.value = false
+    return
+  }
   try {
     if (form.id) {
       await request.put(`/rules/cc/groups/${form.id}`, form)
@@ -352,6 +370,10 @@ const handleCommand = (cmd, row) => {
 }
 
 const handleDelete = (row) => {
+  if (row.is_system) {
+    ElMessage.warning('系统规则不可删除')
+    return
+  }
   ElMessageBox.confirm('确定删除规则组?', '提示', { type: 'warning' }).then(async () => {
     await request.delete(`/rules/cc/groups/${row.id}`)
     ElMessage.success('删除成功')

@@ -497,7 +497,7 @@ const handleBatchDelete = () => {
   if (selectedIds.value.length === 0) {
     return
   }
-  ElMessageBox.confirm('确认删除选中的套餐?', '提示', { type: 'warning' }).then(() => {
+  ElMessageBox.confirm('若已购套餐下仍有网站则无法删除。确认删除选中的套餐?', '提示', { type: 'warning' }).then(() => {
     request({
       url: '/user_plans',
       method: 'delete',

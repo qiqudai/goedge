@@ -31,6 +31,7 @@ type NodeInstallConfig struct {
 }
 
 const nodeBaseDir = "/www/node"
+const defaultSSHUser = "root"
 
 func InstallNodeAgent(node *models.Node, apiBase string) error {
 	if node == nil {
@@ -124,6 +125,11 @@ func InstallNodeAgent(node *models.Node, apiBase string) error {
 	return nil
 }
 
+func ValidateNodeInstallConfig(node *models.Node, apiBase string) error {
+	_, err := buildInstallConfig(node, apiBase)
+	return err
+}
+
 func buildInstallConfig(node *models.Node, apiBase string) (*NodeInstallConfig, error) {
 	host := strings.TrimSpace(node.SSHHost)
 	if host == "" {
@@ -138,7 +144,7 @@ func buildInstallConfig(node *models.Node, apiBase string) (*NodeInstallConfig, 
 	}
 	user := strings.TrimSpace(node.SSHUser)
 	if user == "" {
-		return nil, errors.New("ssh user is required")
+		user = defaultSSHUser
 	}
 	authType := strings.TrimSpace(node.SSHAuthType)
 	if authType == "" {

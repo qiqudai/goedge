@@ -15,10 +15,9 @@
       </template>
     </el-table-column>
     <el-table-column prop="name" label="名称" min-width="150" />
-    <el-table-column label="系统规则" width="100" align="center">
+    <el-table-column label="类型" width="100" align="center">
       <template #default="{row}">
-        <el-icon v-if="row.is_system" color="#67C23A"><Check /></el-icon>
-        <el-icon v-else><Close /></el-icon>
+        <span>{{ row.type_label || (row.is_system ? '系统规则' : '用户规则') }}</span>
       </template>
     </el-table-column>
     <el-table-column label="状态" width="80" align="center">
@@ -37,7 +36,7 @@
             <el-button type="primary" link size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
+                <el-dropdown-item v-if="!row.is_system" command="delete" style="color: #F56C6C;">删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -46,10 +45,11 @@
     </el-table-column>
   </AppTable>
 
-  <el-dialog :title="dialogMode === 'create' ? '新增匹配器' : '编辑匹配器'" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
-    <el-form :model="form" label-width="100px">
+  <el-dialog :title="dialogMode === 'create' ? '新增匹配器' : (isSystemRuleEdit ? '查看匹配器（系统规则只读）' : '编辑匹配器')" v-model="dialogVisible" width="800px" :close-on-click-modal="false">
+    <el-alert v-if="isSystemRuleEdit" type="info" :closable="false" show-icon title="系统规则为只读，管理员也不可修改" style="margin-bottom: 12px;" />
+    <el-form :model="form" label-width="100px" :disabled="isSystemRuleEdit">
       <el-form-item label="类型" v-if="isAdmin">
-        <el-radio-group v-model="form.type">
+        <el-radio-group v-model="form.type" :disabled="isSystemRuleEdit">
           <el-radio value="system">系统规则</el-radio>
           <el-radio value="user">用户规则</el-radio>
         </el-radio-group>
@@ -112,18 +112,19 @@
        </el-form-item>
        
       <el-form-item label="启用">
-        <el-switch v-model="form.is_on" />
+        <el-switch v-model="form.is_on" :disabled="isSystemRuleEdit || cannotDisable" />
+        <div v-if="cannotDisable" class="form-helper">该匹配器正在使用中，无法禁用</div>
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitForm">确定</el-button>
+      <el-button @click="dialogVisible = false">{{ isSystemRuleEdit ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!isSystemRuleEdit" type="primary" @click="submitForm">确定</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { Search, Check, Close, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
@@ -134,12 +135,28 @@ const query = reactive({ name: '' })
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const isAdmin = ref(localStorage.getItem('role') === 'admin')
-const form = reactive({ id: 0, type: 'system', user_id: null, name: '', remark: '', rules: [], is_on: true })
+const form = reactive({ id: 0, type: 'system', user_id: null, name: '', remark: '', rules: [], is_on: true, is_system: false, in_use: false })
+
+const isSystemRuleEdit = computed(() => dialogMode.value === 'update' && (form.type === 'system' || form.is_system))
+const cannotDisable = computed(() => !!form.in_use && !!form.is_on)
 
 const userLoading = ref(false)
 const userOptions = ref([])
 
 const newRule = reactive({ item: 'all', operator: 'eq', value: '' })
+
+const resolveRuleType = (item = {}) => {
+  if (item.type === 'system' || item.type === 'user') return item.type
+  return item.is_system ? 'system' : 'user'
+}
+
+const resolveUserId = (...items) => {
+  for (const item of items) {
+    const userId = item?.user_id ?? item?.uid
+    if (userId) return userId
+  }
+  return null
+}
 
 const matchOptions = [
   { label: '匹配所有请求', value: 'all' },
@@ -218,10 +235,12 @@ const handleEdit = async (row) => {
   dialogMode.value = 'update'
   const { data } = await request.get(`/rules/cc/matchers/${row.id}`)
   Object.assign(form, data)
-  form.type = data.internal ? 'system' : 'user'
-  form.user_id = data.uid
+  form.type = resolveRuleType(data)
+  form.is_system = !!data.is_system
+  form.in_use = !!data.in_use
+  form.user_id = form.type === 'user' ? resolveUserId(data, row) : null
   if (!form.rules) form.rules = []
-  
+
   // Load specific user for label
   if (form.user_id && isAdmin.value) {
     try {
@@ -252,20 +271,39 @@ const moveRule = (index, direction) => {
 }
 
 const submitForm = async () => {
+    if (isSystemRuleEdit.value) {
+      dialogVisible.value = false
+      return
+    }
     try {
-      if (form.id) await request.put(`/rules/cc/matchers/${form.id}`, form)
-      else await request.post('/rules/cc/matchers', form)
+      if (isAdmin.value && form.type === 'user' && !form.user_id) {
+        ElMessage.warning('请选择用户')
+        return
+      }
+      const payload = { ...form, user_id: form.type === 'system' ? null : form.user_id }
+      if (form.id) await request.put(`/rules/cc/matchers/${form.id}`, payload)
+      else await request.post('/rules/cc/matchers', payload)
       ElMessage.success('保存成功')
       dialogVisible.value = false
       fetchData()
     } catch(e) {}
 }
 
+watch(() => form.type, (type) => {
+  if (type === 'system') {
+    form.user_id = null
+  }
+})
+
 const handleCommand = (cmd, row) => {
   if (cmd === 'delete') handleDelete(row)
 }
 
 const handleDelete = (row) => {
+  if (row.is_system) {
+    ElMessage.warning('系统规则不可删除')
+    return
+  }
   ElMessageBox.confirm('确定删除匹配器?', '提示', { type: 'warning' }).then(async () => {
     await request.delete(`/rules/cc/matchers/${row.id}`)
     ElMessage.success('删除成功')

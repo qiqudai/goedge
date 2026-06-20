@@ -146,7 +146,8 @@ const siteSettings = reactive({
     logRequestBody: false,
     logRequestBodySizeLimit: 16,
     defaultSite: false,
-    l2Config: 'current'
+    l2Config: 'current',
+    errorPageLang: ''
   }
 })
 
@@ -434,6 +435,7 @@ export function useSiteSettings() {
 
       siteSettings.advanced.defaultSite = !!(s.default_site ?? sAdv.default_site)
       siteSettings.advanced.l2Config = s.l2_config || sAdv.l2_config || 'current'
+      siteSettings.advanced.errorPageLang = s.error_page_lang || sAdv.error_page_lang || ''
 
       // 缓存设置
       if (s.cache?.rules) {
@@ -452,8 +454,10 @@ export function useSiteSettings() {
           }
         }
 
-        // Custom Rules
-        siteSettings.security.cc.customRules = sec.custom_rules || []
+        // Custom Rules (always active once saved)
+        siteSettings.security.cc.customRules = (sec.custom_rules || []).map(rule => ({
+          ...rule,
+        }))
 
         // Crawlers
         siteSettings.security.crawlers.action = sec.crawlers_action || sec.bot || 'none'

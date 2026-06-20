@@ -629,6 +629,15 @@ func (ctr *NodeGroupController) LineResolutionAction(c *gin.Context) {
 		_ = db.DB.Where("id IN ?", req.IDs).Find(&targetLines).Error
 	}
 	if action == "delete" {
+		enabled, err := services.HasEnabledLines(req.IDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Database Error")})
+			return
+		}
+		if enabled {
+			c.JSON(http.StatusBadRequest, gin.H{"msg": T("line.delete_disable_first")})
+			return
+		}
 		delay := services.ResolveDeleteConfigDelay()
 		if delay > 0 {
 			for _, line := range targetLines {

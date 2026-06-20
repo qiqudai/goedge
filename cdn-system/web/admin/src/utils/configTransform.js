@@ -58,6 +58,7 @@ export function buildSettingsPayload(siteSettings) {
     // Default Site & L2 Config
     default_site: siteSettings.advanced.defaultSite,
     l2_config: siteSettings.advanced.l2Config,
+    error_page_lang: siteSettings.advanced.errorPageLang || '',
 
     // Deprecated fields removed: proxy timeouts, upstream keepalive, limit rate
 
@@ -148,13 +149,15 @@ function buildSecurityPayload(securitySettings) {
     auto_switch: securitySettings.cc.autoSwitch.enable 
       ? JSON.stringify(securitySettings.cc.autoSwitch) 
       : '',
-    custom_rules: securitySettings.cc.customRules,
+    custom_rules: (securitySettings.cc.customRules || []).map(rule => ({
+      ...rule,
+    })),
 
     // IP Lists
     blacklist: splitStr(securitySettings.ip.black),
     whitelist: splitStr(securitySettings.ip.white),
-    ip_black_timeout: securitySettings.ip.blackTime,
-    ip_white_timeout: securitySettings.ip.whiteTime,
+    ip_black_timeout: securitySettings.ip.blackTimeCustom ? securitySettings.ip.blackTime : 3600,
+    ip_white_timeout: securitySettings.ip.whiteTimeCustom ? securitySettings.ip.whiteTime : 21600,
 
     // Crawlers
     crawlers_action: securitySettings.crawlers.action,

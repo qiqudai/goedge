@@ -27,6 +27,10 @@
             </el-radio-group>
           </el-form-item>
           <el-divider content-position="left">{{ NODE_T.sshSettings }}</el-divider>
+          <el-form-item :label="NODE_T.sshHost">
+            <el-input v-model="form.ssh_host" :placeholder="NODE_T.sshHostPlaceholder" />
+            <div class="form-helper">{{ NODE_T.sshHostHint }}</div>
+          </el-form-item>
           <el-form-item :label="NODE_T.sshPort"><el-input v-model.number="form.ssh_port" /></el-form-item>
           <el-form-item :label="NODE_T.sshUser"><el-input v-model="form.ssh_user" :placeholder="NODE_T.sshUserPlaceholder" /></el-form-item>
           <el-form-item :label="NODE_T.sshAuthType">
@@ -86,6 +90,7 @@ import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
 const INSTALL_TIMEOUT = 10000
+const DEFAULT_SSH_USER = 'root'
 
 const props = defineProps({
   item: { type: Object, default: () => ({ id: 0 }) },
@@ -110,7 +115,7 @@ const form = reactive({
   bw_limit: '',
   ssh_host: '',
   ssh_port: 22,
-  ssh_user: '',
+  ssh_user: DEFAULT_SSH_USER,
   ssh_auth_type: 'password',
   ssh_password: '',
   ssh_key: '',
@@ -124,10 +129,13 @@ const regionLocked = computed(() => Number(props.item?.line_count || 0) > 0)
 
 const applyItem = (item) => {
   const nextRegionId = Number(item?.region_id || 0)
-  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', bw_limit: '', ssh_host: '', ssh_port: 22, ssh_user: '', ssh_auth_type: 'password', ssh_password: '', ssh_key: '', work_dir: '/www/node', auto_install: true, sub_ips: [] }, item, {
+  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', bw_limit: '', ssh_host: '', ssh_port: 22, ssh_user: DEFAULT_SSH_USER, ssh_auth_type: 'password', ssh_password: '', ssh_key: '', work_dir: '/www/node', auto_install: true, sub_ips: [] }, item, {
     region_id: nextRegionId,
     work_dir: '/www/node'
   })
+  if (!String(form.ssh_user || '').trim()) {
+    form.ssh_user = DEFAULT_SSH_USER
+  }
   if (!item?.id && !form.region_id && props.regions.length > 0) {
     form.region_id = props.regions[0].id
   }
@@ -153,6 +161,9 @@ const handleSubmit = async () => {
   if (regionLocked.value && Number(form.region_id || 0) !== originalRegionId.value) {
     ElMessage.warning(NODE_T.regionLockedHint)
     return
+  }
+  if (!String(form.ssh_user || '').trim()) {
+    form.ssh_user = DEFAULT_SSH_USER
   }
   form.sub_ips = subIpsText.value.split('\n').filter(i => i.trim()).map(ip => ({ ip: ip.trim() }))
   let res

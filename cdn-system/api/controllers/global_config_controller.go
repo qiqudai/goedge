@@ -21,26 +21,6 @@ var (
 
 const GlobalConfigKey = "global_config"
 
-// Helper to load error page content
-func loadErrorPage(filename string, fallback string) string {
-	var cfg models.ConfigItem
-	if err := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", "error-page", "error_page", "global", 0).
-		First(&cfg).Error; err != nil {
-		return fallback
-	}
-	if cfg.Value == "" {
-		return fallback
-	}
-	var pages map[string]string
-	if err := json.Unmarshal([]byte(cfg.Value), &pages); err != nil {
-		return fallback
-	}
-	if val, ok := pages[filename]; ok && val != "" {
-		return val
-	}
-	return fallback
-}
-
 func getDefaultConfig() models.GlobalConfig {
 	return models.GlobalConfig{
 		WAF: models.WAFConfig{
@@ -141,18 +121,8 @@ func getDefaultConfig() models.GlobalConfig {
 				AllowedCustomPorts:  "1-65535",
 			},
 		},
-		ErrorPages: map[string]string{
-			"400":            loadErrorPage("p400", "<html><body><h1>400 Bad Request</h1><p>Our systems have detected unusual traffic.</p></body></html>"),
-			"403":            loadErrorPage("p403", "<html><body><h1>403 Forbidden</h1><p>Access Denied.</p></body></html>"),
-			"502":            loadErrorPage("p502", "<html><body><h1>502 Bad Gateway</h1><p>The server is busy.</p></body></html>"),
-			"504":            loadErrorPage("p504", "<html><body><h1>504 Gateway Timeout</h1><p>The origin server did not respond.</p></body></html>"),
-			"traffic_limit":  loadErrorPage("p513", "<h1>Traffic Limit Exceeded</h1>"),
-			"site_locked":    loadErrorPage("p514", "<h1>Site Locked</h1>"),
-			"domain_invalid": loadErrorPage("host_not_found", "<h1>Domain Not Configured</h1>"),
-			"conn_limit":     loadErrorPage("p515", "<h1>Connection Limit Exceeded</h1>"),
-			"timeout":        loadErrorPage("p512", "<h1>Package Expired</h1>"),
-			"ip":             loadErrorPage("access_ip_not_allow", "<h1>IP Forbidden</h1>"),
-		},
+		ErrorPageI18n: services.DefaultErrorPageI18nSettings(),
+		ErrorPages:    services.DefaultErrorPageDefinitions(),
 	}
 }
 
@@ -187,12 +157,10 @@ func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
 	}
 
 	// Ensure maps are not nil
-	if config.ErrorPages == nil {
-		config.ErrorPages = make(map[string]string)
-	}
 	if len(config.ErrorPages) == 0 {
 		config.ErrorPages = getDefaultConfig().ErrorPages
 	}
+	services.NormalizeGlobalConfigErrorPages(&config)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -205,6 +173,11 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 	var req models.GlobalConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("Invalid Request")})
+		return
+	}
+	services.NormalizeGlobalConfigErrorPages(&req)
+	if err := services.ValidateErrorPageConfig(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": err.Error()})
 		return
 	}
 

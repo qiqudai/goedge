@@ -6,6 +6,7 @@ local waf = require "lua.waf"        -- Phase 3
 local quota = require "lua.quota"    -- Phase 3
 local balancer = require "lua.balancer" -- Phase 3
 local cc = require "lua.cc"
+local acl = require "lua.acl"
 local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
 local cjson = require "cjson.safe"
@@ -44,26 +45,6 @@ if anti_cc.check_limit(ngx.var.remote_addr) then
 end
 
 -- 4. Dynamic Routing & Config Lookup
-
-local function acl_check(domain_conf, ip)
-    if not domain_conf then return end
-    local rules = domain_conf.acl_rules
-    if rules then
-        for _, rule in ipairs(rules) do
-            if rule.ip == ip then
-                if rule.action == "deny" then
-                    block_request(build_reason("local_protection", "acl_deny", {"condition=acl_rules"}), 403)
-                else
-                    return
-                end
-            end
-        end
-    end
-    local default_action = domain_conf.acl_default_action
-    if default_action == "deny" then
-        block_request(build_reason("local_protection", "acl_default_deny", {"condition=acl_default_action=deny"}), 403)
-    end
-end
 
 local function ip_in_list(list, ip)
     if not list or not ip then
@@ -643,14 +624,17 @@ if not domain_conf then
     ngx.log(ngx.WARN, "Unknown domain: ", host)
     ngx.exit(404)
 else
-    if domain_conf.waf_enable ~= false then
-        waf.check()
-    end
     apply_realtime_send(domain_conf)
     apply_request_logging(domain_conf)
     local client_ip = ngx.var.remote_addr
     apply_geo_logging(client_ip)
     local whitelisted = ip_in_list(domain_conf.white_ips, client_ip)
+    if domain_conf.waf_enable ~= false and not whitelisted then
+        waf.check()
+    end
+    if not whitelisted then
+        acl.check(domain_conf, client_ip, ngx.var.uri)
+    end
     local crawler_allowed = false
     local crawler_action = domain_conf.crawler_action or ""
     if crawler_action ~= "" then
@@ -785,9 +769,6 @@ else
         ngx.exit(502)
     end
 
-    if not whitelisted then
-        acl_check(domain_conf, client_ip)
-    end
 end
 
 -- 7. Edge Logic

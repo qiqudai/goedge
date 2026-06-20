@@ -269,7 +269,13 @@ const handleSiteAction = async (type, data) => {
   }
   
   if (type.endsWith('delete')) {
-    await ElMessageBox.confirm('确定删除吗？', '提示')
+    const targets = data ? [data] : selectedSites.value
+    const enabledSites = targets.filter(site => site.enable)
+    if (enabledSites.length > 0) {
+      ElMessage.warning('删除网站前请先禁用网站')
+      return
+    }
+    await ElMessageBox.confirm('确定删除吗？删除后不可恢复。', '提示', { type: 'warning' })
     await request.post('/sites/batch_action', { action: 'delete', ids })
   } else if (type.endsWith('enable') || type.endsWith('disable')) {
     const action = type.split('-').pop()

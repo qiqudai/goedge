@@ -195,6 +195,25 @@ a:hover {
   color: var(--text-color);
 }
 
+.matcher-config,
+.matcher-row,
+.rule-params {
+  color: var(--control-text);
+}
+
+.matcher-config {
+  background: var(--control-bg);
+  border-color: var(--control-border);
+}
+
+.matcher-row {
+  background: var(--control-bg-hover);
+}
+
+.matcher-text {
+  color: var(--control-text);
+}
+
 .el-table {
   color: var(--text-color);
 }

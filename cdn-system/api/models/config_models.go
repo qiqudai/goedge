@@ -31,7 +31,8 @@ type EdgeConfig struct {
 	Upstreams          []EdgeUpstream             `json:"upstreams"`
 	WAF                *WAFConfig                 `json:"waf,omitempty"`
 	Resources          *GlobalResourceConfig      `json:"resources,omitempty"`
-	ErrorPages         map[string]string          `json:"error_pages,omitempty"`
+	ErrorPageI18n      ErrorPageI18nSettings           `json:"error_page_i18n,omitempty"`
+	ErrorPages         map[string]ErrorPageDefinition  `json:"error_pages,omitempty"`
 	DefaultConfig      *DefaultSiteConfig         `json:"default_config,omitempty"`
 	CCRules            map[int64][]EdgeCCRuleItem `json:"cc_rules,omitempty"`
 	CCMatchers         map[int64]EdgeCCMatcher    `json:"cc_matchers,omitempty"`
@@ -40,6 +41,13 @@ type EdgeConfig struct {
 	Nginx              *EdgeNginxConfig           `json:"nginx,omitempty"`
 	FallbackCertData   string                     `json:"fallback_cert_data,omitempty"`
 	FallbackKeyData    string                     `json:"fallback_key_data,omitempty"`
+	IPUnblock          *EdgeIPUnblock             `json:"ip_unblock,omitempty"`
+}
+
+// EdgeIPUnblock carries IPs that should be removed from edge memory blacklist.
+type EdgeIPUnblock struct {
+	Rev int64    `json:"rev"`
+	IPs []string `json:"ips,omitempty"`
 }
 
 type EdgeDomain struct {
@@ -71,11 +79,15 @@ type EdgeDomain struct {
 	SSLKeyPath                     string                   `json:"ssl_key_path,omitempty"`
 	WAFEnable                      *bool                    `json:"waf_enable,omitempty"`
 	ACLDefaultAction               string                   `json:"acl_default_action,omitempty"`
+	ACLDefaultDenyStatus           int                      `json:"acl_default_deny_status,omitempty"`
+	ACLDefaultRedirectURL          string                   `json:"acl_default_redirect_url,omitempty"`
 	ACLRules                       []EdgeACLRule            `json:"acl_rules,omitempty"`
 	BlackIPs                       []string                 `json:"black_ips,omitempty"`
 	WhiteIPs                       []string                 `json:"white_ips,omitempty"`
 	RegionBlock                    []string                 `json:"region_block,omitempty"`
 	CCRuleID                       int64                    `json:"cc_rule_id,omitempty"`
+	CCAutoSwitch                   *EdgeCCAutoSwitch        `json:"cc_auto_switch,omitempty"`
+	CustomCCRules                  []map[string]interface{} `json:"custom_cc_rules,omitempty"`
 	OriginProtocol                 string                   `json:"origin_protocol,omitempty"`
 	OriginHTTPPort                 string                   `json:"origin_http_port,omitempty"`
 	OriginHTTPSPort                string                   `json:"origin_https_port,omitempty"`
@@ -123,6 +135,7 @@ type EdgeDomain struct {
 	UpstreamKeepalive              bool                     `json:"upstream_keepalive,omitempty"`
 	UpstreamKeepaliveConn          int                      `json:"upstream_keepalive_conn,omitempty"`
 	UpstreamKeepaliveTimeout       int                      `json:"upstream_keepalive_timeout,omitempty"`
+	ErrorPageLang                  string                   `json:"error_page_lang,omitempty"`
 }
 
 type EdgeHotlinkConfig struct {
@@ -159,15 +172,32 @@ type EdgeUpstreamTarget struct {
 	NodeID int64  `json:"node_id,omitempty"`
 }
 
+type EdgeACLCondition struct {
+	Item     string `json:"item"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
 type EdgeACLRule struct {
-	IP     string `json:"ip"`
-	Action string `json:"action"`
+	Conditions  []EdgeACLCondition `json:"conditions,omitempty"`
+	Action      string             `json:"action"`
+	DenyStatus  int                `json:"deny_status,omitempty"`
+	RedirectURL string             `json:"redirect_url,omitempty"`
+	IP          string             `json:"ip,omitempty"`
+}
+
+type EdgeCCAutoSwitch struct {
+	Enable bool  `json:"enable"`
+	QPS    int   `json:"qps"`
+	RuleID int64 `json:"rule_id"`
 }
 
 type EdgeCCRuleItem struct {
 	MatcherID int64  `json:"matcher_id,omitempty"`
 	FilterID  int64  `json:"filter_id,omitempty"`
+	Filter2ID int64  `json:"filter2_id,omitempty"`
 	Action    string `json:"action,omitempty"`
+	Mode      string `json:"mode,omitempty"`
 	Enabled   bool   `json:"enabled"`
 }
 

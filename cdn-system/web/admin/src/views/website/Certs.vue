@@ -363,7 +363,7 @@ const handleBatchAction = action => {
   
   const execute = () => {
     request.post('/certs/batch_action', { action, ids }).then(res => {
-      ElMessage.success(res.message || '操作成功')
+      ElMessage.success(res.msg || res.message || '操作成功')
       fetchList()
     })
   }

@@ -33,13 +33,7 @@ func resolveScopedConfigSyncTargets(resource string, ids []int64) []int64 {
 func resolveGroupIDsForResource(resource string, ids []int64) []int64 {
 	switch resource {
 	case "site":
-		var groupIDs []int64
-		_ = db.DB.Model(&models.Site{}).
-			Select("distinct node_group_id").
-			Where("id IN ?", ids).
-			Where("node_group_id <> 0").
-			Pluck("node_group_id", &groupIDs).Error
-		return uniqueInt64List(groupIDs)
+		return resolveSiteConfigGroupIDs(ids)
 	case "forward":
 		var groupIDs []int64
 		_ = db.DB.Model(&models.Forward{}).
@@ -51,6 +45,50 @@ func resolveGroupIDsForResource(resource string, ids []int64) []int64 {
 	default:
 		return nil
 	}
+}
+
+func resolveSiteConfigGroupIDs(ids []int64) []int64 {
+	ids = uniqueInt64List(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	var sites []models.Site
+	if err := db.DB.Select("id", "user_package", "node_group_id", "backup_node_group", "enable_backup_group").
+		Where("id IN ?", ids).
+		Find(&sites).Error; err != nil {
+		return nil
+	}
+	if len(sites) == 0 {
+		return nil
+	}
+	packMap, err := loadUserPackageMap(sites)
+	if err != nil {
+		return nil
+	}
+	planIDSet := map[int64]struct{}{}
+	for _, pkg := range packMap {
+		if pkg.PackageID != 0 {
+			planIDSet[int64(pkg.PackageID)] = struct{}{}
+		}
+	}
+	planIDs := make([]int64, 0, len(planIDSet))
+	for id := range planIDSet {
+		planIDs = append(planIDs, id)
+	}
+	planMap := loadPlanGroupMap(planIDs)
+
+	groupIDs := make([]int64, 0, len(sites)*2)
+	for _, site := range sites {
+		pkg := packMap[site.UserPackageID]
+		primary, backup, enableBackup := resolveSiteGroups(site, pkg, planMap[int64(pkg.PackageID)])
+		if primary != 0 {
+			groupIDs = append(groupIDs, primary)
+		}
+		if enableBackup && backup != 0 {
+			groupIDs = append(groupIDs, backup)
+		}
+	}
+	return uniqueInt64List(groupIDs)
 }
 
 func resolveGroupIDsByRegion(groupIDs []int64) []int64 {

@@ -1,0 +1,22 @@
+FROM golang:1.24-alpine AS build
+
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /src
+COPY common/ common/
+COPY api/ api/
+
+WORKDIR /src/api
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /cdn-api .
+
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates tzdata wget
+
+COPY --from=build /cdn-api /usr/local/bin/cdn-api
+COPY docker/cc-e2e/config/api.yaml /etc/cdn-api/config.yaml
+
+WORKDIR /etc/cdn-api
+EXPOSE 8080
+
+CMD ["cdn-api", "-config", "/etc/cdn-api/config.yaml"]

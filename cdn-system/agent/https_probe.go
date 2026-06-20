@@ -116,10 +116,6 @@ func runSingleHTTPSProbe(domain, port string, timeout time.Duration) httpsProbeR
 	}
 	defer resp.Body.Close()
 	result.StatusCode = resp.StatusCode
-	if resp.StatusCode >= 500 {
-		result.Error = fmt.Sprintf("unexpected status %d", resp.StatusCode)
-		return result
-	}
 	result.OK = true
 	return result
 }

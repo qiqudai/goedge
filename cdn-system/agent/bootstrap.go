@@ -92,7 +92,10 @@ func pullConfigBootstrap() error {
 
 	if status == 200 {
 		debugLogInteraction("GET", req.URL.String(), status, nil, body)
-		if _, err := applyConfigPayloadWithOptionsAndReload(body, false, true); err != nil {
+		// Agent upgrades can change generated nginx/Lua output without changing the
+		// API config version. Always rebuild on bootstrap, then let startup launch
+		// nginx once with the newly generated configuration.
+		if _, err := applyConfigPayloadWithOptionsAndReload(body, true, true); err != nil {
 			return err
 		}
 		return nil

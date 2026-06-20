@@ -79,8 +79,6 @@
     <div class="section-title">自定义规则</div>
     <div style="margin-bottom: 15px; padding-left: 20px;">
       <el-button type="primary" size="small" @click="openRuleDialog('create')">新增规则</el-button>
-      <el-button size="small" @click="toggleAllRules(true)">启用所有规则</el-button>
-      <el-button size="small" @click="toggleAllRules(false)">关闭所有规则</el-button>
     </div>
 
     <el-table :data="securitySettings.cc.customRules" border style="width: 100%; margin-bottom: 10px;">
@@ -103,11 +101,6 @@
         </template>
       </el-table-column>
       <el-table-column prop="remart" label="备注" />
-      <el-table-column label="状态" width="80" align="center">
-        <template #default="{ row }">
-          <el-switch v-model="row.on" size="small" @change="handleSave" />
-        </template>
-      </el-table-column>
       <el-table-column label="操作" width="120" align="center">
         <template #default="{ row, $index }">
           <el-button link type="primary" size="small" @click="editRule($index)">编辑</el-button>
@@ -170,7 +163,7 @@
           </div>
           
           <!-- Action Params: Rate Limit -->
-          <div v-if="ruleForm.action === 'limit_rate'" style="margin-top: 10px; background: #f5f7fa; padding: 10px; border-radius: 4px;">
+          <div v-if="ruleForm.action === 'limit_rate'" class="rule-params">
             <el-form-item label="在" label-width="60px" style="margin-bottom: 5px;">
                <el-input v-model.number="ruleForm.actionParams.seconds" size="small" ><template #append>秒内</template></el-input>
             </el-form-item>
@@ -209,10 +202,6 @@
 
         <el-form-item label="备注">
           <el-input v-model="ruleForm.remark" placeholder="请输入备注" />
-        </el-form-item>
-        
-        <el-form-item label="状态">
-           <el-switch v-model="ruleForm.on" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -290,6 +279,7 @@
       </el-form-item>
       <el-form-item label="IP白名单">
         <el-input type="textarea" v-model="securitySettings.ip.white" :rows="3" placeholder="一行一个IP" @blur="handleBlurSave" />
+        <div class="form-helper">白名单 IP 将跳过 CC 防护、WAF、站点黑名单、区域屏蔽和防盗链；保存后自动同步到节点。</div>
       </el-form-item>
     </el-form>
       
@@ -581,6 +571,9 @@ const removeMatcher = (idx) => {
 
 const saveRule = () => {
   const newRule = JSON.parse(JSON.stringify(ruleForm))
+  if (ruleDialog.mode === 'create' && newRule.on === undefined) {
+    newRule.on = true
+  }
   if (ruleDialog.mode === 'create') {
     if (!securitySettings.cc.customRules) securitySettings.cc.customRules = []
     securitySettings.cc.customRules.push(newRule)
@@ -598,13 +591,6 @@ const deleteRule = (idx) => {
 
 const editRule = (idx) => {
   openRuleDialog('update', idx)
-}
-
-const toggleAllRules = (enable) => {
-  if (securitySettings.cc.customRules) {
-    securitySettings.cc.customRules.forEach(r => r.on = enable)
-    handleSave()
-  }
 }
 
 // Helpers
@@ -636,29 +622,31 @@ onMounted(() => {
 .section-title {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 20px;
   padding-left: 10px;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--el-color-primary);
 }
 
 .divider {
   height: 1px;
-  background-color: #ebeef5;
+  background-color: var(--el-border-color-lighter);
   margin: 24px 0;
 }
 
 .form-helper {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 6px;
 }
 
 .matcher-config {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--control-border);
   padding: 10px;
   border-radius: 4px;
+  background: var(--control-bg);
+  color: var(--control-text);
 }
 
 .matcher-row {
@@ -666,19 +654,36 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 5px;
-  background: #f5f7fa;
+  background: var(--control-bg-hover);
+  color: var(--control-text);
   padding: 5px 10px;
   border-radius: 4px;
+}
+
+.matcher-text {
+  color: var(--control-text);
+  font-size: 13px;
 }
 
 .matcher-add {
   display: flex;
   align-items: center;
   margin-top: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .action-grid {
   display: flex;
   flex-wrap: wrap;
+}
+
+.rule-params {
+  margin-top: 10px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  padding: 10px;
+  border-radius: 4px;
+  color: var(--control-text);
 }
 </style>

@@ -41,7 +41,7 @@ var (
 
 	localConfigMu    sync.RWMutex
 	LocalResources   *edgeResources
-	LocalErrorPages  map[string]string
+	LocalErrorPageBundle *errorPageBundle
 	LocalDefaultConf *edgeDefaultConfig
 	LocalWAFConfig   *edgeWAFConfig
 	LocalCCRules     map[int64][]edgeCCRuleItem

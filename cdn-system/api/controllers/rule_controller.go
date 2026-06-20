@@ -72,13 +72,18 @@ func (c *RuleController) ListCCRuleGroups(ctx *gin.Context) {
 	userMap, _ := loadUserNameMapFromRules(items)
 	list := make([]gin.H, 0, len(items))
 	for _, item := range items {
+		inUse, _ := services.IsCCRuleGroupInUse(item.ID)
+		isSystem := item.Internal || item.UserID == 0
 		list = append(list, gin.H{
 			"id":          item.ID,
 			"user_id":     item.UserID,
 			"uid":         item.UserID,
 			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
-			"is_system":   item.Internal || item.UserID == 0,
+			"is_system":   isSystem,
+			"type":        mapRuleType(item.UserID, item.Internal),
+			"type_label":  ruleTypeLabel(isSystem),
+			"in_use":      inUse,
 			"is_on":       item.Enable,
 			"is_show":     item.IsShow,
 			"status":      T("status.normal"),
@@ -133,9 +138,11 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 		} else {
 			// Admin creating user rule
 			internal = false
-			if req.UserID > 0 {
-				userID = req.UserID
+			if req.UserID <= 0 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+				return
 			}
+			userID = req.UserID
 		}
 	}
 
@@ -159,7 +166,11 @@ func (c *RuleController) CreateCCRuleGroup(ctx *gin.Context) {
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := db.DB.Create(&ccRule).Error; err != nil {
+	createQuery := db.DB.Omit("TaskID")
+	if internal {
+		createQuery = db.DB.Omit("UserID", "TaskID")
+	}
+	if err := createQuery.Create(&ccRule).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create rule group")})
 		return
 	}
@@ -188,6 +199,7 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		IsVisible    bool                     `json:"is_visible"`
 		VisibleUsers []int64                  `json:"visible_users"`
 		SortOrder    int                      `json:"sort_order"`
+		IsOn         bool                     `json:"is_on"`
 		UserID       int64                    `json:"user_id"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -198,6 +210,11 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 	var ccRule models.CCRule
 	if err := db.DB.Where("id = ?", id).First(&ccRule).Error; err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": T("rule group not found")})
+		return
+	}
+
+	if msgKey := services.GuardCCRuleGroupModify(ccRule); msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
 		return
 	}
 
@@ -223,6 +240,14 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 		}
 	}
 
+	if msgKey, err := services.GuardCCRuleGroupDisable(ccRule.ID, ccRule.Enable, req.IsOn); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update rule group")})
+		return
+	} else if msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
+	}
+
 	dataMap := map[string]interface{}{
 		"rules":         req.Rules,
 		"visible_users": req.VisibleUsers,
@@ -234,9 +259,25 @@ func (c *RuleController) UpdateCCRuleGroup(ctx *gin.Context) {
 	ccRule.Data = string(dataBytes)
 	ccRule.IsShow = req.IsVisible
 	ccRule.Sort = req.SortOrder
+	ccRule.Enable = req.IsOn
 	ccRule.UpdatedAt = time.Now()
 
-	if err := db.DB.Omit("CreatedAt").Save(&ccRule).Error; err != nil {
+	if !isUserRequest(ctx) && req.Type == "system" {
+		if err := db.DB.Model(&models.CCRule{}).Where("id = ?", ccRule.ID).Updates(map[string]interface{}{
+			"uid":       nil,
+			"name":      ccRule.Name,
+			"des":       ccRule.Description,
+			"data":      ccRule.Data,
+			"is_show":   ccRule.IsShow,
+			"sort":      ccRule.Sort,
+			"internal":  true,
+			"enable":    ccRule.Enable,
+			"update_at": ccRule.UpdatedAt,
+		}).Error; err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update rule group")})
+			return
+		}
+	} else if err := db.DB.Omit("CreatedAt", "TaskID").Save(&ccRule).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update rule group")})
 		return
 	}
@@ -291,6 +332,8 @@ func (c *RuleController) GetRuleGroup(ctx *gin.Context) {
 			"user_id":       rule.UserID,
 			"is_system":     rule.Internal || rule.UserID == 0,
 			"type":          mapRuleType(rule.UserID, rule.Internal),
+			"type_label":    ruleTypeLabel(rule.Internal || rule.UserID == 0),
+			"in_use":        ccRuleInUse(rule.ID),
 			"is_on":         rule.Enable,
 			"is_visible":    rule.IsShow,
 			"sort_order":    rule.Sort,
@@ -325,6 +368,14 @@ func (c *RuleController) DeleteCCRuleGroup(ctx *gin.Context) {
 			ctx.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
 			return
 		}
+	}
+
+	if msgKey, err := services.GuardCCRuleGroupDelete(rule); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete rule group")})
+		return
+	} else if msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
 	}
 
 	if err := db.DB.Delete(&rule).Error; err != nil {
@@ -371,13 +422,18 @@ func (c *RuleController) ListMatchers(ctx *gin.Context) {
 	userMap, _ := loadUserNameMapFromMatchers(items)
 	list := make([]gin.H, 0, len(items))
 	for _, item := range items {
+		inUse, _ := services.IsCCMatcherInUse(item.ID)
+		isSystem := item.Internal || item.UserID == 0
 		list = append(list, gin.H{
 			"id":          item.ID,
 			"user_id":     item.UserID,
 			"uid":         item.UserID,
 			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
-			"is_system":   item.Internal || item.UserID == 0,
+			"is_system":   isSystem,
+			"type":        mapRuleType(item.UserID, item.Internal),
+			"type_label":  ruleTypeLabel(isSystem),
+			"in_use":      inUse,
 			"status":      T("status.normal"),
 			"is_on":       item.Enable,
 			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -421,11 +477,14 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 	} else {
 		if req.Type == "system" {
 			internal = true
+			userID = 0
 		} else {
 			internal = false
-			if req.UserID > 0 {
-				userID = req.UserID
+			if req.UserID <= 0 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+				return
 			}
+			userID = req.UserID
 		}
 	}
 
@@ -445,7 +504,11 @@ func (c *RuleController) CreateMatcher(ctx *gin.Context) {
 		UpdatedAt:   time.Now(),
 	}
 
-	if err := db.DB.Create(&matcher).Error; err != nil {
+	createQuery := db.DB.Omit("TaskID")
+	if internal {
+		createQuery = db.DB.Omit("UserID", "TaskID")
+	}
+	if err := createQuery.Create(&matcher).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create matcher")})
 		return
 	}
@@ -485,6 +548,11 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 		return
 	}
 
+	if msgKey := services.GuardCCMatcherModify(matcher); msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
+	}
+
 	if isUserRequest(ctx) {
 		userID := parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 || matcher.UserID != userID {
@@ -498,11 +566,21 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 			matcher.Internal = true
 			matcher.UserID = 0
 		} else {
-			matcher.Internal = false
-			if req.UserID > 0 {
-				matcher.UserID = req.UserID
+			if req.UserID <= 0 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+				return
 			}
+			matcher.Internal = false
+			matcher.UserID = req.UserID
 		}
+	}
+
+	if msgKey, err := services.GuardCCMatcherDisable(matcher.ID, matcher.Enable, req.IsOn); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update matcher")})
+		return
+	} else if msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
 	}
 
 	dataMap := map[string]interface{}{
@@ -516,7 +594,20 @@ func (c *RuleController) UpdateMatcher(ctx *gin.Context) {
 	matcher.Enable = req.IsOn
 	matcher.UpdatedAt = time.Now()
 
-	if err := db.DB.Omit("CreatedAt").Save(&matcher).Error; err != nil {
+	if !isUserRequest(ctx) && req.Type == "system" {
+		if err := db.DB.Model(&models.CCMatch{}).Where("id = ?", matcher.ID).Updates(map[string]interface{}{
+			"uid":       nil,
+			"name":      matcher.Name,
+			"des":       matcher.Description,
+			"data":      matcher.Data,
+			"enable":    matcher.Enable,
+			"internal":  true,
+			"update_at": matcher.UpdatedAt,
+		}).Error; err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update matcher")})
+			return
+		}
+	} else if err := db.DB.Omit("CreatedAt", "TaskID").Save(&matcher).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update matcher")})
 		return
 	}
@@ -562,13 +653,17 @@ func (c *RuleController) GetMatcher(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"id":        matcher.ID,
-			"name":      matcher.Name,
-			"remark":    matcher.Description,
-			"is_system": matcher.Internal || matcher.UserID == 0,
-			"is_on":     matcher.Enable,
-			"type":      mapRuleType(matcher.UserID, matcher.Internal),
-			"rules":     rules,
+			"id":         matcher.ID,
+			"user_id":    matcher.UserID,
+			"uid":        matcher.UserID,
+			"name":       matcher.Name,
+			"remark":     matcher.Description,
+			"is_system":  matcher.Internal || matcher.UserID == 0,
+			"is_on":      matcher.Enable,
+			"type":       mapRuleType(matcher.UserID, matcher.Internal),
+			"type_label": ruleTypeLabel(matcher.Internal || matcher.UserID == 0),
+			"in_use":     ccMatcherInUse(matcher.ID),
+			"rules":      rules,
 		},
 	})
 }
@@ -598,6 +693,18 @@ func (c *RuleController) DeleteMatcher(ctx *gin.Context) {
 			ctx.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
 			return
 		}
+	}
+
+	if services.IsCCMatcherInternal(matcher) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("cc_match.system_protected")})
+		return
+	}
+	if msgKey, err := services.GuardCCMatcherDelete(matcher.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete matcher")})
+		return
+	} else if msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
 	}
 
 	if err := db.DB.Delete(&matcher).Error; err != nil {
@@ -644,14 +751,19 @@ func (c *RuleController) ListFilters(ctx *gin.Context) {
 	userMap, _ := loadUserNameMapFromFilters(items)
 	list := make([]gin.H, 0, len(items))
 	for _, item := range items {
+		inUse, _ := services.IsCCFilterInUse(item.ID)
+		isSystem := item.Internal || item.UserID == 0
 		list = append(list, gin.H{
 			"id":          item.ID,
 			"user_id":     item.UserID,
 			"uid":         item.UserID,
 			"user":        gin.H{"username": userMap[item.UserID], "id": item.UserID},
 			"name":        item.Name,
-			"is_system":   item.Internal || item.UserID == 0,
-			"type":        item.Type,
+			"is_system":   isSystem,
+			"type":        mapRuleType(item.UserID, item.Internal),
+			"type_label":  ruleTypeLabel(isSystem),
+			"in_use":      inUse,
+			"action":      item.Type,
 			"status":      T("status.normal"),
 			"is_on":       item.Enable,
 			"create_time": item.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -700,11 +812,14 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 	} else {
 		if req.Type == "system" {
 			internal = true
+			userID = 0
 		} else {
 			internal = false
-			if req.UserID > 0 {
-				userID = req.UserID
+			if req.UserID <= 0 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+				return
 			}
+			userID = req.UserID
 		}
 	}
 
@@ -732,7 +847,11 @@ func (c *RuleController) CreateFilter(ctx *gin.Context) {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := db.DB.Create(&filter).Error; err != nil {
+	createQuery := db.DB.Omit("TaskID")
+	if internal {
+		createQuery = db.DB.Omit("UserID", "TaskID")
+	}
+	if err := createQuery.Create(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create filter")})
 		return
 	}
@@ -764,6 +883,7 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 		MaxReq       int                    `json:"max_req"`
 		MaxReqPerURI int                    `json:"max_req_per_uri"`
 		Auth         map[string]interface{} `json:"auth"`
+		UserID       int64                  `json:"user_id"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": T("Invalid request")})
@@ -775,6 +895,12 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": T("filter not found")})
 		return
 	}
+
+	if msgKey := services.GuardCCFilterModify(filter); msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
+	}
+
 	if isUserRequest(ctx) {
 		userID := parseUserID(mustGet(ctx, "userID"))
 		if userID == 0 || filter.UserID != userID {
@@ -782,6 +908,24 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 			return
 		}
 		req.Type = "user"
+	} else if req.Type == "system" {
+		filter.Internal = true
+		filter.UserID = 0
+	} else {
+		if req.UserID <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": T("user_id is required")})
+			return
+		}
+		filter.Internal = false
+		filter.UserID = req.UserID
+	}
+
+	if msgKey, err := services.GuardCCFilterDisable(filter.ID, filter.Enable, req.Enable); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update filter")})
+		return
+	} else if msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
 	}
 
 	extra := map[string]interface{}{
@@ -801,13 +945,29 @@ func (c *RuleController) UpdateFilter(ctx *gin.Context) {
 	filter.MaxReqPerUri = req.MaxReqPerURI
 	filter.Extra = string(extraBytes)
 	filter.Enable = req.Enable
-	filter.Internal = req.Type == "system"
-	if req.Type == "user" {
+	if isUserRequest(ctx) {
 		filter.Internal = false
 	}
 	filter.UpdatedAt = time.Now()
 
-	if err := db.DB.Omit("CreatedAt").Save(&filter).Error; err != nil {
+	if !isUserRequest(ctx) && req.Type == "system" {
+		if err := db.DB.Model(&models.CCFilter{}).Where("id = ?", filter.ID).Updates(map[string]interface{}{
+			"uid":             nil,
+			"name":            filter.Name,
+			"des":             filter.Description,
+			"type":            filter.Type,
+			"within_second":   filter.WithinSecond,
+			"max_req":         filter.MaxReq,
+			"max_req_per_uri": filter.MaxReqPerUri,
+			"extra":           filter.Extra,
+			"enable":          filter.Enable,
+			"internal":        true,
+			"update_at":       filter.UpdatedAt,
+		}).Error; err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update filter")})
+			return
+		}
+	} else if err := db.DB.Omit("CreatedAt", "TaskID").Save(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to update filter")})
 		return
 	}
@@ -847,10 +1007,16 @@ func (c *RuleController) GetFilter(ctx *gin.Context) {
 		"code": 0,
 		"data": gin.H{
 			"id":              filter.ID,
+			"user_id":         filter.UserID,
+			"uid":             filter.UserID,
 			"type":            mapRuleType(filter.UserID, filter.Internal),
+			"type_label":      ruleTypeLabel(filter.Internal || filter.UserID == 0),
+			"is_system":       filter.Internal || filter.UserID == 0,
+			"in_use":          ccFilterInUse(filter.ID),
 			"name":            filter.Name,
 			"remark":          filter.Description,
 			"enable":          filter.Enable,
+			"is_on":           filter.Enable,
 			"action":          filter.Type,
 			"match_mode":      extra["match_mode"],
 			"blacklist":       extra["blacklist"],
@@ -886,6 +1052,18 @@ func (c *RuleController) DeleteFilter(ctx *gin.Context) {
 		}
 	}
 
+	if services.IsCCFilterInternal(filter) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("cc_filter.system_protected")})
+		return
+	}
+	if msgKey, err := services.GuardCCFilterDelete(filter.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete filter")})
+		return
+	} else if msgKey != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T(msgKey)})
+		return
+	}
+
 	if err := db.DB.Delete(&filter).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to delete filter")})
 		return
@@ -902,6 +1080,28 @@ func mapRuleType(userID int64, internal bool) string {
 		return "system"
 	}
 	return "user"
+}
+
+func ruleTypeLabel(isSystem bool) string {
+	if isSystem {
+		return "系统规则"
+	}
+	return "用户规则"
+}
+
+func ccRuleInUse(ruleID int64) bool {
+	inUse, _ := services.IsCCRuleGroupInUse(ruleID)
+	return inUse
+}
+
+func ccMatcherInUse(matcherID int64) bool {
+	inUse, _ := services.IsCCMatcherInUse(matcherID)
+	return inUse
+}
+
+func ccFilterInUse(filterID int64) bool {
+	inUse, _ := services.IsCCFilterInUse(filterID)
+	return inUse
 }
 
 func loadUserNameMapFromRules(items []models.CCRule) (map[int64]string, error) {

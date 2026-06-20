@@ -12,7 +12,7 @@ import (
 	"cdn-api/db"
 )
 
-var blockedStatusCodes = []int{403, 418, 429, 451, 410}
+var blockedStatusCodes = []int{403, 418, 429, 451, 410, 515}
 
 // AccessBucket aggregates stats for a time bucket.
 type AccessBucket struct {
@@ -50,11 +50,15 @@ func BlockedStatusCodes() []int {
 }
 
 func blockedStatusCondition() string {
+	return "(status IN (" + blockedStatusSQLList() + ") AND block_source != 'origin' AND NOT (block_source = '' AND upstream_addr != ''))"
+}
+
+func blockedStatusSQLList() string {
 	parts := make([]string, 0, len(blockedStatusCodes))
 	for _, code := range blockedStatusCodes {
 		parts = append(parts, fmt.Sprintf("%d", code))
 	}
-	return "(status IN (" + strings.Join(parts, ",") + ") AND block_source != 'origin' AND NOT (block_source = '' AND upstream_addr != ''))"
+	return strings.Join(parts, ",")
 }
 
 // Some local protection paths currently return 503 without upstream interaction.

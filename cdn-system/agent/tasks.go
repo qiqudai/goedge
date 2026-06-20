@@ -49,6 +49,8 @@ func processTask(id int64, taskType string, data string, report TaskProgressRepo
 		return "", preheatURLs(splitLines(data))
 	case "issue_cert":
 		return issueCertTask(id, data)
+	case "ip_unblock":
+		return applyIPUnblockTask(data)
 	case "config_sync":
 		if strings.TrimSpace(data) == "" {
 			return "", nil
@@ -70,6 +72,58 @@ func processTask(id int64, taskType string, data string, report TaskProgressRepo
 type issueCertItem struct {
 	CertID  int64    `json:"cert_id"`
 	Domains []string `json:"domains"`
+}
+
+type ipUnblockTaskPayload struct {
+	Rev int64    `json:"rev"`
+	IPs []string `json:"ips"`
+}
+
+func applyIPUnblockTask(raw string) (string, error) {
+	var payload ipUnblockTaskPayload
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			return "", fmt.Errorf("invalid ip_unblock payload")
+		}
+	}
+	payload.IPs = normalizeIPUnblockList(payload.IPs)
+	if len(payload.IPs) == 0 {
+		return `{"applied":0}`, nil
+	}
+	confDir := filepath.Join(runtimeRoot(), "conf")
+	if err := os.MkdirAll(confDir, 0755); err != nil {
+		return "", err
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(confDir, "ip_unblock_pending.json")
+	if err := ioutil.WriteFile(target, out, 0644); err != nil {
+		return "", err
+	}
+	log.Printf("[Info] ip_unblock pending written: %s (%d ips)", target, len(payload.IPs))
+	return fmt.Sprintf(`{"applied":%d,"rev":%d}`, len(payload.IPs), payload.Rev), nil
+}
+
+func normalizeIPUnblockList(ips []string) []string {
+	if len(ips) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ips))
+	out := make([]string, 0, len(ips))
+	for _, raw := range ips {
+		ip := strings.TrimSpace(raw)
+		if ip == "" {
+			continue
+		}
+		if _, ok := seen[ip]; ok {
+			continue
+		}
+		seen[ip] = struct{}{}
+		out = append(out, ip)
+	}
+	return out
 }
 
 type issueCertTaskPayload struct {
@@ -156,16 +210,11 @@ func normalizeIssueCAName(ca string) string {
 }
 
 func buildIssueCAFallbackList(primary string) []string {
-	all := []string{"letsencrypt", "zerossl", "google", "buypass"}
 	first := normalizeIssueCAName(primary)
-	out := make([]string, 0, len(all))
-	out = append(out, first)
-	for _, ca := range all {
-		if ca != first {
-			out = append(out, ca)
-		}
+	if first == "letsencrypt" {
+		return []string{"letsencrypt"}
 	}
-	return out
+	return []string{first, "letsencrypt"}
 }
 
 func resolveIssueCADirURL(ca string, primary string, primaryDirURL string) string {
@@ -551,9 +600,10 @@ type UserPackageSyncPayload struct {
 }
 
 type AgentPackageConfig struct {
-	Version int    `json:"version"`
-	Status  string `json:"status"`
-	Limits  struct {
+	PackageID int64  `json:"package_id"`
+	Version   int    `json:"version"`
+	Status    string `json:"status"`
+	Limits    struct {
 		Traffic    int64  `json:"traffic"`
 		Bandwidth  string `json:"bandwidth"`
 		Connection int64  `json:"connection"`
@@ -564,6 +614,10 @@ type AgentPackageConfig struct {
 		CustomCCRule bool `json:"custom_cc_rule"`
 		L2Origin     bool `json:"l2_origin"`
 	} `json:"features"`
+	Time struct {
+		StartAt string `json:"start_at"`
+		EndAt   string `json:"end_at"`
+	} `json:"time"`
 }
 
 func syncUserPackageTask(raw string) (string, error) {
@@ -581,8 +635,9 @@ func syncUserPackageTask(raw string) (string, error) {
 
 	for _, pkg := range payload.Packages {
 		var parsed AgentPackageConfig
-		if err := json.Unmarshal(pkg.Config, &parsed); err != nil {
-			return "", fmt.Errorf("invalid package config: %v", err)
+		normalizedConfig, _, err := normalizeAgentPackageConfig(pkg.PackageID, pkg.Config, &parsed, time.Now())
+		if err != nil {
+			return "", err
 		}
 		filename := fmt.Sprintf("%d.json", pkg.PackageID)
 		targetPath := filepath.Join(packagesDir, filename)
@@ -594,6 +649,7 @@ func syncUserPackageTask(raw string) (string, error) {
 			var existingMeta struct {
 				Version int `json:"version"`
 			}
+			_, _ = normalizePersistedPackageConfig(pkg.PackageID, targetPath, existing, time.Now())
 			if json.Unmarshal(existing, &existingMeta) == nil {
 				currentVersion = int64(existingMeta.Version)
 			}
@@ -612,7 +668,7 @@ func syncUserPackageTask(raw string) (string, error) {
 		// Write Atomic
 		tmpPath := targetPath + ".tmp"
 		// Ensure config is written as string/bytes
-		if err := ioutil.WriteFile(tmpPath, pkg.Config, 0644); err != nil {
+		if err := ioutil.WriteFile(tmpPath, normalizedConfig, 0644); err != nil {
 			return "", fmt.Errorf("write tmp failed: %v", err)
 		}
 		if err := os.Rename(tmpPath, targetPath); err != nil {
@@ -638,6 +694,75 @@ func syncUserPackageTask(raw string) (string, error) {
 	}
 	res, _ := json.Marshal(applied)
 	return string(res), nil
+}
+
+func normalizeAgentPackageConfig(pkgID int64, raw []byte, parsed *AgentPackageConfig, now time.Time) ([]byte, bool, error) {
+	if err := json.Unmarshal(raw, parsed); err != nil {
+		return nil, false, fmt.Errorf("invalid package config: %v", err)
+	}
+	if parsed.PackageID == 0 {
+		parsed.PackageID = pkgID
+	}
+	if !agentPackageExpired(parsed.Time.EndAt, now) {
+		return raw, false, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(parsed.Status), "expired") {
+		return raw, false, nil
+	}
+	parsed.Status = "expired"
+	var normalized map[string]interface{}
+	if err := json.Unmarshal(raw, &normalized); err != nil {
+		return nil, false, fmt.Errorf("invalid package config: %v", err)
+	}
+	if _, ok := normalized["package_id"]; !ok && pkgID > 0 {
+		normalized["package_id"] = pkgID
+	}
+	normalized["status"] = "expired"
+	out, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, false, fmt.Errorf("normalize package config failed: %v", err)
+	}
+	return out, true, nil
+}
+
+func normalizePersistedPackageConfig(pkgID int64, path string, raw []byte, now time.Time) (AgentPackageConfig, error) {
+	var parsed AgentPackageConfig
+	normalized, changed, err := normalizeAgentPackageConfig(pkgID, raw, &parsed, now)
+	if err != nil {
+		return AgentPackageConfig{}, err
+	}
+	if changed {
+		tmpPath := path + ".tmp"
+		if err := os.WriteFile(tmpPath, normalized, 0644); err != nil {
+			return AgentPackageConfig{}, err
+		}
+		if err := os.Rename(tmpPath, path); err != nil {
+			return AgentPackageConfig{}, err
+		}
+	}
+	return parsed, nil
+}
+
+func agentPackageExpired(endAt string, now time.Time) bool {
+	endAt = strings.TrimSpace(endAt)
+	if endAt == "" {
+		return false
+	}
+	for _, layout := range []string{time.RFC3339, time.DateTime, "2006-01-02 15:04:05"} {
+		var (
+			t   time.Time
+			err error
+		)
+		if layout == time.RFC3339 {
+			t, err = time.Parse(layout, endAt)
+		} else {
+			t, err = time.ParseInLocation(layout, endAt, time.Local)
+		}
+		if err == nil {
+			return !now.Before(t)
+		}
+	}
+	return false
 }
 
 func loadPersistedPackages() {
@@ -671,8 +796,8 @@ func loadPersistedPackages() {
 		if err != nil {
 			continue
 		}
-		var parsed AgentPackageConfig
-		if err := json.Unmarshal(data, &parsed); err != nil {
+		parsed, err := normalizePersistedPackageConfig(id, filepath.Join(packagesDir, name), data, time.Now())
+		if err != nil {
 			continue
 		}
 		localConfigMu.Lock()

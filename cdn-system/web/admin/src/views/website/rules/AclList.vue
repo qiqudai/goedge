@@ -400,8 +400,13 @@ const handleCommand = (cmd, row) => {
 }
 
 const handleDelete = (row) => {
-    ElMessageBox.confirm('确定删除该ACL?', '提示', { type: 'warning' }).then(async () => {
+    if (row.enable) {
+        ElMessage.warning('请先禁用 ACL 并解除站点引用后再删除')
+        return
+    }
+    ElMessageBox.confirm('确定删除该 ACL? 删除后不可恢复。', '提示', { type: 'warning' }).then(async () => {
         await request.delete(`/rules/acl/${row.id}`)
+        ElMessage.success('删除成功')
         fetchData()
     })
 }
