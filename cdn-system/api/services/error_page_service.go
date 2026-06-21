@@ -9,6 +9,7 @@ import (
 
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-common/i18n"
 )
 
 var errorPageKeys = []string{
@@ -35,7 +36,7 @@ func DefaultErrorPageI18nSettings() models.ErrorPageI18nSettings {
 	return models.ErrorPageI18nSettings{
 		DefaultLang:  "zh-CN",
 		LangMode:     "browser",
-		EnabledLangs: []string{"zh-CN", "en"},
+		EnabledLangs: i18n.ErrorPageDefaultLocales(),
 	}
 }
 
@@ -119,146 +120,7 @@ body, html {
 }
 
 func defaultErrorPageStrings() map[string]map[string]map[string]string {
-	return map[string]map[string]map[string]string{
-		"400": {
-			"zh-CN": {
-				"title": "请求错误", "subtitle": "请求无效", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您的请求格式不正确。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请检查请求后重试。",
-			},
-			"en": {
-				"title": "Bad Request", "subtitle": "Invalid request", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "Your request was malformed.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Please check your request and try again.",
-			},
-		},
-		"403": {
-			"zh-CN": {
-				"title": "请求被禁止访问", "subtitle": "当前请求已被禁止访问", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您的请求被网站管理员禁止访问",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "可以联系网站管理员咨询原因",
-			},
-			"en": {
-				"title": "Access Denied", "subtitle": "This request is blocked", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "Your request was blocked by the site administrator.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Contact the site administrator for more information.",
-			},
-		},
-		"502": {
-			"zh-CN": {
-				"title": "网站请求出错", "subtitle": "回源请求被中断", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "CDN节点请求源服务器时，请求被源服务器防火墙中断。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "如果您是网站用户，请稍候重试，或者联系管理员。",
-			},
-			"en": {
-				"title": "Bad Gateway", "subtitle": "Origin request interrupted", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "The CDN node request to the origin was interrupted.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "If you are a visitor, try again later or contact the administrator.",
-			},
-		},
-		"504": {
-			"zh-CN": {
-				"title": "网站请求超时", "subtitle": "回源请求超时", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "CDN节点请求源服务器时，等待时间过长。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "如果您是网站用户，请稍候重试，或者联系管理员。",
-			},
-			"en": {
-				"title": "Gateway Timeout", "subtitle": "Origin request timed out", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "The CDN node waited too long for the origin server.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "If you are a visitor, try again later or contact the administrator.",
-			},
-		},
-		"traffic_limit": {
-			"zh-CN": {
-				"title": "流量超限", "subtitle": "流量超限", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您网站使用的套餐流量已用完。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请登录CDN后台升级流量恢复。",
-			},
-			"en": {
-				"title": "Traffic Limit Exceeded", "subtitle": "Traffic limit exceeded", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "This site's traffic quota has been exhausted.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Upgrade your plan to restore service.",
-			},
-		},
-		"site_locked": {
-			"zh-CN": {
-				"title": "网站被锁定", "subtitle": "网站被锁定", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您的网站已被管理员锁定。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请联系管理员。",
-			},
-			"en": {
-				"title": "Site Locked", "subtitle": "Site locked", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "This site has been locked by the administrator.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Contact the administrator.",
-			},
-		},
-		"domain_invalid": {
-			"zh-CN": {
-				"title": "域名未配置", "subtitle": "域名未配置", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您的域名指向了CDN节点，但配置未生效或者未在CDN配置此域名。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请到CDN后台添加此域名，或联系管理员处理。",
-			},
-			"en": {
-				"title": "Domain Not Configured", "subtitle": "Domain not configured", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "This domain points to the CDN but is not configured.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Add this domain in the CDN console or contact the administrator.",
-			},
-		},
-		"conn_limit": {
-			"zh-CN": {
-				"title": "套餐连接数超限", "subtitle": "套餐连接数超限", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您的套餐连接数超限。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请联系管理员。",
-			},
-			"en": {
-				"title": "Connection Limit Exceeded", "subtitle": "Connection limit exceeded", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "This site's connection limit has been exceeded.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Contact the administrator.",
-			},
-		},
-		"timeout": {
-			"zh-CN": {
-				"title": "套餐到期", "subtitle": "套餐到期", "error_label": "Error",
-				"client_ip_label": "您的IP", "node_ip_label": "节点IP",
-				"what_happened": "什么问题?", "what_happened_desc": "您网站使用的套餐已到期。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请登录CDN后台续费套餐恢复。",
-			},
-			"en": {
-				"title": "Package Expired", "subtitle": "Package expired", "error_label": "Error",
-				"client_ip_label": "Your IP", "node_ip_label": "Node IP",
-				"what_happened": "What happened?", "what_happened_desc": "This site's plan has expired.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Renew your plan in the CDN console.",
-			},
-		},
-		"ip": {
-			"zh-CN": {
-				"title": "请使用域名访问", "subtitle": "请使用域名访问", "error_label": "Error",
-				"what_happened": "什么问题?", "what_happened_desc": "当前是直接访问的节点IP。",
-				"what_can_i_do": "如何解决?", "what_can_i_do_desc": "请使用域名访问。",
-			},
-			"en": {
-				"title": "Use Domain Name", "subtitle": "Please use a domain name", "error_label": "Error",
-				"what_happened": "What happened?", "what_happened_desc": "You are accessing the node IP directly.",
-				"what_can_i_do": "What can I do?", "what_can_i_do_desc": "Please access this site using a domain name.",
-			},
-		},
-	}
+	return i18n.ErrorPageDefaultStrings()
 }
 
 func errorPageStatusCode(key string) string {
@@ -339,6 +201,20 @@ func normalizeErrorPageI18nSettings(settings models.ErrorPageI18nSettings) model
 	addLang(settings.DefaultLang)
 	if len(langs) == 0 {
 		langs = append(langs, defaults.EnabledLangs...)
+	} else if len(langs) == 2 {
+		hasZhCN := false
+		hasEn := false
+		for _, lang := range langs {
+			if lang == "zh-CN" {
+				hasZhCN = true
+			}
+			if lang == "en" {
+				hasEn = true
+			}
+		}
+		if hasZhCN && hasEn {
+			langs = append([]string(nil), defaults.EnabledLangs...)
+		}
 	}
 	settings.EnabledLangs = langs
 	return settings
@@ -652,6 +528,7 @@ func LoadGlobalConfigNormalized() *models.GlobalConfig {
 		cfg = &models.GlobalConfig{}
 	}
 	NormalizeGlobalConfigErrorPages(cfg)
+	NormalizeGlobalConfigGuardPages(cfg)
 	return cfg
 }
 
@@ -687,6 +564,11 @@ func loadGlobalConfigRaw() *models.GlobalConfig {
 		parsed := ParseErrorPagesFromRaw(pagesRaw)
 		if len(parsed) > 0 {
 			cfg.ErrorPages = parsed
+		}
+	}
+	if guardRaw, ok := raw["guard_pages"]; ok {
+		if parsed := parseGuardPagesFromRaw(guardRaw); len(parsed) > 0 {
+			cfg.GuardPages = parsed
 		}
 	}
 	if len(cfg.ErrorPages) == 0 {

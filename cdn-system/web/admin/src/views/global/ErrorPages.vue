@@ -1,6 +1,10 @@
 <template>
   <div class="app-container" @focusin="cacheInputValue">
-    <ErrorPageLangSettings v-model="errorPageI18n" />
+    <ErrorPageLangSettings
+      :model-value="errorPageI18n"
+      @update:model-value="updateErrorPageI18n"
+      @save="saveConfig"
+    />
 
     <el-card>
       <template #header>
@@ -58,10 +62,11 @@ import { reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { cacheInputValue } from '@/utils/saveGuard'
 import { fetchGlobalConfig, saveGlobalConfig } from '@/api/globalConfig'
-import { ERROR_PAGE_CODES } from '@/constants/errorPageLocales'
+import { ERROR_PAGE_CODES, DEFAULT_ERROR_PAGE_I18N } from '@/constants/errorPageLocales'
 import {
   buildGlobalConfigPayload,
   ensureErrorPageStructure,
+  fillMissingErrorPageStrings,
   renderErrorPagePreview,
   resolvePreviewStrings
 } from '@/services/errorPageService'
@@ -77,7 +82,7 @@ const errorPages = reactive({})
 const errorPageI18n = reactive({
   default_lang: 'zh-CN',
   lang_mode: 'browser',
-  enabled_langs: ['zh-CN', 'en']
+  enabled_langs: [...DEFAULT_ERROR_PAGE_I18N.enabled_langs]
 })
 const innerTabs = reactive({})
 const previewLang = reactive({})
@@ -96,6 +101,10 @@ const applyStructure = (pages, i18n) => {
   Object.assign(errorPages, normalized.pages)
   Object.assign(errorPageI18n, normalized.i18n)
   initTabState()
+}
+
+const updateErrorPageI18n = (value) => {
+  Object.assign(errorPageI18n, value)
 }
 
 const loadConfig = async () => {
@@ -148,9 +157,7 @@ watch(
         previewLang[key] = errorPageI18n.default_lang
       }
       langs.forEach(lang => {
-        if (!errorPages[key].strings[lang]) {
-          errorPages[key].strings[lang] = {}
-        }
+        errorPages[key].strings = fillMissingErrorPageStrings(key, errorPages[key].strings, langs)
       })
     })
   }

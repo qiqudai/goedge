@@ -560,6 +560,7 @@ type edgeConfig struct {
 	Resources          *edgeResources              `json:"resources,omitempty"`
 	ErrorPageI18n      errorPageI18nSettings           `json:"error_page_i18n"`
 	ErrorPages         map[string]errorPageDefinition  `json:"error_pages"`
+	GuardPages         map[string]guardPageDefinition  `json:"guard_pages"`
 	DefaultConfig      *edgeDefaultConfig          `json:"default_config,omitempty"`
 	CCRules            map[string][]edgeCCRuleItem `json:"cc_rules,omitempty"`
 	CCMatchers         map[string]edgeCCMatcher    `json:"cc_matchers,omitempty"`
@@ -595,11 +596,14 @@ type edgeWAFConfig struct {
 	SecretKey            string `json:"secret_key"`
 	NodeLogCleanStrategy string `json:"node_log_clean_strategy"`
 	CCRuleAutoSwitch     bool   `json:"cc_rule_auto_switch"`
+	CCAutoSwitch         edgeWAFCCAutoSwitch `json:"cc_auto_switch"`
 
-	AntiCCImageSource    string `json:"anti_cc_image_source"`
-	AntiCCImageCustomURL string `json:"anti_cc_image_custom_url"`
-	AntiCCType           string `json:"anti_cc_type"`
-	AntiCCDebug          bool   `json:"anti_cc_debug"`
+	AntiCCImageSource     string `json:"anti_cc_image_source"`
+	AntiCCImageCustomURL  string `json:"anti_cc_image_custom_url"`
+	AntiCCImageUpdateHour int    `json:"anti_cc_image_update_hour"`
+	AntiCCType            string `json:"anti_cc_type"`
+	AntiCCPageCustom      string `json:"anti_cc_page_custom"`
+	AntiCCDebug           bool   `json:"anti_cc_debug"`
 
 	WellKnownProtectionThreshold   int                `json:"well_known_protection_threshold"`
 	ResourceProtectionEnable       bool               `json:"resource_protection_enable"`
@@ -611,6 +615,14 @@ type edgeWAFConfig struct {
 type edgeResourceRule struct {
 	Duration    int `json:"duration"`
 	MaxRequests int `json:"max_requests"`
+}
+
+type edgeWAFCCAutoSwitch struct {
+	Enable    bool   `json:"enable"`
+	QPS502504 int    `json:"qps_502504"`
+	TotalQPS  int    `json:"total_qps"`
+	Rule      string `json:"rule"`
+	Duration  int    `json:"duration"`
 }
 
 type edgeResources struct {
@@ -731,6 +743,9 @@ func generateDynamicConfigs(payload []byte) error {
 		return err
 	}
 	if err := persistErrorPages(cfg.ErrorPageI18n, cfg.ErrorPages); err != nil {
+		return err
+	}
+	if err := persistGuardPages(cfg.GuardPages); err != nil {
 		return err
 	}
 	if err := persistCCRules(cfg.CCRules, cfg.CCMatchers, cfg.CCFilters); err != nil {

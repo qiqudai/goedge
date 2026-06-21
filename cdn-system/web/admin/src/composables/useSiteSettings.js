@@ -2,7 +2,7 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { debounce } from 'lodash-es'
 import { ElMessage } from 'element-plus'
-import request from '@/utils/request'
+import request, { API_BASE } from '@/utils/request'
 import { formatDate, parseBool } from '@/utils/helpers'
 import { buildSettingsPayload } from '@/utils/configTransform'
 
@@ -544,7 +544,7 @@ export function useSiteSettings() {
 
   const loadAcls = () => withLoading(async () => {
     try {
-      const r = await request.get('/acls', { baseURL: '/api/v1' })
+      const r = await request.get('/acls', { baseURL: `${API_BASE}/api/v1` })
       aclList.value = r.data?.list || r.list || []
     } catch (e) { console.error('Load acls failed', e) }
   })

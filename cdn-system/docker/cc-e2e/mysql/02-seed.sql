@@ -136,4 +136,15 @@ INSERT INTO `site` (
   1,
   '{"access":{"acl":0},"security":{"custom_rules":[{"action":"allow","on":true,"matchers":[{"key":"uri","operator":"eq","value":"/api"}]},{"action":"block","on":false,"matchers":[{"key":"uri","operator":"eq","value":"/disabled-rule"}]}]}}',
   NOW(), NOW()
+),
+(
+  2, 1, 1,
+  '["shield-test.local"]',
+  '["origin:8080"]',
+  'http',
+  10002,
+  'running',
+  1,
+  '{"access":{"acl":0},"security":{"default_rule":10002,"custom_rules":[{"on":true,"breakMatch":true,"action":"5s","actionParams":{"seconds":10,"requests":0,"urlRequests":0,"blockOnFail":true},"matchers":[],"remark":"always-on 5s shield"}]}}',
+  NOW(), NOW()
 );

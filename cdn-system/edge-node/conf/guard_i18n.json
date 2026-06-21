@@ -1,0 +1,616 @@
+{
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "en",
+    "ja",
+    "ko",
+    "fr",
+    "de",
+    "es",
+    "pt",
+    "ru",
+    "ar",
+    "th",
+    "vi",
+    "id",
+    "ms",
+    "it",
+    "nl",
+    "pl",
+    "tr",
+    "hi"
+  ],
+  "strings": {
+    "click": {
+      "zh-CN": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "网站当前访问量较大，请点击按钮继续访问",
+        "enter_site": "进入网站"
+      },
+      "zh-TW": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "網站目前訪問量較大，請點擊按鈕繼續訪問",
+        "enter_site": "進入網站"
+      },
+      "en": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "This site is busy. Click the button to continue.",
+        "enter_site": "Enter site"
+      },
+      "ja": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "アクセスが集中しています。ボタンをクリックして続行してください。",
+        "enter_site": "サイトへ進む"
+      },
+      "ko": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "접속량이 많습니다. 버튼을 클릭해 계속 진행하세요.",
+        "enter_site": "사이트 입장"
+      },
+      "fr": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Le site est très sollicité. Cliquez sur le bouton pour continuer.",
+        "enter_site": "Entrer sur le site"
+      },
+      "de": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Die Website ist stark ausgelastet. Klicken Sie auf die Schaltfläche, um fortzufahren.",
+        "enter_site": "Website betreten"
+      },
+      "es": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "El sitio tiene mucho tráfico. Haga clic en el botón para continuar.",
+        "enter_site": "Entrar al sitio"
+      },
+      "pt": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "O site está com muito tráfego. Clique no botão para continuar.",
+        "enter_site": "Entrar no site"
+      },
+      "ru": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Сайт перегружен. Нажмите кнопку, чтобы продолжить.",
+        "enter_site": "Войти на сайт"
+      },
+      "ar": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "الموقع مزدحم حاليًا. انقر الزر للمتابعة.",
+        "enter_site": "دخول الموقع"
+      },
+      "th": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "เว็บไซต์มีผู้ใช้งานจำนวนมาก โปรดคลิกปุ่มเพื่อดำเนินการต่อ",
+        "enter_site": "เข้าเว็บไซต์"
+      },
+      "vi": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Trang web đang quá tải. Nhấn nút để tiếp tục.",
+        "enter_site": "Vào trang web"
+      },
+      "id": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Situs sedang sibuk. Klik tombol untuk melanjutkan.",
+        "enter_site": "Masuk situs"
+      },
+      "ms": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Laman web sedang sibuk. Klik butang untuk teruskan.",
+        "enter_site": "Masuk laman"
+      },
+      "it": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Il sito è molto trafficato. Fai clic sul pulsante per continuare.",
+        "enter_site": "Entra nel sito"
+      },
+      "nl": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "De site is druk. Klik op de knop om door te gaan.",
+        "enter_site": "Site openen"
+      },
+      "pl": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Strona jest mocno obciążona. Kliknij przycisk, aby kontynuować.",
+        "enter_site": "Wejdź na stronę"
+      },
+      "tr": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Site yoğun. Devam etmek için düğmeye tıklayın.",
+        "enter_site": "Siteye gir"
+      },
+      "hi": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "साइट पर अधिक ट्रैफ़िक है। जारी रखने के लिए बटन दबाएँ।",
+        "enter_site": "साइट पर जाएँ"
+      }
+    },
+    "slide": {
+      "zh-CN": {
+        "page_title": "拖动验证",
+        "traffic_notice": "网站当前访问量较大，请拖动滑块后继续访问",
+        "slide_hint": "向右滑动验证"
+      },
+      "zh-TW": {
+        "page_title": "拖動驗證",
+        "traffic_notice": "網站目前訪問量較大，請拖動滑塊後繼續訪問",
+        "slide_hint": "向右滑動驗證"
+      },
+      "en": {
+        "page_title": "Slide verification",
+        "traffic_notice": "This site is busy. Slide to continue.",
+        "slide_hint": "Slide to verify"
+      },
+      "ja": {
+        "page_title": "スライド認証",
+        "traffic_notice": "アクセスが集中しています。スライドして続行してください。",
+        "slide_hint": "右にスライドして認証"
+      },
+      "ko": {
+        "page_title": "슬라이드 인증",
+        "traffic_notice": "접속량이 많습니다. 슬라이드하여 계속 진행하세요.",
+        "slide_hint": "오른쪽으로 밀어 인증"
+      },
+      "fr": {
+        "page_title": "Vérification par glissement",
+        "traffic_notice": "Le site est très sollicité. Faites glisser pour continuer.",
+        "slide_hint": "Glissez vers la droite"
+      },
+      "de": {
+        "page_title": "Schiebeverifizierung",
+        "traffic_notice": "Die Website ist stark ausgelastet. Schieben Sie, um fortzufahren.",
+        "slide_hint": "Nach rechts schieben"
+      },
+      "es": {
+        "page_title": "Verificación deslizante",
+        "traffic_notice": "El sitio tiene mucho tráfico. Deslice para continuar.",
+        "slide_hint": "Deslice hacia la derecha"
+      },
+      "pt": {
+        "page_title": "Verificação por deslize",
+        "traffic_notice": "O site está com muito tráfego. Deslize para continuar.",
+        "slide_hint": "Deslize para a direita"
+      },
+      "ru": {
+        "page_title": "Проверка слайдером",
+        "traffic_notice": "Сайт перегружен. Проведите слайдером, чтобы продолжить.",
+        "slide_hint": "Сдвиньте вправо"
+      },
+      "ar": {
+        "page_title": "تحقق بالسحب",
+        "traffic_notice": "الموقع مزدحم حاليًا. اسحب للمتابعة.",
+        "slide_hint": "اسحب إلى اليمين"
+      },
+      "th": {
+        "page_title": "ยืนยันด้วยการเลื่อน",
+        "traffic_notice": "เว็บไซต์มีผู้ใช้งานจำนวนมาก โปรดเลื่อนเพื่อดำเนินการต่อ",
+        "slide_hint": "เลื่อนไปทางขวา"
+      },
+      "vi": {
+        "page_title": "Xác minh trượt",
+        "traffic_notice": "Trang web đang quá tải. Trượt để tiếp tục.",
+        "slide_hint": "Trượt sang phải"
+      },
+      "id": {
+        "page_title": "Verifikasi geser",
+        "traffic_notice": "Situs sedang sibuk. Geser untuk melanjutkan.",
+        "slide_hint": "Geser ke kanan"
+      },
+      "ms": {
+        "page_title": "Pengesahan leret",
+        "traffic_notice": "Laman web sedang sibuk. Leret untuk teruskan.",
+        "slide_hint": "Leret ke kanan"
+      },
+      "it": {
+        "page_title": "Verifica scorrimento",
+        "traffic_notice": "Il sito è molto trafficato. Scorri per continuare.",
+        "slide_hint": "Scorri a destra"
+      },
+      "nl": {
+        "page_title": "Schuifverificatie",
+        "traffic_notice": "De site is druk. Schuif om door te gaan.",
+        "slide_hint": "Schuif naar rechts"
+      },
+      "pl": {
+        "page_title": "Weryfikacja przesuwaniem",
+        "traffic_notice": "Strona jest mocno obciążona. Przesuń, aby kontynuować.",
+        "slide_hint": "Przesuń w prawo"
+      },
+      "tr": {
+        "page_title": "Kaydırarak doğrulama",
+        "traffic_notice": "Site yoğun. Devam etmek için kaydırın.",
+        "slide_hint": "Sağa kaydırın"
+      },
+      "hi": {
+        "page_title": "स्लाइड सत्यापन",
+        "traffic_notice": "साइट पर अधिक ट्रैफ़िक है। जारी रखने के लिए स्लाइड करें।",
+        "slide_hint": "दाएँ स्लाइड करें"
+      }
+    },
+    "captcha": {
+      "zh-CN": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "网站当前访问量较大，请输入验证码后继续访问",
+        "captcha_label": "请输入验证码",
+        "captcha_hint": "请输入图片中的验证码，不区分大小写",
+        "refresh": "换一个",
+        "enter_site": "进入网站"
+      },
+      "zh-TW": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "網站目前訪問量較大，請輸入驗證碼後繼續訪問",
+        "captcha_label": "請輸入驗證碼",
+        "captcha_hint": "請輸入圖片中的驗證碼，不區分大小寫",
+        "refresh": "換一個",
+        "enter_site": "進入網站"
+      },
+      "en": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "This site is busy. Enter the captcha to continue.",
+        "captcha_label": "Enter captcha",
+        "captcha_hint": "Enter the characters shown in the image (case-insensitive).",
+        "refresh": "Refresh",
+        "enter_site": "Enter site"
+      },
+      "ja": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "アクセスが集中しています。認証コードを入力して続行してください。",
+        "captcha_label": "認証コードを入力",
+        "captcha_hint": "画像の文字を入力してください（大文字小文字は区別しません）。",
+        "refresh": "変更",
+        "enter_site": "サイトへ進む"
+      },
+      "ko": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "접속량이 많습니다. 인증 코드를 입력해 계속 진행하세요.",
+        "captcha_label": "인증 코드 입력",
+        "captcha_hint": "이미지의 문자를 입력하세요(대소문자 구분 없음).",
+        "refresh": "새로고침",
+        "enter_site": "사이트 입장"
+      },
+      "fr": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Le site est très sollicité. Saisissez le captcha pour continuer.",
+        "captcha_label": "Saisir le captcha",
+        "captcha_hint": "Saisissez les caractères de l'image (sans distinction de casse).",
+        "refresh": "Changer",
+        "enter_site": "Entrer sur le site"
+      },
+      "de": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Die Website ist stark ausgelastet. Geben Sie das Captcha ein, um fortzufahren.",
+        "captcha_label": "Captcha eingeben",
+        "captcha_hint": "Geben Sie die Zeichen im Bild ein (Groß-/Kleinschreibung egal).",
+        "refresh": "Neu laden",
+        "enter_site": "Website betreten"
+      },
+      "es": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "El sitio tiene mucho tráfico. Introduzca el captcha para continuar.",
+        "captcha_label": "Introducir captcha",
+        "captcha_hint": "Introduzca los caracteres de la imagen (sin distinguir mayúsculas).",
+        "refresh": "Cambiar",
+        "enter_site": "Entrar al sitio"
+      },
+      "pt": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "O site está com muito tráfego. Digite o captcha para continuar.",
+        "captcha_label": "Digite o captcha",
+        "captcha_hint": "Digite os caracteres da imagem (sem diferenciar maiúsculas).",
+        "refresh": "Trocar",
+        "enter_site": "Entrar no site"
+      },
+      "ru": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Сайт перегружен. Введите captcha, чтобы продолжить.",
+        "captcha_label": "Введите captcha",
+        "captcha_hint": "Введите символы с изображения (без учёта регистра).",
+        "refresh": "Обновить",
+        "enter_site": "Войти на сайт"
+      },
+      "ar": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "الموقع مزدحم حاليًا. أدخل رمز التحقق للمتابعة.",
+        "captcha_label": "أدخل رمز التحقق",
+        "captcha_hint": "أدخل الأحرف الظاهرة في الصورة (بدون تمييز حالة).",
+        "refresh": "تغيير",
+        "enter_site": "دخول الموقع"
+      },
+      "th": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "เว็บไซต์มีผู้ใช้งานจำนวนมาก โปรดกรอกรหัสยืนยันเพื่อดำเนินการต่อ",
+        "captcha_label": "กรอกรหัสยืนยัน",
+        "captcha_hint": "กรอกตัวอักษรในภาพ (ไม่สนใจตัวพิมพ์ใหญ่เล็ก)",
+        "refresh": "เปลี่ยน",
+        "enter_site": "เข้าเว็บไซต์"
+      },
+      "vi": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Trang web đang quá tải. Nhập mã captcha để tiếp tục.",
+        "captcha_label": "Nhập captcha",
+        "captcha_hint": "Nhập ký tự trong ảnh (không phân biệt hoa thường).",
+        "refresh": "Đổi",
+        "enter_site": "Vào trang web"
+      },
+      "id": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Situs sedang sibuk. Masukkan captcha untuk melanjutkan.",
+        "captcha_label": "Masukkan captcha",
+        "captcha_hint": "Masukkan karakter pada gambar (tidak peka huruf).",
+        "refresh": "Ganti",
+        "enter_site": "Masuk situs"
+      },
+      "ms": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Laman web sedang sibuk. Masukkan captcha untuk teruskan.",
+        "captcha_label": "Masukkan captcha",
+        "captcha_hint": "Masukkan aksara dalam imej (tidak sensitif huruf).",
+        "refresh": "Tukar",
+        "enter_site": "Masuk laman"
+      },
+      "it": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Il sito è molto trafficato. Inserisci il captcha per continuare.",
+        "captcha_label": "Inserisci captcha",
+        "captcha_hint": "Inserisci i caratteri nell'immagine (senza distinzione maiuscole).",
+        "refresh": "Cambia",
+        "enter_site": "Entra nel sito"
+      },
+      "nl": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "De site is druk. Voer de captcha in om door te gaan.",
+        "captcha_label": "Captcha invoeren",
+        "captcha_hint": "Voer de tekens in de afbeelding in (hoofdletterongevoelig).",
+        "refresh": "Wijzigen",
+        "enter_site": "Site openen"
+      },
+      "pl": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Strona jest mocno obciążona. Wpisz captcha, aby kontynuować.",
+        "captcha_label": "Wpisz captcha",
+        "captcha_hint": "Wpisz znaki z obrazu (bez rozróżniania wielkości liter).",
+        "refresh": "Zmień",
+        "enter_site": "Wejdź na stronę"
+      },
+      "tr": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "Site yoğun. Devam etmek için captcha girin.",
+        "captcha_label": "Captcha girin",
+        "captcha_hint": "Görseldeki karakterleri girin (büyük/küçük harf duyarsız).",
+        "refresh": "Değiştir",
+        "enter_site": "Siteye gir"
+      },
+      "hi": {
+        "page_title": "CC LOCK",
+        "traffic_notice": "साइट पर अधिक ट्रैफ़िक है। जारी रखने के लिए captcha दर्ज करें।",
+        "captcha_label": "Captcha दर्ज करें",
+        "captcha_hint": "छवि के अक्षर दर्ज करें (अपर/लोअर केस मायने नहीं)।",
+        "refresh": "बदलें",
+        "enter_site": "साइट पर जाएँ"
+      }
+    },
+    "delay_jump": {
+      "zh-CN": {
+        "page_title": "CC LOCK",
+        "delay_message": "浏览器安全检查中，系统将在<span id=\"second\">5</span>秒后返回网站"
+      },
+      "zh-TW": {
+        "page_title": "CC LOCK",
+        "delay_message": "瀏覽器安全檢查中，系統將在<span id=\"second\">5</span>秒後返回網站"
+      },
+      "en": {
+        "page_title": "CC LOCK",
+        "delay_message": "Browser security check in progress. Returning to the site in <span id=\"second\">5</span> seconds."
+      },
+      "ja": {
+        "page_title": "CC LOCK",
+        "delay_message": "ブラウザのセキュリティチェック中です。<span id=\"second\">5</span>秒後にサイトへ戻ります。"
+      },
+      "ko": {
+        "page_title": "CC LOCK",
+        "delay_message": "브라우저 보안 검사 중입니다. <span id=\"second\">5</span>초 후 사이트로 돌아갑니다."
+      },
+      "fr": {
+        "page_title": "CC LOCK",
+        "delay_message": "Vérification de sécurité du navigateur. Retour au site dans <span id=\"second\">5</span> secondes."
+      },
+      "de": {
+        "page_title": "CC LOCK",
+        "delay_message": "Browsersicherheitsprüfung läuft. Rückkehr zur Website in <span id=\"second\">5</span> Sekunden."
+      },
+      "es": {
+        "page_title": "CC LOCK",
+        "delay_message": "Comprobación de seguridad del navegador. Volverá al sitio en <span id=\"second\">5</span> segundos."
+      },
+      "pt": {
+        "page_title": "CC LOCK",
+        "delay_message": "Verificação de segurança do navegador. Retornando ao site em <span id=\"second\">5</span> segundos."
+      },
+      "ru": {
+        "page_title": "CC LOCK",
+        "delay_message": "Проверка безопасности браузера. Возврат на сайт через <span id=\"second\">5</span> сек."
+      },
+      "ar": {
+        "page_title": "CC LOCK",
+        "delay_message": "جاري فحص أمان المتصفح. سيتم العودة إلى الموقع خلال <span id=\"second\">5</span> ثوانٍ."
+      },
+      "th": {
+        "page_title": "CC LOCK",
+        "delay_message": "กำลังตรวจสอบความปลอดภัยของเบราว์เซอร์ จะกลับสู่เว็บไซต์ใน <span id=\"second\">5</span> วินาที"
+      },
+      "vi": {
+        "page_title": "CC LOCK",
+        "delay_message": "Đang kiểm tra bảo mật trình duyệt. Quay lại trang web sau <span id=\"second\">5</span> giây."
+      },
+      "id": {
+        "page_title": "CC LOCK",
+        "delay_message": "Pemeriksaan keamanan browser berlangsung. Kembali ke situs dalam <span id=\"second\">5</span> detik."
+      },
+      "ms": {
+        "page_title": "CC LOCK",
+        "delay_message": "Semakan keselamatan pelayar sedang dijalankan. Kembali ke laman dalam <span id=\"second\">5</span> saat."
+      },
+      "it": {
+        "page_title": "CC LOCK",
+        "delay_message": "Controllo di sicurezza del browser in corso. Ritorno al sito tra <span id=\"second\">5</span> secondi."
+      },
+      "nl": {
+        "page_title": "CC LOCK",
+        "delay_message": "Beveiligingscontrole van de browser bezig. Terug naar de site over <span id=\"second\">5</span> seconden."
+      },
+      "pl": {
+        "page_title": "CC LOCK",
+        "delay_message": "Trwa kontrola bezpieczeństwa przeglądarki. Powrót na stronę za <span id=\"second\">5</span> s."
+      },
+      "tr": {
+        "page_title": "CC LOCK",
+        "delay_message": "Tarayıcı güvenlik denetimi sürüyor. <span id=\"second\">5</span> saniye içinde siteye dönülecek."
+      },
+      "hi": {
+        "page_title": "CC LOCK",
+        "delay_message": "ब्राउज़र सुरक्षा जाँच चल रही है। <span id=\"second\">5</span> सेकंड में साइट पर लौटेंगे।"
+      }
+    },
+    "rotate": {
+      "zh-CN": {
+        "page_title": "安全验证",
+        "traffic_notice": "网站当前访问量较大，请旋转图片至正向后继续访问",
+        "rotate_angle": "旋转角度：",
+        "enter_site": "进入网站",
+        "refresh": "换一张"
+      },
+      "zh-TW": {
+        "page_title": "安全驗證",
+        "traffic_notice": "網站目前訪問量較大，請旋轉圖片至正向後繼續訪問",
+        "rotate_angle": "旋轉角度：",
+        "enter_site": "進入網站",
+        "refresh": "換一張"
+      },
+      "en": {
+        "page_title": "Security verification",
+        "traffic_notice": "This site is busy. Rotate the image upright to continue.",
+        "rotate_angle": "Rotation angle: ",
+        "enter_site": "Enter site",
+        "refresh": "New image"
+      },
+      "ja": {
+        "page_title": "セキュリティ認証",
+        "traffic_notice": "アクセスが集中しています。画像を正位置に回転して続行してください。",
+        "rotate_angle": "回転角度：",
+        "enter_site": "サイトへ進む",
+        "refresh": "画像を変更"
+      },
+      "ko": {
+        "page_title": "보안 인증",
+        "traffic_notice": "접속량이 많습니다. 이미지를 바르게 회전한 뒤 계속 진행하세요.",
+        "rotate_angle": "회전 각도: ",
+        "enter_site": "사이트 입장",
+        "refresh": "다른 이미지"
+      },
+      "fr": {
+        "page_title": "Vérification de sécurité",
+        "traffic_notice": "Le site est très sollicité. Faites pivoter l'image pour continuer.",
+        "rotate_angle": "Angle de rotation : ",
+        "enter_site": "Entrer sur le site",
+        "refresh": "Changer l'image"
+      },
+      "de": {
+        "page_title": "Sicherheitsprüfung",
+        "traffic_notice": "Die Website ist stark ausgelastet. Drehen Sie das Bild richtig, um fortzufahren.",
+        "rotate_angle": "Drehwinkel: ",
+        "enter_site": "Website betreten",
+        "refresh": "Neues Bild"
+      },
+      "es": {
+        "page_title": "Verificación de seguridad",
+        "traffic_notice": "El sitio tiene mucho tráfico. Gire la imagen a la posición correcta para continuar.",
+        "rotate_angle": "Ángulo de rotación: ",
+        "enter_site": "Entrar al sitio",
+        "refresh": "Cambiar imagen"
+      },
+      "pt": {
+        "page_title": "Verificação de segurança",
+        "traffic_notice": "O site está com muito tráfego. Gire a imagem para a posição correta para continuar.",
+        "rotate_angle": "Ângulo de rotação: ",
+        "enter_site": "Entrar no site",
+        "refresh": "Trocar imagem"
+      },
+      "ru": {
+        "page_title": "Проверка безопасности",
+        "traffic_notice": "Сайт перегружен. Поверните изображение правильно, чтобы продолжить.",
+        "rotate_angle": "Угол поворота: ",
+        "enter_site": "Войти на сайт",
+        "refresh": "Другое изображение"
+      },
+      "ar": {
+        "page_title": "التحقق الأمني",
+        "traffic_notice": "الموقع مزدحم حاليًا. قم بتدوير الصورة إلى الوضع الصحيح للمتابعة.",
+        "rotate_angle": "زاوية الدوران: ",
+        "enter_site": "دخول الموقع",
+        "refresh": "صورة أخرى"
+      },
+      "th": {
+        "page_title": "การยืนยันความปลอดภัย",
+        "traffic_notice": "เว็บไซต์มีผู้ใช้งานจำนวนมาก โปรดหมุนภาพให้ตรงแล้วดำเนินการต่อ",
+        "rotate_angle": "มุมหมุน: ",
+        "enter_site": "เข้าเว็บไซต์",
+        "refresh": "เปลี่ยนภาพ"
+      },
+      "vi": {
+        "page_title": "Xác minh bảo mật",
+        "traffic_notice": "Trang web đang quá tải. Xoay ảnh đúng hướng để tiếp tục.",
+        "rotate_angle": "Góc xoay: ",
+        "enter_site": "Vào trang web",
+        "refresh": "Đổi ảnh"
+      },
+      "id": {
+        "page_title": "Verifikasi keamanan",
+        "traffic_notice": "Situs sedang sibuk. Putar gambar ke posisi benar untuk melanjutkan.",
+        "rotate_angle": "Sudut rotasi: ",
+        "enter_site": "Masuk situs",
+        "refresh": "Ganti gambar"
+      },
+      "ms": {
+        "page_title": "Pengesahan keselamatan",
+        "traffic_notice": "Laman web sedang sibuk. Putar imej ke kedudukan betul untuk teruskan.",
+        "rotate_angle": "Sudut putaran: ",
+        "enter_site": "Masuk laman",
+        "refresh": "Tukar imej"
+      },
+      "it": {
+        "page_title": "Verifica di sicurezza",
+        "traffic_notice": "Il sito è molto trafficato. Ruota l'immagine in posizione corretta per continuare.",
+        "rotate_angle": "Angolo di rotazione: ",
+        "enter_site": "Entra nel sito",
+        "refresh": "Cambia immagine"
+      },
+      "nl": {
+        "page_title": "Beveiligingscontrole",
+        "traffic_notice": "De site is druk. Draai de afbeelding rechtop om door te gaan.",
+        "rotate_angle": "Rotatiehoek: ",
+        "enter_site": "Site openen",
+        "refresh": "Andere afbeelding"
+      },
+      "pl": {
+        "page_title": "Weryfikacja bezpieczeństwa",
+        "traffic_notice": "Strona jest mocno obciążona. Obróć obraz do właściwej pozycji, aby kontynuować.",
+        "rotate_angle": "Kąt obrotu: ",
+        "enter_site": "Wejdź na stronę",
+        "refresh": "Inny obraz"
+      },
+      "tr": {
+        "page_title": "Güvenlik doğrulaması",
+        "traffic_notice": "Site yoğun. Devam etmek için görseli doğru konuma döndürün.",
+        "rotate_angle": "Dönüş açısı: ",
+        "enter_site": "Siteye gir",
+        "refresh": "Başka görsel"
+      },
+      "hi": {
+        "page_title": "सुरक्षा सत्यापन",
+        "traffic_notice": "साइट पर अधिक ट्रैफ़िक है। जारी रखने के लिए छवि को सही दिशा में घुमाएँ।",
+        "rotate_angle": "घुमाव कोण: ",
+        "enter_site": "साइट पर जाएँ",
+        "refresh": "दूसरी छवि"
+      }
+    }
+  }
+}

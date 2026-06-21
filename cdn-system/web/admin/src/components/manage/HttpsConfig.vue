@@ -216,23 +216,27 @@ const applyCert = async () => {
   const res = await request.post('/sites/apply_cert', { ids: [siteId.value] })
   const payload = res?.data || res || {}
   const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
+  const reissued = Array.isArray(payload.reissued_ids) ? payload.reissued_ids : []
   const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
-  if (created.length > 0) {
-    ElMessage.success('证书申请已提交，签发并通过节点探测后才会启用 HTTPS')
+  const summary = res?.message || payload.message
+  const issuedCertID = created[0] || reissued[0]
+  if (issuedCertID) {
+    ElMessage.success(
+      reissued.length > 0 && created.length === 0
+        ? '失败证书已重新提交签发，签发并通过节点探测后才会启用 HTTPS'
+        : '证书申请已提交，签发并通过节点探测后才会启用 HTTPS'
+    )
     localSettings.value.enable = false
     localSettings.value.state = 'pending_issue'
-    localSettings.value.pendingCertId = created[0]
-    localSettings.value.certId = created[0]
+    localSettings.value.pendingCertId = issuedCertID
+    localSettings.value.certId = issuedCertID
     if (!localSettings.value.listenPorts) {
       localSettings.value.listenPorts = '443'
     }
     await Promise.allSettled([loadCerts(), loadSite()])
-  }
-  if (skipped.length > 0) {
-    const msg = skipped
-      .map(item => item.reason || '已忽略')
-      .join('\n')
-    ElMessage.warning(msg)
+  } else if (skipped.length > 0) {
+    const msg = skipped.map(item => item.reason || '已忽略').join('\n')
+    ElMessage.warning(summary || msg)
   }
 }
 

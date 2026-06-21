@@ -33,6 +33,7 @@ type EdgeConfig struct {
 	Resources          *GlobalResourceConfig      `json:"resources,omitempty"`
 	ErrorPageI18n      ErrorPageI18nSettings           `json:"error_page_i18n,omitempty"`
 	ErrorPages         map[string]ErrorPageDefinition  `json:"error_pages,omitempty"`
+	GuardPages         map[string]GuardPageDefinition  `json:"guard_pages,omitempty"`
 	DefaultConfig      *DefaultSiteConfig         `json:"default_config,omitempty"`
 	CCRules            map[int64][]EdgeCCRuleItem `json:"cc_rules,omitempty"`
 	CCMatchers         map[int64]EdgeCCMatcher    `json:"cc_matchers,omitempty"`

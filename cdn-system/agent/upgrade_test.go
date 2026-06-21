@@ -80,6 +80,51 @@ func TestPostProcessRuntimeUpgradePatchesNginxConfigPaths(t *testing.T) {
 	}
 }
 
+func TestApplyEdgeNodeUpgradeOverwritesBundledConfAndSkipsRuntime(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+
+	files := map[string]string{
+		filepath.Join(src, "conf", "nginx.conf"):                   "new nginx",
+		filepath.Join(src, "conf", "dynamic", "main.conf"):         "new main",
+		filepath.Join(src, "openresty", "nginx", "sbin", "nginx"):  "new runtime",
+		filepath.Join(dest, "conf", "nginx.conf"):                  "old nginx",
+		filepath.Join(dest, "conf", "dynamic", "main.conf"):        "old main",
+		filepath.Join(dest, "openresty", "nginx", "sbin", "nginx"): "old runtime",
+		filepath.Join(dest, "conf", "cdn_config.json"):             "live config",
+		filepath.Join(src, "conf", "cdn_config.json"):              "package config",
+	}
+	for path, content := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := applyEdgeNodeUpgrade(src, dest); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFileContent := func(path, want string) {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != want {
+			t.Fatalf("%s = %q, want %q", path, string(data), want)
+		}
+	}
+
+	assertFileContent(filepath.Join(dest, "conf", "nginx.conf"), "new nginx")
+	assertFileContent(filepath.Join(dest, "conf", "dynamic", "main.conf"), "new main")
+	assertFileContent(filepath.Join(dest, "openresty", "nginx", "sbin", "nginx"), "old runtime")
+	assertFileContent(filepath.Join(dest, "conf", "cdn_config.json"), "live config")
+}
+
 func TestExtractZipRestoresSymlinkEntries(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("symlink extraction test is unix-only")

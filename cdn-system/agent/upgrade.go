@@ -424,7 +424,7 @@ func shouldSkipUpgradePath(rel string) bool {
 		return true
 	case strings.HasPrefix(rel, "packages/"):
 		return true
-	case strings.HasPrefix(rel, "conf/dynamic/"):
+	case strings.HasPrefix(rel, "openresty/"):
 		return true
 	case rel == "conf/cdn_config.json":
 		return true

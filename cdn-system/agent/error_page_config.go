@@ -6,18 +6,35 @@ import (
 )
 
 func parseEdgeConfigPayload(payload []byte) (edgeConfig, error) {
-	var cfg edgeConfig
-	if err := json.Unmarshal(payload, &cfg); err != nil {
-		return cfg, err
-	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &raw); err != nil {
+		return edgeConfig{}, err
+	}
+
+	var pagesRaw json.RawMessage
+	if value, ok := raw["error_pages"]; ok {
+		pagesRaw = value
+		delete(raw, "error_pages")
+	}
+	var i18nRaw json.RawMessage
+	if value, ok := raw["error_page_i18n"]; ok {
+		i18nRaw = value
+		delete(raw, "error_page_i18n")
+	}
+
+	rest, err := json.Marshal(raw)
+	if err != nil {
+		return edgeConfig{}, err
+	}
+
+	var cfg edgeConfig
+	if err := json.Unmarshal(rest, &cfg); err != nil {
 		return cfg, err
 	}
-	if pagesRaw, ok := raw["error_pages"]; ok {
+	if len(pagesRaw) > 0 {
 		cfg.ErrorPages = parseAgentErrorPagesRaw(pagesRaw)
 	}
-	if i18nRaw, ok := raw["error_page_i18n"]; ok {
+	if len(i18nRaw) > 0 {
 		_ = json.Unmarshal(i18nRaw, &cfg.ErrorPageI18n)
 	}
 	cfg.ErrorPageI18n = normalizeAgentErrorPageI18n(cfg.ErrorPageI18n)

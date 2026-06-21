@@ -340,6 +340,9 @@ end
 function _M.init()
     -- Run immediately once
     _M.load_config()
+    pcall(function()
+        require("lua.guard").preload_assets()
+    end)
     -- Start polling loop
     local ok, err = ngx.timer.at(CHECK_INTERVAL, check_config)
     if not ok then

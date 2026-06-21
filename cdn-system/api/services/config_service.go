@@ -55,6 +55,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		payload.Resources = &globalCfg.Resources
 		payload.ErrorPageI18n = globalCfg.ErrorPageI18n
 		payload.ErrorPages = globalCfg.ErrorPages
+		payload.GuardPages = globalCfg.GuardPages
 		payload.DefaultConfig = &globalCfg.DefaultConfig
 	}
 	if nginxCfg := loadNginxConfig(); nginxCfg != nil {
@@ -561,7 +562,11 @@ func loadGlobalConfig() *models.GlobalConfig {
 	if len(cfg.ErrorPages) == 0 {
 		cfg.ErrorPages = DefaultErrorPageDefinitions()
 	}
+	if len(cfg.GuardPages) == 0 {
+		cfg.GuardPages = DefaultGuardPageDefinitions()
+	}
 	NormalizeGlobalConfigErrorPages(cfg)
+	NormalizeGlobalConfigGuardPages(cfg)
 	return cfg
 }
 

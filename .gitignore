@@ -25,6 +25,14 @@
 /cdn-system/agent/edge-node/openresty/luajit/bin/luajit*
 /cdn-system/agent/edge-node/openresty/nginx/sbin/nginx
 /cdn-system/agent/assets/conf/guard/rotate
+/cdn-system/agent/edge-node/conf/guard/rotate
+/cdn-system/agent/assets/conf/dynamic/
+/cdn-system/agent/edge-node/conf/dynamic/
+/cdn-system/.tools/
+/cdn-system/agent/testdata/cc_smoke/docker-build/
+/cdn-system/agent/testdata/cc_smoke/manual-run/
+/cdn-system/agent/testdata/cc_smoke/runtime/
+/cdn-system/docker/cc-e2e/stage/
 /cdnfly-agent-v5.3.5
 /cdnfly-master-v5.3.6
 node_modules/

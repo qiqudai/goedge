@@ -37,10 +37,10 @@ export const ERROR_PAGE_CODES = [
 export const DEFAULT_ERROR_PAGE_I18N = {
   default_lang: 'zh-CN',
   lang_mode: 'browser',
-  enabled_langs: ['zh-CN', 'en']
+  enabled_langs: COMMON_ERROR_PAGE_LOCALES.map(item => item.value)
 } as const
 
 export const SITE_ERROR_PAGE_LANG_OPTIONS = [
   { value: '', label: '继承全局' },
-  { value: 'browser', label: '跟随浏览器' }
+  { value: 'browser', label: '跟随浏览器（错误页与 CC 验证页）' }
 ]

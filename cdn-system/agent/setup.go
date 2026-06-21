@@ -115,8 +115,8 @@ func initEnvironment() {
 }
 
 func ensureBaseRuntimeAssets(rootDir string) {
-	restoreDirIfMissing("assets/conf", filepath.Join(rootDir, "conf"))
-	restoreDirIfMissing("assets/lua", filepath.Join(rootDir, "lua"))
+	restoreDir("assets/conf", filepath.Join(rootDir, "conf"))
+	restoreDir("assets/lua", filepath.Join(rootDir, "lua"))
 	restoreDirIfMissing("assets/data", filepath.Join(rootDir, "data"))
 	restoreDirIfMissing("assets/cert", filepath.Join(rootDir, "cert"))
 	restoreDirIfMissing("assets/scripts", filepath.Join(rootDir, "scripts"))

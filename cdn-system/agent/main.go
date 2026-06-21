@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var Version = "1.0.12"
+var Version = "1.0.50"
 
 func resolveWorkDir(configPath string) {
 	baseDir := ""

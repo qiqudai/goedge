@@ -18,6 +18,8 @@ local _M = {}
 local COOKIE_GUARD = "guard"
 local COOKIE_GUARD_RET = "guardret"
 local COOKIE_GUARD_PASS = "__cdn_guard_pass"
+local COOKIE_GUARD_BROWSER_ID = "__cdn_guard_bid"
+local COOKIE_GUARD_FINGERPRINT = "__cdn_guard_fp"
 
 local STATE_TTL = 10 * 60
 local PASS_TTL = 30 * 60
@@ -33,8 +35,98 @@ local function is_https()
     return ngx.var.https == "on" or ngx.var.scheme == "https"
 end
 
+local function guard_pass_ttl()
+    local ctx = ngx.ctx
+    if ctx and ctx.guard_pass_ttl then
+        local ttl = tonumber(ctx.guard_pass_ttl)
+        if ttl and ttl > 0 then
+            return ttl
+        end
+    end
+    return PASS_TTL
+end
+
+local function guard_block_ttl()
+    local ctx = ngx.ctx
+    if ctx and ctx.guard_block_ttl then
+        local ttl = tonumber(ctx.guard_block_ttl)
+        if ttl and ttl > 0 then
+            return ttl
+        end
+    end
+    return 0
+end
+
+local function guard_cookie_domain()
+    local ctx = ngx.ctx
+    if ctx and ctx.guard_cookie_domain and ctx.guard_cookie_domain ~= "" then
+        return ctx.guard_cookie_domain
+    end
+    return nil
+end
+
+local function waf_config()
+    local cfg = _G.cdn_config
+    if cfg and cfg.waf then
+        return cfg.waf
+    end
+    return nil
+end
+
+local function guard_debug_enabled()
+    local waf = waf_config()
+    return waf and waf.anti_cc_debug == true
+end
+
+local function guard_debug_log(...)
+    if guard_debug_enabled() then
+        ngx.log(ngx.INFO, ...)
+    end
+end
+
+local function guard_custom_image_url()
+    local waf = waf_config()
+    if not waf then
+        return ""
+    end
+    if waf.anti_cc_image_source ~= "custom" then
+        return ""
+    end
+    local url = tostring(waf.anti_cc_image_custom_url or "")
+    if url == "" then
+        return ""
+    end
+    return url
+end
+
 local function cookie(name)
     return ngx.var["cookie_" .. name]
+end
+
+local function normalize_cookie_token(value, max_len)
+    if type(value) ~= "string" then
+        return ""
+    end
+    local token = string.match(value, "^([%w_%-]+)") or ""
+    if max_len and #token > max_len then
+        token = string.sub(token, 1, max_len)
+    end
+    return token
+end
+
+local function cookie_values(name)
+    local header = ngx.var.http_cookie
+    local values = {}
+    if type(header) ~= "string" or header == "" then
+        return values
+    end
+    for item in string.gmatch(header, "([^;]+)") do
+        local k, v = string.match(item, "^%s*([^=]+)=([^;]*)")
+        if k == name then
+            table.insert(values, v)
+        end
+    end
+    return values
 end
 
 local function add_set_cookie(value)
@@ -53,7 +145,16 @@ end
 
 local function set_cookie(name, value, opts)
     opts = opts or {}
+    if not opts.domain then
+        local domain = guard_cookie_domain()
+        if domain then
+            opts.domain = domain
+        end
+    end
     local parts = { name .. "=" .. (value or ""), "Path=" .. (opts.path or "/") }
+    if opts.domain then
+        table.insert(parts, "Domain=" .. opts.domain)
+    end
     if opts.max_age ~= nil then
         table.insert(parts, "Max-Age=" .. tostring(opts.max_age))
     end
@@ -89,6 +190,187 @@ end
 
 local function guard_dir()
     return config_prefix() .. "conf/guard/"
+end
+
+local function conf_dir()
+    return config_prefix() .. "conf/"
+end
+
+local guard_i18n_cache
+local error_page_i18n_cache
+
+local function read_json(path)
+    local content = read_file(path)
+    if not content then
+        return nil
+    end
+    return cjson.decode(content)
+end
+
+local function normalize_locale(lang)
+    if not lang or lang == "" then
+        return ""
+    end
+    lang = string.gsub(lang, "_", "-")
+    local parts = {}
+    for part in string.gmatch(lang, "[^-]+") do
+        parts[#parts + 1] = part
+    end
+    if #parts == 0 then
+        return ""
+    end
+    parts[1] = string.lower(parts[1])
+    for i = 2, #parts do
+        if #parts[i] == 2 then
+            parts[i] = string.upper(parts[i])
+        else
+            parts[i] = string.lower(parts[i])
+        end
+    end
+    return table.concat(parts, "-")
+end
+
+local function parse_accept_language(header, enabled_langs, default_lang)
+    if not header or header == "" then
+        return default_lang
+    end
+    local enabled = {}
+    for _, lang in ipairs(enabled_langs or {}) do
+        enabled[normalize_locale(lang)] = true
+        local base = string.match(lang, "^([^-]+)")
+        if base then
+            enabled[normalize_locale(base)] = true
+        end
+    end
+    local best_lang = default_lang
+    local best_q = -1
+    for chunk in string.gmatch(header, "[^,]+") do
+        local lang_part = string.match(chunk, "^%s*([^;]+)")
+        local q = tonumber(string.match(chunk, "q=([0-9%.]+)")) or 1
+        if lang_part then
+            lang_part = normalize_locale(string.gsub(lang_part, "^%s*(.-)%s*$", "%1"))
+            if enabled[lang_part] and q > best_q then
+                best_lang = lang_part
+                best_q = q
+            else
+                local base = string.match(lang_part, "^([^-]+)")
+                base = normalize_locale(base)
+                if base ~= "" and enabled[base] and q > best_q then
+                    best_lang = base
+                    best_q = q
+                end
+            end
+        end
+    end
+    return best_lang
+end
+
+local function load_error_page_i18n()
+    if error_page_i18n_cache then
+        return error_page_i18n_cache
+    end
+    local i18n = read_json(conf_dir() .. "error_page_i18n.json")
+    if not i18n then
+        i18n = { default_lang = "zh-CN", lang_mode = "browser", enabled_langs = { "zh-CN", "en" } }
+    end
+    error_page_i18n_cache = i18n
+    return i18n
+end
+
+local function resolve_guard_lang()
+    local i18n = load_error_page_i18n()
+    local default_lang = normalize_locale(i18n.default_lang or "zh-CN")
+    local enabled_langs = i18n.enabled_langs or { default_lang }
+    local site_lang = normalize_locale(ngx.var.cdn_error_lang or "")
+    if site_lang ~= "" and site_lang ~= "browser" then
+        return site_lang
+    end
+    if site_lang == "browser" then
+        return parse_accept_language(ngx.var.http_accept_language or "", enabled_langs, default_lang)
+    end
+    local mode = i18n.lang_mode or "browser"
+    if mode == "browser" then
+        return parse_accept_language(ngx.var.http_accept_language or "", enabled_langs, default_lang)
+    end
+    return default_lang
+end
+
+local function load_guard_i18n()
+    if guard_i18n_cache then
+        return guard_i18n_cache
+    end
+    local data = read_json(conf_dir() .. "guard_i18n.json")
+    guard_i18n_cache = data or {}
+    return guard_i18n_cache
+end
+
+local function strings_key_for_type(filter_type)
+    if filter_type == "five_seconds" then
+        return "delay_jump"
+    end
+    if filter_type == "click_captcha" or filter_type == "click_captcha_simple" then
+        return "click"
+    end
+    if filter_type == "slide_captcha" or filter_type == "slide_captcha_simple" then
+        return "slide"
+    end
+    if filter_type == "captcha" then
+        return "captcha"
+    end
+    if filter_type == "rotate_captcha" then
+        return "rotate"
+    end
+    return "click"
+end
+
+local function resolve_guard_strings(filter_type)
+    local lang = resolve_guard_lang()
+    local i18n = load_error_page_i18n()
+    local default_lang = normalize_locale(i18n.default_lang or "zh-CN")
+    if lang == "" then
+        lang = default_lang
+    end
+    local data = load_guard_i18n()
+    local key = strings_key_for_type(filter_type)
+    local by_lang = (data.strings or {})[key] or {}
+    local candidates = { lang }
+    local base = string.match(lang, "^([^-]+)")
+    if base and base ~= lang then
+        candidates[#candidates + 1] = base
+    end
+    candidates[#candidates + 1] = default_lang
+    candidates[#candidates + 1] = "zh-CN"
+    candidates[#candidates + 1] = "en"
+    local strings
+    for _, candidate in ipairs(candidates) do
+        strings = by_lang[candidate]
+        if strings then
+            lang = candidate
+            break
+        end
+    end
+    strings = strings or by_lang["zh-CN"] or by_lang["en"] or {}
+    local out = {}
+    for k, v in pairs(strings) do
+        out[k] = v
+    end
+    out.html_lang = lang
+    return out
+end
+
+local PLACEHOLDER_PATTERN = "{{([a-zA-Z0-9_]+)}}"
+
+local function render_guard_template(content, strings)
+    if not content then
+        return content
+    end
+    return string.gsub(content, PLACEHOLDER_PATTERN, function(key)
+        local value = strings[key]
+        if value == nil then
+            return "{{" .. key .. "}}"
+        end
+        return value
+    end)
 end
 
 local function read_file(path)
@@ -168,25 +450,28 @@ end
 
 local function normalize_type(filter_type)
     local t = string.lower(tostring(filter_type or ""))
-    if t == "5s" or t == "5s_shield" or t == "shield_5s" or t == "five_seconds" then
+    if t == "5s" or t == "5s_shield" or t == "shield_5s" or t == "five_seconds" or t == "delay_jump" or t == "delay_jump_filter" then
         return "five_seconds"
     end
-    if t == "invisible" or t == "silent_captcha" then
+    if t == "invisible" or t == "silent_captcha" or t == "browser_verify_auto" or t == "302" or t == "302_challenge" then
         return "silent_captcha"
     end
-    if t == "click" or t == "click_captcha" then
+    if t == "click" or t == "click_captcha" or t == "click_filter" then
         return "click_captcha"
     end
     if t == "click_simple" or t == "click_captcha_simple" then
         return "click_captcha_simple"
     end
-    if t == "slide" or t == "slide_captcha" then
+    if t == "slide" or t == "slide_captcha" or t == "slide_filter" then
         return "slide_captcha"
     end
     if t == "slide_simple" or t == "slide_captcha_simple" then
         return "slide_captcha_simple"
     end
-    if t == "rotate" or t == "rotate_captcha" then
+    if t == "captcha_filter" then
+        return "captcha"
+    end
+    if t == "rotate" or t == "rotate_captcha" or t == "rotate_filter" then
         return "rotate_captcha"
     end
     return t
@@ -209,6 +494,41 @@ function _M.is_guard_request(uri)
         return false
     end
     return string.sub(uri, 1, 7) == "/_guard"
+end
+
+local COMMON_NON_BROWSER_UA = {
+    "curl",
+    "wget",
+    "python-requests",
+    "python-urllib",
+    "go-http-client",
+    "httpie",
+    "postmanruntime",
+    "okhttp",
+    "apache-httpclient",
+    "libwww-perl",
+    "scrapy",
+    "aiohttp",
+    "node-fetch",
+    "undici",
+    "axios/",
+    "java/",
+    "ruby",
+    "php/",
+    "powershell",
+}
+
+function _M.is_common_non_browser_request()
+    local ua = string.lower(tostring(ngx.var.http_user_agent or ""))
+    if ua == "" then
+        return true, "ua=empty"
+    end
+    for _, token in ipairs(COMMON_NON_BROWSER_UA) do
+        if string.find(ua, token, 1, true) then
+            return true, "ua=" .. token
+        end
+    end
+    return false, ""
 end
 
 local cached_secret
@@ -262,18 +582,42 @@ local function constant_time_eq(a, b)
     return diff == 0
 end
 
-local function verify_pass_cookie(value, host, ip, filter_type, filter_id)
+local function browser_binding()
+    local browser_id = normalize_cookie_token(cookie(COOKIE_GUARD_BROWSER_ID), 64)
+    local fingerprint = normalize_cookie_token(cookie(COOKIE_GUARD_FINGERPRINT), 128)
+    local ua_sig = string.sub(hmac_hex("ua|" .. tostring(ngx.var.http_user_agent or "")), 1, 24)
+    return browser_id, fingerprint, ua_sig
+end
+
+local function pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig)
+    local raw = table.concat({
+        host or "",
+        ip or "",
+        normalize_type(filter_type),
+        tostring(filter_id or 0),
+        browser_id or "",
+        fingerprint or "",
+        ua_sig or "",
+    }, "|")
+    local digest = md5_bin(raw)
+    if digest then
+        return "guard:pass:" .. str.to_hex(digest)
+    end
+    return "guard:pass:" .. hmac_hex(raw)
+end
+
+local function verify_pass_cookie_value(value, host, ip, filter_type, filter_id)
     if type(value) ~= "string" or value == "" then
         return false
     end
     local parts = {}
     for item in string.gmatch(value, "([^|]+)") do
         table.insert(parts, item)
-        if #parts > 8 then
+        if #parts > 12 then
             break
         end
     end
-    if #parts < 6 then
+    if #parts < 11 or parts[1] ~= "v3" then
         return false
     end
     local exp = tonumber(parts[2]) or 0
@@ -286,34 +630,103 @@ local function verify_pass_cookie(value, host, ip, filter_type, filter_id)
     if parts[5] ~= normalize_type(filter_type) then
         return false
     end
-
-    if parts[1] == "v1" then
-        local payload = table.concat({ parts[1], parts[2], parts[3], parts[4], parts[5] }, "|")
-        local expected = hmac_hex(payload)
-        return constant_time_eq(parts[6], expected)
-    end
-
-    if parts[1] ~= "v2" then
-        return false
-    end
-    if #parts < 7 then
-        return false
-    end
     if parts[6] ~= tostring(filter_id or 0) then
         return false
     end
-    local payload = table.concat({ parts[1], parts[2], parts[3], parts[4], parts[5], parts[6] }, "|")
+    local browser_id, fingerprint, ua_sig = browser_binding()
+    if browser_id == "" or fingerprint == "" then
+        return false
+    end
+    if parts[7] ~= browser_id or parts[8] ~= fingerprint or parts[9] ~= ua_sig then
+        return false
+    end
+    local token_id = parts[10]
+    if token_id == "" then
+        return false
+    end
+    local payload = table.concat({ parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8], parts[9], parts[10] }, "|")
     local expected = hmac_hex(payload)
-    return constant_time_eq(parts[7], expected)
+    if not constant_time_eq(parts[11], expected) then
+        return false
+    end
+
+    local s = store()
+    if not s then
+        return false
+    end
+    local raw = s:get(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig))
+    if type(raw) ~= "string" or raw == "" then
+        return false
+    end
+    local record = cjson.decode(raw)
+    if type(record) == "table" then
+        return record.token == token_id
+            and record.browser_id == browser_id
+            and record.fingerprint == fingerprint
+            and record.ua_sig == ua_sig
+    end
+    return raw == token_id
+end
+
+local function verify_pass_cookie(host, ip, filter_type, filter_id)
+    local values = cookie_values(COOKIE_GUARD_PASS)
+    if #values == 0 then
+        local value = cookie(COOKIE_GUARD_PASS)
+        if value then
+            table.insert(values, value)
+        end
+    end
+    for _, value in ipairs(values) do
+        if verify_pass_cookie_value(value, host, ip, filter_type, filter_id) then
+            return true
+        end
+    end
+    return false
 end
 
 local function build_pass_cookie(host, ip, filter_type, filter_id, ttl)
-    local exp = now() + (ttl or PASS_TTL)
+    local s = store()
+    if not s then
+        return nil, "guard store unavailable"
+    end
+    local browser_id, fingerprint, ua_sig = browser_binding()
+    if browser_id == "" then
+        return nil, "browser id missing"
+    end
+    if fingerprint == "" then
+        return nil, "fingerprint missing"
+    end
+    local pass_ttl = ttl or PASS_TTL
+    local exp = now() + pass_ttl
+    local token_id = rand_hex(16)
     local payload = table.concat(
-        { "v2", tostring(exp), host or "", ip or "", normalize_type(filter_type), tostring(filter_id or 0) },
+        {
+            "v3",
+            tostring(exp),
+            host or "",
+            ip or "",
+            normalize_type(filter_type),
+            tostring(filter_id or 0),
+            browser_id,
+            fingerprint,
+            ua_sig,
+            token_id,
+        },
         "|"
     )
     local sig = hmac_hex(payload)
+    local record = cjson.encode({
+        token = token_id,
+        browser_id = browser_id,
+        fingerprint = fingerprint,
+        ua_sig = ua_sig,
+        host = host or "",
+        ip = ip or "",
+        type = normalize_type(filter_type),
+        filter_id = tostring(filter_id or 0),
+        issued = now(),
+    })
+    s:set(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig), record or token_id, pass_ttl)
     return payload .. "|" .. sig
 end
 
@@ -463,8 +876,7 @@ function _M.ensure_passed(filter, host, ip)
     local filter_type = normalize_type(filter.type or filter.Type or "")
     local filter_id = filter.id or filter.ID or 0
 
-    local pass_value = cookie(COOKIE_GUARD_PASS)
-    if verify_pass_cookie(pass_value, host, ip, filter_type, filter_id) then
+    if verify_pass_cookie(host, ip, filter_type, filter_id) then
         return true
     end
 
@@ -481,9 +893,17 @@ function _M.ensure_passed(filter, host, ip)
     local ok = false
     ok = validate_guardret(filter_type, nonce8, st, guardret_value)
     if ok == true then
-        set_cookie(COOKIE_GUARD_PASS, build_pass_cookie(host, ip, filter_type, filter_id, PASS_TTL), {
+        guard_debug_log("guard passed host=", host or "", " ip=", ip or "", " type=", filter_type)
+        local pass_ttl = guard_pass_ttl()
+        local pass_value, pass_err = build_pass_cookie(host, ip, filter_type, filter_id, pass_ttl)
+        if not pass_value then
+            guard_debug_log("guard pass build failed host=", host or "", " ip=", ip or "", " type=", filter_type, " err=", pass_err or "")
+            clear_cookie(COOKIE_GUARD_RET, false)
+            return false
+        end
+        set_cookie(COOKIE_GUARD_PASS, pass_value, {
             path = "/",
-            max_age = PASS_TTL,
+            max_age = pass_ttl,
             http_only = true,
             secure = is_https(),
             same_site = "Lax",
@@ -493,9 +913,17 @@ function _M.ensure_passed(filter, host, ip)
         delete_state(nonce8)
         return true
     end
+    guard_debug_log("guard failed host=", host or "", " ip=", ip or "", " type=", filter_type)
 
     st.attempts = (tonumber(st.attempts) or 0) + 1
     if st.attempts >= MAX_ATTEMPTS then
+        local block_ttl = guard_block_ttl()
+        if block_ttl > 0 then
+            local block_list = ngx.shared.ip_blacklist
+            if block_list then
+                block_list:set(ip, true, block_ttl)
+            end
+        end
         delete_state(nonce8)
         clear_cookie(COOKIE_GUARD, false)
     else
@@ -530,6 +958,7 @@ end
 function _M.challenge(filter, host, ip)
     local filter_type = normalize_type(filter.type or filter.Type or "")
     ensure_state(filter, host, ip)
+    guard_debug_log("guard challenge host=", host or "", " ip=", ip or "", " type=", filter_type)
 
     ngx.header["Content-Type"] = "text/html; charset=utf-8"
     ngx.header["Cache-Control"] = "no-store"
@@ -540,6 +969,15 @@ function _M.challenge(filter, host, ip)
         ngx.say("<html><body>Guard template missing</body></html>")
         return
     end
+    local custom_url = guard_custom_image_url()
+    if custom_url ~= "" then
+        if filter_type == "rotate_captcha" then
+            content = string.gsub(content, "/_guard/rotate_image", custom_url)
+        elseif filter_type == "captcha" then
+            content = string.gsub(content, "/_guard/captcha%.png", custom_url)
+        end
+    end
+    content = render_guard_template(content, resolve_guard_strings(filter_type))
     ngx.print(content)
 end
 

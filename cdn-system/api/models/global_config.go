@@ -6,6 +6,7 @@ type GlobalConfig struct {
 	DefaultConfig DefaultSiteConfig               `json:"default_config"`
 	ErrorPageI18n ErrorPageI18nSettings           `json:"error_page_i18n"`
 	ErrorPages    map[string]ErrorPageDefinition  `json:"error_pages"`
+	GuardPages    map[string]GuardPageDefinition  `json:"guard_pages"`
 	Resources     GlobalResourceConfig            `json:"resources"`
 }
 
@@ -47,12 +48,15 @@ type WAFConfig struct {
 	SecretKey            string `json:"secret_key"`
 	NodeLogCleanStrategy string `json:"node_log_clean_strategy"` // none, log_only, log_cache
 	CCRuleAutoSwitch     bool   `json:"cc_rule_auto_switch"`
+	CCAutoSwitch         WAFCCAutoSwitch `json:"cc_auto_switch"`
 
 	// Anti-CC Page
-	AntiCCImageSource    string `json:"anti_cc_image_source"` // system, custom
-	AntiCCImageCustomURL string `json:"anti_cc_image_custom_url"`
-	AntiCCType           string `json:"anti_cc_type"` // slide, click, 5s, rotate...
-	AntiCCDebug          bool   `json:"anti_cc_debug"`
+	AntiCCImageSource      string `json:"anti_cc_image_source"` // system, custom
+	AntiCCImageCustomURL   string `json:"anti_cc_image_custom_url"`
+	AntiCCImageUpdateHour  int    `json:"anti_cc_image_update_hour"`
+	AntiCCType             string `json:"anti_cc_type"` // slide, click, 5s, rotate...
+	AntiCCPageCustom       string `json:"anti_cc_page_custom"`
+	AntiCCDebug            bool   `json:"anti_cc_debug"`
 
 	// Complex Protection
 	WellKnownProtectionThreshold   int            `json:"well_known_protection_threshold"`
@@ -73,6 +77,14 @@ type WAFConfig struct {
 type ResourceRule struct {
 	Duration    int `json:"duration"`
 	MaxRequests int `json:"max_requests"`
+}
+
+type WAFCCAutoSwitch struct {
+	Enable    bool   `json:"enable"`
+	QPS502504 int    `json:"qps_502504"`
+	TotalQPS  int    `json:"total_qps"`
+	Rule      string `json:"rule"`
+	Duration  int    `json:"duration"`
 }
 
 type CCConfig struct {

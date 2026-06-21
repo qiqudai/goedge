@@ -192,14 +192,271 @@ local function guard_dir()
     return config_prefix() .. "conf/guard/"
 end
 
-local function read_file(path)
-    local f = io.open(path, "rb")
-    if not f then
+local function conf_dir()
+    return config_prefix() .. "conf/"
+end
+
+local guard_i18n_cache
+local error_page_i18n_cache
+local file_cache = {}
+-- Forward declaration: read_file is defined later in this file, but
+-- read_json/preload_assets reference it earlier. Without this local
+-- declaration the earlier references bind to a nil global and abort.
+local read_file
+local GUARD_TEMPLATE_FILES = {
+    "browser_verify_auto.html",
+    "delay_jump.html",
+    "click.html",
+    "slide.html",
+    "captcha.html",
+    "rotate.html",
+}
+
+function _M.preload_assets()
+    if file_cache._ready then
+        return
+    end
+    file_cache._ready = true
+    for _, tpl in ipairs(GUARD_TEMPLATE_FILES) do
+        local path = guard_dir() .. tpl
+        local f = io.open(path, "rb")
+        if f then
+            file_cache[path] = f:read("*a")
+            f:close()
+        else
+            ngx.log(ngx.WARN, "guard preload missing template: ", path)
+        end
+    end
+    for _, rel in ipairs({ "guard_i18n.json", "error_page_i18n.json" }) do
+        local path = conf_dir() .. rel
+        local f = io.open(path, "rb")
+        if f then
+            file_cache[path] = f:read("*a")
+            f:close()
+        else
+            ngx.log(ngx.WARN, "guard preload missing config: ", path)
+        end
+    end
+    local captcha_list = guard_dir() .. "captcha_list.txt"
+    local f = io.open(captcha_list, "rb")
+    if f then
+        file_cache[captcha_list] = f:read("*a")
+        f:close()
+    end
+end
+
+local function read_json(path)
+    local content = read_file(path)
+    if not content then
         return nil
     end
-    local content = f:read("*a")
-    f:close()
-    return content
+    return cjson.decode(content)
+end
+
+local function normalize_locale(lang)
+    if not lang or lang == "" then
+        return ""
+    end
+    lang = string.gsub(lang, "_", "-")
+    local parts = {}
+    for part in string.gmatch(lang, "[^-]+") do
+        parts[#parts + 1] = part
+    end
+    if #parts == 0 then
+        return ""
+    end
+    parts[1] = string.lower(parts[1])
+    for i = 2, #parts do
+        if #parts[i] == 2 then
+            parts[i] = string.upper(parts[i])
+        else
+            parts[i] = string.lower(parts[i])
+        end
+    end
+    return table.concat(parts, "-")
+end
+
+local function parse_accept_language(header, enabled_langs, default_lang)
+    if not header or header == "" then
+        return default_lang
+    end
+    local enabled = {}
+    for _, lang in ipairs(enabled_langs or {}) do
+        enabled[normalize_locale(lang)] = true
+        local base = string.match(lang, "^([^-]+)")
+        if base then
+            enabled[normalize_locale(base)] = true
+        end
+    end
+    local best_lang = default_lang
+    local best_q = -1
+    for chunk in string.gmatch(header, "[^,]+") do
+        local lang_part = string.match(chunk, "^%s*([^;]+)")
+        local q = tonumber(string.match(chunk, "q=([0-9%.]+)")) or 1
+        if lang_part then
+            lang_part = normalize_locale(string.gsub(lang_part, "^%s*(.-)%s*$", "%1"))
+            if enabled[lang_part] and q > best_q then
+                best_lang = lang_part
+                best_q = q
+            else
+                local base = string.match(lang_part, "^([^-]+)")
+                base = normalize_locale(base)
+                if base ~= "" and enabled[base] and q > best_q then
+                    best_lang = base
+                    best_q = q
+                end
+            end
+        end
+    end
+    return best_lang
+end
+
+local function load_error_page_i18n()
+    if error_page_i18n_cache then
+        return error_page_i18n_cache
+    end
+    local i18n = read_json(conf_dir() .. "error_page_i18n.json")
+    if not i18n then
+        i18n = { default_lang = "zh-CN", lang_mode = "browser", enabled_langs = { "zh-CN", "en" } }
+    end
+    error_page_i18n_cache = i18n
+    return i18n
+end
+
+local function resolve_guard_lang()
+    local i18n = load_error_page_i18n()
+    local default_lang = normalize_locale(i18n.default_lang or "zh-CN")
+    local enabled_langs = i18n.enabled_langs or { default_lang }
+    local site_lang = normalize_locale(ngx.var.cdn_error_lang or "")
+    if site_lang ~= "" and site_lang ~= "browser" then
+        return site_lang
+    end
+    if site_lang == "browser" then
+        return parse_accept_language(ngx.var.http_accept_language or "", enabled_langs, default_lang)
+    end
+    local mode = i18n.lang_mode or "browser"
+    if mode == "browser" then
+        return parse_accept_language(ngx.var.http_accept_language or "", enabled_langs, default_lang)
+    end
+    return default_lang
+end
+
+local function load_guard_i18n()
+    if guard_i18n_cache then
+        return guard_i18n_cache
+    end
+    local data = read_json(conf_dir() .. "guard_i18n.json")
+    guard_i18n_cache = data or {}
+    return guard_i18n_cache
+end
+
+local function strings_key_for_type(filter_type)
+    if filter_type == "five_seconds" then
+        return "delay_jump"
+    end
+    if filter_type == "click_captcha" or filter_type == "click_captcha_simple" then
+        return "click"
+    end
+    if filter_type == "slide_captcha" or filter_type == "slide_captcha_simple" then
+        return "slide"
+    end
+    if filter_type == "captcha" then
+        return "captcha"
+    end
+    if filter_type == "rotate_captcha" then
+        return "rotate"
+    end
+    return "click"
+end
+
+local function resolve_guard_strings(filter_type)
+    local lang = resolve_guard_lang()
+    local i18n = load_error_page_i18n()
+    local default_lang = normalize_locale(i18n.default_lang or "zh-CN")
+    if lang == "" then
+        lang = default_lang
+    end
+    local data = load_guard_i18n()
+    local key = strings_key_for_type(filter_type)
+    local by_lang = (data.strings or {})[key] or {}
+    local candidates = { lang }
+    local base = string.match(lang, "^([^-]+)")
+    if base and base ~= lang then
+        candidates[#candidates + 1] = base
+    end
+    candidates[#candidates + 1] = default_lang
+    candidates[#candidates + 1] = "zh-CN"
+    candidates[#candidates + 1] = "en"
+    local strings
+    for _, candidate in ipairs(candidates) do
+        strings = by_lang[candidate]
+        if strings then
+            lang = candidate
+            break
+        end
+    end
+    strings = strings or by_lang["zh-CN"] or by_lang["en"] or {}
+    local out = {}
+    for k, v in pairs(strings) do
+        out[k] = v
+    end
+    out.html_lang = lang
+    return out
+end
+
+local PLACEHOLDER_PATTERN = "{{([a-zA-Z0-9_]+)}}"
+
+local function render_guard_template(content, strings)
+    if not content then
+        return content
+    end
+    return string.gsub(content, PLACEHOLDER_PATTERN, function(key)
+        local value = strings[key]
+        if value == nil then
+            return "{{" .. key .. "}}"
+        end
+        return value
+    end)
+end
+
+read_file = function(path)
+    if not path or path == "" then
+        return nil
+    end
+    if file_cache[path] then
+        return file_cache[path]
+    end
+    local f = io.open(path, "rb")
+    if f then
+        local content = f:read("*a")
+        f:close()
+        if content and content ~= "" then
+            file_cache[path] = content
+            return content
+        end
+    end
+    local prefix = config_prefix()
+    local guard_base = prefix .. "conf/guard/"
+    if path:sub(1, #guard_base) == guard_base then
+        local rel = path:sub(#guard_base + 1)
+        local res = ngx.location.capture("/_guard/" .. rel)
+        if res and res.status == 200 and res.body and res.body ~= "" then
+            file_cache[path] = res.body
+            return res.body
+        end
+        return nil
+    end
+    local conf_base = prefix .. "conf/"
+    if path:sub(1, #conf_base) == conf_base then
+        local rel = path:sub(#conf_base + 1)
+        local res = ngx.location.capture("/_cdn_conf/" .. rel)
+        if res and res.status == 200 and res.body and res.body ~= "" then
+            file_cache[path] = res.body
+            return res.body
+        end
+        return nil
+    end
+    return nil
 end
 
 local function md5_bin(s)
@@ -312,7 +569,16 @@ function _M.is_guard_request(uri)
     if not uri or uri == "" then
         return false
     end
-    return string.sub(uri, 1, 7) == "/_guard"
+    if string.sub(uri, 1, 7) == "/_guard" then
+        return true
+    end
+    if string.sub(uri, 1, 11) == "/_cdn_conf/" then
+        return true
+    end
+    if string.sub(uri, 1, 19) == "/@cdn_guard_render/" then
+        return true
+    end
+    return false
 end
 
 local COMMON_NON_BROWSER_UA = {
@@ -774,14 +1040,20 @@ local function template_for_type(filter_type)
     return "click.html"
 end
 
-function _M.challenge(filter, host, ip)
-    local filter_type = normalize_type(filter.type or filter.Type or "")
-    ensure_state(filter, host, ip)
-    guard_debug_log("guard challenge host=", host or "", " ip=", ip or "", " type=", filter_type)
-
-    ngx.header["Content-Type"] = "text/html; charset=utf-8"
-    ngx.header["Cache-Control"] = "no-store"
-
+function _M.serve_challenge_by_nonce(nonce8)
+    if not nonce8 or nonce8 == "" then
+        ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+        ngx.say("<html><body>Guard challenge missing</body></html>")
+        return
+    end
+    local st = load_state(nonce8)
+    if not st then
+        ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+        ngx.say("<html><body>Guard challenge missing</body></html>")
+        return
+    end
+    local filter = { type = st.type, id = st.filter_id }
+    local filter_type = normalize_type(st.type or "")
     local tpl = template_for_type(filter_type)
     local content = read_file(guard_dir() .. tpl)
     if not content then
@@ -796,7 +1068,23 @@ function _M.challenge(filter, host, ip)
             content = string.gsub(content, "/_guard/captcha%.png", custom_url)
         end
     end
+    content = render_guard_template(content, resolve_guard_strings(filter_type))
+    ngx.header["Content-Type"] = "text/html; charset=utf-8"
+    ngx.header["Cache-Control"] = "no-store"
     ngx.print(content)
+end
+
+function _M.challenge(filter, host, ip)
+    local filter_type = normalize_type(filter.type or filter.Type or "")
+    local nonce8 = ensure_state(filter, host, ip)
+    guard_debug_log("guard challenge host=", host or "", " ip=", ip or "", " type=", filter_type)
+
+    if not nonce8 or nonce8 == "" then
+        ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+        ngx.say("<html><body>Guard challenge missing</body></html>")
+        return
+    end
+    _M.serve_challenge_by_nonce(nonce8)
 end
 
 local captcha_codes

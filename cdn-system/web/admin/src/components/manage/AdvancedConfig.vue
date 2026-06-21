@@ -157,7 +157,7 @@
             :value="item.value"
           />
         </el-select>
-        <div class="form-helper">站点设置优先于全局；留空表示继承全局语言策略</div>
+        <div class="form-helper">站点设置优先于全局；留空表示继承全局语言策略。同时作用于错误页与 CC 防御验证页文案。</div>
       </el-form-item>
     </el-form>
 

@@ -5,7 +5,8 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@cdn-common/*": ["../../common/*"]
     },
     "allowJs": true,
 

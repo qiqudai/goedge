@@ -192,21 +192,6 @@ local function verify_url_auth(filter, host, ip, uri)
     return true, ""
 end
 
-local function apply_redirect_302(filter, host, ip)
-    local extra = parse_filter_extra(filter)
-    local target = tostring(extra.redirect_url or extra.url or "")
-    if target == "" then
-        if not guard.ensure_passed(filter, host, ip) then
-            guard.challenge(filter, host, ip)
-            ngx.header["X-Block-Source"] = build_cc_reason("cc_guard", filter.id or 0, nil, filter, "config=302")
-            ngx.exit(200)
-        end
-        return true
-    end
-    ngx.header["X-Block-Source"] = build_cc_reason("cc_redirect", filter.id or 0, nil, filter, "config=302")
-    return ngx.redirect(target, 302)
-end
-
 local function block_ttl()
     local ttl = tonumber(ngx.ctx.guard_block_ttl) or 3600
     if ttl <= 0 then
@@ -215,32 +200,76 @@ local function block_ttl()
     return ttl
 end
 
+local function blacklist_on_trigger(ip)
+    if ip and ip ~= "" then
+        ip_block.block(ip, block_ttl())
+    end
+end
+
+local function apply_redirect_302(filter, host, ip)
+    blacklist_on_trigger(ip)
+    local extra = parse_filter_extra(filter)
+    local target = tostring(extra.redirect_url or extra.url or "")
+    if target == "" then
+            if not guard.ensure_passed(filter, host, ip) then
+                ngx.header["X-Block-Source"] = build_cc_reason("cc_guard", filter.id or 0, nil, filter, "config=302")
+                guard.challenge(filter, host, ip)
+                ngx.exit(200)
+            end
+        return true
+    end
+    ngx.header["X-Block-Source"] = build_cc_reason("cc_redirect", filter.id or 0, nil, filter, "config=302")
+    return ngx.redirect(target, 302)
+end
+
+local function rule_should_stop(rule)
+    if not rule then
+        return false
+    end
+    local mode = string.lower(tostring(rule.mode or ""))
+    if mode == "stop" or rule.breakMatch == true or rule.break_match == true then
+        return true
+    end
+    return false
+end
+
+local function finalize_allow(rule)
+    if rule_should_stop(rule) then
+        return "allow"
+    end
+    return "continue"
+end
+
 local function enforce_action(action, rule, rule_id, host, ip, uri, filter, detail)
     action = string.lower(tostring(action or "block"))
     if action == "allow" then
-        ngx.ctx.cc_allowed = true
-        return "allow"
+        return finalize_allow(rule)
     end
     if action == "log" then
         ngx.log(ngx.INFO, "cc log action host=", host or "", " ip=", ip or "", " uri=", uri or "", " detail=", detail or "")
         return "continue"
     end
+
+    blacklist_on_trigger(ip)
+
     if action == "exit" then
         ngx.header["X-Block-Source"] = build_cc_reason("cc_exit", rule_id, rule, filter, detail or "action=exit")
         ngx.exit(444)
     end
+
+    local reason_key = "cc_block"
     if action == "ipset" then
-        ip_block.block(ip, block_ttl())
-        block_request(build_cc_reason("cc_ipset", rule_id, rule, filter, detail or "action=ipset"), 403)
+        reason_key = "cc_ipset"
+    elseif action == "limit_rate" then
+        reason_key = "cc_rate_limit"
     end
-    block_request(build_cc_reason("cc_block", rule_id, rule, filter, detail or ("action=" .. action)), 403)
+    block_request(build_cc_reason(reason_key, rule_id, rule, filter, detail or ("action=" .. action)), 403)
 end
 
 local function probe_filter(filter, rule, rule_id, host, ip, uri, action_override)
     if not filter then
         local action = string.lower(tostring(action_override or rule and rule.action or ""))
         if action == "allow" then
-            ngx.ctx.cc_allowed = true
             return "allow", ""
         end
         if action == "log" then
@@ -258,7 +287,6 @@ local function probe_filter(filter, rule, rule_id, host, ip, uri, action_overrid
     local action = string.lower(tostring(action_override or rule and rule.action or ""))
 
     if filter_type == "allow" or action == "allow" then
-        ngx.ctx.cc_allowed = true
         return "allow", ""
     end
     if filter_type == "log" or action == "log" then
@@ -294,8 +322,8 @@ local function probe_filter(filter, rule, rule_id, host, ip, uri, action_overrid
         local exceeded, detail = rate_exceeded(filter, host, ip, uri)
         if should_force_guard(filter) or exceeded then
             if not guard.ensure_passed(filter, host, ip) then
-                guard.challenge(filter, host, ip)
                 ngx.header["X-Block-Source"] = build_cc_reason("cc_guard", rule_id, rule, filter, detail)
+                guard.challenge(filter, host, ip)
                 ngx.exit(200)
             end
         end
@@ -360,17 +388,6 @@ local function rule_enabled(rule)
     return true
 end
 
-local function rule_should_stop(rule)
-    if not rule then
-        return false
-    end
-    local mode = string.lower(tostring(rule.mode or ""))
-    if mode == "stop" or rule.breakMatch == true or rule.break_match == true then
-        return true
-    end
-    return false
-end
-
 local function build_inline_filter(rule)
     local action = string.lower(tostring(rule.action or "block"))
     local filter_type = ACTION_TO_FILTER[action] or action
@@ -417,7 +434,7 @@ local function execute_rule(rule, host, ip, uri, config, rule_id, ctx)
     if filter1 and filter2 then
         local result1, detail1 = probe_filter(filter1, rule, rule_id, host, ip, uri, nil)
         if result1 == "allow" then
-            return "allow"
+            return finalize_allow(rule)
         end
         if result1 == "continue" then
             if rule_should_stop(rule) then
@@ -427,7 +444,7 @@ local function execute_rule(rule, host, ip, uri, config, rule_id, ctx)
         end
         local result2, detail2 = probe_filter(filter2, rule, rule_id, host, ip, uri, nil)
         if result2 == "allow" then
-            return "allow"
+            return finalize_allow(rule)
         end
         if result2 == "continue" then
             if rule_should_stop(rule) then
@@ -448,7 +465,7 @@ local function execute_rule(rule, host, ip, uri, config, rule_id, ctx)
 
     local result = apply_filter(filter, rule, rule_id, host, ip, uri, action_override)
     if result == "allow" then
-        return "allow"
+        return finalize_allow(rule)
     end
     if rule_should_stop(rule) then
         return "stop"

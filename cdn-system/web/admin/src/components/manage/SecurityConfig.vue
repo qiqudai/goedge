@@ -101,10 +101,32 @@
         </template>
       </el-table-column>
       <el-table-column prop="remart" label="备注" />
-      <el-table-column label="操作" width="120" align="center">
-        <template #default="{ row, $index }">
-          <el-button link type="primary" size="small" @click="editRule($index)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="deleteRule($index)">删除</el-button>
+      <el-table-column label="操作" width="150" align="center">
+        <template #default="{ $index }">
+          <div class="rule-actions">
+            <el-button class="rule-actions__edit" size="small" @click="editRule($index)">
+              <el-icon><EditPen /></el-icon>
+            </el-button>
+            <div class="rule-actions__sort">
+              <el-button
+                size="small"
+                :disabled="$index === 0"
+                @click="moveRule($index, -1)"
+              >
+                <el-icon><ArrowUp /></el-icon>
+              </el-button>
+              <el-button
+                size="small"
+                :disabled="$index === securitySettings.cc.customRules.length - 1"
+                @click="moveRule($index, 1)"
+              >
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+            </div>
+            <el-button class="rule-actions__delete" size="small" @click="deleteRule($index)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -112,7 +134,7 @@
     <div class="form-helper" style="padding-left: 20px;">
       <div>1. 自定义规则优先匹配，之后才是上面的默认防护;</div>
       <div>2. 像API请求的放行可以使用此处的自定义规则;</div>
-      <div>3. 规则是从上到下匹配，可拖动规则调整顺序。</div>
+      <div>3. 规则是从上到下匹配，可使用上下按钮调整顺序。</div>
     </div>
 
     <div class="divider"></div>
@@ -162,6 +184,10 @@
             </el-radio-group>
           </div>
           
+          <div v-if="ruleForm.action === 'block'" class="form-helper">
+            匹配后将 IP 加入节点黑名单，时长取自下方「黑白名单时间 → 黑名单时间」（默认 3600 秒）。
+          </div>
+
           <!-- Action Params: Rate Limit -->
           <div v-if="ruleForm.action === 'limit_rate'" class="rule-params">
             <el-form-item label="在" label-width="60px" style="margin-bottom: 5px;">
@@ -323,6 +349,7 @@
 
 <script setup>
 import { ref, watch, onMounted, reactive, computed } from 'vue'
+import { ArrowDown, ArrowUp, Delete, EditPen } from '@element-plus/icons-vue'
 import CountrySelector from '@/components/CountrySelector.vue'
 import { useSiteSettings } from '@/composables/useSiteSettings'
 import request from '@/utils/request'
@@ -589,6 +616,16 @@ const deleteRule = (idx) => {
   handleSave()
 }
 
+const moveRule = (index, direction) => {
+  const rules = securitySettings.cc.customRules
+  if (!rules?.length) return
+  const target = index + direction
+  if (target < 0 || target >= rules.length) return
+  const [item] = rules.splice(index, 1)
+  rules.splice(target, 0, item)
+  handleSave()
+}
+
 const editRule = (idx) => {
   openRuleDialog('update', idx)
 }
@@ -685,5 +722,58 @@ onMounted(() => {
   padding: 10px;
   border-radius: 4px;
   color: var(--control-text);
+}
+
+.rule-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.rule-actions__edit {
+  --el-button-bg-color: var(--el-color-success);
+  --el-button-border-color: var(--el-color-success);
+  --el-button-hover-bg-color: var(--el-color-success-light-3);
+  --el-button-hover-border-color: var(--el-color-success-light-3);
+  --el-button-active-bg-color: var(--el-color-success-dark-2);
+  --el-button-active-border-color: var(--el-color-success-dark-2);
+  color: var(--el-color-white);
+  padding: 5px 8px;
+}
+
+.rule-actions__sort {
+  display: inline-flex;
+  border-radius: var(--el-border-radius-base);
+  overflow: hidden;
+}
+
+.rule-actions__sort .el-button {
+  --el-button-bg-color: var(--el-color-primary);
+  --el-button-border-color: var(--el-color-primary);
+  --el-button-hover-bg-color: var(--el-color-primary-light-3);
+  --el-button-hover-border-color: var(--el-color-primary-light-3);
+  --el-button-active-bg-color: var(--el-color-primary-dark-2);
+  --el-button-active-border-color: var(--el-color-primary-dark-2);
+  color: var(--el-color-white);
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 0;
+}
+
+.rule-actions__sort .el-button + .el-button {
+  margin-left: 0;
+  border-left: 1px solid color-mix(in srgb, var(--el-color-white) 35%, transparent);
+}
+
+.rule-actions__delete {
+  --el-button-bg-color: var(--el-color-danger);
+  --el-button-border-color: var(--el-color-danger);
+  --el-button-hover-bg-color: var(--el-color-danger-light-3);
+  --el-button-hover-border-color: var(--el-color-danger-light-3);
+  --el-button-active-bg-color: var(--el-color-danger-dark-2);
+  --el-button-active-border-color: var(--el-color-danger-dark-2);
+  color: var(--el-color-white);
+  padding: 5px 8px;
 }
 </style>

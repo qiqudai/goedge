@@ -701,7 +701,9 @@ func writeCacheLocations(b *strings.Builder, domain edgeDomain, tls bool) {
 	}
 	seedLocation("= /_guard/captcha.png", "reserved:guard_captcha")
 	seedLocation("= /_guard/rotate_image", "reserved:guard_rotate")
+	seedLocation("^~ /@cdn_guard_render/", "reserved:guard_render")
 	seedLocation("^~ /_guard/", "reserved:guard_dir")
+	seedLocation("^~ /_cdn_conf/", "reserved:cdn_conf")
 	seedLocation("^~ /.well-known/acme-challenge/", "reserved:acme_challenge")
 	rules := make([]edgeCacheRule, 0)
 	if cacheCfg != nil && len(cacheCfg.Rules) > 0 {
@@ -750,6 +752,22 @@ func writeGuardLocations(b *strings.Builder) {
 		guardDir = abs
 	}
 	guardDir = filepath.ToSlash(guardDir) + "/"
+	b.WriteString("    location @cdn_guard_body {\n")
+	b.WriteString("        internal;\n")
+	b.WriteString("        content_by_lua_block {\n")
+	b.WriteString("            local guard = require \"lua.guard\"\n")
+	b.WriteString("            guard.serve_challenge_by_nonce(ngx.var.cdn_guard_nonce)\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    location ^~ /@cdn_guard_render/ {\n")
+	b.WriteString("        internal;\n")
+	b.WriteString("        content_by_lua_block {\n")
+	b.WriteString("            local uri = ngx.var.uri or \"\"\n")
+	b.WriteString("            local nonce8 = string.match(uri, \"/@cdn_guard_render/([0-9a-f]+)$\")\n")
+	b.WriteString("            local guard = require \"lua.guard\"\n")
+	b.WriteString("            guard.serve_challenge_by_nonce(nonce8)\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n\n")
 	b.WriteString("    location = /_guard/captcha.png {\n")
 	b.WriteString("        default_type image/png;\n")
 	b.WriteString("        content_by_lua_block {\n")
@@ -768,6 +786,15 @@ func writeGuardLocations(b *strings.Builder) {
 
 	b.WriteString("    location ^~ /_guard/ {\n")
 	b.WriteString("        alias " + guardDir + ";\n")
+	b.WriteString("    }\n")
+
+	confDir := filepath.Join(rootDir, "conf")
+	if abs, err := filepath.Abs(confDir); err == nil {
+		confDir = abs
+	}
+	confDir = filepath.ToSlash(confDir) + "/"
+	b.WriteString("    location ^~ /_cdn_conf/ {\n")
+	b.WriteString("        alias " + confDir + ";\n")
 	b.WriteString("    }\n")
 }
 
@@ -942,6 +969,7 @@ func writeProxyBase(b *strings.Builder, domain edgeDomain, customHeaderSet map[s
 	b.WriteString("        limit_req zone=cc_limit burst=20 nodelay;\n")
 	b.WriteString("        limit_conn addr_conn 50;\n")
 	b.WriteString("        set $backend_target \"\";\n")
+	b.WriteString("        set $cdn_guard_nonce \"\";\n")
 	b.WriteString("        access_by_lua_file lua/access_guard.lua;\n")
 	b.WriteString("        header_filter_by_lua_file lua/response_headers.lua;\n")
 	writeProxyHeaderIfMissing(b, customHeaderSet, "Host", originHostHeaderValue(domain))

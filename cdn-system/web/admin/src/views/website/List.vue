@@ -341,15 +341,24 @@ const submitApplyCert = async () => {
     const res = await request.post('/sites/apply_cert', { ids })
     const payload = res?.data || res || {}
     const created = Array.isArray(payload.created_ids) ? payload.created_ids : []
+    const reissued = Array.isArray(payload.reissued_ids) ? payload.reissued_ids : []
     const skipped = Array.isArray(payload.skipped) ? payload.skipped : []
+    const summary = res?.message || payload.message
     if (created.length > 0) {
-      ElMessage.success(`证书申请已提交：${created.length}个`)
+      ElMessage.success(`新申请已提交：${created.length} 个`)
+    }
+    if (reissued.length > 0) {
+      ElMessage.success(`失败证书已重新签发：${reissued.length} 个`)
     }
     if (skipped.length > 0) {
-      const msg = skipped
-        .map(item => `站点${item.site_id || '-'}：${item.reason || '已忽略'}`)
-        .join('\n')
-      ElMessage.warning(msg)
+      if (created.length === 0 && reissued.length === 0 && skipped.length === 1) {
+        ElMessage.warning(skipped[0].reason || summary || '已忽略')
+      } else {
+        const msg = skipped
+          .map(item => `站点 ${item.site_id || '-'}（${item.domain || '-'}）：${item.reason || '已忽略'}`)
+          .join('\n')
+        ElMessage.warning(msg)
+      }
     }
     applyCertVisible.value = false
     fetchSites()

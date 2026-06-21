@@ -1131,7 +1131,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '@/utils/request'
+import request, { API_BASE } from '@/utils/request'
 import CacheRuleDialog from '@/components/CacheRuleDialog.vue'
 import HeaderRuleDialog from '@/components/HeaderRuleDialog.vue'
 import RedirectRuleDialog from '@/components/RedirectRuleDialog.vue'
@@ -1684,7 +1684,7 @@ const loadAcls = async () => {
   if (loading.acls) return
   loading.acls = true
   try {
-    const res = await request.get('/acls', { baseURL: '/api/v1' })
+    const res = await request.get('/acls', { baseURL: `${API_BASE}/api/v1` })
     aclList.value = resolveListResult(res)
   } catch (e) {
     console.error(e)

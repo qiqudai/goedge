@@ -14,6 +14,7 @@
       placeholder="请输入 HTML 模板"
       font-family="monospace"
       @update:model-value="$emit('update:modelValue', $event)"
+      @blur="$emit('blur', $event)"
     />
   </div>
 </template>
@@ -29,7 +30,7 @@ const props = defineProps({
   }
 })
 
-defineEmits(['update:modelValue'])
+defineEmits(['update:modelValue', 'blur'])
 
 const templateKeys = computed(() => extractTemplateKeys(props.modelValue))
 const formatTemplateKey = key => `{{${key}}}`

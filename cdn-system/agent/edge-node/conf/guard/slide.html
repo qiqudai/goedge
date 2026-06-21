@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="{{html_lang}}">
 <head>
-<title>拖动验证</title>
+<title>{{page_title}}</title>
 <meta charset='utf-8'/>
 <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
 <meta name='apple-mobile-web-app-capable' content='yes'>
@@ -135,7 +135,7 @@ body{ margin:auto; padding:0;font-family: 'Microsoft Yahei',Hiragino Sans GB, We
 <div class='alert alert-success' role='alert'>
   <span class='glyphicon glyphicon-exclamation-sign' aria-hidden='true'></span>
   <span class='sr-only'>Error:</span>
-  &nbsp;网站当前访问量较大，请拖动滑块后继续访问
+  &nbsp;{{traffic_notice}}
 </div>
 <form class='form-inline'>
 <div class='panel panel-success'>
@@ -143,7 +143,7 @@ body{ margin:auto; padding:0;font-family: 'Microsoft Yahei',Hiragino Sans GB, We
   <div class='row'>
 <div class='stage'>
     <div class='slider' id='slider'>
-      <div class='tips'>向右滑动验证</div>
+      <div class='tips'>{{slide_hint}}</div>
       <div class='track' id='track'>
         <div class='bg-green'></div>
       </div>

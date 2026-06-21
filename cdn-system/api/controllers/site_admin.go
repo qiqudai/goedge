@@ -1256,6 +1256,7 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 
 	skipped := make([]applyCertSkipItem, 0, len(sites))
 	createdIDs := make([]int64, 0, len(sites))
+	reissuedIDs := make([]int64, 0, len(sites))
 	appliedSiteIDs := make([]int64, 0, len(sites))
 	for _, site := range sites {
 		if len(site.Domains) == 0 {
@@ -1266,8 +1267,49 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			skipped = append(skipped, applyCertSkipItem{
 				SiteID: site.ID,
 				Domain: site.Domains[0],
-				Reason: "该网站已开启https，已忽略，继续下一个申请",
+				Reason: T("Site HTTPS already enabled, skipped"),
 			})
+			continue
+		}
+
+		existingCert, existingAction, existingDomain, err := resolveExistingCertForApply(site.UserID, site.Domains)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load certificates")})
+			return
+		}
+		if existingAction == "issued" {
+			skipped = append(skipped, applyCertSkipItem{
+				SiteID: site.ID,
+				Domain: existingDomain,
+				Reason: fmt.Sprintf(T("Certificate already issued for domain %s"), existingDomain),
+			})
+			continue
+		}
+		if existingAction == "in_progress" {
+			skipped = append(skipped, applyCertSkipItem{
+				SiteID: site.ID,
+				Domain: existingDomain,
+				Reason: fmt.Sprintf(T("Certificate issuance in progress for domain %s"), existingDomain),
+			})
+			continue
+		}
+		if existingAction == "failed" && existingCert != nil {
+			certID := int64(existingCert.ID)
+			if err := db.DB.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Model(&models.Cert{}).Where("id = ?", existingCert.ID).Updates(map[string]interface{}{
+					"state":     "waiting",
+					"ret":       "",
+					"update_at": time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				return updateSitePendingCertificate(tx, site, certID)
+			}); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create cert")})
+				return
+			}
+			reissuedIDs = append(reissuedIDs, certID)
+			appliedSiteIDs = append(appliedSiteIDs, site.ID)
 			continue
 		}
 
@@ -1276,10 +1318,6 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			dnsapi = 0
 		}
 
-		if err := ensureNoExistingCert(site.UserID, site.Domains); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
-			return
-		}
 		cert := models.Cert{
 			UserID:      int(site.UserID),
 			Name:        defaultCertName(site.Domains[0]),
@@ -1319,36 +1357,7 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			).Create(&cert).Error; err != nil {
 				return err
 			}
-			now := time.Now()
-			siteUpdates := map[string]interface{}{
-				"update_at": now,
-			}
-			settings := site.Settings
-			if settings == nil {
-				settings = map[string]interface{}{}
-			}
-			httpsCfg, ok := settings["https"].(map[string]interface{})
-			if !ok || httpsCfg == nil {
-				httpsCfg = map[string]interface{}{}
-				settings["https"] = httpsCfg
-			}
-			httpsCfg["enable"] = false
-			httpsCfg["state"] = "pending_issue"
-			httpsCfg["pending_certificate_id"] = cert.ID
-			httpsCfg["certificate_id"] = 0
-			httpsCfg["active_certificate_id"] = 0
-			httpsCfg["last_error"] = ""
-			if settingsRaw, err := json.Marshal(settings); err == nil {
-				if tx.Migrator().HasColumn(&models.Site{}, "settings") {
-					siteUpdates["settings"] = string(settingsRaw)
-				} else {
-					siteUpdates["SettingsRaw"] = string(settingsRaw)
-				}
-			}
-			if err := tx.Model(&models.Site{}).Where("id = ?", site.ID).Updates(siteUpdates).Error; err != nil {
-				return err
-			}
-			return nil
+			return updateSitePendingCertificate(tx, site, int64(cert.ID))
 		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create cert")})
 			return
@@ -1361,16 +1370,34 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 	if len(appliedSiteIDs) > 0 {
 		services.BumpConfigVersion("site", appliedSiteIDs)
 	}
+	issueIDs := make([]int64, 0, len(createdIDs)+len(reissuedIDs))
+	issueIDs = append(issueIDs, createdIDs...)
+	issueIDs = append(issueIDs, reissuedIDs...)
 	if len(createdIDs) > 0 {
 		services.BumpConfigVersion("cert", createdIDs)
-		services.IssueCertsAsync(time.Now().Unix(), createdIDs)
+	}
+	if len(reissuedIDs) > 0 {
+		services.BumpConfigVersion("cert", reissuedIDs)
+	}
+	if len(issueIDs) > 0 {
+		services.IssueCertsAsync(time.Now().Unix(), issueIDs)
+	}
+
+	messageKey := "Certificate apply queued"
+	if len(issueIDs) == 0 && len(skipped) > 0 {
+		messageKey = "Certificate apply skipped, already issued"
+	} else if len(reissuedIDs) > 0 && len(createdIDs) == 0 {
+		messageKey = "Certificate reissue queued"
+	} else if len(reissuedIDs) > 0 {
+		messageKey = "Certificate apply queued with reissue"
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": T("Certificate apply queued"),
+		"message": T(messageKey),
 		"data": gin.H{
-			"created_ids": createdIDs,
-			"skipped":     skipped,
+			"created_ids":  createdIDs,
+			"reissued_ids": reissuedIDs,
+			"skipped":      skipped,
 		},
 	})
 }
@@ -1387,25 +1414,110 @@ func isSiteHTTPSOn(site models.Site) bool {
 	return httpsOn
 }
 
-func ensureNoExistingCert(userID int64, domains []string) error {
-	if len(domains) == 0 {
-		return errors.New("domain is required")
+func updateSitePendingCertificate(tx *gorm.DB, site models.Site, certID int64) error {
+	now := time.Now()
+	siteUpdates := map[string]interface{}{
+		"update_at": now,
 	}
+	settings := site.Settings
+	if settings == nil {
+		settings = map[string]interface{}{}
+	}
+	httpsCfg, ok := settings["https"].(map[string]interface{})
+	if !ok || httpsCfg == nil {
+		httpsCfg = map[string]interface{}{}
+		settings["https"] = httpsCfg
+	}
+	httpsCfg["enable"] = false
+	httpsCfg["state"] = "pending_issue"
+	httpsCfg["pending_certificate_id"] = certID
+	httpsCfg["certificate_id"] = 0
+	httpsCfg["active_certificate_id"] = 0
+	httpsCfg["last_error"] = ""
+	if settingsRaw, err := json.Marshal(settings); err == nil {
+		if tx.Migrator().HasColumn(&models.Site{}, "settings") {
+			siteUpdates["settings"] = string(settingsRaw)
+		} else {
+			siteUpdates["SettingsRaw"] = string(settingsRaw)
+		}
+	}
+	return tx.Model(&models.Site{}).Where("id = ?", site.ID).Updates(siteUpdates).Error
+}
+
+func resolveExistingCertForApply(userID int64, domains []string) (*models.Cert, string, string, error) {
+	if len(domains) == 0 {
+		return nil, "", "", nil
+	}
+	var issuedCert *models.Cert
+	var issuedDomain string
+	var failedCert *models.Cert
+	var failedDomain string
+	var inProgressCert *models.Cert
+	var inProgressDomain string
+
 	for _, domain := range domains {
 		domain = strings.TrimSpace(domain)
 		if domain == "" {
 			continue
 		}
-		if exists, err := certExistsForDomain(userID, domain); err != nil {
-			return err
-		} else if exists {
-			return fmt.Errorf("certificate already exists for domain %s", domain)
+		cert, err := findCertForUserDomain(userID, domain)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if cert == nil {
+			continue
+		}
+		state := strings.ToLower(strings.TrimSpace(cert.State))
+		switch {
+		case certIsIssuedState(state):
+			if issuedCert == nil {
+				issuedCert = cert
+				issuedDomain = domain
+			}
+		case state == "fail":
+			if failedCert == nil {
+				failedCert = cert
+				failedDomain = domain
+			}
+		case certIsInProgressState(state):
+			if inProgressCert == nil {
+				inProgressCert = cert
+				inProgressDomain = domain
+			}
+		default:
+			if issuedCert == nil {
+				issuedCert = cert
+				issuedDomain = domain
+			}
 		}
 	}
-	return nil
+
+	if issuedCert != nil {
+		return issuedCert, "issued", issuedDomain, nil
+	}
+	if inProgressCert != nil {
+		return inProgressCert, "in_progress", inProgressDomain, nil
+	}
+	if failedCert != nil {
+		return failedCert, "failed", failedDomain, nil
+	}
+	return nil, "", "", nil
 }
 
-func certExistsForDomain(userID int64, domain string) (bool, error) {
+func certIsIssuedState(state string) bool {
+	return state == "ready" || state == "success"
+}
+
+func certIsInProgressState(state string) bool {
+	switch state {
+	case "waiting", "issuing", "dns_pending":
+		return true
+	default:
+		return false
+	}
+}
+
+func findCertForUserDomain(userID int64, domain string) (*models.Cert, error) {
 	var cert models.Cert
 	patterns := []string{
 		domain,
@@ -1417,11 +1529,11 @@ func certExistsForDomain(userID int64, domain string) (bool, error) {
 		Where("(domain = ? OR domain LIKE ? OR domain LIKE ? OR domain LIKE ?)", patterns[0], patterns[1], patterns[2], patterns[3])
 	if err := query.First(&cert).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
+			return nil, nil
 		}
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	return &cert, nil
 }
 
 func resolveCertDefaults(userID int64) (string, int) {

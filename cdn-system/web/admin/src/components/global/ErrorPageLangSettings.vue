@@ -5,7 +5,11 @@
     </template>
     <el-form label-width="140px">
       <el-form-item label="语言策略">
-        <el-radio-group :model-value="modelValue.lang_mode" @update:model-value="updateField('lang_mode', $event)">
+        <el-radio-group
+          :model-value="modelValue.lang_mode"
+          @update:model-value="updateField('lang_mode', $event)"
+          @change="emitSave"
+        >
           <el-radio value="browser">跟随浏览器语言</el-radio>
           <el-radio value="fixed">固定默认语言</el-radio>
         </el-radio-group>
@@ -18,6 +22,8 @@
           default-first-option
           style="width: 280px"
           @update:model-value="updateDefaultLang"
+          @change="emitSave"
+          @blur="emitSave"
         >
           <el-option
             v-for="item in localeOptions"
@@ -36,6 +42,8 @@
           default-first-option
           style="width: 100%; max-width: 720px"
           @update:model-value="updateEnabledLangs"
+          @change="emitSave"
+          @blur="emitSave"
         >
           <el-option
             v-for="item in localeOptions"
@@ -44,7 +52,7 @@
             :value="item.value"
           />
         </el-select>
-        <div class="form-tip">可搜索 BCP47 语言代码并添加，例如 zh-CN、en、ja</div>
+        <div class="form-tip">可搜索 BCP47 语言代码并添加，例如 zh-CN、en、ja。启用语言同时用于错误页与 CC 防御验证页。</div>
       </el-form-item>
     </el-form>
   </el-card>
@@ -61,7 +69,11 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'save'])
+
+const emitSave = () => {
+  emit('save')
+}
 
 const localeOptions = COMMON_ERROR_PAGE_LOCALES
 

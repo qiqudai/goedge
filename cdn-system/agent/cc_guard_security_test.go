@@ -77,11 +77,13 @@ func TestCCGuardSecurityAssets(t *testing.T) {
 		"cc_matcher",
 		"url_auth",
 		"rule_should_stop",
+		"finalize_allow",
 		"breakMatch",
 		"probe_filter",
 		"resolve_effective_rule_id",
 		"cc_auto_switch",
 		"enforce_action",
+		"blacklist_on_trigger",
 		"cc_ipset",
 		"cc_exit",
 	)

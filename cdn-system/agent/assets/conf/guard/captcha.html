@@ -1,13 +1,12 @@
 <!doctype html>
-<html>
+<html lang="{{html_lang}}">
 <head>
-<html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="format-detection" content="telephone=no">
-<title>CC LOCK</title>
+<title>{{page_title}}</title>
 <link rel="stylesheet" href="//apps.bdimg.com/libs/bootstrap/3.3.4/css/bootstrap.min.css">
 <script type="text/javascript" src="//apps.bdimg.com/libs/jquery/1.7.2/jquery.min.js"></script>
 <style>
@@ -46,24 +45,24 @@ body{ margin:auto; padding:0;font-family: "Microsoft Yahei",Hiragino Sans GB, We
 <div class="alert alert-success" role="alert">
   <span class="glyphicon glyphicon-exclamation-sign" aria-hidden="true"></span>
   <span class="sr-only">Error:</span>
-  &nbsp;网站当前访问量较大，请输入验证码后继续访问
+  &nbsp;{{traffic_notice}}
 </div>
 <form class="form-inline">
 <div class="panel panel-success">
   <div class="panel-body">
   <div class="row">
-  <div class="col-md-3"><div class="txts">请输入验证码</div></div>
+  <div class="col-md-3"><div class="txts">{{captcha_label}}</div></div>
   <div class="col-md-9">
   <div class="bds row">
-  请输入图片中的验证码，不区分大小写<br>
+  {{captcha_hint}}<br>
   <input type="text" name="response" class="form-control" id="response"  style="width:40%;display:inline;">&nbsp;
-  <span style="width:60px" id="captcha" class="yz"  alt="Captcha image"><img class="captcha-code" src="/_guard/captcha.png"></span>&nbsp;<span><a class="refresh-captcha-code">换一个</a></span>
+  <span style="width:60px" id="captcha" class="yz"  alt="Captcha image"><img class="captcha-code" src="/_guard/captcha.png"></span>&nbsp;<span><a class="refresh-captcha-code">{{refresh}}</a></span>
   <p><span style="color:red" id="notice"></span></p>
   </div>
   </div>
   </div> 
   </div>
-   <div class="panel-footer"><input id="access" type="botton" class="btn btn-success" value="进入网站" /></div>
+   <div class="panel-footer"><input id="access" type="botton" class="btn btn-success" value="{{enter_site}}" /></div>
 </div>
 </form>
 </div>

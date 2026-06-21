@@ -11,4 +11,21 @@ api/acme/
 
 # Compiled binaries
 api/api-linux-amd64
+api/cdn-api
 agent/cdn-agent-linux-amd64
+agent/cdn-agent
+
+# Local runtime/generated nginx fragments
+agent/assets/conf/dynamic/
+agent/edge-node/conf/dynamic/
+
+# Guard rotate image pool (generated/local)
+agent/assets/conf/guard/rotate/
+agent/edge-node/conf/guard/rotate/
+
+# Local tools and test artifacts
+.tools/
+agent/testdata/cc_smoke/docker-build/
+agent/testdata/cc_smoke/manual-run/
+agent/testdata/cc_smoke/runtime/
+docker/cc-e2e/stage/

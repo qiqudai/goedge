@@ -123,6 +123,7 @@ func getDefaultConfig() models.GlobalConfig {
 		},
 		ErrorPageI18n: services.DefaultErrorPageI18nSettings(),
 		ErrorPages:    services.DefaultErrorPageDefinitions(),
+		GuardPages:    services.DefaultGuardPageDefinitions(),
 	}
 }
 
@@ -160,7 +161,11 @@ func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
 	if len(config.ErrorPages) == 0 {
 		config.ErrorPages = getDefaultConfig().ErrorPages
 	}
+	if len(config.GuardPages) == 0 {
+		config.GuardPages = getDefaultConfig().GuardPages
+	}
 	services.NormalizeGlobalConfigErrorPages(&config)
+	services.NormalizeGlobalConfigGuardPages(&config)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -176,7 +181,12 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 		return
 	}
 	services.NormalizeGlobalConfigErrorPages(&req)
+	services.NormalizeGlobalConfigGuardPages(&req)
 	if err := services.ValidateErrorPageConfig(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": err.Error()})
+		return
+	}
+	if err := services.ValidateGuardPageConfig(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": err.Error()})
 		return
 	}
