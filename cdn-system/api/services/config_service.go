@@ -1023,11 +1023,10 @@ func extractRegionBlock(site models.Site) []string {
 	if site.Settings != nil {
 		if access, ok := site.Settings["access"].(map[string]interface{}); ok {
 			if rb, ok := access["region_block"]; ok {
-				if isRegionBlockDisabled(rb) {
-					return nil
-				}
-				if list := parseRegionBlockConfig(rb); len(list) > 0 {
-					return list
+				if !isRegionBlockDisabled(rb) {
+					if list := parseRegionBlockConfig(rb); len(list) > 0 {
+						return list
+					}
 				}
 			}
 		}

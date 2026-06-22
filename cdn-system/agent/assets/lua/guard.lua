@@ -204,6 +204,7 @@ local file_cache = {}
 -- read_json/preload_assets reference it earlier. Without this local
 -- declaration the earlier references bind to a nil global and abort.
 local read_file
+local secret
 local GUARD_TEMPLATE_FILES = {
     "browser_verify_auto.html",
     "delay_jump.html",
@@ -619,7 +620,7 @@ end
 
 local cached_secret
 
-local function secret()
+secret = function()
     local cfg = _G.cdn_config
     if cfg and cfg.waf and type(cfg.waf.secret_key) == "string" and cfg.waf.secret_key ~= "" then
         cached_secret = cfg.waf.secret_key

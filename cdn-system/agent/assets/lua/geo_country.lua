@@ -229,7 +229,11 @@ function M.from_ip2region(raw)
     local last = raw:match("([^|]+)$")
     if last then
         last = string.upper(trim(last))
-        if last:match("^[A-Z]{2}$") then
+        -- Lua patterns do not support PCRE {2}; use explicit letter counts for ISO codes.
+        if #last == 2 and last:match("^[%a][%a]$") then
+            return last
+        end
+        if #last == 3 and last:match("^[%a][%a][%a]$") then
             return last
         end
     end
