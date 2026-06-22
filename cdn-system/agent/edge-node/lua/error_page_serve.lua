@@ -162,8 +162,12 @@ function _M.serve()
 
     local client_ip = ngx.var.cdn_client_ip or ngx.var.remote_addr or ""
     local node_ip = ngx.var.server_addr or ""
+    local host = ngx.var.host or ""
+    local request_id = ngx.var.request_id or ngx.var.connection or ""
     content = string.gsub(content, "{client_ip}", client_ip)
     content = string.gsub(content, "{node_ip}", node_ip)
+    content = string.gsub(content, "{host}", host)
+    content = string.gsub(content, "{request_id}", tostring(request_id))
 
     ngx.header["Content-Type"] = "text/html; charset=UTF-8"
     ngx.say(content)

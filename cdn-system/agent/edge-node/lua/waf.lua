@@ -10,6 +10,7 @@ local UA_BLACKLIST = { "sqlmap", "nikto", "w3af", "nmap" }
 local cdnfly = require "lua.cdnfly_wrapper"
 local geo_country = require "lua.geo_country"
 local guard = require "lua.guard"
+local error_page_block = require "lua.error_page_block"
 
 local function build_waf_reason(rule, extras)
     local parts = {"type=waf", "module=lua.waf", "rule=" .. tostring(rule or "unknown"), "rule_id=0"}
@@ -208,10 +209,20 @@ local function should_block_page_rate_limit(config, ip)
     return count > limit
 end
 
+local function exit_status_for_block(reason, status, default_status)
+    if error_page_block.is_access_block_reason(reason) then
+        return error_page_block.ACCESS_BLOCKED_STATUS
+    end
+    if default_status ~= nil then
+        return status or default_status
+    end
+    return status or 403
+end
+
 local function block_request(config, ip, reason, status, extras)
     if not config or not config.waf then
         mark_block_source(build_waf_reason(reason or "waf", extras))
-        ngx.exit(status or 403)
+        ngx.exit(exit_status_for_block(reason, status, 403))
     end
     if is_log_only(config) then
         waf_debug_log(config, "WAF log_only skip: ", reason or "")
@@ -241,15 +252,16 @@ local function block_request(config, ip, reason, status, extras)
     end
     table.insert(details, "mode=" .. tostring(action))
     mark_block_source(build_waf_reason(reason or "waf", details))
+    local exit_status = exit_status_for_block(reason, status, nil)
 
     if action == "ipset" then
         set_ip_blacklist(config, ip)
-        ngx.exit(status or 403)
+        ngx.exit(exit_status)
     elseif action == "page" then
         if config.waf.block_page_traffic_free == true then
             ngx.ctx.waf_block_page = true
         end
-        ngx.exit(status or 418)
+        ngx.exit(exit_status_for_block(reason, status, 418))
     end
 
     ngx.exit(444)
@@ -345,15 +357,12 @@ local function resolve_country(ip)
         country = res.country or res.region or res[1] or ""
     else
         raw = tostring(res)
-        local first = raw:match("^[^|]+") or raw
-        country = first
+        country = geo_country.from_ip2region(raw)
+    end
+    if country == "" then
+        return ""
     end
     country = string.upper(country)
-    local idx = string.find(country, "-", 1, true)
-    if idx and idx > 1 then
-        country = string.sub(country, 1, idx - 1)
-    end
-    country = geo_country.to_iso(country, raw)
     if cache and country ~= "" then
         cache:set("geo:" .. ip, country, 600)
     end
@@ -369,11 +378,7 @@ local function region_blocked(region_list, ip)
         return false
     end
     for _, item in ipairs(region_list) do
-        local code = string.upper(tostring(item or ""))
-        local idx = string.find(code, "-", 1, true)
-        if idx and idx > 1 then
-            code = string.sub(code, 1, idx - 1)
-        end
+        local code = geo_country.to_iso(tostring(item or ""), tostring(item or ""))
         if code ~= "" and code == country then
             return true
         end

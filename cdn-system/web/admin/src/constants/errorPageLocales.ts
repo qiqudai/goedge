@@ -31,7 +31,8 @@ export const ERROR_PAGE_CODES = [
   { key: 'domain_invalid', label: '域名无效' },
   { key: 'conn_limit', label: '连接数超限' },
   { key: 'timeout', label: '套餐到期' },
-  { key: 'ip', label: '限制IP访问' }
+  { key: 'ip', label: '限制IP访问' },
+  { key: 'access_blocked', label: 'IP/地区拦截' }
 ]
 
 export const DEFAULT_ERROR_PAGE_I18N = {

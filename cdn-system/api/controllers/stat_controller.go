@@ -30,11 +30,14 @@ func (c *StatController) ListRanking(ctx *gin.Context) {
 	}
 
 	type RankItem struct {
-		Rank          int    `json:"rank"`
-		Item          string `json:"item"` // Domain, URL, IP, etc.
-		RequestCount  int    `json:"request_count"`
-		OutTraffic    string `json:"out_traffic"`
-		OriginTraffic string `json:"origin_traffic"`
+		Rank          int                      `json:"rank"`
+		Item          string                   `json:"item"` // Domain, URL, IP, etc.
+		Site          string                   `json:"site,omitempty"`
+		URI           string                   `json:"uri,omitempty"`
+		RequestCount  int                      `json:"request_count"`
+		OutTraffic    string                   `json:"out_traffic"`
+		OriginTraffic string                   `json:"origin_traffic"`
+		IPs           []services.HotURLIPCount `json:"ips,omitempty"`
 	}
 
 	hostFilter := resolveHostFilter(ctx)
@@ -52,6 +55,45 @@ func (c *StatController) ListRanking(ctx *gin.Context) {
 			"code": 0,
 			"data": gin.H{
 				"list":     paged,
+				"total":    total,
+				"page":     page,
+				"pageSize": pageSize,
+			},
+		})
+		return
+	}
+
+	if rankType == "url_ip" {
+		source, err := services.QueryHotURLRanking(statsRange.Start, statsRange.End, hostFilter, keyword, maxSize)
+		if err != nil {
+			log.Printf("[stats] hot url ranking query failed: err=%v", err)
+			source = []services.HotURLIPItem{}
+		}
+		total := len(source)
+		start, end := paginateBounds(page, pageSize, total)
+		pagedSource := source[start:end]
+		ipMap, err := services.QueryHotURLTopIPs(statsRange.Start, statsRange.End, hostFilter, pagedSource, 100)
+		if err != nil {
+			log.Printf("[stats] hot url ip query failed: err=%v", err)
+			ipMap = map[string][]services.HotURLIPCount{}
+		}
+		list := make([]RankItem, 0, len(pagedSource))
+		for i, item := range pagedSource {
+			list = append(list, RankItem{
+				Rank:          start + i + 1,
+				Item:          item.Item,
+				Site:          item.Site,
+				URI:           item.URI,
+				RequestCount:  int(item.RequestCount),
+				OutTraffic:    services.FormatBytes(item.OutBytes),
+				OriginTraffic: services.FormatBytes(item.OriginBytes),
+				IPs:           ipMap[item.Site+"\x00"+item.URI],
+			})
+		}
+		ctx.JSON(http.StatusOK, gin.H{
+			"code": 0,
+			"data": gin.H{
+				"list":     list,
 				"total":    total,
 				"page":     page,
 				"pageSize": pageSize,

@@ -9,6 +9,7 @@ local cc = require "lua.cc"
 local acl = require "lua.acl"
 local cache = require "lua.cache"
 local geo_country = require "lua.geo_country"
+local error_page_block = require "lua.error_page_block"
 local cjson = require "cjson.safe"
 
 local function build_reason(source_type, rule, extras)
@@ -36,7 +37,7 @@ end
 
 -- 1. IP Blocking Check (Legacy/Fallback)
 if ip_block.is_blocked(ngx.var.remote_addr) then
-    block_request(build_reason("ip_block", "ip_block", {"condition=ip_in_blacklist"}), 418)
+    error_page_block.exit_blocked(build_reason("ip_block", "ip_block", {"condition=ip_in_blacklist"}))
 end
 
 -- 2. Anti-CC Check (Legacy/Fallback)
@@ -84,15 +85,12 @@ local function resolve_country(ip)
         country = res.country or res.region or res[1] or ""
     else
         raw = tostring(res)
-        local first = raw:match("^[^|]+") or raw
-        country = first
+        country = geo_country.from_ip2region(raw)
+    end
+    if country == "" then
+        return ""
     end
     country = string.upper(country)
-    local idx = string.find(country, "-", 1, true)
-    if idx and idx > 1 then
-        country = string.sub(country, 1, idx - 1)
-    end
-    country = geo_country.to_iso(country, raw)
     if cache and country ~= "" then
         cache:set("geo:" .. ip, country, 600)
     end
@@ -112,7 +110,8 @@ local function region_blocked(domain_conf, ip)
         return false
     end
     for _, code in ipairs(list) do
-        if string.upper(code) == country then
+        local normalized = geo_country.to_iso(tostring(code or ""), tostring(code or ""))
+        if normalized ~= "" and normalized == country then
             return true
         end
     end
@@ -657,10 +656,10 @@ else
     end
 
     if not whitelisted and ip_in_list(domain_conf.black_ips, client_ip) then
-        ngx.exit(403)
+        error_page_block.exit_blocked(build_reason("local_protection", "ip_deny", {"condition=site_black_ips"}))
     end
     if not whitelisted and region_blocked(domain_conf, client_ip) then
-        ngx.exit(403)
+        error_page_block.exit_blocked(build_reason("local_protection", "region_block", {"condition=region_block"}))
     end
     if not whitelisted and domain_conf.block_transparent_proxy then
         local xff = ngx.var.http_x_forwarded_for

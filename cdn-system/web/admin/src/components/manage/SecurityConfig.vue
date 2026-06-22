@@ -82,17 +82,23 @@
     </div>
 
     <el-table :data="securitySettings.cc.customRules" border style="width: 100%; margin-bottom: 10px;">
-      <el-table-column label="匹配条件" min-width="200">
+      <el-table-column label="规则" min-width="320">
         <template #default="{ row }">
-          <div v-for="(m, idx) in row.matchers" :key="idx" style="font-size: 12px;">
-            {{ getMatcherText(m) }}
+          <div class="custom-rule-display">
+            <template v-if="row.matchers && row.matchers.length">
+              <div v-for="(m, idx) in row.matchers" :key="idx">
+                匹配条件 {{ getMatcherText(m) }}
+              </div>
+            </template>
+            <div v-else>匹配条件 匹配所有请求</div>
+            <div class="custom-rule-filter">
+              <div>执行过滤 {{ getActionSummary(row) }}</div>
+              <template v-if="row.action === 'limit_rate'">
+                <div>总请求允许 {{ Number(row.actionParams?.requests) || 0 }}次/{{ Number(row.actionParams?.seconds) || 0 }}秒</div>
+                <div>同URL允许 {{ Number(row.actionParams?.urlRequests) || 0 }}次/{{ Number(row.actionParams?.seconds) || 0 }}秒</div>
+              </template>
+            </div>
           </div>
-          <div v-if="!row.matchers || !row.matchers.length">匹配所有请求</div>
-        </template>
-      </el-table-column>
-      <el-table-column label="执行过滤" width="120">
-        <template #default="{ row }">
-          {{ getActionText(row.action) }}
         </template>
       </el-table-column>
       <el-table-column label="匹配模式" width="120">
@@ -642,6 +648,11 @@ const getActionText = (val) => {
   return actions.find(i => i.value === val)?.label || val
 }
 
+const getActionSummary = (row) => {
+  if (row?.action === 'limit_rate') return '针对单个IP地址:'
+  return getActionText(row?.action)
+}
+
 const isVerificationAction = (val) => {
   return ['invisible', '5s', 'click', 'click_simple', 'slide', 'slide_simple', 'captcha', 'rotate'].includes(val)
 }
@@ -700,6 +711,17 @@ onMounted(() => {
 .matcher-text {
   color: var(--control-text);
   font-size: 13px;
+}
+
+.custom-rule-display {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+.custom-rule-filter {
+  margin-top: 8px;
 }
 
 .matcher-add {

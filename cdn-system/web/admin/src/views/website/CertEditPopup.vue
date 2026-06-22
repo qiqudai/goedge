@@ -56,10 +56,10 @@
 
           <template v-if="showCertFields">
             <el-form-item label="证书">
-              <el-input v-model="form.cert" type="textarea" :rows="4" placeholder="-----BEGIN CERTIFICATE-----" />
+              <el-input v-model="form.cert" type="textarea" :rows="4" placeholder="-----BEGIN CERTIFICATE-----" @blur="handleCertPemBlur" />
             </el-form-item>
             <el-form-item label="密钥">
-              <el-input v-model="form.key" type="textarea" :rows="4" placeholder="-----BEGIN PRIVATE KEY-----" />
+              <el-input v-model="form.key" type="textarea" :rows="4" placeholder="-----BEGIN PRIVATE KEY-----" @blur="handleKeyPemBlur" />
             </el-form-item>
           </template>
 
@@ -232,6 +232,7 @@ import { ref, reactive, watch, computed } from 'vue'
 import { InfoFilled, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import { looksLikeCertificatePem, looksLikePrivateKeyPem, normalizeUploadPemFields } from '@/utils/pem'
 
 const props = defineProps({
   visible: Boolean,
@@ -363,6 +364,10 @@ const initForm = (data) => {
    form.dnsapi = data.dnsapi || 0
    form.cert = data.cert 
    form.key = data.key 
+   if (form.type === 'upload' && form.key && looksLikeCertificatePem(form.key) && !looksLikePrivateKeyPem(form.key)) {
+     form.key = ''
+     ElMessage.warning('密钥数据无效（存的是证书内容），请重新粘贴私钥')
+   }
    form.auto_renew = data.auto_renew !== false
    hasStoredCert.value = !!(data.cert || data.key)
    
@@ -409,6 +414,30 @@ const resetForm = () => {
   wildcardChallenge.value = null
 }
 
+const handleCertPemBlur = () => {
+  if (form.type !== 'upload') return
+  const normalized = normalizeUploadPemFields(form.cert, form.key)
+  form.cert = normalized.cert
+  if (normalized.key) {
+    form.key = normalized.key
+  }
+}
+
+const handleKeyPemBlur = () => {
+  if (form.type !== 'upload') return
+  const normalized = normalizeUploadPemFields(form.cert, form.key)
+  if (normalized.key) {
+    form.key = normalized.key
+  }
+  if (!form.cert && normalized.cert) {
+    form.cert = normalized.cert
+  }
+  if (form.key && looksLikeCertificatePem(form.key) && !looksLikePrivateKeyPem(form.key)) {
+    ElMessage.warning('密钥栏不能填写证书内容，请粘贴 BEGIN PRIVATE KEY')
+    form.key = ''
+  }
+}
+
 const submit = () => {
   if (activeTab.value === 'batch') {
      submitBatch()
@@ -425,6 +454,15 @@ const submit = () => {
   // But let's stick to standard single update/create for now unless domains > 1 and it's new.
   
   const payload = { ...form }
+  if (showCertFields.value) {
+    const normalized = normalizeUploadPemFields(payload.cert, payload.key)
+    payload.cert = normalized.cert
+    payload.key = normalized.key
+    if (payload.key && looksLikeCertificatePem(payload.key) && !looksLikePrivateKeyPem(payload.key)) {
+      ElMessage.warning('密钥栏不能填写证书内容，请粘贴私钥')
+      return
+    }
+  }
   if (!showCertFields.value) {
     delete payload.cert
     delete payload.key

@@ -30,6 +30,12 @@ func AccessLogRefererExpr() string {
 	return "if(http_referer = '' OR http_referer = '-', '-', lower(if(extract(http_referer, '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]+)') != '', extract(http_referer, '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]+)'), http_referer)))"
 }
 
+// AccessLogURIPathExpr returns the request URI without query parameters.
+func AccessLogURIPathExpr() string {
+	pathExpr := "replaceRegexpOne(uri, '\\\\?.*$', '')"
+	return fmt.Sprintf("if(%s = '', '/', %s)", pathExpr, pathExpr)
+}
+
 // AccessLogClientCountryExpr returns the normalized display value uploaded by
 // edge nodes for client country rankings.
 func AccessLogClientCountryExpr() string {

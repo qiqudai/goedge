@@ -12,7 +12,7 @@ import (
 	"cdn-api/db"
 )
 
-var blockedStatusCodes = []int{403, 418, 429, 451, 410, 515}
+var blockedStatusCodes = []int{403, 418, 419, 429, 451, 410, 515}
 
 // AccessBucket aggregates stats for a time bucket.
 type AccessBucket struct {

@@ -47,10 +47,16 @@ func (ctrl *CertController) List(c *gin.Context) {
 
 // Upload handles certificate upload
 func (ctrl *CertController) Upload(c *gin.Context) {
-	certModel, err := buildCertFromRequest(c, true)
+	certModel, err := buildCertFromRequest(c, true, false)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 		return
+	}
+	if encKey, err := services.EncryptCertKeyForStore(certModel.Key); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+		return
+	} else {
+		certModel.Key = encKey
 	}
 	// Manual uploaded certificates can not auto renew by ACME.
 	certModel.AutoRenew = false
@@ -90,7 +96,7 @@ func (ctrl *CertController) Update(c *gin.Context) {
 	isAdmin := role == "admin"
 
 	// Allow admin to specify UserID
-	certModel, err := buildCertFromRequest(c, isAdmin)
+	certModel, err := buildCertFromRequest(c, isAdmin, true)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 		return
@@ -108,10 +114,21 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		"update_at": certModel.UpdateAt,
 	}
 
-	certProvided := strings.TrimSpace(certModel.Cert) != "" || strings.TrimSpace(certModel.Key) != ""
+	certText := strings.TrimSpace(certModel.Cert)
+	keyText := strings.TrimSpace(certModel.Key)
+	certProvided := certText != "" || keyText != ""
 	if certModel.Type == "upload" && certProvided {
-		updates["cert"] = certModel.Cert
-		updates["key"] = certModel.Key
+		if certText != "" {
+			updates["cert"] = certText
+		}
+		if keyText != "" {
+			encKey, err := services.EncryptCertKeyForStore(keyText)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+				return
+			}
+			updates["key"] = encKey
+		}
 		updates["auto_renew"] = false
 		updates["state"] = "ready"
 		updates["ret"] = ""
@@ -120,8 +137,8 @@ func (ctrl *CertController) Update(c *gin.Context) {
 		if certModel.StartTime != nil || certModel.ExpireTime != nil {
 			updates["start_time"] = certModel.StartTime
 			updates["expire_time"] = certModel.ExpireTime
-		} else if strings.TrimSpace(certModel.Cert) != "" {
-			if domains, notBefore, notAfter, err := parseCert(certModel.Cert); err == nil {
+		} else if certText != "" {
+			if domains, notBefore, notAfter, err := parseCert(certText); err == nil {
 				updates["start_time"] = notBefore
 				updates["expire_time"] = notAfter
 				if certModel.Domain == "" && len(domains) > 0 {
@@ -162,6 +179,12 @@ func (ctrl *CertController) Update(c *gin.Context) {
 			certModel.Ret = ""
 			certModel.TaskID = 0
 			certModel.IssueTaskID = 0
+			if encKey, err := services.EncryptCertKeyForStore(certModel.Key); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+				return
+			} else if encKey != "" {
+				certModel.Key = encKey
+			}
 
 			if createErr := db.DB.Omit("task_id", "issue_task_id").Create(certModel).Error; createErr != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to save certificate")})
@@ -785,13 +808,7 @@ func queryCerts(c *gin.Context, userID *int64) (*certListResult, error) {
 		keyValue := ""
 		if exposeCert {
 			certValue = cert.Cert
-			if strings.TrimSpace(cert.Key) != "" {
-				if dec, err := services.Crypto.Decrypt(cert.Key); err == nil {
-					keyValue = dec
-				} else {
-					keyValue = cert.Key
-				}
-			}
+			keyValue = services.ExposeStoredPrivateKey(cert.Key)
 		}
 		detail := CertDetail{
 			ID:          cert.ID,
@@ -944,7 +961,7 @@ func (ctrl *CertController) UpdateDefaultSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("saved")})
 }
 
-func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error) {
+func buildCertFromRequest(c *gin.Context, allowUserID bool, partial bool) (*models.Cert, error) {
 	var input struct {
 		UserID    int64  `json:"user_id"`
 		Name      string `json:"name"`
@@ -973,11 +990,13 @@ func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error
 		return nil, errors.New("user_id is required")
 	}
 
-	certValue := input.Cert
-	keyValue := input.Key
+	certValue := strings.TrimSpace(input.Cert)
+	keyValue := strings.TrimSpace(input.Key)
 	if typeName != "upload" {
 		certValue = ""
 		keyValue = ""
+	} else {
+		certValue, keyValue = services.NormalizeUploadCertKeyInputs(certValue, keyValue)
 	}
 
 	certModel := &models.Cert{
@@ -996,20 +1015,35 @@ func buildCertFromRequest(c *gin.Context, allowUserID bool) (*models.Cert, error
 	}
 
 	if typeName == "upload" {
-		if strings.TrimSpace(input.Cert) == "" || strings.TrimSpace(input.Key) == "" {
+		if !partial && (certValue == "" || keyValue == "") {
 			return nil, errors.New("cert and key are required for upload")
 		}
-		domains, notBefore, notAfter, err := parseCert(input.Cert)
-		if err != nil {
-			return nil, err
+		if certValue != "" && keyValue != "" {
+			if err := services.ValidateUploadCertKeyPair(certValue, keyValue); err != nil {
+				return nil, err
+			}
+		} else if certValue != "" {
+			if _, _, _, err := parseCert(certValue); err != nil {
+				return nil, err
+			}
+		} else if keyValue != "" {
+			if _, err := services.ParsePrivateKeyPEM(keyValue); err != nil {
+				return nil, err
+			}
 		}
-		if certModel.Domain == "" {
-			certModel.Domain = strings.Join(domains, ",")
-		}
-		certModel.StartTime = &notBefore
-		certModel.ExpireTime = &notAfter
-		if certModel.Name == "" {
-			certModel.Name = defaultCertName(domains[0])
+		if certValue != "" {
+			domains, notBefore, notAfter, err := parseCert(certValue)
+			if err != nil {
+				return nil, err
+			}
+			if certModel.Domain == "" {
+				certModel.Domain = strings.Join(domains, ",")
+			}
+			certModel.StartTime = &notBefore
+			certModel.ExpireTime = &notAfter
+			if certModel.Name == "" && len(domains) > 0 {
+				certModel.Name = defaultCertName(domains[0])
+			}
 		}
 		// Manual uploaded certificates should never auto renew.
 		certModel.AutoRenew = false
@@ -1053,7 +1087,7 @@ func stopIssueTasksByID(taskIDs ...int64) {
 }
 
 func parseCert(certPEM string) ([]string, time.Time, time.Time, error) {
-	block, _ := pem.Decode([]byte(certPEM))
+	block, _ := pem.Decode([]byte(strings.TrimSpace(certPEM)))
 	if block == nil {
 		return nil, time.Time{}, time.Time{}, errors.New("invalid PEM certificate")
 	}
@@ -1228,12 +1262,7 @@ func buildCertZip(domainKey string, certs []models.Cert) ([]byte, string, error)
 		}
 
 		certPem := strings.TrimSpace(cert.Cert)
-		keyPem := strings.TrimSpace(cert.Key)
-		if keyPem != "" {
-			if dec, err := services.Crypto.Decrypt(keyPem); err == nil {
-				keyPem = dec
-			}
-		}
+		keyPem := services.ExposeStoredPrivateKey(cert.Key)
 
 		if err := writeZipFile(writer, base+".pem", certPem+"\n"); err != nil {
 			return nil, "", err

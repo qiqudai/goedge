@@ -53,7 +53,12 @@ func TestCCGuardSecurityAssets(t *testing.T) {
 	assertContains(t, "guard.lua", guardLua,
 		"__cdn_guard_bid",
 		"__cdn_guard_fp",
+		"__cdn_guard_state",
+		"waf.secret_key",
+		"guard:secret",
 		"guard:pass:",
+		"load_state_cookie",
+		"save_state_cookie",
 		"parts[1] ~= \"v3\"",
 		"verify_pass_cookie_value",
 		"is_common_non_browser_request",
@@ -115,9 +120,7 @@ func TestCCGuardSecurityAssets(t *testing.T) {
 
 	fpScript := readAsset(t, "assets/conf/guard/fingerprint.js")
 	assertContains(t, "fingerprint.js", fpScript,
-		"canvasSignal",
-		"webglSignal",
-		"fontSignal",
+		"buildFingerprint",
 		"__cdn_guard_bid",
 		"__cdn_guard_fp",
 	)

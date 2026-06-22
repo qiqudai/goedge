@@ -41,6 +41,7 @@
            <el-radio-group v-model="rankingType" style="margin-bottom: 20px;" @change="handleRankingTypeChange">
              <el-radio-button value="domain">域名排行</el-radio-button>
              <el-radio-button value="url">热门URL</el-radio-button>
+             <el-radio-button value="url_ip">热门URL及IP</el-radio-button>
              <el-radio-button value="latency">耗时排行</el-radio-button>
              <el-radio-button value="ip">客户端IP排行</el-radio-button>
              <el-radio-button value="country">国家排行</el-radio-button>
@@ -72,6 +73,34 @@
         </div>
 
         <el-table :data="rankingList" border style="width: 100%" v-loading="loading">
+          <el-table-column v-if="isHotURLIP" type="expand" width="48">
+            <template #default="scope">
+              <el-table
+                :data="scope.row.ips || []"
+                border
+                size="small"
+                class="ip-detail-table"
+                empty-text="暂无IP访问"
+              >
+                <el-table-column prop="rank" label="排行" width="80" />
+                <el-table-column prop="ip" label="IP地址" min-width="180" />
+                <el-table-column prop="total_request_count" label="统计范围请求次数" sortable />
+                <el-table-column prop="request_count" label="60秒访问次数" sortable />
+                <el-table-column label="操作" width="120" align="center">
+                  <template #default="ipScope">
+                    <el-button
+                      size="small"
+                      type="danger"
+                      link
+                      @click="blockHotURLIP(scope.row, ipScope.row)"
+                    >
+                      加入黑名单
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+          </el-table-column>
           <el-table-column prop="rank" label="排行" width="80" />
           
           <el-table-column :label="itemLabel" min-width="200">
@@ -124,7 +153,7 @@
 <script setup>
 import { ref, onMounted, computed, reactive, watch, nextTick } from 'vue'
 import { Search } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 import * as echarts from 'echarts'
 import AppPagination from '@/components/AppPagination.vue'
@@ -159,6 +188,7 @@ const itemLabel = computed(() => {
     const map = {
         'domain': '域名',
         'url': 'URL',
+        'url_ip': 'URL',
         'latency': 'URL',
         'ip': 'IP地址',
         'country': '国家',
@@ -172,6 +202,7 @@ const searchPlaceholder = computed(() => {
      const map = {
         'domain': '输入域名',
         'url': '输入URL',
+        'url_ip': '输入URL或域名',
         'latency': '输入URL',
         'ip': '输入IP',
         'country': '输入国家',
@@ -182,6 +213,7 @@ const searchPlaceholder = computed(() => {
 })
 
 const isLatency = computed(() => rankingType.value === 'latency')
+const isHotURLIP = computed(() => rankingType.value === 'url_ip')
 
 const formatMilliseconds = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -262,6 +294,29 @@ const handleTimeRangeChange = (val) => {
 const handleRankingPageSizeChange = () => {
   rankingPager.page = 1
   fetchRankingList()
+}
+
+const blockHotURLIP = async (urlRow, ipRow) => {
+  const ip = ipRow?.ip
+  const domain = urlRow?.site
+  if (!ip || !domain) {
+    ElMessage.warning('缺少IP或域名，无法加入黑名单')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定将 ${ip} 加入 ${domain} 的IP黑名单？`, '加入黑名单', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消'
+    })
+    const res = await request.post('/logs/block/block_ip', { ip, domain })
+    if (res.code === 0 || res.code === 200) {
+      ElMessage.success(res.data?.added === false ? '该IP已在黑名单中' : '已加入黑名单并同步配置')
+    }
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    console.error(error)
+  }
 }
 
 // --- Chart Data Fetching & Rendering ---
@@ -358,6 +413,10 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+.ip-detail-table {
+  width: calc(100% - 48px);
+  margin: 8px 0 8px 48px;
 }
 .latency-chip {
   --latency-text: #1f2937;

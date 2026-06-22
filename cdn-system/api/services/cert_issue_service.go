@@ -377,7 +377,7 @@ func ActivatePendingHTTPSForCert(certID int64, certPEM string) {
 		errText := ""
 		for _, domain := range site.Domains {
 			if result := CertificateCoversDomain(certPEM, domain); !result.OK {
-				errText = fmt.Sprintf("certificate does not cover domain: %s", normalizeDomainHostForEdge(domain))
+				errText = FormatCertCoverageError(normalizeDomainHostForEdge(domain), result)
 				break
 			}
 		}

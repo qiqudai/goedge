@@ -1,0 +1,8 @@
+{
+  "source": "https://github.com/lionsoul2014/ip2region",
+  "file": "data/ip2region_v4.xdb",
+  "runtime_name": "ip2region.xdb",
+  "sha256": "cabf0493883e94015da95ce9ef22b514d9494eb47f66b22942c7710c5d6720be",
+  "size_bytes": 10641955,
+  "updated_at": "2026-06-22"
+}

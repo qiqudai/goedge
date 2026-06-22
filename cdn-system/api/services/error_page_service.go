@@ -15,6 +15,7 @@ import (
 var errorPageKeys = []string{
 	"400", "403", "502", "504",
 	"traffic_limit", "site_locked", "domain_invalid", "conn_limit", "timeout", "ip",
+	"access_blocked",
 }
 
 var legacyErrorPageAliases = map[string]string{
@@ -38,6 +39,163 @@ func DefaultErrorPageI18nSettings() models.ErrorPageI18nSettings {
 		LangMode:     "browser",
 		EnabledLangs: i18n.ErrorPageDefaultLocales(),
 	}
+}
+
+func defaultAccessBlockedTemplate() string {
+	return `<!DOCTYPE html>
+<html class="no-js" lang="en-US">
+<head>
+<title>{{title}}</title>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+*, body, html { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #fff;
+    color: #404040;
+    font-family: system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,Noto Sans,sans-serif;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 64px; }
+.hero { margin-bottom: 32px; }
+.hero h1 { font-size: 42px; font-weight: 400; line-height: 1.2; color: #313131; margin: 0 0 12px; }
+.hero p { font-size: 22px; color: #666; margin: 0; }
+.hero .host { color: #404040; font-weight: 500; word-break: break-all; }
+.illustration { display: flex; justify-content: center; margin: 36px 0 48px; }
+.browser {
+    width: min(100%, 520px);
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #f5f5f5;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.browser-bar { height: 28px; background: #ececec; border-bottom: 1px solid #ddd; }
+.browser-body {
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fafafa;
+}
+.block-icon {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: #b91c1c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 48px;
+    line-height: 1;
+    font-weight: 300;
+}
+.columns { display: flex; gap: 48px; flex-wrap: wrap; }
+.column { flex: 1 1 280px; min-width: 0; }
+.column h2 { font-size: 22px; font-weight: 400; color: #313131; margin: 0 0 12px; }
+.column p { font-size: 15px; line-height: 1.6; color: #666; margin: 0; }
+.footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e5e5;
+    font-size: 13px;
+    color: #888;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+@media (max-width: 768px) {
+    .hero h1 { font-size: 30px; }
+    .hero p { font-size: 18px; }
+    .columns { flex-direction: column; gap: 28px; }
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>{{heading}}</h1>
+      <p>{{unable_access}} <span class="host">{host}</span></p>
+    </div>
+    <div class="illustration">
+      <div class="browser" aria-hidden="true">
+        <div class="browser-bar"></div>
+        <div class="browser-body"><div class="block-icon">&times;</div></div>
+      </div>
+    </div>
+    <div class="columns">
+      <div class="column">
+        <h2>{{what_happened}}</h2>
+        <p>{{what_happened_desc}}</p>
+      </div>
+      <div class="column">
+        <h2>{{what_can_i_do}}</h2>
+        <p>{{what_can_i_do_desc}}</p>
+      </div>
+    </div>
+    <div class="footer">{{client_ip_label}}: {client_ip} &bull; {{request_id_label}}: {request_id}</div>
+  </div>
+</body>
+</html>`
+}
+
+func defaultAccessBlockedStrings() map[string]map[string]string {
+	type localeText struct {
+		title, heading, unableAccess, whatHappened, whatHappenedDesc, whatCanIDo, whatCanIDoDesc, clientIPLabel, requestIDLabel string
+	}
+	byLocale := map[string]localeText{
+		"zh-CN": {
+			title: "访问已被拦截", heading: "抱歉，您已被禁止访问",
+			unableAccess: "您无法访问", whatHappened: "为什么会被拦截？",
+			whatHappenedDesc: "该网站启用了安全防护服务，用于拦截异常或受限来源访问。当前请求触发了 IP 黑名单或地区访问限制。",
+			whatCanIDo: "如何解决？", whatCanIDoDesc: "请联系网站管理员说明情况，并提供您的 IP 地址与请求 ID。",
+			clientIPLabel: "您的 IP", requestIDLabel: "请求 ID",
+		},
+		"zh-TW": {
+			title: "存取已被攔截", heading: "抱歉，您已被禁止存取",
+			unableAccess: "您無法存取", whatHappened: "為什麼會被攔截？",
+			whatHappenedDesc: "此網站啟用了安全防護服務，用於攔截異常或受限來源存取。目前請求觸發了 IP 黑名單或地區存取限制。",
+			whatCanIDo: "如何解決？", whatCanIDoDesc: "請聯繫網站管理員說明情況，並提供您的 IP 位址與請求 ID。",
+			clientIPLabel: "您的 IP", requestIDLabel: "請求 ID",
+		},
+		"en": {
+			title: "Access Blocked", heading: "Sorry, you have been blocked",
+			unableAccess: "You are unable to access", whatHappened: "Why have I been blocked?",
+			whatHappenedDesc: "This website is using a security service to protect itself from online attacks. Your request matched an IP blacklist or regional access restriction.",
+			whatCanIDo: "What can I do to resolve this?", whatCanIDoDesc: "Email the site owner and include what you were doing when this page appeared, your IP address, and the request ID below.",
+			clientIPLabel: "Your IP", requestIDLabel: "Request ID",
+		},
+		"fr": {
+			title: "Accès bloqué", heading: "Désolé, vous avez été bloqué",
+			unableAccess: "Vous ne pouvez pas accéder à", whatHappened: "Pourquoi ai-je été bloqué ?",
+			whatHappenedDesc: "Ce site utilise un service de sécurité pour se protéger. Votre requête correspond à une liste noire IP ou à une restriction régionale.",
+			whatCanIDo: "Que puis-je faire ?", whatCanIDoDesc: "Contactez le propriétaire du site en indiquant votre IP et l'identifiant de requête ci-dessous.",
+			clientIPLabel: "Votre IP", requestIDLabel: "ID de requête",
+		},
+	}
+	fallback := byLocale["en"]
+	out := make(map[string]map[string]string, len(i18n.ErrorPageDefaultLocales()))
+	for _, locale := range i18n.ErrorPageDefaultLocales() {
+		text, ok := byLocale[locale]
+		if !ok {
+			text = fallback
+		}
+		out[locale] = map[string]string{
+			"title":              text.title,
+			"heading":            text.heading,
+			"unable_access":      text.unableAccess,
+			"what_happened":      text.whatHappened,
+			"what_happened_desc": text.whatHappenedDesc,
+			"what_can_i_do":      text.whatCanIDo,
+			"what_can_i_do_desc": text.whatCanIDoDesc,
+			"client_ip_label":    text.clientIPLabel,
+			"request_id_label":   text.requestIDLabel,
+		}
+	}
+	return out
 }
 
 func defaultErrorPageTemplate(statusCode string, showIP bool) string {
@@ -137,13 +295,15 @@ func errorPageStatusCode(key string) string {
 		return "512"
 	case "ip":
 		return "1003"
+	case "access_blocked":
+		return "419"
 	default:
 		return key
 	}
 }
 
 func errorPageShowsIP(key string) bool {
-	return key != "ip"
+	return key != "ip" && key != "access_blocked"
 }
 
 func DefaultErrorPageDefinitions() map[string]models.ErrorPageDefinition {
@@ -153,6 +313,16 @@ func DefaultErrorPageDefinitions() map[string]models.ErrorPageDefinition {
 		stringsByLang := defaults[key]
 		if stringsByLang == nil {
 			stringsByLang = map[string]map[string]string{}
+		}
+		if key == "access_blocked" {
+			if len(stringsByLang) == 0 {
+				stringsByLang = defaultAccessBlockedStrings()
+			}
+			out[key] = models.ErrorPageDefinition{
+				Template: defaultAccessBlockedTemplate(),
+				Strings:  stringsByLang,
+			}
+			continue
 		}
 		out[key] = models.ErrorPageDefinition{
 			Template: defaultErrorPageTemplate(errorPageStatusCode(key), errorPageShowsIP(key)),

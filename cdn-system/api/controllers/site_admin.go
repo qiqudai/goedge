@@ -62,7 +62,7 @@ func validateCertCoversDomains(certID int64, domains []string, userID int64) err
 			continue
 		}
 		if result := services.CertificateCoversDomain(cert.Cert, domain); !result.OK {
-			return fmt.Errorf("certificate does not cover domain: %s", domain)
+			return errors.New(services.FormatCertCoverageError(domain, result))
 		}
 	}
 	return nil

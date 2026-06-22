@@ -18,6 +18,7 @@ local _M = {}
 local COOKIE_GUARD = "guard"
 local COOKIE_GUARD_RET = "guardret"
 local COOKIE_GUARD_PASS = "__cdn_guard_pass"
+local COOKIE_GUARD_STATE = "__cdn_guard_state"
 local COOKIE_GUARD_BROWSER_ID = "__cdn_guard_bid"
 local COOKIE_GUARD_FINGERPRINT = "__cdn_guard_fp"
 
@@ -469,7 +470,7 @@ local function md5_bin(s)
 end
 
 local function aes_for_nonce(nonce8)
-    local key = md5_bin(nonce8)
+    local key = md5_bin(secret() .. "|" .. tostring(nonce8 or ""))
     if not key then
         return nil, "md5 failed"
     end
@@ -667,6 +668,14 @@ local function constant_time_eq(a, b)
     return diff == 0
 end
 
+local function valid_browser_id(value)
+    return type(value) == "string" and value:match("^[a-f0-9]{32}$") ~= nil
+end
+
+local function valid_fingerprint(value)
+    return type(value) == "string" and value:match("^[a-f0-9]{16}$") ~= nil
+end
+
 local function browser_binding()
     local browser_id = normalize_cookie_token(cookie(COOKIE_GUARD_BROWSER_ID), 64)
     local fingerprint = normalize_cookie_token(cookie(COOKIE_GUARD_FINGERPRINT), 128)
@@ -689,6 +698,129 @@ local function pass_state_key(host, ip, filter_type, filter_id, browser_id, fing
         return "guard:pass:" .. str.to_hex(digest)
     end
     return "guard:pass:" .. hmac_hex(raw)
+end
+
+local function b64url_encode(value)
+    local encoded = ngx.encode_base64(value or "") or ""
+    encoded = string.gsub(encoded, "+", "-")
+    encoded = string.gsub(encoded, "/", "_")
+    encoded = string.gsub(encoded, "=+$", "")
+    return encoded
+end
+
+local function b64url_decode(value)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    value = string.gsub(value, "-", "+")
+    value = string.gsub(value, "_", "/")
+    local mod = #value % 4
+    if mod > 0 then
+        value = value .. string.rep("=", 4 - mod)
+    end
+    return ngx.decode_base64(value)
+end
+
+local function state_payload(st)
+    return cjson.encode(st)
+end
+
+local function sign_state_payload(payload)
+    return hmac_hex("state|" .. tostring(payload or ""))
+end
+
+local function state_cookie_value(st)
+    local payload = state_payload(st)
+    if not payload then
+        return nil
+    end
+    return "v1." .. b64url_encode(payload) .. "." .. sign_state_payload(payload)
+end
+
+local function validate_state(st, host, ip, filter_type, filter_id)
+    if type(st) ~= "table" then
+        return false
+    end
+    if st.host ~= host or st.ip ~= ip then
+        return false
+    end
+    if st.type ~= filter_type or tostring(st.filter_id or 0) ~= tostring(filter_id or 0) then
+        return false
+    end
+    local issued = tonumber(st.issued) or 0
+    if issued <= 0 or issued + STATE_TTL < now() then
+        return false
+    end
+    return true
+end
+
+local function load_state_cookie(host, ip, filter_type, filter_id)
+    local value = cookie(COOKIE_GUARD_STATE)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    local version, payload64, sig = string.match(value, "^(v1)%.([^%.]+)%.([0-9a-f]+)$")
+    if version ~= "v1" or not payload64 or not sig then
+        return nil
+    end
+    local payload = b64url_decode(payload64)
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+    if not constant_time_eq(sig, sign_state_payload(payload)) then
+        return nil
+    end
+    local st = cjson.decode(payload)
+    if validate_state(st, host, ip, filter_type, filter_id) then
+        return st
+    end
+    return nil
+end
+
+local function load_state_cookie_by_nonce(nonce8)
+    local value = cookie(COOKIE_GUARD_STATE)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    local version, payload64, sig = string.match(value, "^(v1)%.([^%.]+)%.([0-9a-f]+)$")
+    if version ~= "v1" or not payload64 or not sig then
+        return nil
+    end
+    local payload = b64url_decode(payload64)
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+    if not constant_time_eq(sig, sign_state_payload(payload)) then
+        return nil
+    end
+    local st = cjson.decode(payload)
+    if type(st) ~= "table" or st.nonce ~= nonce8 then
+        return nil
+    end
+    local issued = tonumber(st.issued) or 0
+    if issued <= 0 or issued + STATE_TTL < now() then
+        return nil
+    end
+    return st
+end
+
+local function save_state_cookie(st)
+    local value = state_cookie_value(st)
+    if not value then
+        return false
+    end
+    set_cookie(COOKIE_GUARD_STATE, value, {
+        path = "/",
+        max_age = STATE_TTL,
+        http_only = true,
+        secure = is_https(),
+        same_site = "Lax",
+    })
+    return true
+end
+
+local function clear_state_cookie()
+    clear_cookie(COOKIE_GUARD_STATE, true)
 end
 
 local function verify_pass_cookie_value(value, host, ip, filter_type, filter_id)
@@ -719,7 +851,7 @@ local function verify_pass_cookie_value(value, host, ip, filter_type, filter_id)
         return false
     end
     local browser_id, fingerprint, ua_sig = browser_binding()
-    if browser_id == "" or fingerprint == "" then
+    if not valid_browser_id(browser_id) or not valid_fingerprint(fingerprint) then
         return false
     end
     if parts[7] ~= browser_id or parts[8] ~= fingerprint or parts[9] ~= ua_sig then
@@ -734,23 +866,7 @@ local function verify_pass_cookie_value(value, host, ip, filter_type, filter_id)
     if not constant_time_eq(parts[11], expected) then
         return false
     end
-
-    local s = store()
-    if not s then
-        return false
-    end
-    local raw = s:get(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig))
-    if type(raw) ~= "string" or raw == "" then
-        return false
-    end
-    local record = cjson.decode(raw)
-    if type(record) == "table" then
-        return record.token == token_id
-            and record.browser_id == browser_id
-            and record.fingerprint == fingerprint
-            and record.ua_sig == ua_sig
-    end
-    return raw == token_id
+    return true
 end
 
 local function verify_pass_cookie(host, ip, filter_type, filter_id)
@@ -770,16 +886,9 @@ local function verify_pass_cookie(host, ip, filter_type, filter_id)
 end
 
 local function build_pass_cookie(host, ip, filter_type, filter_id, ttl)
-    local s = store()
-    if not s then
-        return nil, "guard store unavailable"
-    end
     local browser_id, fingerprint, ua_sig = browser_binding()
-    if browser_id == "" then
-        return nil, "browser id missing"
-    end
-    if fingerprint == "" then
-        return nil, "fingerprint missing"
+    if not valid_browser_id(browser_id) or not valid_fingerprint(fingerprint) then
+        return nil, "browser binding missing"
     end
     local pass_ttl = ttl or PASS_TTL
     local exp = now() + pass_ttl
@@ -811,7 +920,10 @@ local function build_pass_cookie(host, ip, filter_type, filter_id, ttl)
         filter_id = tostring(filter_id or 0),
         issued = now(),
     })
-    s:set(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig), record or token_id, pass_ttl)
+    local s = store()
+    if s then
+        s:set(pass_state_key(host, ip, filter_type, filter_id, browser_id, fingerprint, ua_sig), record or token_id, pass_ttl)
+    end
     return payload .. "|" .. sig
 end
 
@@ -846,6 +958,10 @@ local function ensure_state(filter, host, ip)
     local guard_value = cookie(COOKIE_GUARD)
     local nonce8 = parse_guard_nonce(guard_value)
     if nonce8 then
+        local cookie_state = load_state_cookie(host, ip, filter_type, filter_id)
+        if cookie_state and cookie_state.nonce == nonce8 then
+            return nonce8, cookie_state, guard_value
+        end
         local st = load_state(nonce8)
         if st and st.host == host and st.ip == ip and st.type == filter_type and st.filter_id == filter_id then
             return nonce8, st, guard_value
@@ -854,13 +970,14 @@ local function ensure_state(filter, host, ip)
 
     nonce8 = rand_hex(4)
     local issued_at = now()
-    local st = { host = host, ip = ip, type = filter_type, filter_id = filter_id, issued = issued_at, attempts = 0 }
+    local st = { nonce = nonce8, host = host, ip = ip, type = filter_type, filter_id = filter_id, issued = issued_at, attempts = 0 }
     if filter_type == "rotate_captcha" then
         local group = (tonumber(rand_hex(1), 16) or 1) % 30 + 1
         local degree = (tonumber(rand_hex(2), 16) or 15) % 331 + 15
         st.rotate = { file = string.format("%d-%d.jpeg", group, degree), degree = degree, answer = (360 - degree) % 360 }
     end
     save_state(nonce8, st, STATE_TTL)
+    save_state_cookie(st)
 
     guard_value = build_guard_cookie_value(nonce8, filter_type, issued_at)
     set_cookie(COOKIE_GUARD, guard_value, { path = "/", max_age = STATE_TTL, secure = is_https(), same_site = "Lax" })
@@ -903,6 +1020,9 @@ local function validate_guardret(filter_type, nonce8, st, guardret_value)
     local text = tostring(plain or "")
 
     if filter_type == "silent_captcha" or filter_type == "five_seconds" then
+        if now() - (tonumber(st.issued) or 0) < 300 then
+            return false, "auto verify too fast"
+        end
         local n = tonumber(text) or 0
         local expected = (tonumber(st.issued) or 0) + 10
         if n ~= expected then
@@ -920,9 +1040,15 @@ local function validate_guardret(filter_type, nonce8, st, guardret_value)
     end
 
     if filter_type == "click_captcha" or filter_type == "click_captcha_simple" then
+        if now() - (tonumber(st.issued) or 0) < 800 then
+            return false, "click too fast"
+        end
         local x, y, a = tonumber(payload.x), tonumber(payload.y), tonumber(payload.a)
         if not x or not y or not a or a ~= x + y then
             return false, "click invalid"
+        end
+        if x < 0 or y < 0 or x > 4096 or y > 4096 then
+            return false, "click out of range"
         end
         return true
     end
@@ -934,8 +1060,24 @@ local function validate_guardret(filter_type, nonce8, st, guardret_value)
         end
         local first_ts = tonumber(move[1].timestamp) or 0
         local last_ts = tonumber(move[#move].timestamp) or 0
-        if first_ts > 0 and last_ts > 0 and last_ts-first_ts < 300 then
+        if first_ts <= 0 or last_ts <= 0 or last_ts-first_ts < 500 then
             return false, "slide too fast"
+        end
+        local slider = tonumber(payload.slider) or 0
+        local btn = tonumber(payload.btn) or 0
+        local start_x = tonumber(move[1].x) or 0
+        local end_x = tonumber(move[#move].x) or 0
+        local expected = slider - btn
+        if slider <= 0 or btn <= 0 or expected <= 0 or end_x - start_x < expected - 3 then
+            return false, "slide distance"
+        end
+        local prev_x = start_x
+        for i = 2, #move do
+            local x = tonumber(move[i].x) or 0
+            if x < prev_x - 2 then
+                return false, "slide non-monotonic"
+            end
+            prev_x = x
         end
         return true
     end
@@ -947,8 +1089,7 @@ local function validate_guardret(filter_type, nonce8, st, guardret_value)
         end
         deg = deg % 360
         local answer = tonumber(st.rotate.answer) or 0
-        local degree = tonumber(st.rotate.degree) or 0
-        if abs_diff_mod360(deg, answer) <= ROTATE_TOLERANCE_DEG or abs_diff_mod360(deg, degree) <= ROTATE_TOLERANCE_DEG then
+        if abs_diff_mod360(deg, answer) <= ROTATE_TOLERANCE_DEG then
             return true
         end
         return false, "rotate mismatch"
@@ -995,6 +1136,7 @@ function _M.ensure_passed(filter, host, ip)
         })
         clear_cookie(COOKIE_GUARD_RET, false)
         clear_cookie(COOKIE_GUARD, false)
+        clear_state_cookie()
         delete_state(nonce8)
         return true
     end
@@ -1011,8 +1153,10 @@ function _M.ensure_passed(filter, host, ip)
         end
         delete_state(nonce8)
         clear_cookie(COOKIE_GUARD, false)
+        clear_state_cookie()
     else
         save_state(nonce8, st, STATE_TTL)
+        save_state_cookie(st)
     end
     clear_cookie(COOKIE_GUARD_RET, false)
     return false
@@ -1046,7 +1190,7 @@ function _M.serve_challenge_by_nonce(nonce8)
         ngx.say("<html><body>Guard challenge missing</body></html>")
         return
     end
-    local st = load_state(nonce8)
+    local st = load_state_cookie_by_nonce(nonce8) or load_state(nonce8)
     if not st then
         ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
         ngx.say("<html><body>Guard challenge missing</body></html>")
@@ -1140,6 +1284,7 @@ function _M.serve_captcha_png()
     local code = list[rand_index(#list)]
     st.captcha = { code = code, at = now() }
     save_state(nonce8, st, STATE_TTL)
+    save_state_cookie(st)
 
     local img = read_file(guard_dir() .. "captcha/" .. code .. ".png")
     if not img then
@@ -1158,7 +1303,7 @@ function _M.serve_rotate_image()
         ngx.status = 404
         return
     end
-    local st = load_state(nonce8)
+    local st = load_state_cookie_by_nonce(nonce8) or load_state(nonce8)
     if not st or st.type ~= "rotate_captcha" or not st.rotate or not st.rotate.file then
         ngx.status = 404
         return
@@ -1169,6 +1314,7 @@ function _M.serve_rotate_image()
         st.rotate = { file = string.format("%d-%d.jpeg", group, degree), degree = degree, answer = (360 - degree) % 360 }
         st.attempts = 0
         save_state(nonce8, st, STATE_TTL)
+        save_state_cookie(st)
     end
 
     local img = read_file(guard_dir() .. "rotate/" .. st.rotate.file)

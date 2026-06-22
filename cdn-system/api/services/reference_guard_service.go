@@ -9,6 +9,53 @@ import (
 	"cdn-api/models"
 )
 
+// IsSiteHTTPSEnabled reports whether HTTPS is actively enabled for a site.
+// When HTTPS is off, bound certificates are treated as unbound for guard checks.
+func IsSiteHTTPSEnabled(site *models.Site) bool {
+	if site == nil {
+		return false
+	}
+	if site.Settings != nil {
+		if httpsCfg, ok := site.Settings["https"].(map[string]interface{}); ok {
+			if _, hasEnable := httpsCfg["enable"]; hasEnable {
+				return parseBoolValue(httpsCfg["enable"], false)
+			}
+		}
+	}
+	return len(site.HttpsListen) > 0 || strings.TrimSpace(site.HttpsListenRaw) != ""
+}
+
+func siteReferencesCertID(site *models.Site, certID int64) bool {
+	if site == nil || certID <= 0 {
+		return false
+	}
+	if site.CertID == certID {
+		return true
+	}
+	if site.Settings == nil {
+		return false
+	}
+	httpsCfg, ok := site.Settings["https"].(map[string]interface{})
+	if !ok || httpsCfg == nil {
+		return false
+	}
+	for _, key := range []string{"certificate_id", "active_certificate_id", "pending_certificate_id"} {
+		if int64(parseIntValue(httpsCfg[key], 0)) == certID {
+			return true
+		}
+	}
+	return false
+}
+
+func siteReferencesAnyCertID(site *models.Site, certIDs map[int64]struct{}) bool {
+	for certID := range certIDs {
+		if siteReferencesCertID(site, certID) {
+			return true
+		}
+	}
+	return false
+}
+
 // LoadSiteDefaultGroupMap returns the first website-group ID for each site.
 func LoadSiteDefaultGroupMap(siteIDs []int64) map[int64]int64 {
 	result := map[int64]int64{}
@@ -38,15 +85,46 @@ func CountSitesReferencingCertIDs(certIDs []int64) (int64, error) {
 	if len(certIDs) == 0 {
 		return 0, nil
 	}
-	var siteCount int64
-	if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
-		err := db.DB.Table("site").Where("cert_id IN ?", certIDs).Count(&siteCount).Error
-		return siteCount, err
+	certSet := make(map[int64]struct{}, len(certIDs))
+	for _, certID := range certIDs {
+		certSet[certID] = struct{}{}
 	}
-	err := db.DB.Table("site").
-		Where("CAST(JSON_UNQUOTE(JSON_EXTRACT(settings, '$.https.certificate_id')) AS SIGNED) IN ?", certIDs).
-		Count(&siteCount).Error
-	return siteCount, err
+
+	var sites []models.Site
+	query := db.DB.Model(&models.Site{})
+	conditions := make([]string, 0, 4)
+	args := make([]interface{}, 0, 4)
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cert_id") {
+		conditions = append(conditions, "cert_id IN ?")
+		args = append(args, certIDs)
+	}
+	if db.DB.Migrator().HasColumn(&models.Site{}, "settings") {
+		conditions = append(conditions,
+			"CAST(JSON_UNQUOTE(JSON_EXTRACT(settings, '$.https.certificate_id')) AS SIGNED) IN ?",
+			"CAST(JSON_UNQUOTE(JSON_EXTRACT(settings, '$.https.active_certificate_id')) AS SIGNED) IN ?",
+			"CAST(JSON_UNQUOTE(JSON_EXTRACT(settings, '$.https.pending_certificate_id')) AS SIGNED) IN ?",
+		)
+		args = append(args, certIDs, certIDs, certIDs)
+	}
+	if len(conditions) == 0 {
+		return 0, nil
+	}
+	if err := query.Where(strings.Join(conditions, " OR "), args...).Find(&sites).Error; err != nil {
+		return 0, err
+	}
+
+	var count int64
+	for i := range sites {
+		site := &sites[i]
+		if !siteReferencesAnyCertID(site, certSet) {
+			continue
+		}
+		if !IsSiteHTTPSEnabled(site) {
+			continue
+		}
+		count++
+	}
+	return count, nil
 }
 
 func CountSitesReferencingCCRuleGroup(ruleID int64) (int64, error) {

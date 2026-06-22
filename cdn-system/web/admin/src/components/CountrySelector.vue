@@ -131,12 +131,17 @@ const rawGroups = [
       { label: '塔吉克斯坦', value: 'tj' },
       { label: '吉尔吉斯', value: 'kg' },
       { label: '乌兹别克', value: 'uz' },
-      { label: '哈萨克斯坦', value: 'kz' }
+      { label: '哈萨克斯坦', value: 'kz' },
+      { label: '亚美尼亚', value: 'am' },
+      { label: '阿塞拜疆', value: 'az' },
+      { label: '格鲁吉亚', value: 'ge' },
+      { label: '土耳其', value: 'tr' }
     ]
   },
   {
     label: '非洲',
     items: [
+      { label: '阿尔及利亚', value: 'dz' },
       { label: '安哥拉', value: 'ao' },
       { label: '贝宁', value: 'bj' },
       { label: '博茨瓦纳', value: 'bw' },
@@ -154,6 +159,7 @@ const rawGroups = [
       { label: '厄立特里亚', value: 'er' },
       { label: '埃塞俄比亚', value: 'et' },
       { label: '加蓬', value: 'ga' },
+      { label: '喀麦隆', value: 'cm' },
       { label: '冈比亚', value: 'gm' },
       { label: '加纳', value: 'gh' },
       { label: '几内亚', value: 'gn' },
@@ -215,9 +221,11 @@ const rawGroups = [
       { label: '斯洛伐克', value: 'sk' },
       { label: '匈牙利', value: 'hu' },
       { label: '罗马尼亚', value: 'ro' },
+      { label: '俄罗斯', value: 'ru' },
       { label: '保加利亚', value: 'bg' },
       { label: '希腊', value: 'gr' },
       { label: '塞尔维亚', value: 'rs' },
+      { label: '圣马力诺', value: 'sm' },
       { label: '克罗地亚', value: 'hr' },
       { label: '波黑', value: 'ba' },
       { label: '黑山', value: 'me' },
@@ -229,6 +237,7 @@ const rawGroups = [
       { label: '拉脱维亚', value: 'lv' },
       { label: '爱沙尼亚', value: 'ee' },
       { label: '摩尔多瓦', value: 'md' },
+      { label: '塞浦路斯', value: 'cy' },
       { label: '斯洛文尼亚', value: 'si' },
       { label: '卢森堡', value: 'lu' },
       { label: '马耳他', value: 'mt' },
@@ -251,7 +260,21 @@ const rawGroups = [
       { label: '洪都拉斯', value: 'hn' },
       { label: '尼加拉瓜', value: 'ni' },
       { label: '哥斯达黎加', value: 'cr' },
-      { label: '巴拿马', value: 'pa' }
+      { label: '巴拿马', value: 'pa' },
+      { label: '古巴', value: 'cu' },
+      { label: '海地', value: 'ht' },
+      { label: '多米尼加', value: 'do' },
+      { label: '牙买加', value: 'jm' },
+      { label: '巴哈马', value: 'bs' },
+      { label: '巴巴多斯', value: 'bb' },
+      { label: '特立尼达和多巴哥', value: 'tt' },
+      { label: '安提瓜和巴布达', value: 'ag' },
+      { label: '多米尼克', value: 'dm' },
+      { label: '格林纳达', value: 'gd' },
+      { label: '圣基茨和尼维斯', value: 'kn' },
+      { label: '圣卢西亚', value: 'lc' },
+      { label: '圣文森特和格林纳丁斯', value: 'vc' },
+      { label: '阿鲁巴', value: 'aw' }
     ]
   },
   {
@@ -268,7 +291,8 @@ const rawGroups = [
       { label: '巴拉圭', value: 'py' },
       { label: '乌拉圭', value: 'uy' },
       { label: '圭亚那', value: 'gy' },
-      { label: '苏里南', value: 'sr' }
+      { label: '苏里南', value: 'sr' },
+      { label: '法属圭亚那', value: 'gf' }
     ]
   },
   {

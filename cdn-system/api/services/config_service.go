@@ -836,6 +836,12 @@ func convertLegacyACLAPIRules(rules []legacyACLAPIRule) []models.EdgeACLRule {
 				Value:    value,
 			})
 		}
+		sort.SliceStable(entry.Conditions, func(i, j int) bool {
+			if entry.Conditions[i].Item == entry.Conditions[j].Item {
+				return entry.Conditions[i].Operator < entry.Conditions[j].Operator
+			}
+			return entry.Conditions[i].Item < entry.Conditions[j].Item
+		})
 		if len(entry.Conditions) > 0 {
 			out = append(out, entry)
 		}

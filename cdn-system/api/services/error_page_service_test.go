@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"cdn-api/models"
@@ -36,6 +37,24 @@ func TestValidateErrorPageConfig(t *testing.T) {
 	}
 	if err := ValidateErrorPageConfig(cfg); err != nil {
 		t.Fatalf("expected valid config, got %v", err)
+	}
+}
+
+func TestDefaultAccessBlockedPage(t *testing.T) {
+	defs := DefaultErrorPageDefinitions()
+	def, ok := defs["access_blocked"]
+	if !ok {
+		t.Fatal("missing access_blocked definition")
+	}
+	if !strings.Contains(def.Template, "{{heading}}") {
+		t.Fatalf("template missing heading placeholder: %s", def.Template)
+	}
+	if errorPageStatusCode("access_blocked") != "419" {
+		t.Fatalf("unexpected status code: %s", errorPageStatusCode("access_blocked"))
+	}
+	html := RenderErrorPage(def.Template, def.Strings["en"])
+	if !strings.Contains(html, "Sorry, you have been blocked") {
+		t.Fatalf("unexpected render: %s", html)
 	}
 }
 

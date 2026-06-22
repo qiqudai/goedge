@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,6 +21,54 @@ const (
 	blockDefaultRange = "7d"
 	blockTimeLayout   = "2006-01-02 15:04:05"
 )
+
+// BlockIP adds an IP to the matched site's blacklist and bumps edge config.
+// POST /api/v1/admin/logs/block/block_ip
+func (c *BlockLogController) BlockIP(ctx *gin.Context) {
+	var req struct {
+		IP     string `json:"ip"`
+		Domain string `json:"domain"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	ip := strings.TrimSpace(req.IP)
+	if net.ParseIP(ip) == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid ip"})
+		return
+	}
+	domain := strings.TrimSpace(req.Domain)
+	if domain == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "domain is required"})
+		return
+	}
+	index, _, ok := resolveBlockHostFilter(ctx)
+	if !ok || index == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
+		return
+	}
+	siteID, matchedDomain := resolveBlockSite(index, domain)
+	if siteID == 0 {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
+		return
+	}
+	added, err := addSiteBlacklistIP(siteID, ip)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "block ip failed"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "ok",
+		"data": gin.H{
+			"site_id": siteID,
+			"domain":  matchedDomain,
+			"ip":      ip,
+			"added":   added,
+		},
+	})
+}
 
 // ListCurrent Retrieves current blocked IPs
 // GET /api/v1/admin/logs/block/current
@@ -287,6 +336,39 @@ func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok"})
+}
+
+func addSiteBlacklistIP(siteID int64, ip string) (bool, error) {
+	var site models.Site
+	if err := db.DB.Select("id, black_ip, settings").Where("id = ?", siteID).First(&site).Error; err != nil {
+		return false, err
+	}
+	settings := map[string]interface{}{}
+	if strings.TrimSpace(site.SettingsRaw) != "" {
+		_ = json.Unmarshal([]byte(site.SettingsRaw), &settings)
+	}
+	blacklist := parseStringListValue(site.BlackIPRaw)
+	if fromSettings, ok := extractSecurityIPList(settings, "blacklist"); ok && len(fromSettings) > 0 {
+		blacklist = fromSettings
+	}
+	for _, item := range blacklist {
+		if item == ip {
+			services.BumpConfigVersion("site_blacklist", []int64{siteID})
+			return false, nil
+		}
+	}
+	blacklist = normalizeStringList(append(blacklist, ip))
+	setSecurityIPList(settings, "blacklist", blacklist)
+	settingsRaw, _ := json.Marshal(settings)
+	if err := db.DB.Model(&models.Site{}).Where("id = ?", siteID).Updates(map[string]interface{}{
+		"black_ip":  encodeList(blacklist),
+		"settings":  string(settingsRaw),
+		"update_at": time.Now(),
+	}).Error; err != nil {
+		return false, err
+	}
+	services.BumpConfigVersion("site_blacklist", []int64{siteID})
+	return true, nil
 }
 
 // UnblockSite removes all blocked records for selected sites.

@@ -118,8 +118,14 @@ func ensureBaseRuntimeAssets(rootDir string) {
 	restoreDir("assets/conf", filepath.Join(rootDir, "conf"))
 	restoreDir("assets/lua", filepath.Join(rootDir, "lua"))
 	restoreDirIfMissing("assets/data", filepath.Join(rootDir, "data"))
+	ensureIp2RegionDatabase(rootDir)
 	restoreDirIfMissing("assets/cert", filepath.Join(rootDir, "cert"))
 	restoreDirIfMissing("assets/scripts", filepath.Join(rootDir, "scripts"))
+}
+
+func ensureIp2RegionDatabase(rootDir string) {
+	localPath := filepath.Join(rootDir, "data", "ip2region.xdb")
+	restoreFile("assets/data/ip2region.xdb", localPath, true)
 }
 
 func patchNginxConfigPaths(content string, rootDir string) string {

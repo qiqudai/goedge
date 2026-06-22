@@ -662,6 +662,8 @@ func errorPageStatusForKey(key string) int {
 		return 410
 	case "ip":
 		return 418
+	case "access_blocked":
+		return 419
 	default:
 		return 0
 	}

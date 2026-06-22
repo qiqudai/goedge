@@ -85,6 +85,32 @@ local function md5_hex(value)
     return str.to_hex(digest)
 end
 
+local function normalize_auth_uri(uri)
+    local path = tostring(uri or ngx.var.uri or "/")
+    if path == "" then
+        path = "/"
+    end
+    return string.lower(path)
+end
+
+local function sign_equals(left, right)
+    return string.lower(tostring(left or "")) == string.lower(tostring(right or ""))
+end
+
+local function validate_auth_time(ts, max_diff)
+    if ts == "" then
+        return nil, "missing_time"
+    end
+    local ts_num = tonumber(ts)
+    if not ts_num then
+        return nil, "invalid_time"
+    end
+    if math.abs(ngx.time() - ts_num) > max_diff then
+        return nil, "expired"
+    end
+    return ts, ""
+end
+
 local function rate_exceeded(filter, host, ip, uri)
     if not store or not filter then
         return false, ""
@@ -147,37 +173,39 @@ local function verify_url_auth(filter, host, ip, uri)
         return false, "missing_sign"
     end
 
-    local path = uri or ngx.var.uri or "/"
+    local path = normalize_auth_uri(uri)
     local expected = ""
-    local raw = ""
 
     if method == "B" then
-        raw = key .. path
+        local ts, rand, uid, digest = sign:match("^([0-9]+)%-([^%-]+)%-([^%-]+)%-([0-9a-fA-F]+)$")
+        if not ts or not rand or not uid or not digest then
+            return false, "bad_sign_format"
+        end
+        local ok_time, time_err = validate_auth_time(ts, max_diff)
+        if not ok_time then
+            return false, time_err
+        end
+        local raw = path .. "-" .. ts .. "-" .. rand .. "-" .. uid .. "-" .. key
+        if auth.ip_auth == true then
+            raw = raw .. "-" .. tostring(ip or "")
+        end
         expected = md5_hex(raw)
+        if not sign_equals(digest, expected) then
+            return false, "bad_sign"
+        end
     else
         local ts = tostring(args[time_param] or "")
-        if ts == "" then
-            return false, "missing_time"
+        local ok_time, time_err = validate_auth_time(ts, max_diff)
+        if not ok_time then
+            return false, time_err
         end
-        local ts_num = tonumber(ts)
-        if not ts_num then
-            return false, "invalid_time"
+        local raw = key .. path .. ts
+        if auth.ip_auth == true then
+            raw = raw .. tostring(ip or "")
         end
-        if math.abs(ngx.time() - ts_num) > max_diff then
-            return false, "expired"
-        end
-        raw = key .. path .. ts
         expected = md5_hex(raw)
-    end
-
-    if string.lower(sign) ~= string.lower(expected) then
-        return false, "bad_sign"
-    end
-
-    if auth.ip_auth == true then
-        local bound_ip = tostring(args.ip or args.client_ip or "")
-        if bound_ip ~= "" and bound_ip ~= ip then
-            return false, "ip_mismatch"
+        if not sign_equals(sign, expected) then
+            return false, "bad_sign"
         end
     end
 
