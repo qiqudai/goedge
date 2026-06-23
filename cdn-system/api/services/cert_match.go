@@ -39,6 +39,10 @@ func CertificateCoversDomain(certPEM string, domain string) CertCoverageResult {
 	return CertCoverageResult{Reason: "certificate does not cover domain", Names: names}
 }
 
+func CertNameCoversDomain(certName string, domain string) bool {
+	return certNameMatchesDomain(certName, domain)
+}
+
 func FormatCertCoverageError(domain string, result CertCoverageResult) string {
 	if result.OK {
 		return ""

@@ -1448,6 +1448,10 @@ func resolveExistingCertForApply(userID int64, domains []string) (*models.Cert, 
 	if len(domains) == 0 {
 		return nil, "", "", nil
 	}
+	certs, err := loadCertsForApply(userID)
+	if err != nil {
+		return nil, "", "", err
+	}
 	var issuedCert *models.Cert
 	var issuedDomain string
 	var failedCert *models.Cert
@@ -1460,10 +1464,7 @@ func resolveExistingCertForApply(userID int64, domains []string) (*models.Cert, 
 		if domain == "" {
 			continue
 		}
-		cert, err := findCertForUserDomain(userID, domain)
-		if err != nil {
-			return nil, "", "", err
-		}
+		cert := findCertForDomainInList(certs, domain)
 		if cert == nil {
 			continue
 		}
@@ -1518,22 +1519,86 @@ func certIsInProgressState(state string) bool {
 }
 
 func findCertForUserDomain(userID int64, domain string) (*models.Cert, error) {
-	var cert models.Cert
-	patterns := []string{
-		domain,
-		domain + ",%",
-		"%," + domain,
-		"%," + domain + ",%",
+	certs, err := loadCertsForApply(userID)
+	if err != nil {
+		return nil, err
 	}
-	query := db.DB.Where("uid = ?", userID).
-		Where("(domain = ? OR domain LIKE ? OR domain LIKE ? OR domain LIKE ?)", patterns[0], patterns[1], patterns[2], patterns[3])
-	if err := query.First(&cert).Error; err != nil {
+	return findCertForDomainInList(certs, domain), nil
+}
+
+func loadCertsForApply(userID int64) ([]models.Cert, error) {
+	var certs []models.Cert
+	if err := db.DB.Select("id", "uid", "domain", "cert", "state", "update_at").
+		Where("uid = ?", userID).
+		Where("(domain <> '' OR cert <> '')").
+		Order("update_at DESC").
+		Order("id DESC").
+		Find(&certs).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return &cert, nil
+	return certs, nil
+}
+
+func findCertForDomainInList(certs []models.Cert, domain string) *models.Cert {
+	domain = normalizeDomainHost(domain)
+	if domain == "" {
+		return nil
+	}
+	var fallback *models.Cert
+	var failed *models.Cert
+	var inProgress *models.Cert
+	for i := range certs {
+		cert := &certs[i]
+		if !certCoversApplyDomain(*cert, domain) {
+			continue
+		}
+		state := strings.ToLower(strings.TrimSpace(cert.State))
+		switch {
+		case certIsIssuedState(state):
+			return cert
+		case certIsInProgressState(state):
+			if inProgress == nil {
+				inProgress = cert
+			}
+		case state == "fail":
+			if failed == nil {
+				failed = cert
+			}
+		default:
+			if fallback == nil {
+				fallback = cert
+			}
+		}
+	}
+	if fallback != nil {
+		return fallback
+	}
+	if inProgress != nil {
+		return inProgress
+	}
+	if failed != nil {
+		return failed
+	}
+	return nil
+}
+
+func certCoversApplyDomain(cert models.Cert, domain string) bool {
+	domain = normalizeDomainHost(domain)
+	if domain == "" {
+		return false
+	}
+	if strings.TrimSpace(cert.Cert) != "" {
+		return services.CertificateCoversDomain(cert.Cert, domain).OK
+	}
+	for _, candidate := range strings.Split(cert.Domain, ",") {
+		if services.CertNameCoversDomain(candidate, domain) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveCertDefaults(userID int64) (string, int) {
