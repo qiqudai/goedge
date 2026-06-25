@@ -103,7 +103,7 @@
                 </el-radio-group>
             </el-form-item>
             <!-- Deny Options (if Default Action is Deny?? usually default is Allow, but if Deny selected) -->
-            <div v-if="form.default_action === 'deny'" style="margin-left: 100px; margin-bottom: 20px; background: #f9f9f9; padding: 10px; border-radius: 4px;">
+            <div v-if="form.default_action === 'deny'" style="margin-left: 100px; margin-bottom: 20px; background: var(--el-fill-color-light); padding: 10px; border-radius: 4px;">
                 <el-form-item label="拒绝返回" label-width="80px" style="margin-bottom: 0;">
                     <el-radio-group v-model="form.deny_action_type"> <!-- Helper field, not directly in model but mapped later -->
                         <el-radio value="403">返回403</el-radio>
@@ -198,7 +198,7 @@
                 </el-radio-group>
             </el-form-item>
 
-            <div v-if="ruleForm.action === 'deny'" style="margin-left: 80px; background: #f9f9f9; padding: 10px; border-radius: 4px;">
+            <div v-if="ruleForm.action === 'deny'" style="margin-left: 80px; background: var(--el-fill-color-light); padding: 10px; border-radius: 4px;">
                  <el-form-item label="拒绝返回" label-width="80px" style="margin-bottom: 0;">
                     <el-radio-group v-model="ruleForm.deny_status_type">
                         <el-radio value="403">返回403</el-radio>

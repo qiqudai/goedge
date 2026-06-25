@@ -206,27 +206,27 @@ const handleClose = () => {
 
 .condition-toggle {
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 14px;
   margin-bottom: 10px;
   display: flex;
   align-items: center;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   padding: 8px 12px;
   border-radius: 4px;
   transition: all 0.3s;
 }
 
 .condition-toggle:hover {
-  background: #edf2f7;
+  background: var(--el-fill-color-lighter);
   color: #409eff;
 }
 
 .condition-content {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   padding: 16px;
-  background-color: #fafafa;
+  background-color: var(--el-fill-color-lighter);
 }
 
 .condition-selector {
@@ -242,16 +242,16 @@ const handleClose = () => {
 .condition-item {
   display: flex;
   align-items: center;
-  background: white;
+  background: var(--el-bg-color);
   padding: 12px;
   border-radius: 4px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
 }
 
 .condition-item label {
   min-width: 80px;
   font-weight: 500;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .dialog-footer {

@@ -3,7 +3,7 @@
     <el-tabs v-model="activeTab" @tab-click="handleTabClick">
       
       <!-- 基础数据 -->
-      <el-tab-pane label="基础数据" name="basic">
+      <el-tab-pane label="基础数据" name="basic" lazy>
         <div class="chart-wrapper">
           <div ref="bandwidthChartRef" class="chart" />
         </div>
@@ -16,7 +16,7 @@
       </el-tab-pane>
 
       <!-- 质量监控 -->
-      <el-tab-pane label="质量监控" name="quality">
+      <el-tab-pane label="质量监控" name="quality" lazy>
         <div class="chart-wrapper">
           <div ref="hitRateChartRef" class="chart" />
         </div>
@@ -26,7 +26,7 @@
       </el-tab-pane>
 
       <!-- 回源监控 -->
-      <el-tab-pane label="回源监控" name="origin">
+      <el-tab-pane label="回源监控" name="origin" lazy>
         <div class="chart-wrapper">
           <div ref="originBandwidthChartRef" class="chart" />
         </div>
@@ -36,7 +36,7 @@
       </el-tab-pane>
 
       <!-- 数据排行 -->
-      <el-tab-pane label="数据排行" name="ranking">
+      <el-tab-pane label="数据排行" name="ranking" lazy>
         <div class="filter-container">
            <el-radio-group v-model="rankingType" style="margin-bottom: 20px;" @change="handleRankingTypeChange">
              <el-radio-button value="domain">域名排行</el-radio-button>
@@ -155,7 +155,7 @@ import { ref, onMounted, computed, reactive, watch, nextTick } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
-import * as echarts from 'echarts'
+import { loadEcharts } from '@/utils/echarts'
 import AppPagination from '@/components/AppPagination.vue'
 
 const activeTab = ref('basic') // Default changed to basic to show charts first
@@ -171,6 +171,7 @@ const originBandwidthChartRef = ref(null)
 const originTrafficChartRef = ref(null)
 
 let charts = [] // Store chart instances to dispose/resize
+let echarts = null
 
 // --- Ranking ---
 const rankingType = ref('domain')
@@ -320,8 +321,10 @@ const blockHotURLIP = async (urlRow, ipRow) => {
 }
 
 // --- Chart Data Fetching & Rendering ---
-const initChart = (dom, title, xAxisData, seriesData, unit) => {
+const initChart = async (dom, title, xAxisData, seriesData, unit) => {
   if (!dom) return
+  echarts = echarts || await loadEcharts()
+  if (!document.body.contains(dom)) return
   const chart = echarts.init(dom)
   chart.setOption({
     title: { text: title },
@@ -339,9 +342,11 @@ const fetchBasicStats = async () => {
         if (res.code === 0 || res.code === 200) {
             const data = res.data
             await nextTick()
-            initChart(bandwidthChartRef.value, '带宽', data.x_axis, [{ name: '带宽', type: 'line', data: data.bandwidth, areaStyle: {} }], 'Mbps')
-            initChart(trafficChartRef.value, '流量', data.x_axis, [{ name: '流量', type: 'line', data: data.traffic, areaStyle: {} }], 'MB')
-            initChart(qpsChartRef.value, 'QPS', data.x_axis, [{ name: 'QPS', type: 'line', data: data.qps, areaStyle: {} }], 'req/s')
+            await Promise.all([
+              initChart(bandwidthChartRef.value, '带宽', data.x_axis, [{ name: '带宽', type: 'line', data: data.bandwidth, areaStyle: {} }], 'Mbps'),
+              initChart(trafficChartRef.value, '流量', data.x_axis, [{ name: '流量', type: 'line', data: data.traffic, areaStyle: {} }], 'MB'),
+              initChart(qpsChartRef.value, 'QPS', data.x_axis, [{ name: 'QPS', type: 'line', data: data.qps, areaStyle: {} }], 'req/s')
+            ])
         }
     } catch (e) { console.error(e) }
 }
@@ -352,11 +357,13 @@ const fetchQualityStats = async () => {
         if (res.code === 0 || res.code === 200) {
             const data = res.data
              await nextTick()
-            initChart(hitRateChartRef.value, 'Hit Rate', data.x_axis, [{ name: 'Hit Rate', type: 'line', data: data.hit_rate }], '%')
-            initChart(statusChartRef.value, '状态码', data.x_axis, [
-                { name: '4xx', type: 'line', data: data.status_4xx },
-                { name: '5xx', type: 'line', data: data.status_5xx }
-            ], 'Count')
+            await Promise.all([
+              initChart(hitRateChartRef.value, 'Hit Rate', data.x_axis, [{ name: 'Hit Rate', type: 'line', data: data.hit_rate }], '%'),
+              initChart(statusChartRef.value, '状态码', data.x_axis, [
+                  { name: '4xx', type: 'line', data: data.status_4xx },
+                  { name: '5xx', type: 'line', data: data.status_5xx }
+              ], 'Count')
+            ])
         }
     } catch (e) { console.error(e) }
 }
@@ -367,8 +374,10 @@ const fetchOriginStats = async () => {
         if (res.code === 0 || res.code === 200) {
             const data = res.data
              await nextTick()
-            initChart(originBandwidthChartRef.value, '回源带宽', data.x_axis, [{ name: 'Origin Bandwidth', type: 'line', data: data.origin_bandwidth }], 'Mbps')
-            initChart(originTrafficChartRef.value, '回源流量', data.x_axis, [{ name: 'Origin Traffic', type: 'line', data: data.origin_traffic }], 'MB')
+            await Promise.all([
+              initChart(originBandwidthChartRef.value, '回源带宽', data.x_axis, [{ name: 'Origin Bandwidth', type: 'line', data: data.origin_bandwidth }], 'Mbps'),
+              initChart(originTrafficChartRef.value, '回源流量', data.x_axis, [{ name: 'Origin Traffic', type: 'line', data: data.origin_traffic }], 'MB')
+            ])
         }
     } catch (e) { console.error(e) }
 }

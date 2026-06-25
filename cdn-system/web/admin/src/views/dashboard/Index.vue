@@ -278,8 +278,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed, watch } from 'vue'
-import * as echarts from 'echarts'
+import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
+import { loadEcharts } from '@/utils/echarts'
 import request from '@/utils/request'
 
 const defaultAvatar = 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png'
@@ -308,6 +308,10 @@ const topLists = ref({
 })
 
 let myChart = null
+let echarts = null
+const handleResize = () => {
+  myChart?.resize()
+}
 
 const statusDot = value => {
   if (value === true || value === 'ok') return 'status-success'
@@ -335,12 +339,14 @@ const ckErrorTip = computed(() => {
   return clean.join('；')
 })
 
-const initChart = () => {
+const initChart = async () => {
   const chartDom = document.getElementById('trendChart')
   if (!chartDom) return
+  echarts = echarts || await loadEcharts()
+  if (!document.body.contains(chartDom)) return
   myChart = echarts.init(chartDom)
   updateChartOption()
-  window.addEventListener('resize', () => myChart && myChart.resize())
+  window.addEventListener('resize', handleResize)
 }
 
 const updateChartOption = () => {
@@ -460,7 +466,7 @@ const fetchData = async () => {
     systemStatus.value = data.system_status || {}
     licenseInfo.value = data.license || {}
 
-    nextTick(() => {
+    nextTick(async () => {
       if (!myChart) initChart()
       updateChartOption()
     })
@@ -474,12 +480,18 @@ watch(chartType, () => updateChartOption())
 onMounted(() => {
   fetchData()
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  myChart?.dispose()
+  myChart = null
+})
 </script>
 
 <style scoped>
 .dashboard-container {
   padding: 16px 20px 24px;
-  background: #f5f6f8;
+  background: var(--el-bg-color-page);
   min-height: calc(100vh - 84px);
 }
 .dashboard-row {
@@ -520,29 +532,29 @@ onMounted(() => {
   font-size: 12px;
 }
 .user-meta {
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 12px;
   margin-top: 6px;
 }
 .meta-sep {
   margin: 0 6px;
-  color: #dcdfe6;
+  color: var(--el-border-color);
 }
 
 .ops-card {
   margin-bottom: 16px;
 }
 .ops-item {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   padding-bottom: 16px;
 }
 .ops-title {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 .ops-value {
   font-size: 14px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-top: 30px;
 }
 

@@ -16,25 +16,25 @@
 
       <div class="error-page-container">
         <el-tabs v-model="activeCode" tab-position="left" class="error-tabs" style="height: calc(100vh - 360px);">
-          <el-tab-pane v-for="code in errorCodes" :key="code.key" :label="code.label" :name="code.key">
+          <el-tab-pane v-for="code in errorCodes" :key="code.key" :label="code.label" :name="code.key" lazy>
             <div class="tab-content-scroll">
               <div class="editor-header">
                 <h3>{{ code.label }} ({{ code.key }})</h3>
               </div>
 
               <el-tabs v-model="innerTabs[code.key]" class="inner-tabs">
-                <el-tab-pane label="HTML 模板" name="template">
-                  <ErrorPageTemplateEditor v-model="errorPages[code.key].template" />
+                <el-tab-pane label="HTML 模板" name="template" lazy>
+                  <ErrorPageTemplateEditor v-model="pageDef(code.key).template" />
                 </el-tab-pane>
-                <el-tab-pane label="多语言文案" name="strings">
+                <el-tab-pane label="多语言文案" name="strings" lazy>
                   <ErrorPageTranslationTable
-                    :template="errorPages[code.key].template"
-                    :strings="errorPages[code.key].strings"
+                    :template="pageDef(code.key).template"
+                    :strings="pageDef(code.key).strings"
                     :enabled-langs="errorPageI18n.enabled_langs"
                     @update:strings="value => updateStrings(code.key, value)"
                   />
                 </el-tab-pane>
-                <el-tab-pane label="预览" name="preview">
+                <el-tab-pane label="预览" name="preview" lazy>
                   <div class="preview-toolbar">
                     <span>预览语言</span>
                     <el-select v-model="previewLang[code.key]" style="width: 200px">
@@ -58,7 +58,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted, watch } from 'vue'
+import { defineAsyncComponent, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { cacheInputValue } from '@/utils/saveGuard'
 import { fetchGlobalConfig, saveGlobalConfig } from '@/api/globalConfig'
@@ -72,7 +72,8 @@ import {
 } from '@/services/errorPageService'
 import ErrorPageLangSettings from '@/components/global/ErrorPageLangSettings.vue'
 import ErrorPageTemplateEditor from '@/components/global/ErrorPageTemplateEditor.vue'
-import ErrorPageTranslationTable from '@/components/global/ErrorPageTranslationTable.vue'
+
+const ErrorPageTranslationTable = defineAsyncComponent(() => import('@/components/global/ErrorPageTranslationTable.vue'))
 
 const loading = ref(false)
 const saving = ref(false)
@@ -87,6 +88,8 @@ const errorPageI18n = reactive({
 const innerTabs = reactive({})
 const previewLang = reactive({})
 const errorCodes = ERROR_PAGE_CODES
+
+const pageDef = (code) => errorPages[code] || { template: '', strings: {} }
 
 const initTabState = () => {
   errorCodes.forEach(code => {
@@ -156,14 +159,14 @@ watch(
       if (!langs.includes(previewLang[key])) {
         previewLang[key] = errorPageI18n.default_lang
       }
-      langs.forEach(lang => {
-        errorPages[key].strings = fillMissingErrorPageStrings(key, errorPages[key].strings, langs)
-      })
+      if (!errorPages[key]) return
+      errorPages[key].strings = fillMissingErrorPageStrings(key, errorPages[key].strings, langs)
     })
   }
 )
 
 onMounted(() => {
+  applyStructure({}, DEFAULT_ERROR_PAGE_I18N)
   loadConfig()
 })
 </script>

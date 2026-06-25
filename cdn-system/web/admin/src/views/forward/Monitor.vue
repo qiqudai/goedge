@@ -4,9 +4,9 @@
       <el-tabs v-model="activeTopTab" class="custom-tabs" @tab-change="handleTopTab">
         <el-tab-pane label="转发列表" name="list" />
         <el-tab-pane label="默认设置" name="default" />
-        <el-tab-pane label="实时监控" name="monitor">
+        <el-tab-pane label="实时监控" name="monitor" lazy>
           <el-tabs v-model="activeTab" class="monitor-inner-tabs" @tab-change="handleInnerTab">
-            <el-tab-pane label="带宽流量" name="traffic">
+            <el-tab-pane label="带宽流量" name="traffic" lazy>
               <div class="filter-container">
                 <el-input v-model="query.keyword" placeholder="端口检索 (如: 88/TCP)" style="width: 200px; margin-right: 12px;" />
                 <el-button-group style="margin-right: 12px;">
@@ -32,7 +32,7 @@
               </el-row>
             </el-tab-pane>
 
-            <el-tab-pane label="端口排行" name="ranking">
+            <el-tab-pane label="端口排行" name="ranking" lazy>
               <div class="filter-container">
                 <el-button type="primary" size="small" @click="reloadRanking">即时刷新</el-button>
               </div>
@@ -57,7 +57,7 @@
 <script setup>
 import { ref, reactive, onMounted, nextTick, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import * as echarts from 'echarts'
+import { loadEcharts } from '@/utils/echarts'
 import request from '@/utils/request'
 
 const router = useRouter()
@@ -71,6 +71,7 @@ const rankingLoading = ref(false)
 
 let bandwidthChart = null
 let trafficChart = null
+let echarts = null
 
 const handleTopTab = (name) => {
   const map = {
@@ -131,17 +132,19 @@ const buildChartOption = (title, color, data) => {
   }
 }
 
-const ensureCharts = () => {
+const ensureCharts = async () => {
   const bwDom = document.getElementById('bandwidthChart')
   const trDom = document.getElementById('trafficChart')
   if (!bwDom || !trDom) return false
+  echarts = echarts || await loadEcharts()
+  if (!document.body.contains(bwDom) || !document.body.contains(trDom)) return false
   if (!bandwidthChart) bandwidthChart = echarts.init(bwDom)
   if (!trafficChart) trafficChart = echarts.init(trDom)
   return true
 }
 
-const updateCharts = (payload) => {
-  if (!ensureCharts()) return
+const updateCharts = async (payload) => {
+  if (!await ensureCharts()) return
   const times = payload?.x_axis || []
   const bwValues = payload?.bandwidth || []
   const trValues = payload?.traffic || []
@@ -157,7 +160,7 @@ const loadTraffic = async () => {
     })
     if (res.code === 0 || res.code === 200) {
       await nextTick()
-      updateCharts(res.data || {})
+      await updateCharts(res.data || {})
     }
   } finally {
     trafficLoading.value = false

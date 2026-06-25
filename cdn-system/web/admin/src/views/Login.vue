@@ -25,8 +25,8 @@
             </el-form-item>
             <el-form-item v-if="showCaptchaType">
               <el-radio-group v-model="captchaType">
-                <el-radio label="email">邮箱验证码</el-radio>
-                <el-radio label="sms">短信验证码</el-radio>
+                <el-radio value="email">邮箱验证码</el-radio>
+                <el-radio value="sms">短信验证码</el-radio>
               </el-radio-group>
             </el-form-item>
             <el-form-item v-if="showCaptcha">

@@ -24,8 +24,28 @@
             <el-radio-group v-model="form.type">
               <el-radio :value="1">{{ NODE_T.l1EdgeNode }}</el-radio>
               <el-radio :value="2">{{ NODE_T.l2MiddleNode }}</el-radio>
+              <el-radio :value="3">{{ NODE_T.l3RegionalNode }}</el-radio>
             </el-radio-group>
+            <div v-if="form.type === 1" class="form-helper">{{ NODE_T.l1Desc }}</div>
+            <div v-else-if="form.type === 2" class="form-helper">{{ NODE_T.l2Desc }}</div>
+            <div v-else-if="form.type === 3" class="form-helper">{{ NODE_T.l3Desc }}</div>
           </el-form-item>
+          <template v-if="form.type === 3">
+            <el-form-item :label="NODE_T.parentFetchMode">
+              <el-radio-group v-model="form.parent_fetch_mode">
+                <el-radio v-for="item in PARENT_FETCH_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="form.parent_fetch_mode !== 'origin'" :label="NODE_T.parentGroup">
+              <el-select v-model="form.parent_group_id" :placeholder="NODE_T.parentGroupPlaceholder" clearable style="width: 100%;">
+                <el-option v-for="group in nodeGroups" :key="group.id" :label="group.name" :value="group.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="form.parent_fetch_mode === 'l1'" :label="NODE_T.l1RespectL2">
+              <el-switch v-model="form.l1_respect_l2" />
+              <div class="form-helper">{{ NODE_T.l1RespectL2Hint }}</div>
+            </el-form-item>
+          </template>
           <el-divider content-position="left">{{ NODE_T.sshSettings }}</el-divider>
           <el-form-item :label="NODE_T.sshHost">
             <el-input v-model="form.ssh_host" :placeholder="NODE_T.sshHostPlaceholder" />
@@ -84,8 +104,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, computed } from 'vue'
-import { NODE_T } from './constants'
+import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { NODE_T, PARENT_FETCH_OPTIONS } from './constants'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 
@@ -121,15 +141,19 @@ const form = reactive({
   ssh_key: '',
   work_dir: '/www/node',
   auto_install: true,
-  sub_ips: []
+  sub_ips: [],
+  parent_group_id: 0,
+  parent_fetch_mode: 'origin',
+  l1_respect_l2: true
 })
+const nodeGroups = ref([])
 const subIpsText = ref('')
 const originalRegionId = ref(0)
 const regionLocked = computed(() => Number(props.item?.line_count || 0) > 0)
 
 const applyItem = (item) => {
   const nextRegionId = Number(item?.region_id || 0)
-  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', bw_limit: '', ssh_host: '', ssh_port: 22, ssh_user: DEFAULT_SSH_USER, ssh_auth_type: 'password', ssh_password: '', ssh_key: '', work_dir: '/www/node', auto_install: true, sub_ips: [] }, item, {
+  Object.assign(form, { id: 0, name: '', region_id: 0, remark: '', sort_order: 100, ip: '', type: 1, cache_dir: '', cache_limit: 0, log_dir: '', bw_limit: '', ssh_host: '', ssh_port: 22, ssh_user: DEFAULT_SSH_USER, ssh_auth_type: 'password', ssh_password: '', ssh_key: '', work_dir: '/www/node', auto_install: true, sub_ips: [], parent_group_id: 0, parent_fetch_mode: 'origin', l1_respect_l2: true }, item, {
     region_id: nextRegionId,
     work_dir: '/www/node'
   })
@@ -157,7 +181,18 @@ watch(() => props.regions.length, () => {
 })
 watch(visible, (val) => emit('update:modelValue', val))
 
+const loadNodeGroups = async () => {
+  const res = await request.get('/node-groups', { params: { pageSize: 200 } })
+  nodeGroups.value = res?.list || res?.data?.list || []
+}
+
+onMounted(loadNodeGroups)
+
 const handleSubmit = async () => {
+  if (Number(form.type) === 3 && form.parent_fetch_mode !== 'origin' && !Number(form.parent_group_id)) {
+    ElMessage.warning(NODE_T.parentGroupPlaceholder)
+    return
+  }
   if (regionLocked.value && Number(form.region_id || 0) !== originalRegionId.value) {
     ElMessage.warning(NODE_T.regionLockedHint)
     return

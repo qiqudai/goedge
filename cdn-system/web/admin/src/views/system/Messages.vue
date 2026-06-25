@@ -115,8 +115,10 @@ onMounted(() => loadList())
 }
 .detail-content {
   padding: 8px 10px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
+  color: var(--el-text-color-regular);
   line-height: 1.6;
 }
 </style>

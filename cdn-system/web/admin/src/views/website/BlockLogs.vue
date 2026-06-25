@@ -5,6 +5,7 @@
         <div class="filter-container">
           <span class="timezone-note">时间显示：本地时区 ({{ localTimeZoneLabel }})</span>
           <el-button type="primary" class="filter-item" @click="handleUnblockBatch">批量解封</el-button>
+          <el-button type="danger" class="filter-item" @click="openBlockBatchDialog">加入黑名单</el-button>
           <el-button class="filter-item" @click="handleUnblockSite">解封网站</el-button>
           <el-button class="filter-item" @click="handleExportCurrent">导出当前</el-button>
 
@@ -151,6 +152,26 @@
         </AppTable>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="blockBatchVisible" title="批量加入黑名单" width="560px">
+      <el-form label-width="90px">
+        <el-form-item label="域名" required>
+          <el-input v-model="blockBatchForm.domain" placeholder="example.com" />
+        </el-form-item>
+        <el-form-item label="IP 列表" required>
+          <el-input
+            v-model="blockBatchForm.text"
+            type="textarea"
+            :rows="8"
+            placeholder="一行一个，支持单 IP、CIDR、通配符&#10;1.2.3.4&#10;127.*.*.*&#10;10.0.0.0/24"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="blockBatchVisible = false">取消</el-button>
+        <el-button type="primary" :loading="blockBatchSubmitting" @click="submitBlockBatch">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -158,7 +179,7 @@
 import { ref, onMounted, reactive, computed} from 'vue'
 import { Search, ArrowDown } from '@element-plus/icons-vue'
 import request from '@/utils/request'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatDateInTimezone } from '@/utils/helpers'
 
 const activeTab = ref('current')
@@ -170,6 +191,9 @@ const currentTotal = ref(0)
 const currentSelections = ref([])
 const currentQuery = reactive({ page: 1, pageSize: 10 })
 const currentFilter = reactive({ type: 'ip', keyword: '' })
+const blockBatchVisible = ref(false)
+const blockBatchSubmitting = ref(false)
+const blockBatchForm = reactive({ domain: '', text: '' })
 const DISPLAY_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const localTimeZoneLabel = computed(() => DISPLAY_TIMEZONE)
 
@@ -224,6 +248,48 @@ const fetchCurrentList = async () => {
 
 const handleCurrentSelectionChange = (rows) => {
   currentSelections.value = Array.isArray(rows) ? rows : []
+}
+
+const openBlockBatchDialog = () => {
+  const domains = [...new Set(currentSelections.value.map(r => String(r?.domain || '').trim()).filter(Boolean))]
+  const ips = [...new Set(currentSelections.value.map(r => String(r?.ip || '').trim()).filter(Boolean))]
+  blockBatchForm.domain = domains.length === 1 ? domains[0] : (domains[0] || '')
+  blockBatchForm.text = ips.join('\n')
+  blockBatchVisible.value = true
+}
+
+const submitBlockBatch = async () => {
+  const domain = String(blockBatchForm.domain || '').trim()
+  const text = String(blockBatchForm.text || '').trim()
+  if (!domain) {
+    ElMessage.warning('请填写域名')
+    return
+  }
+  if (!text) {
+    ElMessage.warning('请填写至少一个 IP 或 IP 范围')
+    return
+  }
+  blockBatchSubmitting.value = true
+  try {
+    await ElMessageBox.confirm(`确定将列表中的 IP 加入 ${domain} 的黑名单？`, '加入黑名单', { type: 'warning' })
+    const res = await request.post('/logs/block/block_batch', { domain, text })
+    const data = res.data || {}
+    const added = Number(data.added || 0)
+    const skipped = Number(data.skipped || 0)
+    const invalid = Array.isArray(data.invalid) ? data.invalid : []
+    let msg = `成功加入 ${added} 条`
+    if (skipped > 0) msg += `，跳过重复 ${skipped} 条`
+    if (invalid.length > 0) msg += `，无效 ${invalid.length} 条`
+    ElMessage.success(msg)
+    blockBatchVisible.value = false
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error(error)
+      ElMessage.error('加入黑名单失败')
+    }
+  } finally {
+    blockBatchSubmitting.value = false
+  }
 }
 
 const handleUnblockBatch = async () => {

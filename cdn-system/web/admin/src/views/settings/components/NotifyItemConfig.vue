@@ -32,8 +32,8 @@
 
         <el-form-item label="通知模板">
           <el-radio-group v-model="templateType">
-            <el-radio label="email">邮件模板</el-radio>
-            <el-radio label="sms">短信模板</el-radio>
+            <el-radio value="email">邮件模板</el-radio>
+            <el-radio value="sms">短信模板</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -134,8 +134,8 @@ const insertVar = (type, v) => {
   margin-bottom: 20px;
   font-size: 14px;
   font-weight: 500;
-  color: #606266;
-  border-bottom: 1px solid #ebeef5;
+  color: var(--el-text-color-regular);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   padding-bottom: 10px;
 }
 .section-divider span {
@@ -147,9 +147,9 @@ const insertVar = (type, v) => {
 }
 
 .template-box {
-    background: #fdfdfd; 
+    background: var(--el-bg-color); 
     padding: 15px; 
-    border: 1px solid #f0f0f0; 
+    border: 1px solid var(--el-border-color-lighter); 
     border-radius: 4px;
     margin-top: 5px;
 }
@@ -166,7 +166,7 @@ const insertVar = (type, v) => {
 }
 .variables-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-top: 8px;
 }
 </style>

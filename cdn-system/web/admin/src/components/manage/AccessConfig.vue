@@ -190,7 +190,7 @@ const aclList = computed(() => props.aclList)
 .section-title {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 20px;
   padding-left: 10px;
   border-left: 3px solid #409eff;
@@ -198,33 +198,33 @@ const aclList = computed(() => props.aclList)
 
 .divider {
   height: 1px;
-  background-color: #ebeef5;
+  background-color: var(--el-border-color-lighter);
   margin: 24px 0;
 }
 
 .form-helper {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 6px;
 }
 
 .cors-more-toggle {
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 14px;
   margin-bottom: 20px;
   margin-left: 150px;
   display: flex;
   align-items: center;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   padding: 10px 15px;
   border-radius: 4px;
   transition: all 0.3s;
 }
 
 .cors-more-toggle:hover {
-  background: #edf2f7;
+  background: var(--el-fill-color-lighter);
   color: #409eff;
 }
 </style>

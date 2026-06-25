@@ -1,8 +1,61 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
-import 'element-plus/dist/index.css'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+import {
+  ElAlert,
+  ElAside,
+  ElAvatar,
+  ElButton,
+  ElButtonGroup,
+  ElCard,
+  ElCascader,
+  ElCheckbox,
+  ElCheckboxGroup,
+  ElCol,
+  ElCollapse,
+  ElCollapseItem,
+  ElConfigProvider,
+  ElContainer,
+  ElDatePicker,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDivider,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElForm,
+  ElFormItem,
+  ElFooter,
+  ElHeader,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLink,
+  ElLoading,
+  ElMain,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElPageHeader,
+  ElPagination,
+  ElPopover,
+  ElProgress,
+  ElRadio,
+  ElRadioButton,
+  ElRadioGroup,
+  ElRow,
+  ElSelect,
+  ElSlider,
+  ElSubMenu,
+  ElSwitch,
+  ElTabPane,
+  ElTable,
+  ElTableColumn,
+  ElTabs,
+  ElTag,
+  ElTooltip,
+  ElUpload
+} from 'element-plus'
+import './element-plus.css'
 import 'default-passive-events'
 import App from './App.vue'
 import router from './router'
@@ -14,13 +67,69 @@ import './style.css'
 
 const app = createApp(App)
 
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
+const elementComponents = [
+  ElAlert,
+  ElAside,
+  ElAvatar,
+  ElButton,
+  ElButtonGroup,
+  ElCard,
+  ElCascader,
+  ElCheckbox,
+  ElCheckboxGroup,
+  ElCol,
+  ElCollapse,
+  ElCollapseItem,
+  ElConfigProvider,
+  ElContainer,
+  ElDatePicker,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDivider,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElForm,
+  ElFormItem,
+  ElFooter,
+  ElHeader,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLink,
+  ElMain,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElPageHeader,
+  ElPagination,
+  ElPopover,
+  ElProgress,
+  ElRadio,
+  ElRadioButton,
+  ElRadioGroup,
+  ElRow,
+  ElSelect,
+  ElSlider,
+  ElSubMenu,
+  ElSwitch,
+  ElTabPane,
+  ElTable,
+  ElTableColumn,
+  ElTabs,
+  ElTag,
+  ElTooltip,
+  ElUpload
+]
+
+elementComponents.forEach(component => {
+  app.use(component)
+})
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+app.use(ElLoading)
 app.component('AppPagination', AppPagination)
 app.component('AppTable', AppTable)
 app.mount('#app')

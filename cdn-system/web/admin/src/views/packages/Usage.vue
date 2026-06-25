@@ -42,15 +42,19 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import request from '@/utils/request'
-import * as echarts from 'echarts'
+import { loadEcharts } from '@/utils/echarts'
 
 const range = ref('today')
 const loading = ref(false)
 const tableData = ref([])
 const usageChartRef = ref(null)
 let usageChart = null
+let echarts = null
+const handleResize = () => {
+  usageChart?.resize()
+}
 
 const summary = ref({
   total: 0,
@@ -59,10 +63,13 @@ const summary = ref({
   unit: 'MB'
 })
 
-const buildChart = (xAxis, series, unit) => {
+const buildChart = async (xAxis, series, unit) => {
   if (!usageChartRef.value) return
+  const chartDom = usageChartRef.value
+  echarts = echarts || await loadEcharts()
+  if (!document.body.contains(chartDom)) return
   if (!usageChart) {
-    usageChart = echarts.init(usageChartRef.value)
+    usageChart = echarts.init(chartDom)
   }
   usageChart.setOption({
     tooltip: { trigger: 'axis' },
@@ -108,7 +115,7 @@ const loadUsage = async () => {
       }
       tableData.value = data.list || []
       await nextTick()
-      buildChart(data.x_axis || [], data.values || [], summary.value.unit)
+      await buildChart(data.x_axis || [], data.values || [], summary.value.unit)
     }
   } finally {
     loading.value = false
@@ -117,9 +124,13 @@ const loadUsage = async () => {
 
 onMounted(() => {
   loadUsage()
-  window.addEventListener('resize', () => {
-    if (usageChart) usageChart.resize()
-  })
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  usageChart?.dispose()
+  usageChart = null
 })
 </script>
 

@@ -5,8 +5,8 @@
       <div class="section-top">
          <el-form-item label="通知时间段">
            <el-radio-group v-model="configs['notification-period']">
-             <el-radio label="all">全天</el-radio>
-             <el-radio label="custom">自定义</el-radio>
+             <el-radio value="all">全天</el-radio>
+             <el-radio value="custom">自定义</el-radio>
            </el-radio-group>
            <el-input 
              v-if="configs['notification-period'] === 'custom'" 
@@ -266,7 +266,7 @@ watch(configs, () => {
   padding: 10px;
 }
 .section-top {
-    border-bottom: 1px solid #ebeef5;
+    border-bottom: 1px solid var(--el-border-color-lighter);
     margin-bottom: 20px;
     padding-bottom: 20px;
 }

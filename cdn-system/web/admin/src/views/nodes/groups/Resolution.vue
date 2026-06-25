@@ -596,7 +596,7 @@ watch(
 <style scoped>
 :deep(.bw-dropdown .el-input__wrapper),
 :deep(.bw-dropdown .el-select__wrapper) {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
   border-radius: 4px;
   box-shadow: none;
   transition: border-color 0.2s ease, background-color 0.2s ease;
@@ -652,7 +652,7 @@ watch(
   gap: 8px;
 }
 .label {
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .line-bar {
   display: flex;
@@ -660,7 +660,7 @@ watch(
   gap: 12px;
 }
 .line-tip {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .split-container {
@@ -709,23 +709,23 @@ watch(
 }
 
 .bw-cascader-dropdown {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
 }
 
 .bw-cascader-dropdown .el-cascader-menu {
-  border-right-color: #ebeef5;
+  border-right-color: var(--el-border-color-lighter);
 }
 
 .bw-cascader-dropdown .el-cascader-node {
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .bw-cascader-dropdown .el-cascader-node:not(.is-disabled):hover,
 .bw-cascader-dropdown .el-cascader-node.in-active-path,
 .bw-cascader-dropdown .el-cascader-node.is-active,
 .bw-cascader-dropdown .el-cascader-node.is-selectable.in-checked-path {
-  background-color: #f5f7fa;
-  color: #111111;
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
 }
 
 :root[data-theme="dark"] .bw-cascader-dropdown {

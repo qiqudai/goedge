@@ -211,14 +211,14 @@ const handleSave = () => {
 
 <style scoped>
 .advanced-settings {
-  background-color: #f5f7fa;
+  background-color: var(--el-fill-color-light);
   padding: 10px;
   border-radius: 4px;
 }
 .skip-conditions-wrapper {
-  background: #fff;
+  background: var(--el-bg-color);
   padding: 10px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
   border-radius: 4px;
 }
 .add-skip-row {

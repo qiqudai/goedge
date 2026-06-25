@@ -289,7 +289,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  background-color: #fff;
+  background-color: var(--el-bg-color);
   padding: 10px;
   border-radius: 4px;
 }
@@ -302,10 +302,10 @@ onMounted(() => {
   margin-top: 20px;
   text-align: right;
   padding: 10px;
-  background: #fff;
+  background: var(--el-bg-color);
 }
 .text-gray {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 0.9em;
   margin-left: 5px;
 }

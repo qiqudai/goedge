@@ -312,7 +312,7 @@ const calcCertDays = (cert, certs) => {
 .section-title {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 20px;
   padding-left: 10px;
   border-left: 3px solid #409eff;
@@ -320,13 +320,13 @@ const calcCertDays = (cert, certs) => {
 
 .divider {
   height: 1px;
-  background-color: #ebeef5;
+  background-color: var(--el-border-color-lighter);
   margin: 24px 0;
 }
 
 .form-helper {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 6px;
 }

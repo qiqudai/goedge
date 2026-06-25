@@ -206,7 +206,7 @@ onMounted(() => {
 }
 
 .page-card {
-  background: #fff;
+  background: var(--el-bg-color);
 }
 
 .manage-tabs {
@@ -217,7 +217,7 @@ onMounted(() => {
   display: block;
   width: 100%;
   margin-top: 6px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 1.5;
   clear: both;

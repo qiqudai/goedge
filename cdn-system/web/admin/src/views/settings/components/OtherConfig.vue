@@ -13,9 +13,9 @@
       <template #header>记录相关</template>
       <el-form-item label="记录定时修复">
         <el-radio-group v-model.number="form.record_repair_enable" @change="handleSave">
-          <el-radio :label="0">关闭</el-radio>
-          <el-radio :label="1">定时修复记录</el-radio>
-          <el-radio :label="2">Scheduled repair and purge</el-radio>
+          <el-radio :value="0">关闭</el-radio>
+          <el-radio :value="1">定时修复记录</el-radio>
+          <el-radio :value="2">Scheduled repair and purge</el-radio>
         </el-radio-group>
       </el-form-item>
       <el-form-item label="DNS记录保护">
@@ -31,8 +31,8 @@
       </el-form-item>
       <el-form-item label="同步范围">
         <el-radio-group v-model="form.sync_site_config_scope" @change="handleSave">
-          <el-radio label="region">By region</el-radio>
-          <el-radio label="group">按线路组</el-radio>
+          <el-radio value="region">By region</el-radio>
+          <el-radio value="group">按线路组</el-radio>
         </el-radio-group>
       </el-form-item>
     </el-card>
@@ -85,8 +85,8 @@
       <template #header>流量计算</template>
       <el-form-item label="TCP系数">
         <el-radio-group v-model.number="form.tcp_traffic_factor" @change="handleSave">
-          <el-radio :label="1.0">1.0</el-radio>
-          <el-radio :label="1.1">1.1</el-radio>
+          <el-radio :value="1.0">1.0</el-radio>
+          <el-radio :value="1.1">1.1</el-radio>
         </el-radio-group>
         <div class="form-helper mt-10 text-gray-500 line-height-1.5">
           由于TCP/IP包头和TCP重传等原因，实际节点流量消耗要比从Nginx日志文件里统计的要大，所以提供一个系数可选择：<br>

@@ -389,7 +389,7 @@ onMounted(() => {
 }
 .timezone-note {
   margin-bottom: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .filter-row {
@@ -399,11 +399,11 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 .advanced-filter-area {
-  background: #f8f9fa;
+  background: var(--el-fill-color-light);
   padding: 15px;
   border-radius: 4px;
   margin-bottom: 10px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
 }
 .filter-tags-container {
   margin-bottom: 10px;
@@ -417,7 +417,7 @@ onMounted(() => {
   gap: 6px;
 }
 .range-sep {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .text-success { color: #67c23a; }
 .text-warning { color: #e6a23c; }
@@ -430,6 +430,6 @@ onMounted(() => {
 .empty-block {
   text-align: center;
   padding: 50px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>

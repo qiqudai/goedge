@@ -31,10 +31,10 @@ const reload = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f6f8;
+  background: var(--el-bg-color-page);
 }
 .card {
-  background: #fff;
+  background: var(--el-bg-color);
   padding: 32px 40px;
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
@@ -47,7 +47,7 @@ const reload = () => {
   margin-bottom: 12px;
 }
 .message {
-  color: #666;
+  color: var(--el-text-color-regular);
   margin-bottom: 20px;
   line-height: 1.6;
   word-break: break-word;

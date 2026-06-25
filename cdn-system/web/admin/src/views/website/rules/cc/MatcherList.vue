@@ -345,7 +345,7 @@ onMounted(() => {
 }
 .form-helper {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 5px;
 }
@@ -354,7 +354,7 @@ onMounted(() => {
   gap: 10px;
   margin-top: 10px;
   align-items: center;
-  border: 1px dashed #dcdfe6;
+  border: 1px dashed var(--el-border-color);
   padding: 10px;
   border-radius: 4px;
 }

@@ -74,8 +74,18 @@ export const NODE_T = {
   installed: '\u5df2\u5b89\u88c5',
   l1EdgeNode: 'L1\u8fb9\u7f18\u8282\u70b9',
   l2MiddleNode: 'L2\u4e2d\u95f4\u8282\u70b9',
+  l3RegionalNode: 'L3\u56fd\u5185\u63a5\u5165\u8282\u70b9',
   l1Desc: 'L1\u8fb9\u7f18\u8282\u70b9\u662f\u7528\u6237\u5b9e\u9645\u8bbf\u95ee\u7684\u8282\u70b9;',
   l2Desc: 'L2\u4e2d\u95f4\u8282\u70b9\u662fL1\u4e0e\u6e90\u670d\u52a1\u5668\u4e4b\u95f4\u7684\u8282\u70b9\uff0c\u7528\u4e8e\u6c47\u805aL1\u8282\u70b9\u8bf7\u6c42\uff0c\u63d0\u9ad8\u7f13\u5b58\u547d\u4e2d\u7387\uff0c\u6216\u4f18\u5316\u56de\u6e90\u7ebf\u8def\u3002',
+  l3Desc: 'L3\u56fd\u5185\u63a5\u5165\u8282\u70b9\u9760\u8fd1\u56fd\u5185\u7528\u6237\uff0c\u53ef\u9009\u62e9\u56de\u6e90\u5230\u7236\u8282\u70b9\u7ec4\u7684 L1/L2\uff0c\u6216\u76f4\u8fde\u6e90\u7ad9\u3002',
+  parentGroup: '\u7236\u8282\u70b9\u7ec4',
+  parentGroupPlaceholder: '\u8bf7\u9009\u62e9\u7236\u8282\u70b9\u7ec4\uff08\u5982\u9999\u6e2f\u7ec4\uff09',
+  parentFetchMode: '\u56de\u6e90\u65b9\u5f0f',
+  parentFetchOrigin: '\u76f4\u8fde\u6e90\u7ad9',
+  parentFetchL1: '\u56de\u6e90\u5230 L1',
+  parentFetchL2: '\u56de\u6e90\u5230 L2',
+  l1RespectL2: 'L1 \u662f\u5426\u7ee7\u7eed\u8d70 L2',
+  l1RespectL2Hint: '\u5173\u95ed\u65f6\uff0cL3 \u2192 L1 \u8bf7\u6c42\u4f1a\u5f3a\u5236 L1 \u76f4\u8fde\u6e90\u7ad9',
   cacheDir: '\u7f13\u5b58\u76ee\u5f55',
   cacheLimit: '\u7f13\u5b58\u4e0a\u9650',
   logDir: '\u65e5\u5fd7\u76ee\u5f55',
@@ -117,5 +127,12 @@ export const STATUS_OPTIONS = [
 
 export const TYPE_OPTIONS = [
   { label: 'L1\u8fb9\u7f18', value: 1 },
-  { label: 'L2\u4e2d\u95f4', value: 2 }
+  { label: 'L2\u4e2d\u95f4', value: 2 },
+  { label: 'L3\u56fd\u5185\u63a5\u5165', value: 3 }
+]
+
+export const PARENT_FETCH_OPTIONS = [
+  { label: '\u76f4\u8fde\u6e90\u7ad9', value: 'origin' },
+  { label: '\u56de\u6e90\u5230 L1', value: 'l1' },
+  { label: '\u56de\u6e90\u5230 L2', value: 'l2' }
 ]

@@ -1,10 +1,13 @@
 <template>
-  <router-view />
-  <GlobalLoading />
+  <el-config-provider :locale="zhCn">
+    <router-view />
+    <GlobalLoading />
+  </el-config-provider>
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import GlobalLoading from '@/components/GlobalLoading.vue'
 import { useSystemInfo } from '@/composables/useSystemInfo'
 

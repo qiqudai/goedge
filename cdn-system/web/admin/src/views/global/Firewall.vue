@@ -79,6 +79,40 @@
         <el-tab-pane label="安全控制 & 名单" name="access">
           <el-form label-width="180px" class="firewall-form">
             <SectionTitle>黑白名单 (一行一个，支持 CIDR)</SectionTitle>
+            <div class="risk-grid">
+              <div class="risk-item">
+                <span class="risk-label">泛 IP 上限</span>
+                <strong>{{ wafPatternLimit }}</strong>
+              </div>
+              <div class="risk-item">
+                <span class="risk-label">黑名单精准 IP</span>
+                <strong>{{ blacklistRisk.exact }}</strong>
+              </div>
+              <div class="risk-item" :class="{ danger: blacklistRisk.pattern > wafPatternLimit }">
+                <span class="risk-label">黑名单泛 IP</span>
+                <strong>{{ blacklistRisk.pattern }}</strong>
+              </div>
+              <div class="risk-item" :class="{ danger: whitelistRisk.pattern > wafPatternLimit }">
+                <span class="risk-label">白名单泛 IP</span>
+                <strong>{{ whitelistRisk.pattern }}</strong>
+              </div>
+              <div class="risk-item" :class="{ danger: totalInvalidEntries > 0 }">
+                <span class="risk-label">无效条目</span>
+                <strong>{{ totalInvalidEntries }}</strong>
+              </div>
+              <div class="risk-item" :class="{ warn: totalOverbroadEntries > 0 }">
+                <span class="risk-label">过宽规则</span>
+                <strong>{{ totalOverbroadEntries }}</strong>
+              </div>
+            </div>
+            <el-alert
+              v-if="wafListRiskMessage"
+              class="risk-alert"
+              :title="wafListRiskMessage"
+              type="warning"
+              show-icon
+              :closable="false"
+            />
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="白名单 IP">
@@ -363,6 +397,105 @@ const guardEditorTab = ref('template')
 const guardPreviewLang = ref('zh-CN')
 const config = ref({ waf: { ...defaultWaf }, guard_pages: {}, error_page_i18n: { ...DEFAULT_ERROR_PAGE_I18N } })
 
+const wafPatternLimit = computed(() => {
+  return Number(config.value.resources?.website?.max_waf_pattern_ips || 100)
+})
+
+const parseIPListEntries = (text = '') => {
+  const seen = new Set()
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(item => item.trim())
+    .filter(item => {
+      if (!item || seen.has(item)) return false
+      seen.add(item)
+      return true
+    })
+}
+
+const isIPv4 = (entry) => {
+  const parts = entry.split('.')
+  return parts.length === 4 && parts.every(part => {
+    if (!/^\d+$/.test(part)) return false
+    const n = Number(part)
+    return n >= 0 && n <= 255
+  })
+}
+
+const isIPv6 = (entry) => entry.includes(':') && /^[0-9a-fA-F:]+$/.test(entry)
+
+const isCIDR = (entry) => {
+  const [ip, prefix] = entry.split('/')
+  if (!ip || prefix == null || !/^\d+$/.test(prefix)) return false
+  const bits = Number(prefix)
+  if (isIPv4(ip)) return bits >= 0 && bits <= 32
+  if (isIPv6(ip)) return bits >= 0 && bits <= 128
+  return false
+}
+
+const isWildcard = (entry) => {
+  if (!entry.includes('*')) return false
+  const parts = entry.split('.')
+  if (!parts.length || parts.length > 4) return false
+  return parts.every(part => part === '*' || (/^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255))
+}
+
+const isPatternEntry = (entry) => entry.includes('/') || entry.includes('*')
+
+const isValidIPEntry = (entry) => isIPv4(entry) || isIPv6(entry) || isCIDR(entry) || isWildcard(entry)
+
+const isOverbroadEntry = (entry) => {
+  if (entry.includes('*')) {
+    return entry.split('.').filter(part => part !== '*').length === 0
+  }
+  if (entry.includes('/')) {
+    const [ip, prefix] = entry.split('/')
+    const bits = Number(prefix)
+    if (isIPv4(ip)) return bits <= 8
+    if (isIPv6(ip)) return bits <= 32
+  }
+  return false
+}
+
+const analyzeIPList = (text = '') => {
+  const stats = { total: 0, exact: 0, pattern: 0, invalid: 0, overbroad: 0 }
+  parseIPListEntries(text).forEach(entry => {
+    stats.total++
+    if (!isValidIPEntry(entry)) {
+      stats.invalid++
+      return
+    }
+    if (isPatternEntry(entry)) {
+      stats.pattern++
+      if (isOverbroadEntry(entry)) {
+        stats.overbroad++
+      }
+      return
+    }
+    stats.exact++
+  })
+  return stats
+}
+
+const blacklistRisk = computed(() => analyzeIPList(config.value.waf?.blacklist_ips || ''))
+const whitelistRisk = computed(() => analyzeIPList(config.value.waf?.whitelist_ips || ''))
+const totalInvalidEntries = computed(() => blacklistRisk.value.invalid + whitelistRisk.value.invalid)
+const totalOverbroadEntries = computed(() => blacklistRisk.value.overbroad + whitelistRisk.value.overbroad)
+const wafListRiskMessage = computed(() => {
+  if (totalInvalidEntries.value > 0) {
+    return `存在 ${totalInvalidEntries.value} 条无效 IP 规则，保存时会被后端拒绝。`
+  }
+  if (blacklistRisk.value.pattern > wafPatternLimit.value || whitelistRisk.value.pattern > wafPatternLimit.value) {
+    return `泛 IP 规则超过上限 ${wafPatternLimit.value}，请减少 CIDR 或通配符规则。`
+  }
+  if (totalOverbroadEntries.value > 0) {
+    return `存在 ${totalOverbroadEntries.value} 条覆盖范围过大的规则，请确认不会误封大范围用户。`
+  }
+  return ''
+})
+
 const enabledGuardLangs = computed(() => {
   const langs = config.value.error_page_i18n?.enabled_langs
   return Array.isArray(langs) && langs.length ? langs : DEFAULT_ERROR_PAGE_I18N.enabled_langs
@@ -386,6 +519,11 @@ const guardPreviewHtml = computed(() => {
 const normalizeConfig = (raw = {}) => {
   const merged = { ...raw }
   merged.waf = normalizeWaf(merged.waf)
+  merged.resources = merged.resources || {}
+  merged.resources.website = {
+    max_waf_pattern_ips: 100,
+    ...(merged.resources.website || {})
+  }
   merged.error_page_i18n = {
     ...DEFAULT_ERROR_PAGE_I18N,
     ...(merged.error_page_i18n || {})
@@ -576,6 +714,44 @@ onMounted(() => {
   margin-left: 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.risk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 6px 0 14px;
+}
+
+.risk-item {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--el-fill-color-lighter);
+}
+
+.risk-item strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  color: var(--el-text-color-primary);
+}
+
+.risk-item.warn strong {
+  color: var(--el-color-warning);
+}
+
+.risk-item.danger strong {
+  color: var(--el-color-danger);
+}
+
+.risk-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.risk-alert {
+  margin: 0 0 14px;
 }
 
 .unit {

@@ -523,49 +523,53 @@ const openUpgrade = (row) => {
   upgradeVisible.value = true
 }
 
+const toEditLimit = (val) => {
+  if (val === null || val === undefined || val === '') {
+    return ''
+  }
+  if (typeof val === 'number' && val <= 0) {
+    return ''
+  }
+  return String(val)
+}
+
+const normalizeLimitForSubmit = (val) => {
+  const text = String(val ?? '').trim()
+  if (!text || text === '不限') {
+    return '0'
+  }
+  return text
+}
+
 const openEdit = (row) => {
-  // We should ideally fetch single item to get full details if list is partial.
-  // Assuming list has all fields for now or fetch detail.
-  // Checking list response in Basic.vue... list usually has most.
-  // But safest is to use row data and map it.
-  
-  // Mapping row (UserPackage) fields to editForm
   editForm.value = {
     id: row.id,
-    name: row.plan_name || '', // user_plans table might not have plan_name column editable? Usually it references plan. But UserPackage has snapshot.
-    // The screenshot implies we are editing the UserPackage specific settings.
+    name: row.plan_name || '',
     end_at: formatDateTime(row.end_at),
-    
-    // Groups
-    region_id: row.region_id || row.region || 0, // check api response key
+
+    region_id: row.region_id || row.region || 0,
     node_group_id: row.node_group_id || 0,
     backup_group_id: row.backup_group_id || 0,
 
-    // Resources
-    traffic: row.traffic,
-    bandwidth: row.bandwidth,
-    connection: row.connection,
-    domain: row.domain,
-    main_domain_limit: row.main_domain_limit,
-    http_port: row.http_port,
-    stream_port: row.stream_port,
-    custom_cc_rule: row.custom_cc_rule,
-    websocket: row.websocket,
-    http3_enabled: row.http3_enabled,
+    traffic: toEditLimit(row.traffic),
+    bandwidth: toEditLimit(row.bandwidth),
+    connection: toEditLimit(row.connection),
+    domain: toEditLimit(row.domain),
+    main_domain_limit: toEditLimit(row.main_domain_limit),
+    http_port: toEditLimit(row.http_port),
+    stream_port: toEditLimit(row.stream_port),
+    custom_cc_rule: !!row.custom_cc_rule,
+    websocket: !!row.websocket,
+    http3_enabled: !!row.http3_enabled,
 
-    // Price
-    price_monthly: row.price_monthly,
-    price_quarterly: row.price_quarterly,
-    price_yearly: row.price_yearly,
+    price_monthly: row.price_monthly ?? row.month_price ?? 0,
+    price_quarterly: row.price_quarterly ?? row.quarter_price ?? 0,
+    price_yearly: row.price_yearly ?? row.year_price ?? 0,
 
-    // CNAME
-    // User request: Hostname is the "record_id" (Resolve Value). Show it.
     cname_hostname: row.cname_hostname || row.record_id || '',
     cname_domain: row.cname_domain || '',
-    cname_mode: row.cname_mode || 'default'
+    cname_mode: row.cname_mode || 'domain'
   }
-  console.log('[DEBUG] openEdit row:', row)
-  console.log('[DEBUG] editForm cname:', editForm.value.cname_domain, editForm.value.cname_mode)
   editVisible.value = true
 }
 
@@ -589,10 +593,20 @@ const submitEdit = () => {
     return
   }
 
-  // Construct payload. 
-  // IMPORTANT: Backend needs to handle these fields.
-  const payload = { ...editForm.value }
-  
+  const payload = {
+    ...editForm.value,
+    traffic: normalizeLimitForSubmit(editForm.value.traffic),
+    bandwidth: normalizeLimitForSubmit(editForm.value.bandwidth),
+    connection: normalizeLimitForSubmit(editForm.value.connection),
+    domain: normalizeLimitForSubmit(editForm.value.domain),
+    main_domain_limit: normalizeLimitForSubmit(editForm.value.main_domain_limit),
+    http_port: normalizeLimitForSubmit(editForm.value.http_port),
+    stream_port: normalizeLimitForSubmit(editForm.value.stream_port),
+    price_monthly: Number(editForm.value.price_monthly) || 0,
+    price_quarterly: Number(editForm.value.price_quarterly) || 0,
+    price_yearly: Number(editForm.value.price_yearly) || 0
+  }
+
   request.put(`/user_plans/${editForm.value.id}`, payload).then(() => {
     ElMessage.success('更新成功')
     editVisible.value = false

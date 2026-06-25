@@ -34,7 +34,7 @@ const siteSettings = computed(() => {
 <style scoped>
 .page-header {
   padding: 16px;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 4px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }

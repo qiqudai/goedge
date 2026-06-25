@@ -433,7 +433,7 @@ onMounted(() => {
 
 <style scoped>
 .country-selector {
-  border: 1px dashed #dcdfe6;
+  border: 1px dashed var(--el-border-color);
   padding: 12px;
   border-radius: 6px;
   margin-top: 8px;
@@ -442,7 +442,7 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 .custom-selector {
-  border-top: 1px dashed #eee;
+  border-top: 1px dashed var(--el-border-color-lighter);
   padding-top: 12px;
 }
 .country-group {
@@ -460,7 +460,7 @@ onMounted(() => {
 .group-label {
   font-size: 14px;
   font-weight: bold;
-  color: #606266;
+  color: var(--el-text-color-regular);
   margin-right: 12px;
   min-width: 60px;
 }

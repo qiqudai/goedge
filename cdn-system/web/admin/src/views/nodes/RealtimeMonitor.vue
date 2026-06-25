@@ -131,15 +131,20 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted, nextTick, watch } from 'vue'
+import { reactive, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import request from '@/utils/request'
-import * as echarts from 'echarts'
+import { loadEcharts } from '@/utils/echarts'
 
 const activeTab = ref('ranking')
 const trafficChartRef = ref(null)
 let myChart = null
+let echarts = null
+let chartResizeBound = false
 const rankingLoading = ref(false)
 const metricsLoading = ref(false)
+const handleResize = () => {
+  myChart?.resize()
+}
 
 const ranking = reactive({
   metric: 'bandwidth',
@@ -168,6 +173,15 @@ const nodeOptions = ref([])
 onMounted(() => {
   fetchNodes()
   refreshRanking()
+})
+
+onBeforeUnmount(() => {
+  if (chartResizeBound) {
+    window.removeEventListener('resize', handleResize)
+    chartResizeBound = false
+  }
+  myChart?.dispose()
+  myChart = null
 })
 
 const fetchNodes = () => {
@@ -217,15 +231,20 @@ const refreshMetrics = async () => {
 }
 
 // Chart Logic
-const initChart = () => {
+const initChart = async () => {
   const chartDom = document.getElementById('trafficChart')
   if (!chartDom) return
   if (myChart) {
       myChart.dispose()
   }
+  echarts = echarts || await loadEcharts()
+  if (!document.body.contains(chartDom)) return
   myChart = echarts.init(chartDom)
   refreshTraffic() // Load data initially
-  window.addEventListener('resize', () => myChart && myChart.resize())
+  if (!chartResizeBound) {
+    window.addEventListener('resize', handleResize)
+    chartResizeBound = true
+  }
 }
 
 const refreshTraffic = () => {
@@ -379,7 +398,7 @@ const handleTrafficTimeRangeChange = () => {
 }
 
 .toolbar-label {
-  color: #606266;
+  color: var(--el-text-color-regular);
   min-width: 40px;
 }
 
@@ -388,10 +407,10 @@ const handleTrafficTimeRangeChange = () => {
 }
 
 .chart-container {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   padding: 18px;
-  background: #fff;
+  background: var(--el-bg-color);
 }
 
 .chart-title {

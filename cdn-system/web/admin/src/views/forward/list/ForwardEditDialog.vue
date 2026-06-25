@@ -281,11 +281,11 @@ export default {
     margin: 24px 0; 
     cursor: pointer;
     user-select: none;
-    color: #909399;
+    color: var(--el-text-color-secondary);
     font-size: 13px;
 }
-.expand-divider .line { flex: 1; height: 1px; background: #ebeef5; border-bottom: 1px dashed #ebeef5; }
+.expand-divider .line { flex: 1; height: 1px; background: var(--el-border-color-lighter); border-bottom: 1px dashed var(--el-border-color-lighter); }
 .expand-divider .text { padding: 0 15px; display: flex; align-items: center; gap: 5px; }
-.form-tip-small { font-size: 12px; color: #909399; }
+.form-tip-small { font-size: 12px; color: var(--el-text-color-secondary); }
 </style>
 

@@ -97,7 +97,7 @@ onMounted(() => loadKey())
 }
 .label {
   width: 90px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .value {
   display: flex;

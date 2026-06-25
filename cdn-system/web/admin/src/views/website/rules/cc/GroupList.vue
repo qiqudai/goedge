@@ -450,12 +450,12 @@ onMounted(() => {
 }
 .form-helper {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 5px;
 }
 .more-settings-container {
-  border-top: 1px dashed #ebeef5;
+  border-top: 1px dashed var(--el-border-color-lighter);
   margin-top: 10px;
   padding-top: 10px;
 }
