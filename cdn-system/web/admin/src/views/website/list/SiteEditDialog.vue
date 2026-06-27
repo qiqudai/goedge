@@ -62,6 +62,7 @@
             <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
+        <el-alert v-if="!canCreateWithPackage" :title="noPackageMessage" type="warning" :closable="false" class="limit-alert" />
 
         <el-form-item label="加速类型">
            <el-radio-group v-model="form.site_type">
@@ -120,6 +121,7 @@
                     <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
                 </el-select>
                 </el-form-item>
+                <el-alert v-if="!canCreateWithPackage" :title="noPackageMessage" type="warning" :closable="false" class="limit-alert" />
                 
                 <el-tabs v-model="batchMode" type="border-card" class="mb-4">
                     <el-tab-pane label="简单模式" name="simple">
@@ -187,7 +189,7 @@ domain=test.com|ip=2.2.2.2,3.3.3.3"
 </template>
 
 <script setup>
-import { ref, reactive, watch, nextTick } from 'vue'
+import { computed, ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import request from '@/utils/request'
@@ -248,6 +250,8 @@ const currentBatchId = ref('')
 const validBatchDomains = ref([])
 const domainUsage = ref(null)
 const domainLimitExceeded = ref(false)
+const noPackageMessage = '当前用户没有可用套餐，不能添加站点'
+const canCreateWithPackage = computed(() => form.id || userPackages.value.length > 0)
 
 const rules = {
   domains: [
@@ -358,6 +362,8 @@ const handleUserChange = async (uid) => {
         dnsProviders.value = []
         form.group_ids = []
         batchForm.group_id = ''
+        form.user_package_id = ''
+        batchForm.user_package_id = ''
         lastUserId.value = ''
         await reloadGroupSelect()
         return
@@ -366,6 +372,8 @@ const handleUserChange = async (uid) => {
     if (String(uid) !== String(lastUserId.value)) {
         form.group_ids = []
         batchForm.group_id = ''
+        form.user_package_id = ''
+        batchForm.user_package_id = ''
         lastUserId.value = uid
     }
     
@@ -511,8 +519,18 @@ const handleSubmit = async () => {
         submitting.value = false
         return
     }
+    if (!form.id && userPackages.value.length === 0) {
+        ElMessage.error(noPackageMessage)
+        submitting.value = false
+        return
+    }
     if (activeTab.value === 'single') {
         await singleFormRef.value?.validate()
+        if (!form.user_package_id) {
+            ElMessage.error('请选择套餐')
+            submitting.value = false
+            return
+        }
         const payload = { 
             ...form,
             user_id: Number(form.user_id),
@@ -564,6 +582,11 @@ const handleSubmit = async () => {
 
         if (!dataStr) {
             ElMessage.error('请输入网站数据')
+            submitting.value = false
+            return
+        }
+        if (!batchForm.user_package_id) {
+            ElMessage.error('请选择套餐')
             submitting.value = false
             return
         }

@@ -306,6 +306,26 @@ function _M.load_config()
     end
     config.upstream_map = upstream_map
 
+    local function load_status_file(name)
+        local prefix = ngx.config.prefix() or ""
+        if prefix ~= "" and prefix:sub(-1) ~= "/" then
+            prefix = prefix .. "/"
+        end
+        local path = prefix .. "conf/" .. name
+        local f = io.open(path, "r")
+        if not f then
+            return nil
+        end
+        local content = f:read("*a")
+        f:close()
+        if not content or content == "" then
+            return nil
+        end
+        return cjson.decode(content)
+    end
+    config.l2_status = load_status_file("l2_status.json")
+    config.parent_status = load_status_file("parent_status.json")
+
     -- Update Global State
     current_config = config
     last_version = version

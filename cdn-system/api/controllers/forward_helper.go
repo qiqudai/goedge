@@ -38,6 +38,16 @@ func parseForwardCreateRequest(c *gin.Context, admin bool) (*models.Forward, []i
 	if userID == 0 {
 		return nil, nil, errors.New("user_id is required")
 	}
+	if req.UserPackageID == 0 {
+		defaultID, err := findDefaultUserPackageID(userID)
+		if err != nil {
+			return nil, nil, err
+		}
+		req.UserPackageID = defaultID
+	}
+	if err := ensureUserPackageOwnership(userID, req.UserPackageID); err != nil {
+		return nil, nil, err
+	}
 
 	listenPorts := req.ListenPorts
 	if len(listenPorts) == 0 && strings.TrimSpace(req.ListenPortsInput) != "" {
@@ -139,21 +149,29 @@ func normalizeForwardListenEndpoint(value string) (string, int, bool) {
 		raw = strings.TrimSpace(raw[idx+3:])
 	}
 
+	listenValue := raw
+	if idx := strings.LastIndex(raw, "/"); idx != -1 {
+		suffix := strings.ToLower(strings.TrimSpace(raw[idx+1:]))
+		if suffix == "tcp" || suffix == "udp" {
+			listenValue = strings.TrimSpace(raw[:idx])
+		}
+	}
+
 	host := "*"
-	portStr := raw
-	if strings.HasPrefix(raw, ":") {
-		portStr = strings.TrimSpace(raw[1:])
-	} else if strings.Count(raw, ":") == 0 {
-		portStr = raw
+	portStr := listenValue
+	if strings.HasPrefix(listenValue, ":") {
+		portStr = strings.TrimSpace(listenValue[1:])
+	} else if strings.Count(listenValue, ":") == 0 {
+		portStr = listenValue
 	} else {
-		h, p, err := net.SplitHostPort(raw)
+		h, p, err := net.SplitHostPort(listenValue)
 		if err != nil {
-			idx := strings.LastIndex(raw, ":")
-			if idx <= 0 || idx == len(raw)-1 {
+			idx := strings.LastIndex(listenValue, ":")
+			if idx <= 0 || idx == len(listenValue)-1 {
 				return "", 0, false
 			}
-			h = raw[:idx]
-			p = raw[idx+1:]
+			h = listenValue[:idx]
+			p = listenValue[idx+1:]
 		}
 		host = strings.TrimSpace(strings.Trim(h, "[]"))
 		portStr = strings.TrimSpace(p)

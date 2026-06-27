@@ -324,7 +324,13 @@ func (ctr *AuthController) Register(c *gin.Context) {
 	}
 
 	now := time.Now()
+	userID, err := services.GenerateOrdinaryUserID(db.DB)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create user")})
+		return
+	}
 	user := models.User{
+		ID:        userID,
 		Name:      username,
 		Email:     strings.TrimSpace(req.Email),
 		Phone:     strings.TrimSpace(req.Phone),

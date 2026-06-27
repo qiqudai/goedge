@@ -14,6 +14,11 @@ type dnsAuthMeta struct {
 	TTL int `json:"ttl"`
 }
 
+type desiredDNSRecord struct {
+	Value  string
+	Weight int
+}
+
 func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs []int64) error {
 	if groupID == 0 {
 		return nil
@@ -114,23 +119,9 @@ func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs [
 		}
 
 		log.Printf("[DNS] sync start provider=%s group=%d line=%s action=%s nodes=%d domains=%d", api.Type, groupID, lineID, logAction, len(ipWeights), 1)
-		if len(ipWeights) == 0 {
-			log.Printf("[DNS] sync skip group=%d line=%s action=%s nodes=0", groupID, lineID, logAction)
-			return nil
-		}
 		errs := make([]string, 0)
-		if updater, ok := provider.(RecordSetUpdater); ok {
-			desiredIPs := make([]string, 0, len(ipWeights))
-			for ip := range ipWeights {
-				desiredIPs = append(desiredIPs, ip)
-			}
-			if err := updater.UpsertRecordSet(root, record, desiredIPs); err != nil {
-				errs = append(errs, fmt.Sprintf("provider=%s upsert domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
-			}
-		} else {
-			if err := syncLineRecordSetLegacy(provider, root, record, ipWeights); err != nil {
-				errs = append(errs, fmt.Sprintf("provider=%s resync domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
-			}
+		if err := applyLineRecordSet(provider, root, record, ipWeights); err != nil {
+			errs = append(errs, fmt.Sprintf("provider=%s resync domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
 		}
 		if len(errs) > 0 {
 			msg := strings.Join(errs, "; ")
@@ -163,27 +154,52 @@ func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs [
 		deleteAll = remaining == 0
 	}
 	log.Printf("[DNS] sync start provider=%s group=%d line=%s action=%s nodes=%d domains=%d", api.Type, groupID, lineID, logAction, len(nodes), 1)
+	errs := make([]string, 0)
 	if deleteAll {
-		log.Printf("[DNS] sync skip delete-all group=%d line=%s action=%s nodes=0", groupID, lineID, logAction)
+		if err := applyLineRecordSet(provider, root, record, map[string]int{}); err != nil {
+			errs = append(errs, fmt.Sprintf("provider=%s clear domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
+		}
+		if len(errs) > 0 {
+			msg := strings.Join(errs, "; ")
+			log.Printf("[DNS] sync failed group=%d line=%s action=%s errors=%s", groupID, lineID, logAction, msg)
+			return errors.New(msg)
+		}
+		log.Printf("[DNS] sync success group=%d line=%s action=%s (cleared)", groupID, lineID, logAction)
 		return nil
 	}
-	errs := make([]string, 0)
 	weightMap := map[int64]int{}
 	if action == "add" || action == "resync" {
 		weightMap = loadLineWeightMap(groupID, lineID, nodeIPIDs)
 	}
 
-	if updater, ok := provider.(RecordSetUpdater); ok {
+	if _, ok := provider.(RecordSetUpdater); ok {
 		desiredIPs, err := loadLineNodeIPs(groupID, lineID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("provider=%s list domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
 		} else {
-			if len(desiredIPs) == 0 {
-				log.Printf("[DNS] sync skip upsert group=%d line=%s action=%s nodes=0", groupID, lineID, logAction)
-				return nil
+			lineNodeIDs := loadLineNodeIDs(groupID, lineID)
+			lineWeightMap := loadLineWeightMap(groupID, lineID, lineNodeIDs)
+			ipWeights := make(map[string]int, len(desiredIPs))
+			for _, ip := range desiredIPs {
+				ipWeights[ip] = 0
 			}
-			if err := updater.UpsertRecordSet(root, record, desiredIPs); err != nil {
-				errs = append(errs, fmt.Sprintf("provider=%s upsert domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
+			if len(lineNodeIDs) > 0 {
+				var lineNodes []models.Node
+				if err := db.DB.Select("id", "ip").Where("id IN ?", lineNodeIDs).Find(&lineNodes).Error; err != nil {
+					errs = append(errs, fmt.Sprintf("provider=%s load nodes domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
+				} else {
+					for _, node := range lineNodes {
+						ip := strings.TrimSpace(node.IP)
+						if ip != "" {
+							ipWeights[ip] = lineWeightMap[node.ID]
+						}
+					}
+				}
+			}
+			if len(errs) == 0 {
+				if err := applyLineRecordSet(provider, root, record, ipWeights); err != nil {
+					errs = append(errs, fmt.Sprintf("provider=%s upsert domain=%s name=%s line=%s err=%v", api.Type, root, record.Name, record.Line, err))
+				}
 			}
 		}
 	} else {
@@ -217,13 +233,47 @@ func SyncLineRecords(groupID int64, lineID, lineName, action string, nodeIPIDs [
 	return nil
 }
 
+func applyLineRecordSet(provider Provider, domain string, record DNSRecord, desiredWeights map[string]int) error {
+	if updater, ok := provider.(RecordSetUpdater); ok {
+		values := make([]string, 0, len(desiredWeights))
+		for value := range desiredWeights {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+		return updater.UpsertRecordSet(domain, record, values)
+	}
+	return syncLineRecordSetLegacy(provider, domain, record, desiredWeights)
+}
+
+// ReconcileLineRecordSet syncs provider records for name/type/line to desired values.
+func ReconcileLineRecordSet(provider Provider, domain string, record DNSRecord, values []string) error {
+	desired := make(map[string]int, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			desired[value] = 0
+		}
+	}
+	return syncLineRecordSetLegacy(provider, domain, record, desired)
+}
+
 func syncLineRecordSetLegacy(provider Provider, domain string, record DNSRecord, desiredWeights map[string]int) error {
 	records, err := provider.GetRecords(domain)
 	if err != nil {
 		return err
 	}
-	existing := make([]DNSRecord, 0)
-	existingCount := map[string]int{}
+	desired := make(map[string]desiredDNSRecord, len(desiredWeights))
+	for value, weight := range desiredWeights {
+		key := normalizeDNSRecordValue(record.Type, value)
+		if key == "" {
+			continue
+		}
+		desired[key] = desiredDNSRecord{Value: strings.TrimSpace(value), Weight: weight}
+	}
+	activeRecords := map[string][]DNSRecord{}
+	allRecords := map[string][]DNSRecord{}
 	for _, r := range records {
 		if r.Type != record.Type {
 			continue
@@ -231,69 +281,103 @@ func syncLineRecordSetLegacy(provider Provider, domain string, record DNSRecord,
 		if r.Name != record.Name {
 			continue
 		}
-		if strings.TrimSpace(record.Line) != "" && r.Line != record.Line {
+		if !dnsLineMatches(record.Line, r.Line) {
 			continue
 		}
-		existing = append(existing, r)
-		existingCount[r.Value]++
+		key := normalizeDNSRecordValue(record.Type, r.Value)
+		if key == "" {
+			continue
+		}
+		allRecords[key] = append(allRecords[key], r)
+		if dnsRecordIsActive(r) {
+			activeRecords[key] = append(activeRecords[key], r)
+		}
 	}
-	if len(desiredWeights) == 0 {
+	if len(desired) == 0 {
+		for _, records := range allRecords {
+			for _, item := range records {
+				if err := provider.DeleteRecord(domain, item); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 
 	replacer, canReplace := provider.(RecordValueReplacer)
-	for value, weight := range desiredWeights {
-		_, exists := existingCount[value]
-		record.Value = value
-		record.Weight = weight
+	for key, wanted := range desired {
+		active := activeRecords[key]
+		exists := len(active) > 0
+		record.Value = wanted.Value
+		record.Weight = wanted.Weight
 		if !exists {
 			if err := provider.AddRecord(domain, record); err != nil {
 				return err
 			}
 			continue
 		}
-		for _, r := range existing {
-			if r.Value != value {
-				continue
-			}
-			needsUpdate := r.TTL != record.TTL || (weight > 0 && r.Weight != weight)
+		for _, r := range active {
+			needsUpdate := r.TTL != record.TTL || (wanted.Weight > 0 && r.Weight != wanted.Weight)
 			if !needsUpdate {
 				break
 			}
 			if canReplace {
-				if err := replacer.ReplaceRecordValue(domain, record, value); err != nil {
+				updateRecord := record
+				updateRecord.Value = r.Value
+				if err := replacer.ReplaceRecordValue(domain, updateRecord, wanted.Value); err != nil {
 					return err
 				}
 			} else {
-				if err := provider.DeleteRecord(domain, record); err != nil {
-					return err
-				}
-				if err := provider.AddRecord(domain, record); err != nil {
-					return err
-				}
+				// Avoid delete-then-add for TTL/weight drift on providers without
+				// an in-place update API; removing live CDN records creates outages.
+				break
 			}
 			break
 		}
 	}
 
-	for value, count := range existingCount {
-		if _, keep := desiredWeights[value]; keep {
-			for i := 1; i < count; i++ {
-				record.Value = value
-				if err := provider.DeleteRecord(domain, record); err != nil {
-					return err
-				}
-			}
+	for key, records := range allRecords {
+		if _, keep := desired[key]; keep {
 			continue
 		}
-		for i := 0; i < count; i++ {
-			record.Value = value
-			if err := provider.DeleteRecord(domain, record); err != nil {
+		for _, item := range records {
+			if err := provider.DeleteRecord(domain, item); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func dnsLineMatches(want, got string) bool {
+	want = strings.TrimSpace(want)
+	if want == "" {
+		return true
+	}
+	return normalizePackageDNSLine(want) == normalizePackageDNSLine(got)
+}
+
+func normalizeDNSRecordValue(recordType, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.EqualFold(recordType, "CNAME") {
+		return normalizeDomainName(value)
+	}
+	return value
+}
+
+func dnsRecordIsActive(record DNSRecord) bool {
+	status := strings.ToLower(strings.TrimSpace(record.Status))
+	switch status {
+	case "", "enable", "enabled", "normal", "active", "1", "ok":
+		return true
+	case "disable", "disabled", "pause", "paused", "0":
+		return false
+	default:
+		return true
+	}
 }
 
 func normalizeDomainName(input string) string {

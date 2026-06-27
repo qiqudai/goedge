@@ -55,6 +55,36 @@ wait_edge() {
   return 1
 }
 
+EDGE_SYNC_WAIT="${EDGE_SYNC_WAIT:-10}"
+
+flush_edge_runtime() {
+  echo "[cc-e2e] recreate edge to clear runtime ip_blacklist"
+  $COMPOSE up -d --no-deps --force-recreate edge >/dev/null
+  wait_edge
+  sleep "$EDGE_SYNC_WAIT"
+}
+
+reset_site_guard_state() {
+  $MYSQL -e "UPDATE site SET cc_default_rule = 0, white_ip = NULL, black_ip = NULL, settings = '{\"access\":{\"acl\":0}}', update_at = NOW() WHERE id = 1;" >/dev/null
+  flush_edge_runtime
+}
+
+assert_config_contains() {
+  local name="$1"
+  local needle="$2"
+  cfg=$($COMPOSE exec -T edge wget -qO- \
+    --header="Authorization: Bearer ${AGENT_TOKEN}" \
+    "http://api:8080/api/v1/agent/config?node_id=1" 2>/dev/null || true)
+  if echo "$cfg" | grep -q "$needle"; then
+    echo "[PASS] $name"
+    pass=$((pass + 1))
+  else
+    echo "[FAIL] $name (missing: $needle)"
+    echo "       snippet: $(echo "$cfg" | head -c 400)"
+    fail=$((fail + 1))
+  fi
+}
+
 prepare_edge_stage() {
   local stage="$COMPOSE_DIR/stage"
   rm -rf "$stage"
@@ -109,7 +139,7 @@ assert_status "CC ON refresh #3 blocked" "403"
 
 echo "[cc-e2e] phase 2: disable CC in control plane, sync to edge"
 $MYSQL -e "UPDATE site SET cc_default_rule = 0, update_at = NOW() WHERE id = 1;" >/dev/null
-sleep 8
+flush_edge_runtime
 
 assert_status "CC OFF refresh #1" "200"
 assert_status "CC OFF refresh #2" "200"
@@ -118,7 +148,7 @@ assert_status "CC OFF refresh #3 still allowed" "200"
 echo "[cc-e2e] phase 3: re-enable CC after rate window resets"
 sleep 6
 $MYSQL -e "UPDATE site SET cc_default_rule = 10001, update_at = NOW() WHERE id = 1;" >/dev/null
-sleep 8
+sleep "$EDGE_SYNC_WAIT"
 
 assert_status "CC ON again #1" "200"
 assert_status "CC ON again #2" "200"
@@ -127,7 +157,7 @@ assert_status "CC ON again #3 blocked" "403"
 echo "[cc-e2e] phase 4: whitelist IP bypasses CC (access_guard.lua)"
 sleep 6
 $MYSQL -e "UPDATE site SET white_ip = '[\"${WHITELIST_IP}\"]', update_at = NOW() WHERE id = 1;" >/dev/null
-sleep 8
+sleep "$EDGE_SYNC_WAIT"
 
 cfg=$($COMPOSE exec -T edge wget -qO- \
   --header="Authorization: Bearer ${AGENT_TOKEN}" \
@@ -147,12 +177,18 @@ assert_status "whitelist refresh #3" "200" "$WHITELIST_IP"
 assert_status "whitelist refresh #4" "200" "$WHITELIST_IP"
 assert_status "whitelist refresh #5" "200" "$WHITELIST_IP"
 
+echo "[cc-e2e] phase 4b: non-whitelist still subject to CC"
+flush_edge_runtime
+$MYSQL -e "UPDATE site SET white_ip = '[\"${WHITELIST_IP}\"]', cc_default_rule = 10001, update_at = NOW() WHERE id = 1;" >/dev/null
+sleep "$EDGE_SYNC_WAIT"
+
 assert_status "non-whitelist refresh #1" "200" "$TEST_CLIENT_IP"
 assert_status "non-whitelist refresh #2" "200" "$TEST_CLIENT_IP"
 assert_status "non-whitelist refresh #3 blocked" "403" "$TEST_CLIENT_IP"
 
 echo "[cc-e2e] phase 5: custom CC allow /api bypasses system CC on same client"
-sleep 6
+flush_edge_runtime
+sleep 2
 assert_status "custom allow /api #1" "200" "$TEST_CLIENT_IP" "/api"
 assert_status "custom allow /api #2" "200" "$TEST_CLIENT_IP" "/api"
 assert_status "custom allow /api #3 still allowed" "200" "$TEST_CLIENT_IP" "/api"
@@ -160,15 +196,14 @@ assert_status "disabled custom rule path ignored" "200" "$TEST_CLIENT_IP" "/disa
 
 echo "[cc-e2e] phase 6: ACL default deny with single-IP allow"
 $MYSQL -e "UPDATE site SET white_ip = NULL, settings = '{\"access\":{\"acl\":10001}}', update_at = NOW() WHERE id = 1;" >/dev/null
-sleep 8
+sleep "$EDGE_SYNC_WAIT"
 
 assert_status "ACL allowed IP" "200" "$ACL_ALLOW_IP"
 assert_status "ACL default deny IP" "403" "$TEST_CLIENT_IP"
 
 echo "[cc-e2e] phase 7: dual filter1+filter2 — filter2 pass avoids block on /dual"
-sleep 6
 $MYSQL -e "UPDATE site SET cc_default_rule = 10003, settings = '{\"access\":{\"acl\":0}}', update_at = NOW() WHERE id = 1;" >/dev/null
-sleep 8
+sleep "$EDGE_SYNC_WAIT"
 
 assert_status "dual filter /dual #1" "200" "$TEST_CLIENT_IP" "/dual"
 assert_status "dual filter /dual #2" "200" "$TEST_CLIENT_IP" "/dual"
@@ -176,7 +211,7 @@ assert_status "dual filter /dual #3 still allowed" "200" "$TEST_CLIENT_IP" "/dua
 
 echo "[cc-e2e] phase 8: ACL deny redirect"
 $MYSQL -e "UPDATE site SET cc_default_rule = 0, settings = '{\"access\":{\"acl\":10002}}', update_at = NOW() WHERE id = 1;" >/dev/null
-sleep 8
+sleep "$EDGE_SYNC_WAIT"
 
 code=$(curl -s -o /tmp/cc_e2e_body.txt -w '%{http_code}' \
   -H "Host: ${HOST}" \
@@ -189,6 +224,50 @@ else
   echo "[FAIL] ACL redirect deny -> HTTP $code, want 302"
   fail=$((fail + 1))
 fi
+
+echo "[cc-e2e] phase 9: site blacklist exact IP -> HTTP 419"
+reset_site_guard_state
+$MYSQL -e "UPDATE site SET black_ip = '[\"${TEST_CLIENT_IP}\"]', settings = '{\"access\":{\"acl\":0},\"security\":{\"blacklist\":[\"${TEST_CLIENT_IP}\"]}}', update_at = NOW() WHERE id = 1;" >/dev/null
+sleep "$EDGE_SYNC_WAIT"
+assert_config_contains "edge config includes exact blacklist IP" "${TEST_CLIENT_IP}"
+assert_status "blacklist exact IP blocked" "419" "$TEST_CLIENT_IP"
+assert_status "non-blacklisted IP allowed" "200" "10.1.1.1"
+
+echo "[cc-e2e] phase 10: site blacklist wildcard 127.*.*.*"
+reset_site_guard_state
+$MYSQL -e "UPDATE site SET black_ip = '[\"127.*.*.*\"]', settings = '{\"access\":{\"acl\":0},\"security\":{\"blacklist\":[\"127.*.*.*\"]}}', update_at = NOW() WHERE id = 1;" >/dev/null
+sleep "$EDGE_SYNC_WAIT"
+assert_config_contains "edge config includes wildcard blacklist" '127\.\*\.\*\.\*'
+assert_status "127.0.0.55 wildcard blocked" "419" "127.0.0.55"
+assert_status "8.8.8.8 outside wildcard allowed" "200" "8.8.8.8"
+
+echo "[cc-e2e] phase 11: site blacklist CIDR 10.0.0.0/24"
+reset_site_guard_state
+$MYSQL -e "UPDATE site SET black_ip = '[\"10.0.0.0/24\"]', settings = '{\"access\":{\"acl\":0},\"security\":{\"blacklist\":[\"10.0.0.0/24\"]}}', update_at = NOW() WHERE id = 1;" >/dev/null
+sleep "$EDGE_SYNC_WAIT"
+assert_config_contains "edge config includes CIDR blacklist" "10.0.0.0/24"
+assert_status "10.0.0.50 in CIDR blocked" "419" "10.0.0.50"
+assert_status "10.0.1.50 outside CIDR allowed" "200" "10.0.1.50"
+
+echo "[cc-e2e] phase 12: whitelist bypasses site blacklist"
+reset_site_guard_state
+$MYSQL -e "UPDATE site SET white_ip = '[\"${WHITELIST_IP}\"]', black_ip = '[\"10.0.0.0/8\"]', settings = '{\"access\":{\"acl\":0},\"security\":{\"blacklist\":[\"10.0.0.0/8\"],\"whitelist\":[\"${WHITELIST_IP}\"]}}', update_at = NOW() WHERE id = 1;" >/dev/null
+sleep "$EDGE_SYNC_WAIT"
+assert_config_contains "edge config includes whitelist IP" "${WHITELIST_IP}"
+assert_status "whitelisted IP bypasses /8 blacklist" "200" "$WHITELIST_IP"
+assert_status "non-whitelisted IP in /8 blocked" "419" "$TEST_CLIENT_IP"
+
+echo "[cc-e2e] phase 13: batch blacklist entries persisted to edge config"
+reset_site_guard_state
+$MYSQL -e "UPDATE site SET black_ip = '[\"127.*.*.*\",\"10.0.0.0/24\",\"203.0.113.9\"]', settings = '{\"access\":{\"acl\":0},\"security\":{\"blacklist\":[\"127.*.*.*\",\"10.0.0.0/24\",\"203.0.113.9\"]}}', update_at = NOW() WHERE id = 1;" >/dev/null
+sleep "$EDGE_SYNC_WAIT"
+assert_config_contains "batch wildcard in edge config" '127\.\*\.\*\.\*'
+assert_config_contains "batch CIDR in edge config" "10.0.0.0/24"
+assert_config_contains "batch exact IP in edge config" "203.0.113.9"
+assert_status "batch wildcard block" "419" "127.0.0.8"
+assert_status "batch CIDR block" "419" "10.0.0.44"
+assert_status "batch exact IP block" "419" "203.0.113.9"
+assert_status "batch unrelated IP allowed" "200" "203.0.113.10"
 
 if [[ "$fail" -gt 0 ]]; then
   echo "[cc-e2e] FAILED pass=$pass fail=$fail"

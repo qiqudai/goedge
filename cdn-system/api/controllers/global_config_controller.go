@@ -21,6 +21,14 @@ var (
 
 const GlobalConfigKey = "global_config"
 
+type userGlobalConfigResponse struct {
+	DefaultConfig models.DefaultSiteConfig              `json:"default_config"`
+	ErrorPageI18n models.ErrorPageI18nSettings          `json:"error_page_i18n"`
+	ErrorPages    map[string]models.ErrorPageDefinition `json:"error_pages"`
+	GuardPages    map[string]models.GuardPageDefinition `json:"guard_pages"`
+	Resources     models.GlobalResourceConfig           `json:"resources"`
+}
+
 func getDefaultConfig() models.GlobalConfig {
 	return models.GlobalConfig{
 		WAF: models.WAFConfig{
@@ -97,9 +105,11 @@ func getDefaultConfig() models.GlobalConfig {
 				MaxLimitMultiplier:    200,
 				MaxBlacklistIPs:       50,
 				MaxWhitelistIPs:       50,
+				MaxWAFPatternIPs:      100,
 				DailyURLPurgeLimit:    2000,
 				DailyDirPurgeLimit:    500,
 				DailyPreloadLimit:     2000,
+				PreloadTimeout:        120,
 				DailyUnlockIPLimit:    1000,
 				UnlockIPBatchLimit:    50,
 				MaxCCRulesPerGroup:    5,
@@ -117,7 +127,7 @@ func getDefaultConfig() models.GlobalConfig {
 				MaxACLRules:        10,
 			},
 			Public: models.PublicResourceConfig{
-				DisabledCustomPorts: "22",
+				DisabledCustomPorts: "22 5000",
 				AllowedCustomPorts:  "1-65535",
 			},
 		},
@@ -127,8 +137,7 @@ func getDefaultConfig() models.GlobalConfig {
 	}
 }
 
-// GetConfig
-func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
+func loadGlobalConfig() models.GlobalConfig {
 	var sysConfig models.SysConfig
 	// Match db.sql config structure: name="global_config", type="system", scope_id=0, scope_name="global"
 	result := db.DB.Where("name = ? AND type = ?", GlobalConfigKey, "system").Take(&sysConfig)
@@ -166,10 +175,34 @@ func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
 	}
 	services.NormalizeGlobalConfigErrorPages(&config)
 	services.NormalizeGlobalConfigGuardPages(&config)
+	return config
+}
+
+// GetConfig
+func (ctr *GlobalConfigController) GetConfig(c *gin.Context) {
+	config := loadGlobalConfig()
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": config,
+	})
+}
+
+// GetUserConfig returns the read-only global fields required by ordinary user pages.
+func (ctr *GlobalConfigController) GetUserConfig(c *gin.Context) {
+	config := loadGlobalConfig()
+	resources := config.Resources
+	resources.Website.LogStorageDir = ""
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": userGlobalConfigResponse{
+			DefaultConfig: config.DefaultConfig,
+			ErrorPageI18n: config.ErrorPageI18n,
+			ErrorPages:    config.ErrorPages,
+			GuardPages:    config.GuardPages,
+			Resources:     resources,
+		},
 	})
 }
 
@@ -182,6 +215,11 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 	}
 	services.NormalizeGlobalConfigErrorPages(&req)
 	services.NormalizeGlobalConfigGuardPages(&req)
+	req.Resources.Website = services.MergeWebsiteResourcesForConfig(req.Resources.Website)
+	if err := services.ValidateWAFIPLists(req.WAF, req.Resources.Website.MaxWAFPatternIPs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": err.Error()})
+		return
+	}
 	if err := services.ValidateErrorPageConfig(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": err.Error()})
 		return
@@ -233,6 +271,10 @@ func (ctr *GlobalConfigController) UpdateConfig(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Update Error")})
 			return
 		}
+	}
+
+	if err := services.SyncLegacyResourceConfigs(&req); err != nil {
+		log.Printf("[Sync] legacy resource config sync failed: %v", err)
 	}
 
 	// 4. Trigger Node Sync (Use timestamp as version)

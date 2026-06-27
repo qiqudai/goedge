@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var Version = "1.0.53"
+var Version = "1.0.57"
 
 func resolveWorkDir(configPath string) {
 	baseDir := ""
@@ -159,6 +159,8 @@ func main() {
 	}
 	startGenevaIfEnabled()
 
+	reconcileLogOffsetsOnStartup()
+
 	// 2. Start Tickers
 	go startConfigPull()      // Reconcile missed WS config dispatches.
 	go startWebSocketClient() // Persistent Connection
@@ -167,6 +169,7 @@ func main() {
 	go startMetricsShip()
 	go startLogCleanup()
 	go startL2Monitor()
+	go startParentMonitor()
 
 	// 3. Keep Alive
 	waitForShutdownAndCleanup()

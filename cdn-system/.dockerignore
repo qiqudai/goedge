@@ -1,5 +1,6 @@
 .git
 .tools
+build/
 **/node_modules
 agent/edge-node/openresty
 agent/assets/openresty*

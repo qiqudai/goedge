@@ -123,11 +123,62 @@ func loadL2StatusSnapshot() map[int64]bool {
 	return out
 }
 
-func selectStreamTargets(stream edgeStream, l2Status map[int64]bool) []edgeStreamTarget {
+func loadParentStatusSnapshot() (map[int64]bool, map[int64]bool) {
+	rootDir := runtimeRoot()
+	if rootDir == "" {
+		return nil, nil
+	}
+	path := filepath.Join(rootDir, "conf", "parent_status.json")
+	var raw struct {
+		L1 map[string]bool `json:"l1"`
+		L2 map[string]bool `json:"l2"`
+	}
+	if err := fsutil.ReadJSONFile(path, &raw); err != nil {
+		return map[int64]bool{}, map[int64]bool{}
+	}
+	parse := func(in map[string]bool) map[int64]bool {
+		out := map[int64]bool{}
+		for key, val := range in {
+			if id, err := strconv.ParseInt(key, 10, 64); err == nil {
+				out[id] = val
+			}
+		}
+		return out
+	}
+	return parse(raw.L1), parse(raw.L2)
+}
+
+type streamStatusSnapshot struct {
+	L2       map[int64]bool
+	ParentL1 map[int64]bool
+	ParentL2 map[int64]bool
+}
+
+func loadStreamStatusSnapshot() streamStatusSnapshot {
+	l2 := loadL2StatusSnapshot()
+	if l2 == nil {
+		l2 = map[int64]bool{}
+	}
+	l1, l2p := loadParentStatusSnapshot()
+	if l1 == nil {
+		l1 = map[int64]bool{}
+	}
+	if l2p == nil {
+		l2p = map[int64]bool{}
+	}
+	return streamStatusSnapshot{L2: l2, ParentL1: l1, ParentL2: l2p}
+}
+
+func selectStreamTargets(stream edgeStream, status streamStatusSnapshot) []edgeStreamTarget {
 	if !stream.UseListenPort || len(stream.Targets) == 0 {
 		return stream.Targets
 	}
-	if l2Status == nil {
+	mode := strings.ToLower(strings.TrimSpace(stream.ParentFetchMode))
+	if mode == "l1" || mode == "l2" {
+		return selectParentStreamTargets(stream, status, mode)
+	}
+	statusMap := status.L2
+	if statusMap == nil {
 		return stream.Targets
 	}
 	l2Targets := make([]edgeStreamTarget, 0, len(stream.Targets))
@@ -144,7 +195,7 @@ func selectStreamTargets(stream edgeStream, l2Status map[int64]bool) []edgeStrea
 	}
 	healthyL2 := make([]edgeStreamTarget, 0, len(l2Targets))
 	for _, target := range l2Targets {
-		if online, ok := l2Status[target.NodeID]; ok && online {
+		if online, ok := statusMap[target.NodeID]; ok && online {
 			healthyL2 = append(healthyL2, target)
 		}
 	}
@@ -160,7 +211,64 @@ func selectStreamTargets(stream edgeStream, l2Status map[int64]bool) []edgeStrea
 	return originTargets
 }
 
-func renderStreamConfig(streams []edgeStream, l2Status map[int64]bool) string {
+func selectParentStreamTargets(stream edgeStream, status streamStatusSnapshot, mode string) []edgeStreamTarget {
+	primary := make([]edgeStreamTarget, 0, len(stream.Targets))
+	backupParents := make([]edgeStreamTarget, 0, len(stream.Targets))
+	originTargets := make([]edgeStreamTarget, 0, len(stream.Targets))
+	for _, target := range stream.Targets {
+		if target.NodeID == 0 {
+			originTargets = append(originTargets, target)
+			continue
+		}
+		if target.Backup {
+			backupParents = append(backupParents, target)
+			continue
+		}
+		primary = append(primary, target)
+	}
+	filterByStatus := func(targets []edgeStreamTarget, statusMap map[int64]bool) []edgeStreamTarget {
+		if statusMap == nil {
+			return targets
+		}
+		out := make([]edgeStreamTarget, 0, len(targets))
+		for _, target := range targets {
+			if online, ok := statusMap[target.NodeID]; ok && online {
+				out = append(out, target)
+			}
+		}
+		return out
+	}
+	if mode == "l2" {
+		healthy := filterByStatus(primary, status.ParentL2)
+		if len(healthy) > 0 {
+			return append(healthy, originTargets...)
+		}
+		if len(originTargets) == 0 {
+			return nil
+		}
+		for i := range originTargets {
+			originTargets[i].Backup = false
+		}
+		return originTargets
+	}
+	healthyPrimary := filterByStatus(primary, status.ParentL1)
+	if len(healthyPrimary) > 0 {
+		return append(healthyPrimary, append(backupParents, originTargets...)...)
+	}
+	healthyBackup := filterByStatus(backupParents, status.ParentL2)
+	if len(healthyBackup) > 0 {
+		return append(healthyBackup, originTargets...)
+	}
+	if len(originTargets) == 0 {
+		return nil
+	}
+	for i := range originTargets {
+		originTargets[i].Backup = false
+	}
+	return originTargets
+}
+
+func renderStreamConfig(streams []edgeStream, status streamStatusSnapshot) string {
 	if len(streams) == 0 {
 		return ""
 	}
@@ -168,7 +276,7 @@ func renderStreamConfig(streams []edgeStream, l2Status map[int64]bool) string {
 	for _, stream := range streams {
 		listenPorts := filterStreamPorts(stream.ListenPorts, LocalResources)
 		listenEntries := normalizeStreamListenPorts(listenPorts, stream.ListenProtocol)
-		targets := selectStreamTargets(stream, l2Status)
+		targets := selectStreamTargets(stream, status)
 		if len(listenEntries) == 0 || len(targets) == 0 {
 			continue
 		}
@@ -257,7 +365,7 @@ func writeStreamConfig(streams []edgeStream) error {
 	if len(streams) == 0 {
 		return ioutil.WriteFile(confPath, []byte(""), 0644)
 	}
-	content := renderStreamConfig(streams, loadL2StatusSnapshot())
+	content := renderStreamConfig(streams, loadStreamStatusSnapshot())
 	return ioutil.WriteFile(confPath, []byte(content), 0644)
 }
 
@@ -294,7 +402,7 @@ func refreshStreamConfigForL2Status(snapshot map[string]bool) {
 	if !hasL2Streams {
 		return
 	}
-	content := renderStreamConfig(cfg.Streams, l2Status)
+	content := renderStreamConfig(cfg.Streams, streamStatusSnapshot{L2: l2Status})
 	confPath := filepath.Join(rootDir, "conf", "dynamic", "stream.conf")
 	existing, err := ioutil.ReadFile(confPath)
 	if err == nil && string(existing) == content {

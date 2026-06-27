@@ -425,7 +425,9 @@ func ApplyForwardDefaults(forward *models.Forward, defaults map[string]string) {
 			forward.BackendPort = v
 		}
 	}
-	if v := defaults["proxy_protocol"]; v != "" {
+	if v, ok := originCfg["proxy_protocol"]; ok {
+		forward.ProxyProtocol = parseBool(v, false)
+	} else if v := defaults["proxy_protocol"]; v != "" {
 		forward.ProxyProtocol = parseBool(v, false)
 	}
 }

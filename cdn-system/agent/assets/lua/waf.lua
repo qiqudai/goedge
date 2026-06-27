@@ -319,12 +319,127 @@ local function should_block_resource(config, ip, uri)
     return false
 end
 
-local function in_list(list, ip)
-    if not list or list == "" then return false end
-    for line in string.gmatch(list, "[^\n]+") do
+local function ipv4_to_num(ip)
+    local a, b, c, d = ip:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+    if not a then
+        return nil
+    end
+    a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+    if not a or not b or not c or not d then
+        return nil
+    end
+    return a * 16777216 + b * 65536 + c * 256 + d
+end
+
+local function ip_in_cidr(ip, cidr)
+    local base, prefix = cidr:match("^(%d+%.%d+%.%d+%.%d+)%s*/%s*(%d+)$")
+    if not base or not prefix then
+        return false
+    end
+    local ip_num = ipv4_to_num(ip)
+    local base_num = ipv4_to_num(base)
+    if not ip_num or not base_num then
+        return false
+    end
+    local bits = tonumber(prefix)
+    if not bits or bits < 0 or bits > 32 then
+        return false
+    end
+    local mask = bits == 0 and 0 or bit.lshift(0xFFFFFFFF, 32 - bits)
+    mask = bit.band(mask, 0xFFFFFFFF)
+    return bit.band(ip_num, mask) == bit.band(base_num, mask)
+end
+
+local function split_ipv4_octets(ip)
+    local parts = {}
+    if not ip or ip == "" then
+        return parts
+    end
+    for oct in string.gmatch(ip, "(%d+)") do
+        parts[#parts + 1] = oct
+    end
+    return parts
+end
+
+local function ip_matches_list_entry(ip, entry)
+    if not ip or not entry then
+        return false
+    end
+    entry = string.match(tostring(entry), "^%s*(.-)%s*$") or ""
+    if entry == "" then
+        return false
+    end
+    if ip == entry then
+        return true
+    end
+    if string.find(entry, "/", 1, true) then
+        return ip_in_cidr(ip, entry)
+    end
+    if string.find(entry, "*", 1, true) then
+        local ip_parts = split_ipv4_octets(ip)
+        if #ip_parts ~= 4 then
+            return false
+        end
+        local pat_parts = {}
+        for part in string.gmatch(entry, "([^%.]+)") do
+            pat_parts[#pat_parts + 1] = part
+        end
+        if #pat_parts == 0 or #pat_parts > 4 then
+            return false
+        end
+        for i = 1, #pat_parts do
+            if pat_parts[i] ~= "*" and pat_parts[i] ~= ip_parts[i] then
+                return false
+            end
+        end
+        return true
+    end
+    return false
+end
+
+local ip_list_cache = {}
+local ip_list_cache_size = 0
+local IP_LIST_CACHE_LIMIT = 8
+
+local function parsed_ip_list(list)
+    if not list or list == "" then
+        return nil
+    end
+    local raw = tostring(list)
+    local cached = ip_list_cache[raw]
+    if cached then
+        return cached
+    end
+    local parsed = { exact = {}, patterns = {} }
+    for line in string.gmatch(raw, "[^\n]+") do
         line = string.gsub(line, "^%s+", "")
         line = string.gsub(line, "%s+$", "")
-        if line ~= "" and line == ip then
+        if line ~= "" then
+            if string.find(line, "/", 1, true) or string.find(line, "*", 1, true) then
+                parsed.patterns[#parsed.patterns + 1] = line
+            else
+                parsed.exact[line] = true
+            end
+        end
+    end
+    if ip_list_cache_size >= IP_LIST_CACHE_LIMIT then
+        ip_list_cache = {}
+        ip_list_cache_size = 0
+    end
+    ip_list_cache[raw] = parsed
+    ip_list_cache_size = ip_list_cache_size + 1
+    return parsed
+end
+
+local function in_list(list, ip)
+    if not ip then return false end
+    local parsed = parsed_ip_list(list)
+    if not parsed then return false end
+    if parsed.exact[ip] then
+        return true
+    end
+    for _, line in ipairs(parsed.patterns) do
+        if ip_matches_list_entry(ip, line) then
             return true
         end
     end

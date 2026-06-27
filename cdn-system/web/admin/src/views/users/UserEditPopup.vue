@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="编辑用户"
+    :title="isCreate ? '添加用户' : '编辑用户'"
     width="700px"
     @close="handleClose"
     :close-on-click-modal="false"
@@ -10,7 +10,7 @@
       <!-- Tab 1: Basic Info -->
       <el-tab-pane label="基础信息" name="basic">
         <el-form :model="form" label-width="100px" ref="basicForm">
-          <el-form-item label="ID">
+          <el-form-item v-if="!isCreate" label="ID">
              <span>{{ form.id }}</span>
           </el-form-item>
           <el-form-item label="邮箱">
@@ -29,7 +29,7 @@
             <el-input v-model="form.qq" placeholder="请输入QQ" />
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="form.password" type="password" placeholder="留空则不修改" show-password />
+            <el-input v-model="form.password" type="password" :placeholder="isCreate ? '请输入密码' : '留空则不修改'" show-password />
           </el-form-item>
           <el-form-item label="用户分组">
              <el-select v-model="form.group_id" placeholder="请选择">
@@ -119,7 +119,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { sha256Hex } from '@/utils/crypto'
@@ -136,6 +136,7 @@ const emits = defineEmits(['update:visible', 'saved'])
 
 const activeTab = ref('basic')
 const saving = ref(false)
+const isCreate = computed(() => !form.id)
 
 const form = reactive({
   id: 0,
@@ -197,8 +198,14 @@ const handleClose = () => {
 }
 
 const submit = async () => {
+  if (!form.name.trim() || !form.email.trim() || (isCreate.value && !form.password.trim())) {
+    ElMessage.error(isCreate.value ? '用户名、邮箱和密码不能为空' : '用户名和邮箱不能为空')
+    return
+  }
+
   saving.value = true
   const payload = { ...form }
+  payload.type = payload.type || 2
   if (payload.password) {
     try {
       payload.password = await sha256Hex(payload.password)
@@ -210,8 +217,12 @@ const submit = async () => {
     }
   }
 
-  request.put(`/users/${form.id}`, payload).then(() => {
-    ElMessage.success('保存成功')
+  const submitRequest = isCreate.value
+    ? request.post('/users', payload)
+    : request.put(`/users/${form.id}`, payload)
+
+  submitRequest.then(() => {
+    ElMessage.success(isCreate.value ? '创建成功' : '保存成功')
     handleClose()
     emits('saved')
   }).finally(() => {

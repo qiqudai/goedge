@@ -703,6 +703,9 @@ func LoadGlobalConfigNormalized() *models.GlobalConfig {
 }
 
 func loadGlobalConfigRaw() *models.GlobalConfig {
+	if db.DB == nil {
+		return nil
+	}
 	var sys models.SysConfig
 	if err := db.DB.First(&sys, "name = ?", "global_config").Error; err != nil {
 		return nil

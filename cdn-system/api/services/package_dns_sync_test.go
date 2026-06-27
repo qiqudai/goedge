@@ -1,6 +1,12 @@
 package services
 
-import "testing"
+import (
+	"cdn-api/db"
+	"testing"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
 
 func TestShouldSyncPackageCnameForGroup(t *testing.T) {
 	cases := []struct {
@@ -41,5 +47,33 @@ func TestShouldSyncPackageCnameForGroup(t *testing.T) {
 				t.Fatalf("shouldSyncPackageCnameForGroup() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSyncPackageCnameForLineChangeSkipsDelete(t *testing.T) {
+	if err := SyncPackageCnameForLineChange(1, "default", "default", []int64{1}, "delete"); err != nil {
+		t.Fatalf("delete action should be ignored: %v", err)
+	}
+	if err := SyncPackageCnameForLineChange(1, "default", "default", []int64{1}, "disable"); err != nil {
+		t.Fatalf("disable action should be ignored: %v", err)
+	}
+}
+
+func TestSyncPackageCnameForNodesSkipsDelete(t *testing.T) {
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	oldDB := db.DB
+	defer func() {
+		db.DB = oldDB
+	}()
+	db.DB = gdb
+
+	if err := SyncPackageCnameForNodes([]int64{1}, "delete"); err != nil {
+		t.Fatalf("node delete action should be ignored: %v", err)
+	}
+	if err := SyncPackageCnameForNodes([]int64{1}, "disable"); err != nil {
+		t.Fatalf("node disable action should be ignored: %v", err)
 	}
 }

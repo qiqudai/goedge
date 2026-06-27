@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 )
@@ -110,6 +111,10 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 			log.Printf("[DNS] package cname sync failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
 			return err
 		}
+		if err := verifyPackageCNAMERecord(provider, root, recordName, lineValue, desiredValue); err != nil {
+			log.Printf("[DNS] package cname verify failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+			return err
+		}
 		log.Printf("[DNS] package cname sync success host=%s.%s line=%s action=%s", recordName, root, lineID, action)
 		return nil
 	}
@@ -132,7 +137,7 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 			continue
 		}
 		existing = append(existing, r)
-		if normalizeDomainName(r.Value) == desiredValue {
+		if normalizeDomainName(r.Value) == desiredValue && dnsRecordIsActive(r) {
 			hasDesired = true
 		}
 	}
@@ -169,6 +174,10 @@ func SyncPackageLineRecords(domain models.CnameDomain, hostname string, groupID 
 			return err
 		}
 	}
+	if err := verifyPackageCNAMERecord(provider, root, recordName, lineValue, desiredValue); err != nil {
+		log.Printf("[DNS] package cname verify failed host=%s.%s line=%s err=%v", recordName, root, lineID, err)
+		return err
+	}
 	log.Printf("[DNS] package cname sync success host=%s.%s line=%s action=%s", recordName, root, lineID, action)
 	return nil
 }
@@ -196,4 +205,39 @@ func deleteAllByLine(provider Provider, domain string, record DNSRecord) error {
 		}
 	}
 	return nil
+}
+
+func verifyPackageCNAMERecord(provider Provider, domain, recordName, lineValue, desiredValue string) error {
+	records, err := provider.GetRecords(domain)
+	if err != nil {
+		return err
+	}
+	normalizedLine := normalizePackageDNSLine(lineValue)
+	for _, record := range records {
+		if !strings.EqualFold(strings.TrimSpace(record.Type), "CNAME") {
+			continue
+		}
+		if strings.TrimSpace(record.Name) != strings.TrimSpace(recordName) {
+			continue
+		}
+		if normalizedLine != "" && normalizePackageDNSLine(record.Line) != normalizedLine {
+			continue
+		}
+		if normalizeDomainName(record.Value) == desiredValue && dnsRecordIsActive(record) {
+			return nil
+		}
+	}
+	return fmt.Errorf("package cname record not active after sync: host=%s.%s line=%s value=%s", recordName, domain, lineValue, desiredValue)
+}
+
+func normalizePackageDNSLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+	lower := strings.ToLower(line)
+	if lower == "default" || line == "默认" {
+		return "default"
+	}
+	return lower
 }

@@ -8,6 +8,6 @@
     "disabled_ports": "80 443"
   },
   "public": {
-    "disabled_custom_ports": "22"
+    "disabled_custom_ports": "22 5000"
   }
 }

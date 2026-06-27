@@ -111,6 +111,7 @@ func Setup(r *gin.Engine) {
 			admin.GET("/logs/block/stats", blockLogCtr.ListStats)
 			admin.GET("/logs/block/history", blockLogCtr.ListHistory)
 			admin.POST("/logs/block/block_ip", blockLogCtr.BlockIP)
+			admin.POST("/logs/block/block_batch", blockLogCtr.BlockBatch)
 			admin.POST("/logs/block/unblock_ip", blockLogCtr.UnblockIP)
 			admin.POST("/logs/block/unblock_batch", blockLogCtr.UnblockBatch)
 			admin.POST("/logs/block/unblock_site", blockLogCtr.UnblockSite)
@@ -128,9 +129,9 @@ func Setup(r *gin.Engine) {
 			admin.GET("/stats/node_ranking", statCtr.ListNodeRanking)
 			admin.GET("/stats/node_metrics", statCtr.ListNodeMetrics)
 
-			// Dashboard
-			dashCtr := &controllers.DashboardController{}
-			admin.GET("/dashboard", dashCtr.Index)
+		// Dashboard
+		dashCtr := &controllers.DashboardController{}
+		admin.GET("/dashboard", dashCtr.Index)
 
 			// Global Config
 			admin.GET("/global_config", (&controllers.GlobalConfigController{}).GetConfig)
@@ -195,6 +196,7 @@ func Setup(r *gin.Engine) {
 			// User Domain Management
 			userCtr := &controllers.UserController{}
 			admin.GET("/users", userCtr.ListUsers)
+			admin.POST("/users", userCtr.CreateUser)
 			admin.PUT("/users/:id/status", userCtr.ToggleStatus)
 			admin.PUT("/users/:id", userCtr.UpdateUser)
 			admin.DELETE("/users/:id", userCtr.DeleteUser)
@@ -340,8 +342,8 @@ func Setup(r *gin.Engine) {
 			user.GET("/balance_logs", (&controllers.FinanceController{}).ListUserBalanceLogs)
 			user.POST("/orders/package/open", (&controllers.FinanceController{}).UserCreatePackageOpenOrder)
 			user.POST("/orders/package/renew", (&controllers.FinanceController{}).UserCreatePackageRenewOrder)
-			// Dashboard (shared UI entry, user uses /api/v1/user/dashboard via baseURL)
-			user.GET("/dashboard", (&controllers.DashboardController{}).Index)
+		// Dashboard (shared UI entry, user uses /api/v1/user/dashboard via baseURL)
+		user.GET("/dashboard", (&controllers.DashboardController{}).Index)
 			user.GET("/logs/operation", (&controllers.LogController{}).ListOpLogsUser)
 			user.GET("/messages", (&controllers.MessageController{}).UserList)
 			user.GET("/messages/unread", (&controllers.MessageController{}).UserUnread)
@@ -368,6 +370,7 @@ func Setup(r *gin.Engine) {
 			user.GET("/sites/:id", siteController.AdminGet)
 			user.PUT("/sites/:id", siteController.AdminUpdate)
 			user.GET("/domain_usage", siteController.DomainUsage)
+			user.GET("/global_config", (&controllers.GlobalConfigController{}).GetUserConfig)
 
 			// Cert management
 			certController := new(controllers.CertController)
@@ -458,6 +461,7 @@ func Setup(r *gin.Engine) {
 			user.GET("/logs/block/stats", userBlockLogCtr.ListStats)
 			user.GET("/logs/block/history", userBlockLogCtr.ListHistory)
 			user.POST("/logs/block/block_ip", userBlockLogCtr.BlockIP)
+			user.POST("/logs/block/block_batch", userBlockLogCtr.BlockBatch)
 			user.POST("/logs/block/unblock_ip", userBlockLogCtr.UnblockIP)
 			user.POST("/logs/block/unblock_batch", userBlockLogCtr.UnblockBatch)
 			user.POST("/logs/block/unblock_site", userBlockLogCtr.UnblockSite)
@@ -508,6 +512,7 @@ func Setup(r *gin.Engine) {
 			agentGroup.GET("/tasks", agentCtr.GetTasks)
 			agentGroup.POST("/tasks/:id/finish", agentCtr.FinishTask)
 			agentGroup.GET("/l2/nodes", agentCtr.GetL2Nodes)
+			agentGroup.GET("/parent/nodes", agentCtr.GetParentNodes)
 			agentGroup.POST("/l2/heartbeat", agentCtr.ReportL2Heartbeat)
 			agentGroup.POST("/certs/issued", agentCertCtr.ReceiveIssued)
 			agentGroup.POST("/acme/tokens", agentAcmeCtr.PutToken)

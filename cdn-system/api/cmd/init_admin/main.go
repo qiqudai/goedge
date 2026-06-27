@@ -5,22 +5,25 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/utils"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 )
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: init_admin <username> <password> [email]")
+	config.Load()
+	args := flagArgs()
+	if len(args) < 2 {
+		fmt.Println("Usage: init_admin [-config path] [-db dsn] <username> <password> [email]")
 		os.Exit(1)
 	}
 
-	username := strings.TrimSpace(os.Args[1])
-	password := strings.TrimSpace(os.Args[2])
+	username := strings.TrimSpace(args[0])
+	password := strings.TrimSpace(args[1])
 	email := ""
-	if len(os.Args) >= 4 {
-		email = strings.TrimSpace(os.Args[3])
+	if len(args) >= 3 {
+		email = strings.TrimSpace(args[2])
 	}
 
 	if username == "" || password == "" {
@@ -28,7 +31,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	config.Load()
 	db.Init()
 
 	// Map Role to Type (Assuming 1=Admin)
@@ -79,4 +81,8 @@ func main() {
 	}
 
 	fmt.Println("admin user created:", user.Name)
+}
+
+func flagArgs() []string {
+	return flag.Args()
 }

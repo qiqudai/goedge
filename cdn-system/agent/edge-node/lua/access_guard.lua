@@ -601,6 +601,65 @@ local function ip_in_cidr(ip, cidr)
     return bit.band(ip_num, mask) == bit.band(base_num, mask)
 end
 
+local function split_ipv4_octets(ip)
+    local parts = {}
+    if not ip or ip == "" then
+        return parts
+    end
+    for oct in string.gmatch(ip, "(%d+)") do
+        parts[#parts + 1] = oct
+    end
+    return parts
+end
+
+local function ip_matches_blacklist_entry(ip, entry)
+    if not ip or not entry then
+        return false
+    end
+    entry = string.match(tostring(entry), "^%s*(.-)%s*$") or ""
+    if entry == "" then
+        return false
+    end
+    if ip == entry then
+        return true
+    end
+    if string.find(entry, "/", 1, true) then
+        return ip_in_cidr(ip, entry)
+    end
+    if not string.find(entry, "*", 1, true) then
+        return false
+    end
+    local ip_parts = split_ipv4_octets(ip)
+    if #ip_parts ~= 4 then
+        return false
+    end
+    local pat_parts = {}
+    for part in string.gmatch(entry, "([^%.]+)") do
+        pat_parts[#pat_parts + 1] = part
+    end
+    if #pat_parts == 0 or #pat_parts > 4 then
+        return false
+    end
+    for i = 1, #pat_parts do
+        if pat_parts[i] ~= "*" and pat_parts[i] ~= ip_parts[i] then
+            return false
+        end
+    end
+    return true
+end
+
+local function ip_in_blacklist(list, ip)
+    if not list or not ip then
+        return false
+    end
+    for _, item in ipairs(list) do
+        if ip_matches_blacklist_entry(ip, item) then
+            return true
+        end
+    end
+    return false
+end
+
 local function ip_in_ranges(ip, value)
     local list = split_pipe(value)
     if #list == 0 then
@@ -788,7 +847,7 @@ local function resolve_origin_scheme(protocol)
     return proto, proto
 end
 
-local function build_backend_target(addr, domain_conf, use_l2)
+local function build_backend_target(addr, domain_conf, layer)
     local scheme, proto = resolve_origin_scheme(domain_conf.origin_protocol)
     local target = addr
     if not string.find(addr, ":", 1, true) then
@@ -799,7 +858,13 @@ local function build_backend_target(addr, domain_conf, use_l2)
             end
         else
             local port = ""
-            if use_l2 then
+            if layer == "parent" then
+                if scheme == "https" and domain_conf.parent_https_port and domain_conf.parent_https_port ~= "" then
+                    port = domain_conf.parent_https_port
+                elseif scheme == "http" and domain_conf.parent_http_port and domain_conf.parent_http_port ~= "" then
+                    port = domain_conf.parent_http_port
+                end
+            elseif layer == "l2" then
                 if scheme == "https" and domain_conf.l2_https_port and domain_conf.l2_https_port ~= "" then
                     port = domain_conf.l2_https_port
                 elseif scheme == "http" and domain_conf.l2_http_port and domain_conf.l2_http_port ~= "" then
@@ -821,18 +886,172 @@ local function build_backend_target(addr, domain_conf, use_l2)
     return scheme .. "://" .. target
 end
 
+local function load_status_nodes(tier)
+    local config = _G.cdn_config
+    if not config then
+        return {}
+    end
+    if tier == "l2" then
+        local snap = config.l2_status
+        if type(snap) == "table" and type(snap.nodes) == "table" then
+            return snap.nodes
+        end
+        return {}
+    end
+    local snap = config.parent_status
+    if type(snap) == "table" and type(snap[tier]) == "table" then
+        return snap[tier]
+    end
+    return {}
+end
+
+local function target_online(target, status_map)
+    if type(target) ~= "table" then
+        return true
+    end
+    local node_id = target.node_id
+    if not node_id or node_id == "" then
+        return true
+    end
+    local val = status_map[tostring(node_id)]
+    if val == nil then
+        return true
+    end
+    return val == true or val == 1 or val == "true"
+end
+
+local function filter_online_targets(targets, status_map)
+    if type(targets) ~= "table" or #targets == 0 then
+        return targets
+    end
+    local has_status = false
+    local out = {}
+    for _, t in ipairs(targets) do
+        local node_id = t.node_id
+        if node_id and node_id ~= "" then
+            local val = status_map[tostring(node_id)]
+            if val ~= nil then
+                has_status = true
+                if val == true or val == 1 or val == "true" then
+                    table.insert(out, t)
+                end
+            else
+                table.insert(out, t)
+            end
+        else
+            table.insert(out, t)
+        end
+    end
+    if has_status then
+        if #out > 0 then
+            return out
+        end
+        return {}
+    end
+    return targets
+end
+
+local function has_online_targets(upstream_key, status_map, config)
+    if not upstream_key or upstream_key == "" or not config or not config.upstream_map then
+        return false
+    end
+    local targets = config.upstream_map[upstream_key]
+    if type(targets) ~= "table" or #targets == 0 then
+        return false
+    end
+    return #filter_online_targets(targets, status_map) > 0
+end
+
+local function should_skip_l2()
+    local hdr = ngx.req.get_headers()["X-CDN-Skip-Parent-Tier"]
+    if type(hdr) == "table" then
+        hdr = hdr[1]
+    end
+    return hdr and string.lower(tostring(hdr)) == "l2"
+end
+
+local function parse_bool_flag(v, default_value)
+    if v == nil then
+        return default_value
+    end
+    if type(v) == "boolean" then
+        return v
+    end
+    local s = string.lower(tostring(v))
+    if s == "1" or s == "true" or s == "on" or s == "yes" then
+        return true
+    end
+    if s == "0" or s == "false" or s == "off" or s == "no" then
+        return false
+    end
+    return default_value
+end
+
+local function resolve_l3_upstream(domain_conf, config)
+    local mode = string.lower(tostring(domain_conf.parent_fetch_mode or "origin"))
+    if mode == "" or mode == "origin" then
+        return domain_conf.upstream_key, "origin"
+    end
+    local l1_key = domain_conf.parent_l1_upstream_key
+    local l2_key = domain_conf.parent_l2_upstream_key
+    local l1_status = load_status_nodes("l1")
+    local l2_status = load_status_nodes("l2")
+    if mode == "l1" then
+        if l1_key and l1_key ~= "" and has_online_targets(l1_key, l1_status, config) then
+            return l1_key, "parent"
+        end
+        if l2_key and l2_key ~= "" and has_online_targets(l2_key, l2_status, config) then
+            return l2_key, "parent"
+        end
+        return domain_conf.upstream_key, "origin"
+    end
+    if mode == "l2" then
+        if l2_key and l2_key ~= "" and has_online_targets(l2_key, l2_status, config) then
+            return l2_key, "parent"
+        end
+        return domain_conf.upstream_key, "origin"
+    end
+    return domain_conf.upstream_key, "origin"
+end
+
 local function select_backend_target(domain_conf, client_ip)
     local config = _G.cdn_config
     if not config then
         return nil
     end
+    local node_level = tonumber(config.node_level) or 1
+    local upstream_key = domain_conf.upstream_key
+    local layer = "origin"
     local use_l2 = false
-    if config.upstream_map and domain_conf.use_l2 and domain_conf.l2_upstream_key and domain_conf.l2_upstream_key ~= "" then
-        if config.upstream_map[domain_conf.l2_upstream_key] then
-            use_l2 = true
+
+    if node_level == 3 then
+        upstream_key, layer = resolve_l3_upstream(domain_conf, config)
+        ngx.ctx.parent_used = (layer == "parent")
+        ngx.ctx.l2_used = false
+        if string.lower(tostring(domain_conf.parent_fetch_mode or "")) == "l1"
+            and layer == "parent"
+            and not parse_bool_flag(domain_conf.l1_respect_l2, true) then
+            ngx.req.set_header("X-CDN-Skip-Parent-Tier", "l2")
+        end
+    else
+        if node_level == 1 and not should_skip_l2()
+            and config.upstream_map
+            and domain_conf.use_l2
+            and domain_conf.l2_upstream_key
+            and domain_conf.l2_upstream_key ~= ""
+            and config.upstream_map[domain_conf.l2_upstream_key] then
+            local l2_status = load_status_nodes("l2")
+            if has_online_targets(domain_conf.l2_upstream_key, l2_status, config) then
+                use_l2 = true
+            end
+        end
+        ngx.ctx.l2_used = use_l2
+        ngx.ctx.parent_used = false
+        if use_l2 then
+            upstream_key = domain_conf.l2_upstream_key
+            layer = "l2"
         end
     end
-    ngx.ctx.l2_used = use_l2
 
     local ctx = {
         request_uri = ngx.var.request_uri or "",
@@ -857,7 +1076,7 @@ local function select_backend_target(domain_conf, client_ip)
         ctx.node_city = node_geo.city or ""
         ctx.node_isp = node_geo.isp or ""
     end
-    if not use_l2 then
+    if layer ~= "l2" and layer ~= "parent" then
         local override = select_condition_origin(domain_conf, ctx)
         if override and override ~= "" then
             local items = split_origin_list(override)
@@ -869,7 +1088,7 @@ local function select_backend_target(domain_conf, client_ip)
                 local key = "cond:" .. override
                 local addr = balancer.get_target(key, targets, "round_robin")
                 if addr then
-                    return build_backend_target(addr, domain_conf, false)
+                    return build_backend_target(addr, domain_conf, "origin")
                 end
             end
         end
@@ -878,10 +1097,6 @@ local function select_backend_target(domain_conf, client_ip)
     if not config.upstream_map then
         return nil
     end
-    local upstream_key = domain_conf.upstream_key
-    if use_l2 then
-        upstream_key = domain_conf.l2_upstream_key
-    end
     if not upstream_key or upstream_key == "" then
         return nil
     end
@@ -889,12 +1104,22 @@ local function select_backend_target(domain_conf, client_ip)
     if not targets then
         return nil
     end
+    if layer == "l2" then
+        targets = filter_online_targets(targets, load_status_nodes("l2"))
+    elseif layer == "parent" then
+        local mode = string.lower(tostring(domain_conf.parent_fetch_mode or ""))
+        if mode == "l2" or (mode == "l1" and upstream_key == domain_conf.parent_l2_upstream_key) then
+            targets = filter_online_targets(targets, load_status_nodes("l2"))
+        else
+            targets = filter_online_targets(targets, load_status_nodes("l1"))
+        end
+    end
     local policy = domain_conf.load_balance_policy or "round_robin"
     local addr = balancer.get_target(upstream_key, targets, policy)
     if not addr then
         return nil
     end
-    return build_backend_target(addr, domain_conf, use_l2)
+    return build_backend_target(addr, domain_conf, layer)
 end
 
 local function find_default_domain(config)
@@ -1022,7 +1247,7 @@ if domain_conf then
         ngx.ctx.guard_cookie_domain = nil
     end
 
-    if not whitelisted and ip_in_list(domain_conf.black_ips, client_ip) then
+    if not whitelisted and ip_in_blacklist(domain_conf.black_ips, client_ip) then
         error_page_block.exit_blocked(build_reason("local_protection", "ip_deny", {"condition=site_black_ips"}))
     end
     if not whitelisted and region_blocked(domain_conf, client_ip) then

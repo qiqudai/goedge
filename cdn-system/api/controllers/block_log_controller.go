@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,7 +33,7 @@ func (c *BlockLogController) BlockIP(ctx *gin.Context) {
 		return
 	}
 	ip := strings.TrimSpace(req.IP)
-	if net.ParseIP(ip) == nil {
+	if !services.IsValidIPBlacklistEntry(ip) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid ip"})
 		return
 	}
@@ -66,6 +65,91 @@ func (c *BlockLogController) BlockIP(ctx *gin.Context) {
 			"domain":  matchedDomain,
 			"ip":      ip,
 			"added":   added,
+		},
+	})
+}
+
+// BlockBatch adds multiple IP/pattern entries to the matched site's blacklist.
+// POST /api/v1/admin/logs/block/block_batch
+func (c *BlockLogController) BlockBatch(ctx *gin.Context) {
+	var req struct {
+		Domain string   `json:"domain"`
+		IPs    []string `json:"ips"`
+		Text   string   `json:"text"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	domain := strings.TrimSpace(req.Domain)
+	if domain == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "domain is required"})
+		return
+	}
+	entries := make([]string, 0)
+	if len(req.IPs) > 0 {
+		entries = append(entries, req.IPs...)
+	}
+	if strings.TrimSpace(req.Text) != "" {
+		entries = append(entries, services.ParseIPBlacklistLines(req.Text)...)
+	}
+	seen := map[string]struct{}{}
+	normalized := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		item := services.NormalizeIPBlacklistEntry(entry)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		normalized = append(normalized, item)
+	}
+	if len(normalized) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ips is required"})
+		return
+	}
+
+	index, _, ok := resolveBlockHostFilter(ctx)
+	if !ok || index == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
+		return
+	}
+	siteID, matchedDomain := resolveBlockSite(index, domain)
+	if siteID == 0 {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "site not found"})
+		return
+	}
+
+	invalid := make([]string, 0)
+	valid := make([]string, 0, len(normalized))
+	for _, entry := range normalized {
+		if !services.IsValidIPBlacklistEntry(entry) {
+			invalid = append(invalid, entry)
+			continue
+		}
+		valid = append(valid, entry)
+	}
+	if len(valid) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid ip", "invalid": invalid})
+		return
+	}
+
+	added, skipped, err := addSiteBlacklistEntries(siteID, valid)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "block ip failed"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "ok",
+		"data": gin.H{
+			"site_id": siteID,
+			"domain":  matchedDomain,
+			"added":   added,
+			"skipped": skipped,
+			"invalid": invalid,
 		},
 	})
 }
@@ -339,9 +423,20 @@ func (c *BlockLogController) UnblockBatch(ctx *gin.Context) {
 }
 
 func addSiteBlacklistIP(siteID int64, ip string) (bool, error) {
+	added, _, err := addSiteBlacklistEntries(siteID, []string{ip})
+	if err != nil {
+		return false, err
+	}
+	return added > 0, nil
+}
+
+func addSiteBlacklistEntries(siteID int64, entries []string) (added int, skipped int, err error) {
+	if len(entries) == 0 {
+		return 0, 0, nil
+	}
 	var site models.Site
 	if err := db.DB.Select("id, black_ip, settings").Where("id = ?", siteID).First(&site).Error; err != nil {
-		return false, err
+		return 0, 0, err
 	}
 	settings := map[string]interface{}{}
 	if strings.TrimSpace(site.SettingsRaw) != "" {
@@ -351,13 +446,31 @@ func addSiteBlacklistIP(siteID int64, ip string) (bool, error) {
 	if fromSettings, ok := extractSecurityIPList(settings, "blacklist"); ok && len(fromSettings) > 0 {
 		blacklist = fromSettings
 	}
+	existing := make(map[string]struct{}, len(blacklist))
 	for _, item := range blacklist {
-		if item == ip {
-			services.BumpConfigVersion("site_blacklist", []int64{siteID})
-			return false, nil
-		}
+		existing[item] = struct{}{}
 	}
-	blacklist = normalizeStringList(append(blacklist, ip))
+	for _, entry := range entries {
+		entry = services.NormalizeIPBlacklistEntry(entry)
+		if entry == "" {
+			continue
+		}
+		if _, ok := existing[entry]; ok {
+			skipped++
+			continue
+		}
+		blacklist = append(blacklist, entry)
+		existing[entry] = struct{}{}
+		added++
+	}
+	if added == 0 {
+		services.BumpConfigVersion("site_blacklist", []int64{siteID})
+		return 0, skipped, nil
+	}
+	blacklist = normalizeStringList(blacklist)
+	if err := services.CheckSiteIPListLimit("blacklist", len(blacklist)); err != nil {
+		return 0, skipped, err
+	}
 	setSecurityIPList(settings, "blacklist", blacklist)
 	settingsRaw, _ := json.Marshal(settings)
 	if err := db.DB.Model(&models.Site{}).Where("id = ?", siteID).Updates(map[string]interface{}{
@@ -365,10 +478,10 @@ func addSiteBlacklistIP(siteID int64, ip string) (bool, error) {
 		"settings":  string(settingsRaw),
 		"update_at": time.Now(),
 	}).Error; err != nil {
-		return false, err
+		return 0, skipped, err
 	}
 	services.BumpConfigVersion("site_blacklist", []int64{siteID})
-	return true, nil
+	return added, skipped, nil
 }
 
 // UnblockSite removes all blocked records for selected sites.

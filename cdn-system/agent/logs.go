@@ -8,9 +8,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
+)
+
+var (
+	logShipMu        sync.Mutex
+	accessLogDeliver = sendAccessLogs
+	streamLogDeliver = sendStreamLogs
 )
 
 func startAccessLogShip() {
@@ -108,103 +114,114 @@ func getLogStorageSettings() (string, int) {
 }
 
 func shipAccessLogs() {
+	logShipMu.Lock()
+	defer logShipMu.Unlock()
+
 	logPath, offsetPath := getAccessLogPaths()
 	if DebugMode && !accessLogPathLogged {
 		log.Printf("[Debug] Access log ship path=%s offset=%s", logPath, offsetPath)
 		accessLogPathLogged = true
 	}
-	fi, err := os.Stat(logPath)
-	if err != nil {
-		return
-	}
-	offset := loadOffset(offsetPath)
-	if offset > fi.Size() {
-		offset = 0
-	}
-
-	file, err := os.Open(logPath)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return
-	}
-
-	reader := bufio.NewReader(file)
-	lines := make([]string, 0, 200)
-	for len(lines) < 200 {
-		line, err := reader.ReadString('\n')
-		line = strings.TrimSpace(line)
-		if line != "" {
-			lines = append(lines, line)
-		}
-		if err != nil {
-			break
-		}
-	}
-	if len(lines) == 0 {
-		return
-	}
-	lines = normalizeLogTimesToUTC(lines)
-
-	newOffset, _ := file.Seek(0, io.SeekCurrent)
-	if err := sendAccessLogs(lines); err != nil {
-		log.Printf("[Error] Access log ship failed: %v", err)
-		return
-	}
-	saveOffset(offsetPath, newOffset)
+	shipLogBatch(logPath, offsetPath, accessLogDeliver)
 }
 
 func shipStreamLogs() {
+	logShipMu.Lock()
+	defer logShipMu.Unlock()
+
 	logPath, offsetPath := getStreamLogPaths()
 	if DebugMode && !streamLogPathLogged {
 		log.Printf("[Debug] Stream log ship path=%s offset=%s", logPath, offsetPath)
 		streamLogPathLogged = true
 	}
-	fi, err := os.Stat(logPath)
-	if err != nil {
-		return
-	}
-	offset := loadOffset(offsetPath)
-	if offset > fi.Size() {
-		offset = 0
-	}
+	shipLogBatch(logPath, offsetPath, streamLogDeliver)
+}
 
-	file, err := os.Open(logPath)
-	if err != nil {
-		return
-	}
-	defer file.Close()
+const (
+	// logShipBatchLines bounds how many lines we put into a single delivery
+	// (one WS frame / HTTP body) to keep memory and frame size reasonable.
+	logShipBatchLines = 1000
+	// logShipMaxBatchesPerTick bounds how much we drain per tick so a single
+	// shipper run cannot monopolize CPU on a pathological backlog, while still
+	// providing huge headroom (1000 * 500 = 500k lines / tick) so a busy node
+	// can stay caught up instead of falling permanently behind.
+	logShipMaxBatchesPerTick = 500
+)
 
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return
-	}
-
-	reader := bufio.NewReader(file)
-	lines := make([]string, 0, 200)
-	for len(lines) < 200 {
-		line, err := reader.ReadString('\n')
-		line = strings.TrimSpace(line)
-		if line != "" {
-			lines = append(lines, line)
-		}
+// shipLogBatch drains new log lines from logPath starting at the persisted byte
+// offset and delivers them in bounded batches. It keeps draining within a tick
+// until it reaches EOF (or the per-tick batch cap), so a high-traffic node does
+// not accumulate an unbounded backlog. De-duplication relies solely on the byte
+// offset (plus inode/size reconciliation for truncation/rotation); the API layer
+// is the authoritative guard against stale replays.
+func shipLogBatch(logPath, offsetPath string, deliver func([]string) error) {
+	for batch := 0; batch < logShipMaxBatchesPerTick; batch++ {
+		fi, err := os.Stat(logPath)
 		if err != nil {
-			break
+			return
+		}
+
+		state := loadLogOffsetState(offsetPath)
+		offset := resolveLogReadOffset(state, fi)
+
+		file, err := os.Open(logPath)
+		if err != nil {
+			return
+		}
+		if _, err := file.Seek(offset, io.SeekStart); err != nil {
+			file.Close()
+			return
+		}
+
+		reader := bufio.NewReader(file)
+		lines := make([]string, 0, logShipBatchLines)
+		var consumed int64
+		reachedEOF := false
+		for len(lines) < logShipBatchLines {
+			line, rerr := reader.ReadString('\n')
+			if rerr != nil {
+				// Trailing fragment without a newline: leave it unconsumed so
+				// the completed line is shipped on a later tick.
+				reachedEOF = true
+				break
+			}
+			consumed += int64(len(line))
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				lines = append(lines, trimmed)
+			}
+		}
+		file.Close()
+
+		if len(lines) == 0 {
+			// Caught up: reconcile offset bookkeeping (handles truncation/rotation
+			// detected via resolveLogReadOffset) without losing LastTS.
+			if offset != state.Offset || fi.Size() != state.Size || fileInfoInode(fi) != state.Inode {
+				saveLogOffsetState(offsetPath, logOffsetState{
+					Offset: offset,
+					Inode:  fileInfoInode(fi),
+					Size:   fi.Size(),
+					LastTS: state.LastTS,
+				})
+			}
+			return
+		}
+
+		lines = normalizeLogTimesToUTC(lines)
+		if err := deliver(lines); err != nil {
+			log.Printf("[Error] Log ship failed: %v", err)
+			return
+		}
+		saveLogOffsetState(offsetPath, logOffsetState{
+			Offset: offset + consumed,
+			Inode:  fileInfoInode(fi),
+			Size:   fi.Size(),
+			LastTS: maxLogLineTimestamp(lines, state.LastTS),
+		})
+
+		if reachedEOF {
+			return
 		}
 	}
-	if len(lines) == 0 {
-		return
-	}
-	lines = normalizeLogTimesToUTC(lines)
-
-	newOffset, _ := file.Seek(0, io.SeekCurrent)
-	if err := sendStreamLogs(lines); err != nil {
-		log.Printf("[Error] Stream log ship failed: %v", err)
-		return
-	}
-	saveOffset(offsetPath, newOffset)
 }
 
 func shipMetrics() {
@@ -216,26 +233,6 @@ func shipMetrics() {
 	if err := sendMetrics(string(body)); err != nil {
 		log.Printf("[Error] Metrics ship failed: %v", err)
 	}
-}
-
-func loadOffset(path string) int64 {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	value := strings.TrimSpace(string(data))
-	if value == "" {
-		return 0
-	}
-	offset, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return offset
-}
-
-func saveOffset(path string, offset int64) {
-	_ = os.WriteFile(path, []byte(strconv.FormatInt(offset, 10)), 0644)
 }
 
 func currentNginxLogsDir() string {

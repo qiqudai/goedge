@@ -110,9 +110,11 @@
 
 | 操作 | 规则 | 后端 |
 |------|------|------|
-| 删除 | 无线路；无套餐/已购套餐引用 | `DeleteNodeGroup` |
+| 删除 | 无线路；无套餐/已购套餐引用；**无 L3 节点 `parent_group_id` 引用** | `DeleteNodeGroup` |
 
-错误码：`node_group.has_nodes`, `node_group.has_packages`
+错误码：`node_group.has_nodes`, `node_group.has_packages`, `node_group.has_parent_fetch_refs`
+
+**L3 父节点组引用**：`node.level=3` 且 `parent_fetch_mode` 为 `l1`/`l2` 时，`node_config.parent_group_id` 指向父层线路分组。删除该分组前须先解除所有 L3 节点的父层绑定（改为 `origin` 或更换分组）。实现：`CountParentGroupReferences`（`parent_fetch_service.go`）。
 
 ### 2.6 证书 (Cert)
 

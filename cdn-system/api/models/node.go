@@ -41,7 +41,10 @@ type Node struct {
 	Online               bool     `json:"online" gorm:"-"`
 	LineCount            int64    `json:"line_count" gorm:"-"`
 	// New fields for Node Settings
-	Level                int        `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2
+	Level                int        `json:"type" gorm:"column:level;default:1"` // 1: L1, 2: L2, 3: L3 domestic/regional edge
+	ParentGroupID        int64      `json:"parent_group_id,omitempty" gorm:"-"`
+	ParentFetchMode      string     `json:"parent_fetch_mode,omitempty" gorm:"-"`
+	L1RespectL2          bool       `json:"l1_respect_l2,omitempty" gorm:"-"`
 	Sort                 int        `json:"sort_order" gorm:"column:sort;default:0"`
 	CacheDir             string     `json:"cache_dir" gorm:"column:cache_dir"`
 	MaxCacheSize         int        `json:"cache_limit" gorm:"column:max_cache_size"`

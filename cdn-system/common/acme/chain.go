@@ -13,11 +13,6 @@ import (
 
 const PreferredLetsEncryptChain = "ISRG Root X1"
 
-var incompatibleLEChainSubjectCN = []string{
-	"YR2",
-	"Root YR",
-}
-
 func IsLetsEncryptDirectory(caDirURL string) bool {
 	dir := strings.ToLower(strings.TrimSpace(caDirURL))
 	return strings.Contains(dir, "letsencrypt.org")
@@ -58,25 +53,6 @@ func ParseCertificateBundle(certPEM string) ([]*x509.Certificate, error) {
 }
 
 func UsesIncompatibleLetsEncryptChain(certPEM string) bool {
-	certs, err := ParseCertificateBundle(certPEM)
-	if err != nil {
-		return false
-	}
-	for _, cert := range certs {
-		if hasIncompatibleLetsEncryptCN(cert.Subject.CommonName) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasIncompatibleLetsEncryptCN(commonName string) bool {
-	cn := strings.TrimSpace(commonName)
-	for _, marker := range incompatibleLEChainSubjectCN {
-		if cn == marker || strings.Contains(cn, marker) {
-			return true
-		}
-	}
 	return false
 }
 
@@ -92,9 +68,6 @@ func selectCompatibleLetsEncryptBundle(certs map[string]*legoacme.RawCertificate
 			continue
 		}
 		bundle := bytes.TrimSpace(raw.Cert)
-		if UsesIncompatibleLetsEncryptChain(string(bundle)) {
-			continue
-		}
 		size, err := countCertificates(bundle)
 		if err != nil {
 			continue
@@ -107,7 +80,7 @@ func selectCompatibleLetsEncryptBundle(certs map[string]*legoacme.RawCertificate
 	if len(best) > 0 {
 		return best, nil
 	}
-	return nil, errors.New("no compatible Let's Encrypt chain found (avoid YR2 / ISRG Root YR)")
+	return nil, errors.New("no usable certificate bundle found")
 }
 
 func countCertificates(pemBytes []byte) (int, error) {

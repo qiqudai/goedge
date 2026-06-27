@@ -50,7 +50,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		payload.AntiBlocking = ParseBoolFlag(val)
 	}
 
-	if globalCfg := loadGlobalConfig(); globalCfg != nil {
+	if globalCfg := cloneGlobalConfigForEdge(loadGlobalConfig()); globalCfg != nil {
 		payload.WAF = &globalCfg.WAF
 		payload.Resources = &globalCfg.Resources
 		payload.ErrorPageI18n = globalCfg.ErrorPageI18n
@@ -95,7 +95,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 	l2TargetsByGroup := map[int64][]l2Target{}
 	l2UpstreamKeyByGroup := map[int64]string{}
 	if node.Level == 1 {
-		l2TargetsByGroup = loadL2TargetsByGroup(groupIDs)
+		l2TargetsByGroup = LoadL2TargetsByGroup(groupIDs)
 		for groupID, targets := range l2TargetsByGroup {
 			if len(targets) == 0 {
 				continue
@@ -118,6 +118,60 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 					ID:      upstreamKey,
 					Targets: upstreamTargets,
 				})
+			}
+		}
+	}
+
+	parentFetchCfg := ParentFetchConfig{}
+	parentL1UpstreamKey := ""
+	parentL2UpstreamKey := ""
+	if node.Level == 3 {
+		parentFetchCfg = LoadParentFetchConfig(node.ID)
+		payload.ParentGroupID = parentFetchCfg.ParentGroupID
+		payload.ParentFetchMode = parentFetchCfg.ParentFetchMode
+		if parentFetchCfg.ParentGroupID > 0 {
+			parentGroupIDs := []int64{parentFetchCfg.ParentGroupID}
+			l1Targets := LoadL1TargetsByGroup(parentGroupIDs)
+			l2Targets := LoadL2TargetsByGroup(parentGroupIDs)
+			if len(l1Targets[parentFetchCfg.ParentGroupID]) > 0 {
+				parentL1UpstreamKey = fmt.Sprintf("l1_upstream_%d", parentFetchCfg.ParentGroupID)
+				upstreamTargets := make([]models.EdgeUpstreamTarget, 0)
+				for _, target := range l1Targets[parentFetchCfg.ParentGroupID] {
+					if target.IP == "" {
+						continue
+					}
+					upstreamTargets = append(upstreamTargets, models.EdgeUpstreamTarget{
+						Addr:   target.IP,
+						Weight: 1,
+						NodeID: target.NodeID,
+					})
+				}
+				if len(upstreamTargets) > 0 {
+					payload.Upstreams = append(payload.Upstreams, models.EdgeUpstream{
+						ID:      parentL1UpstreamKey,
+						Targets: upstreamTargets,
+					})
+				}
+			}
+			if len(l2Targets[parentFetchCfg.ParentGroupID]) > 0 {
+				parentL2UpstreamKey = fmt.Sprintf("l2_upstream_%d", parentFetchCfg.ParentGroupID)
+				upstreamTargets := make([]models.EdgeUpstreamTarget, 0)
+				for _, target := range l2Targets[parentFetchCfg.ParentGroupID] {
+					if target.IP == "" {
+						continue
+					}
+					upstreamTargets = append(upstreamTargets, models.EdgeUpstreamTarget{
+						Addr:   target.IP,
+						Weight: 1,
+						NodeID: target.NodeID,
+					})
+				}
+				if len(upstreamTargets) > 0 {
+					payload.Upstreams = append(payload.Upstreams, models.EdgeUpstream{
+						ID:      parentL2UpstreamKey,
+						Targets: upstreamTargets,
+					})
+				}
 			}
 		}
 	}
@@ -201,6 +255,23 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			l2HTTPSPort = resolveListenPort(effectiveSite.HttpsListen, "")
 		}
 
+		parentFetchMode := ""
+		parentHTTPPort := ""
+		parentHTTPSPort := ""
+		l1RespectL2 := true
+		domainParentL1Key := ""
+		domainParentL2Key := ""
+		if node.Level == 3 {
+			parentFetchMode = parentFetchCfg.ParentFetchMode
+			l1RespectL2 = parentFetchCfg.L1RespectL2
+			domainParentL1Key = parentL1UpstreamKey
+			domainParentL2Key = parentL2UpstreamKey
+			if parentFetchMode == ParentFetchL1 || parentFetchMode == ParentFetchL2 {
+				parentHTTPPort = resolveListenPort(effectiveSite.HttpListen, "80")
+				parentHTTPSPort = resolveListenPort(effectiveSite.HttpsListen, "")
+			}
+		}
+
 		upstreamKey := fmt.Sprintf("upstream_%d", effectiveSite.ID)
 		targets := buildUpstreamTargets(*effectiveSite, originProtocol, originHTTPPort, originHTTPSPort)
 		if len(targets) > 0 {
@@ -282,6 +353,12 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				UseL2:                          l2Enabled,
 				L2HTTPPort:                     l2HTTPPort,
 				L2HTTPSPort:                    l2HTTPSPort,
+				ParentFetchMode:                parentFetchMode,
+				ParentL1UpstreamKey:            domainParentL1Key,
+				ParentL2UpstreamKey:            domainParentL2Key,
+				ParentHTTPPort:                 parentHTTPPort,
+				ParentHTTPSPort:                parentHTTPSPort,
+				L1RespectL2:                    l1RespectL2,
 				LoadBalancePolicy:              policy,
 				Headers:                        headers,
 				ResponseHeaders:                responseHeaders,
@@ -301,8 +378,8 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 				ACLDefaultDenyStatus:           aclDenyStatus,
 				ACLDefaultRedirectURL:          aclRedirectURL,
 				ACLRules:                       aclRules,
-				BlackIPs:                       parseIPList(effectiveSite.BlackIPRaw),
-				WhiteIPs:                       parseIPList(effectiveSite.WhiteIPRaw),
+				BlackIPs:                       TrimSiteIPList("blacklist", parseIPList(effectiveSite.BlackIPRaw)),
+				WhiteIPs:                       TrimSiteIPList("whitelist", parseIPList(effectiveSite.WhiteIPRaw)),
 				RegionBlock:                    regionBlock,
 				CCRuleID:                       effectiveSite.CcDefaultRule,
 				CCAutoSwitch:                   ccAutoSwitch,
@@ -388,7 +465,7 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 		}
 	}
 
-	payload.Streams = buildStreamsForNode(node, groupIDs, l2TargetsByGroup, groupL2Config)
+	payload.Streams = buildStreamsForNode(node, groupIDs, l2TargetsByGroup, groupL2Config, parentFetchCfg, parentL1UpstreamKey, parentL2UpstreamKey)
 
 	ccRules, ccMatchers, ccFilters, err := loadAllCCData()
 	if err == nil {
@@ -524,7 +601,17 @@ func int64Set(items []int64) map[int64]struct{} {
 }
 
 func hashConfigVersion(cfg *models.EdgeConfig) int64 {
-	clone := *cfg
+	if cfg == nil {
+		return time.Now().Unix()
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return time.Now().Unix()
+	}
+	var clone models.EdgeConfig
+	if err := json.Unmarshal(raw, &clone); err != nil {
+		return time.Now().Unix()
+	}
 	clone.Version = 0
 	b, err := json.Marshal(clone)
 	if err != nil {
@@ -533,6 +620,21 @@ func hashConfigVersion(cfg *models.EdgeConfig) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write(b)
 	return int64(h.Sum64())
+}
+
+func cloneGlobalConfigForEdge(src *models.GlobalConfig) *models.GlobalConfig {
+	if src == nil {
+		return nil
+	}
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return src
+	}
+	var dst models.GlobalConfig
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		return src
+	}
+	return &dst
 }
 
 func findNode(nodeID string) (*models.Node, error) {
@@ -2745,7 +2847,7 @@ func extractOriginConfig(site models.Site) (string, string, string) {
 	return protocol, httpPort, httpsPort
 }
 
-func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup map[int64][]l2Target, groupL2Config map[int64]string) []models.EdgeStream {
+func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup map[int64][]l2Target, groupL2Config map[int64]string, parentFetchCfg ParentFetchConfig, parentL1UpstreamKey, parentL2UpstreamKey string) []models.EdgeStream {
 	if len(groupIDs) == 0 {
 		return nil
 	}
@@ -2791,6 +2893,8 @@ func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup m
 		}
 
 		useL2 := false
+		useParentFetch := false
+		parentMode := ParentFetchOrigin
 		if node != nil && node.Level == 1 {
 			packageL2Enabled := false
 			if pkg, ok := userPackageMap[forward.UserPackageID]; ok {
@@ -2800,8 +2904,64 @@ func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup m
 				useL2 = true
 			}
 		}
+		if node != nil && node.Level == 3 {
+			parentMode = NormalizeParentFetchMode(parentFetchCfg.ParentFetchMode)
+			if parentMode == ParentFetchL1 || parentMode == ParentFetchL2 {
+				useParentFetch = true
+			}
+		}
 		targets := make([]models.EdgeStreamTarget, 0, len(forward.Origins))
-		if useL2 {
+		if useParentFetch {
+			if parentMode == ParentFetchL1 && parentFetchCfg.ParentGroupID > 0 {
+				for _, parentNode := range LoadL1TargetsByGroup([]int64{parentFetchCfg.ParentGroupID})[parentFetchCfg.ParentGroupID] {
+					if parentNode.IP == "" {
+						continue
+					}
+					targets = append(targets, models.EdgeStreamTarget{
+						Addr:   parentNode.IP,
+						Weight: 1,
+						Enable: true,
+						NodeID: parentNode.NodeID,
+					})
+				}
+				for _, parentNode := range LoadL2TargetsByGroup([]int64{parentFetchCfg.ParentGroupID})[parentFetchCfg.ParentGroupID] {
+					if parentNode.IP == "" {
+						continue
+					}
+					targets = append(targets, models.EdgeStreamTarget{
+						Addr:   parentNode.IP,
+						Weight: 1,
+						Enable: true,
+						NodeID: parentNode.NodeID,
+						Backup: true,
+					})
+				}
+			}
+			if parentMode == ParentFetchL2 && parentFetchCfg.ParentGroupID > 0 {
+				for _, parentNode := range LoadL2TargetsByGroup([]int64{parentFetchCfg.ParentGroupID})[parentFetchCfg.ParentGroupID] {
+					if parentNode.IP == "" {
+						continue
+					}
+					targets = append(targets, models.EdgeStreamTarget{
+						Addr:   parentNode.IP,
+						Weight: 1,
+						Enable: true,
+						NodeID: parentNode.NodeID,
+					})
+				}
+			}
+			for _, origin := range effectiveForward.Origins {
+				if !origin.Enable {
+					continue
+				}
+				targets = append(targets, models.EdgeStreamTarget{
+					Addr:   origin.Address,
+					Weight: origin.Weight,
+					Enable: origin.Enable,
+					Backup: true,
+				})
+			}
+		} else if useL2 {
 			for _, l2Node := range l2TargetsByGroup[forward.NodeGroupID] {
 				if l2Node.IP == "" {
 					continue
@@ -2841,7 +3001,10 @@ func buildStreamsForNode(node *models.Node, groupIDs []int64, l2TargetsByGroup m
 			ListenPorts:         effectiveForward.ListenPorts,
 			ListenProtocol:      listenProtocol,
 			Targets:             targets,
-			UseListenPort:       useL2,
+			UseListenPort:       useL2 || useParentFetch,
+			ParentFetchMode:     parentMode,
+			ParentL1UpstreamKey: parentL1UpstreamKey,
+			ParentL2UpstreamKey: parentL2UpstreamKey,
 			BalanceWay:          strings.TrimSpace(effectiveForward.BalanceWay),
 			ProxyProtocol:       effectiveForward.ProxyProtocol,
 			ProxyConnectTimeout: connectTimeout,
@@ -3000,7 +3163,7 @@ func loadNodeGroupL2Config(groupIDs []int64) map[int64]string {
 	return result
 }
 
-func loadL2TargetsByGroup(groupIDs []int64) map[int64][]l2Target {
+func LoadL2TargetsByGroup(groupIDs []int64) map[int64][]l2Target {
 	result := map[int64][]l2Target{}
 	if db.DB == nil || len(groupIDs) == 0 {
 		return result
@@ -3027,6 +3190,61 @@ func loadL2TargetsByGroup(groupIDs []int64) map[int64][]l2Target {
 	var nodes []models.Node
 	if err := db.DB.Select("id", "ip", "level", "enable").
 		Where("id IN ? AND level = ? AND enable = ?", nodeIDs, 2, true).
+		Find(&nodes).Error; err != nil {
+		return result
+	}
+	nodeMap := map[int64]models.Node{}
+	for _, node := range nodes {
+		nodeMap[node.ID] = node
+	}
+	added := map[int64]map[int64]struct{}{}
+	for _, line := range lines {
+		node, ok := nodeMap[line.NodeID]
+		if !ok || node.IP == "" {
+			continue
+		}
+		if _, ok := added[line.NodeGroupID]; !ok {
+			added[line.NodeGroupID] = map[int64]struct{}{}
+		}
+		if _, exists := added[line.NodeGroupID][node.ID]; exists {
+			continue
+		}
+		added[line.NodeGroupID][node.ID] = struct{}{}
+		result[line.NodeGroupID] = append(result[line.NodeGroupID], l2Target{
+			NodeID: node.ID,
+			IP:     node.IP,
+		})
+	}
+	return result
+}
+
+func LoadL1TargetsByGroup(groupIDs []int64) map[int64][]l2Target {
+	result := map[int64][]l2Target{}
+	if db.DB == nil || len(groupIDs) == 0 {
+		return result
+	}
+	var lines []models.Line
+	if err := db.DB.Select("node_group_id", "node_id", "enable").
+		Where("node_group_id IN ? AND enable = ?", groupIDs, true).
+		Find(&lines).Error; err != nil {
+		return result
+	}
+	nodeSet := map[int64]struct{}{}
+	for _, line := range lines {
+		if line.NodeID != 0 {
+			nodeSet[line.NodeID] = struct{}{}
+		}
+	}
+	if len(nodeSet) == 0 {
+		return result
+	}
+	nodeIDs := make([]int64, 0, len(nodeSet))
+	for id := range nodeSet {
+		nodeIDs = append(nodeIDs, id)
+	}
+	var nodes []models.Node
+	if err := db.DB.Select("id", "ip", "level", "enable").
+		Where("id IN ? AND level = ? AND enable = ?", nodeIDs, 1, true).
 		Find(&nodes).Error; err != nil {
 		return result
 	}

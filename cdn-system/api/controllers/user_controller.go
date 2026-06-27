@@ -299,6 +299,14 @@ func (ctr *UserController) CreateUser(c *gin.Context) {
 	if userType != 1 {
 		userType = 2
 	}
+	var userID int64
+	if userType == 2 {
+		userID, err = services.GenerateOrdinaryUserID(db.DB)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create user")})
+			return
+		}
+	}
 	groupID, err := normalizeUserGroupID(req.GroupID)
 	if err != nil {
 		if err.Error() == "user group not found" {
@@ -309,6 +317,7 @@ func (ctr *UserController) CreateUser(c *gin.Context) {
 		return
 	}
 	user := models.User{
+		ID:           userID,
 		Email:        email,
 		Name:         name,
 		Description:  strings.TrimSpace(req.Des),

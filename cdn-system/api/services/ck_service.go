@@ -61,7 +61,13 @@ type rawStreamLog struct {
 	ServerPort            int    `json:"server_port"`
 }
 
+const accessLogMaxInsertAge = 24 * time.Hour
+
 func InsertAccessLogs(nodeID, nodeIP string, lines []string) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	lines = filterAccessLogLinesForInsert(lines)
 	if len(lines) == 0 {
 		return 0
 	}
@@ -504,6 +510,36 @@ func parseRequest(request string) (string, string) {
 		return parts[0], parts[1]
 	}
 	return "", ""
+}
+
+func filterAccessLogLinesForInsert(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	cutoff := time.Now().UTC().Add(-accessLogMaxInsertAge)
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		ts := parseAccessLogLineTime(line)
+		if !ts.IsZero() && ts.Before(cutoff) {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func parseAccessLogLineTime(line string) time.Time {
+	var raw struct {
+		TimeISO8601 string `json:"time_iso8601"`
+	}
+	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		return time.Time{}
+	}
+	return parseISOTime(raw.TimeISO8601)
 }
 
 func parseISOTime(value string) time.Time {

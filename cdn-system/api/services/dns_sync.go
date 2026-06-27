@@ -6,6 +6,7 @@ import (
 	"cdn-api/services/dns"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -180,6 +181,10 @@ func upsertDNSRecordSimple(api models.DNSAPI, zone, rType, name, value string, t
 }
 
 func deleteDNSRecord(api models.DNSAPI, zone, rType, name, value string, ttl int) error {
+	if isProtectedPackageCNAMERecord(zone, rType, name) {
+		log.Printf("[DNS] protected package cname delete skipped zone=%s name=%s value=%s", zone, name, value)
+		return nil
+	}
 	provider, err := dns.GetProvider(api.Type, api.Auth)
 	if err != nil {
 		return fmt.Errorf("get provider failed: %v", err)
@@ -193,6 +198,28 @@ func deleteDNSRecord(api models.DNSAPI, zone, rType, name, value string, ttl int
 		Value: value,
 		TTL:   ttl,
 	})
+}
+
+func isProtectedPackageCNAMERecord(zone, recordType, name string) bool {
+	if db.DB == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(recordType), "CNAME") {
+		return false
+	}
+	zone = normalizeCnameDomain(zone)
+	name = strings.TrimSpace(strings.ToLower(strings.TrimSuffix(name, ".")))
+	if zone == "" || name == "" || name == "@" {
+		return false
+	}
+	var count int64
+	if err := db.DB.Model(&models.UserPackage{}).
+		Where("LOWER(cname_mode) = ? AND cname_domain = ? AND (LOWER(cname_hostname) = ? OR LOWER(record_id) = ?)",
+			"package", zone, name, name).
+		Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
 }
 
 func diffDomains(oldDomains, newDomains []string) []string {

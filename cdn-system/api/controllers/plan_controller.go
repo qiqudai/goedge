@@ -80,6 +80,10 @@ type userPlanItem struct {
 	CnameHostname   string    `json:"cname_hostname"`
 	CnameHostname2  string    `json:"cname_hostname2"`
 	CnameMode       string    `json:"cname_mode"`
+	PriceMonthly    int64     `json:"price_monthly"`
+	PriceQuarterly  int64     `json:"price_quarterly"`
+	PriceYearly     int64     `json:"price_yearly"`
+	Http3Enabled    bool      `json:"http3_enabled"`
 	StartAt         time.Time `json:"start_at"`
 	EndAt           time.Time `json:"end_at"`
 	Status          string    `json:"status"`
@@ -502,6 +506,12 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 		}
 	}
 
+	http3Map, err := loadUserPackageBoolConfig(userPlans, "http3_enabled")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Config Error")})
+		return
+	}
+
 	now := time.Now()
 	list := make([]userPlanItem, 0, len(userPlans))
 	for _, p := range userPlans {
@@ -551,6 +561,10 @@ func (ctr *PlanController) ListUserPlans(c *gin.Context) {
 			CnameHostname:   p.CnameHostname,
 			CnameHostname2:  p.CnameHostname2,
 			CnameMode:       p.CnameMode,
+			PriceMonthly:    p.MonthPrice,
+			PriceQuarterly:  p.QuarterPrice,
+			PriceYearly:     p.YearPrice,
+			Http3Enabled:    http3Map[p.ID],
 			StartAt:         startAt,
 			EndAt:           p.EndAt,
 			Status:          status,
@@ -832,8 +846,41 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	if hasKey(payload, "enable_backup_group") {
 		updates["enable_backup_group"] = getBool(payload, "enable_backup_group")
 	}
-	if hasKey(payload, "main_domain_limit") {
-		updates["main_domain_limit"] = getInt64(payload, "main_domain_limit")
+	if v, ok := parseLimitInt(payload, "main_domain_limit"); ok {
+		updates["main_domain_limit"] = v
+	}
+	if v, ok := parseLimitInt(payload, "traffic"); ok {
+		updates["traffic"] = v
+	}
+	if v, ok := parseLimitString(payload, "bandwidth"); ok {
+		updates["bandwidth"] = v
+	}
+	if v, ok := parseLimitInt(payload, "connection"); ok {
+		updates["connection"] = v
+	}
+	if v, ok := parseLimitInt(payload, "domain"); ok {
+		updates["domain"] = v
+	}
+	if v, ok := parseLimitInt(payload, "http_port"); ok {
+		updates["http_port"] = v
+	}
+	if v, ok := parseLimitInt(payload, "stream_port"); ok {
+		updates["stream_port"] = v
+	}
+	if hasKey(payload, "custom_cc_rule") {
+		updates["custom_cc_rule"] = getBool(payload, "custom_cc_rule")
+	}
+	if hasKey(payload, "websocket") {
+		updates["websocket"] = getBool(payload, "websocket")
+	}
+	if hasKey(payload, "price_monthly") {
+		updates["month_price"] = getInt64(payload, "price_monthly")
+	}
+	if hasKey(payload, "price_quarterly") {
+		updates["quarter_price"] = getInt64(payload, "price_quarterly")
+	}
+	if hasKey(payload, "price_yearly") {
+		updates["year_price"] = getInt64(payload, "price_yearly")
 	}
 	// CNAME Fields support
 	if hasKey(payload, "cname_domain") {
@@ -859,14 +906,26 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 		}
 	}
 
-	if len(updates) == 0 {
+	http3Update := hasKey(payload, "http3_enabled")
+	http3Enabled := getBool(payload, "http3_enabled")
+
+	if len(updates) == 0 && !http3Update {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("no updates")})
 		return
 	}
 
-	if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
-		return
+	dnsChanged := userPackageDNSFieldsChanged(current, updates)
+	if len(updates) > 0 {
+		if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
+			return
+		}
+	}
+	if http3Update {
+		if err := saveUserPackageBoolConfig(id, "http3_enabled", http3Enabled); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Config Update Failed")})
+			return
+		}
 	}
 
 	// Trigger Sync
@@ -877,14 +936,10 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	var siteIDs []int64
 	if err := db.DB.Model(&models.Site{}).Where("user_package = ?", id).Pluck("id", &siteIDs).Error; err == nil && len(siteIDs) > 0 {
 		services.BumpConfigVersion("site", siteIDs)
-		var sites []models.Site
-		if err := db.DB.Where("id IN ?", siteIDs).Find(&sites).Error; err == nil {
-			for _, site := range sites {
-				resyncSiteCnameForSite(site)
-			}
-		}
 	}
-	resyncUserPackageGroupCnames(id)
+	if dnsChanged {
+		resyncUserPackageGroupCnames(id)
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
 
@@ -1084,4 +1139,35 @@ func getTimeUpdateValue(payload map[string]interface{}, key string) interface{} 
 		return tm
 	}
 	return gorm.Expr("NULL")
+}
+
+func isUnlimitedLimitText(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "0", "不限", "unlimited", "unlimit", "null", "none":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseLimitInt(payload map[string]interface{}, key string) (int32, bool) {
+	if !hasKey(payload, key) {
+		return 0, false
+	}
+	raw := getString(payload, key)
+	if isUnlimitedLimitText(raw) {
+		return 0, true
+	}
+	return int32(getInt64(payload, key)), true
+}
+
+func parseLimitString(payload map[string]interface{}, key string) (string, bool) {
+	if !hasKey(payload, key) {
+		return "", false
+	}
+	raw := getString(payload, key)
+	if isUnlimitedLimitText(raw) {
+		return "", true
+	}
+	return raw, true
 }

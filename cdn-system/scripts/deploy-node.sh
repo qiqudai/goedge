@@ -145,7 +145,7 @@ prompt_secret SSH_PASS "SSH password"
 [[ -n "$SSH_PASS" ]] || err "SSH password is required"
 
 if [[ -z "${NODE_TYPE:-}" ]]; then
-  prompt_default NODE_TYPE "Node type (L1/L2)" "L1"
+  prompt_default NODE_TYPE "Node type (L1/L2/L3)" "L1"
 else
   echo "Using node type: $NODE_TYPE"
 fi
@@ -154,8 +154,10 @@ if [[ "$NODE_TYPE_UPPER" == "L1" ]]; then
   NODE_LEVEL=1
 elif [[ "$NODE_TYPE_UPPER" == "L2" ]]; then
   NODE_LEVEL=2
+elif [[ "$NODE_TYPE_UPPER" == "L3" ]]; then
+  NODE_LEVEL=3
 else
-  err "Node type must be L1 or L2"
+  err "Node type must be L1, L2, or L3"
 fi
 
 DEFAULT_API_PORT="${API_PORT:-$(yaml_get port || true)}"

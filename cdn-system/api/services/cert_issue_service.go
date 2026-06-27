@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,8 @@ type issueTaskMeta struct {
 }
 
 const maxCertIssueAttempts = 3
+
+var acmeRetryAfterPattern = regexp.MustCompile(`(?i)retry after ([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}) UTC`)
 
 // IssueCertsAsync creates tasks and starts processing
 func IssueCertsAsync(batchID int64, ids []int64) {
@@ -97,6 +100,12 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 	// 1. Load Cert
 	if err := db.DB.First(&cert, certID).Error; err != nil {
 		log.Printf("[CertIssue] cert not found cert_id=%d err=%v", certID, err)
+		return
+	}
+	if retryAt, blocked := certIssueRetryBlocked(cert, time.Now()); blocked {
+		reason := fmt.Sprintf("acme rate limited; retry after %s", retryAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+		log.Printf("[CertIssue] skip blocked cert_id=%d %s", certID, reason)
+		markCertIssueBlocked(certID, cert.IssueTaskID, reason, retryAt)
 		return
 	}
 	if isManualUploadCert(cert.Type) {
@@ -166,6 +175,10 @@ func processUniqueIssueTask(batchID int64, certID int64) {
 				"state": "fail",
 				"ret":   errMsg,
 			})
+			if retryAt, ok := parseACMERateLimitRetryAt(errMsg); ok {
+				markCertIssueBlocked(certID, task.ID, errMsg, retryAt)
+				return
+			}
 			if isFatalIssueError(err) {
 				failTask(&task, errMsg)
 				db.DB.Model(&models.Cert{ID: cert.ID}).Updates(map[string]interface{}{
@@ -453,6 +466,12 @@ func dispatchCertsToNodes(batchID int64, certs []models.Cert) error {
 	}
 
 	for _, cert := range certs {
+		if retryAt, blocked := certIssueRetryBlocked(cert, time.Now()); blocked {
+			reason := fmt.Sprintf("acme rate limited; retry after %s", retryAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+			log.Printf("[CertIssue] skip node dispatch cert_id=%d %s", cert.ID, reason)
+			markCertIssueBlocked(int64(cert.ID), cert.IssueTaskID, reason, retryAt)
+			continue
+		}
 		domains := splitCertDomains(cert.Domain)
 		if len(domains) == 0 {
 			markCertIssueFailed(int64(cert.ID), "cert domain is empty")
@@ -1015,6 +1034,29 @@ func markCertIssueFailed(certID int64, reason string) {
 	MarkPendingHTTPSFailedForCert(certID, reason)
 }
 
+func markCertIssueBlocked(certID int64, taskID int64, reason string, retryAt time.Time) {
+	reason = strings.TrimSpace(reason)
+	retryAt = retryAt.In(time.Local)
+	if certID != 0 {
+		if err := db.DB.Model(&models.Cert{}).Where("id = ? AND state <> ?", certID, "ready").Updates(map[string]interface{}{
+			"state": "fail",
+			"ret":   reason,
+		}).Error; err != nil {
+			log.Printf("[CertIssue] mark cert blocked cert_id=%d err=%v", certID, err)
+		}
+	}
+	if taskID != 0 {
+		if err := db.DB.Model(&models.Task{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+			"state":    "retrying",
+			"ret":      reason,
+			"retry_at": retryAt,
+			"end_at":   time.Now(),
+		}).Error; err != nil {
+			log.Printf("[CertIssue] mark task blocked task_id=%d err=%v", taskID, err)
+		}
+	}
+}
+
 func MarkPendingHTTPSFailedForCert(certID int64, reason string) {
 	if certID == 0 {
 		return
@@ -1065,6 +1107,17 @@ func MarkIssueTaskFailed(taskID int64, reason string) {
 	if taskID == 0 {
 		return
 	}
+	if retryAt, ok := parseACMERateLimitRetryAt(reason); ok {
+		var certs []models.Cert
+		if err := db.DB.Select("id").Where("issue_task_id = ? AND state <> ?", taskID, "ready").Find(&certs).Error; err == nil {
+			for _, cert := range certs {
+				markCertIssueBlocked(int64(cert.ID), taskID, reason, retryAt)
+			}
+			return
+		}
+		markCertIssueBlocked(0, taskID, reason, retryAt)
+		return
+	}
 	updates := map[string]interface{}{
 		"state": "fail",
 		"ret":   strings.TrimSpace(reason),
@@ -1082,6 +1135,45 @@ func nextCertRetryDelay(errTimes int) time.Duration {
 		return time.Duration(delays[errTimes]) * time.Minute
 	}
 	return 60 * time.Minute
+}
+
+func certIssueRetryBlocked(cert models.Cert, now time.Time) (time.Time, bool) {
+	if cert.IssueTaskID == 0 {
+		return time.Time{}, false
+	}
+	var task models.Task
+	if err := db.DB.Select("id", "retry_at", "ret", "state").Where("id = ?", cert.IssueTaskID).First(&task).Error; err != nil {
+		return time.Time{}, false
+	}
+	if task.RetryAt == nil || !task.RetryAt.After(now) {
+		return time.Time{}, false
+	}
+	if _, ok := parseACMERateLimitRetryAt(task.Ret); ok {
+		return *task.RetryAt, true
+	}
+	if strings.Contains(strings.ToLower(task.Ret), "rate limited") || strings.EqualFold(task.State, "retrying") {
+		return *task.RetryAt, true
+	}
+	return time.Time{}, false
+}
+
+func parseACMERateLimitRetryAt(message string) (time.Time, bool) {
+	lowered := strings.ToLower(message)
+	if !strings.Contains(lowered, "ratelimited") &&
+		!strings.Contains(lowered, "rate limited") &&
+		!strings.Contains(lowered, "too many certificates") &&
+		!strings.Contains(lowered, "too many new orders") {
+		return time.Time{}, false
+	}
+	match := acmeRetryAfterPattern.FindStringSubmatch(message)
+	if len(match) != 2 {
+		return time.Time{}, false
+	}
+	retryAt, err := time.ParseInLocation("2006-01-02 15:04:05", match[1], time.UTC)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return retryAt, true
 }
 
 func isFatalIssueError(err error) bool {

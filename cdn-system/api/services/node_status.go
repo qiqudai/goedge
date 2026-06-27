@@ -3,8 +3,6 @@ package services
 import (
 	"cdn-api/db"
 	"cdn-api/models"
-	"cdn-api/services/dns"
-	"log"
 	"sync"
 	"time"
 )
@@ -110,37 +108,9 @@ func HandleNodeRecover(nodeID int64) {
 	if nodeID <= 0 || db.DB == nil {
 		return
 	}
-	go func(id int64) {
-		if err := SyncPackageCnameForNodes([]int64{id}, "add"); err != nil {
-			log.Printf("[DNS] package cname recover sync failed node=%d err=%v", id, err)
-		}
-	}(nodeID)
-	var lines []models.Line
-	if err := db.DB.Where("(node_ip_id = ? OR node_id = ?) AND enable = ?", nodeID, nodeID, true).Find(&lines).Error; err != nil {
-		return
-	}
-	if len(lines) == 0 {
-		return
-	}
-	type key struct {
-		groupID  int64
-		lineID   string
-		lineName string
-	}
-	groupIPIDs := map[key][]int64{}
-	for _, line := range lines {
-		k := key{groupID: line.NodeGroupID, lineID: line.LineID, lineName: line.LineName}
-		if line.NodeIPID != 0 {
-			groupIPIDs[k] = append(groupIPIDs[k], line.NodeIPID)
-		}
-	}
-	for k, ipIDs := range groupIPIDs {
-		ipIDs = uniqueInt64List(ipIDs)
-		if len(ipIDs) == 0 {
-			continue
-		}
-		_ = dns.SyncLineRecords(k.groupID, k.lineID, k.lineName, "add", ipIDs)
-	}
+	// Node recovery does not change line membership or package CNAME policy.
+	// DNS is refreshed only when line membership, node enable/delete, or node group
+	// resolution names change.
 }
 
 func uniqueInt64List(items []int64) []int64 {

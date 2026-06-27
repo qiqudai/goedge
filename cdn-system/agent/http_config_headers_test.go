@@ -283,6 +283,9 @@ func TestWriteProxyBlock_NonWebsocketHidesProblematicHopByHopResponseHeaders(t *
 		"proxy_hide_header Connection;",
 		"proxy_hide_header Keep-Alive;",
 		"proxy_hide_header Proxy-Connection;",
+		"proxy_hide_header TE;",
+		"proxy_hide_header Trailer;",
+		"proxy_hide_header Transfer-Encoding;",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected non-websocket proxy to hide %q", want)
@@ -304,10 +307,52 @@ func TestWriteProxyBlock_WebsocketKeepsHopByHopResponseHeadersVisible(t *testing
 		"proxy_hide_header Connection;",
 		"proxy_hide_header Keep-Alive;",
 		"proxy_hide_header Proxy-Connection;",
+		"proxy_hide_header TE;",
+		"proxy_hide_header Trailer;",
+		"proxy_hide_header Transfer-Encoding;",
 	} {
 		if strings.Contains(out, unexpected) {
 			t.Fatalf("did not expect websocket proxy to hide %q", unexpected)
 		}
+	}
+}
+
+func TestWriteProxyBlock_ClearsUnsafeRequestHopByHopHeaders(t *testing.T) {
+	domain := edgeDomain{}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+
+	for _, want := range []string{
+		"proxy_set_header Expect \"\";",
+		"proxy_set_header Keep-Alive \"\";",
+		"proxy_set_header Proxy-Connection \"\";",
+		"proxy_set_header TE \"\";",
+		"proxy_set_header Trailer \"\";",
+		"proxy_set_header Upgrade \"\";",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing request compatibility header %q\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteProxyBlock_WebsocketOnlyForwardsSanitizedUpgradeVariable(t *testing.T) {
+	domain := edgeDomain{EnableWebsocket: true}
+
+	var b strings.Builder
+	writeProxyBlock(&b, domain, false, nil, nil)
+	out := b.String()
+
+	if !strings.Contains(out, "proxy_set_header Upgrade $cdn_websocket_upgrade;") {
+		t.Fatalf("websocket proxy must use sanitized upgrade variable\n%s", out)
+	}
+	if !strings.Contains(out, "proxy_set_header Connection $connection_upgrade;") {
+		t.Fatalf("websocket proxy must keep mapped Connection upgrade\n%s", out)
+	}
+	if strings.Contains(out, "proxy_set_header Upgrade $http_upgrade;") {
+		t.Fatalf("websocket proxy must not forward arbitrary Upgrade values\n%s", out)
 	}
 }
 

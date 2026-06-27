@@ -62,6 +62,9 @@ type nodeRequest struct {
 	WorkDir        string             `json:"work_dir"`
 	AutoInstall    bool               `json:"auto_install"`
 	SubIPs         []models.NodeSubIP `json:"sub_ips"`
+	ParentGroupID  int64              `json:"parent_group_id"`
+	ParentFetchMode string            `json:"parent_fetch_mode"`
+	L1RespectL2    bool               `json:"l1_respect_l2"`
 }
 
 // UpdateStatus toggles node enable status.
@@ -297,6 +300,7 @@ func (ctr *NodeController) ListNodes(c *gin.Context) {
 	for i := range nodes {
 		nodes[i].Online = services.IsNodeOnline(nodes[i].ID, 30*time.Second)
 	}
+	services.AttachParentFetchToNodes(nodes)
 	antiBlockingMap, _ := services.GetNodeConfigMap("anti_blocking")
 	reportedConfigMap, _ := services.GetNodeConfigMap("reported_config")
 	for i := range nodes {
@@ -472,6 +476,14 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Name and IP are required")})
 		return
 	}
+	if err := services.ValidateParentFetchConfig(req.Level, services.ParentFetchConfig{
+		ParentGroupID:   req.ParentGroupID,
+		ParentFetchMode: req.ParentFetchMode,
+		L1RespectL2:     req.L1RespectL2,
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("parent_group_id is required for l1/l2 parent fetch mode")})
+		return
+	}
 
 	if req.RegionID != nil && *req.RegionID == 0 {
 		req.RegionID = nil
@@ -539,6 +551,11 @@ func (ctr *NodeController) CreateNode(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Create Sub IPs Failed")})
 		return
 	}
+	_ = services.SaveParentFetchConfig(node.ID, services.ParentFetchConfig{
+		ParentGroupID:   req.ParentGroupID,
+		ParentFetchMode: req.ParentFetchMode,
+		L1RespectL2:     req.L1RespectL2,
+	})
 
 	// Sync node metadata (no-op if no cache layer)
 	if ctr.NodeService != nil {
@@ -598,6 +615,14 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 	var req nodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": T("Invalid Params")})
+		return
+	}
+	if err := services.ValidateParentFetchConfig(req.Level, services.ParentFetchConfig{
+		ParentGroupID:   req.ParentGroupID,
+		ParentFetchMode: req.ParentFetchMode,
+		L1RespectL2:     req.L1RespectL2,
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("parent_group_id is required for l1/l2 parent fetch mode")})
 		return
 	}
 
@@ -730,6 +755,11 @@ func (ctr *NodeController) UpdateNode(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Update Failed")})
 		return
 	}
+	_ = services.SaveParentFetchConfig(id, services.ParentFetchConfig{
+		ParentGroupID:   req.ParentGroupID,
+		ParentFetchMode: req.ParentFetchMode,
+		L1RespectL2:     req.L1RespectL2,
+	})
 
 	if ctr.NodeService != nil {
 		// Update cached node metadata if used

@@ -71,6 +71,12 @@ func TestWriteHTTPGlobalConfig_GenerateCachePathWhenCacheEnabled(t *testing.T) {
 	if !strings.Contains(out, "map $upstream_status $cdn_no_cache_status {") {
 		t.Fatalf("cdn_no_cache_status map missing when cache is enabled")
 	}
+	if !strings.Contains(out, "map $upstream_http_cache_control $cdn_no_cache_control {") {
+		t.Fatalf("cdn_no_cache_control map missing when cache is enabled")
+	}
+	if !strings.Contains(out, "map $upstream_http_vary $cdn_no_cache_vary {") {
+		t.Fatalf("cdn_no_cache_vary map missing when cache is enabled")
+	}
 	if !strings.Contains(out, "~^(200|302)$ 0;") {
 		t.Fatalf("default cache status map entry missing")
 	}

@@ -1,0 +1,15 @@
+FROM openresty/openresty:1.25.3.1-0-alpine-fat
+
+RUN apk add --no-cache openssl
+
+WORKDIR /opt/compat
+
+COPY .build/lua/response_headers.lua /opt/compat/lua/response_headers.lua
+COPY edge/nginx.conf /opt/compat/nginx.conf
+COPY edge/entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh && mkdir -p /opt/compat/cert
+
+EXPOSE 18443
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -121,6 +121,11 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		}
 		query = query.Where("uid = ?", uid)
 	}
+	var current models.UserPackage
+	if err := query.First(&current).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": T("Not Found")})
+		return
+	}
 
 	updates := map[string]interface{}{}
 	if name := strings.TrimSpace(req.Name); name != "" {
@@ -207,8 +212,13 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 	// DEBUG LOG
 	fmt.Printf("[DEBUG] UpdateUserPackage ID=%d ReqDomain=%s UpdatesDomain=%v\n", id, req.CnameDomain, updates["cname_domain"])
 
+	dnsChanged := userPackageDNSFieldsChanged(current, updates)
+	updateQuery := db.DB.Model(&models.UserPackage{}).Where("id = ?", id)
+	if isUserReq {
+		updateQuery = updateQuery.Where("uid = ?", current.UserID)
+	}
 	if len(updates) > 0 {
-		if err := query.Updates(updates).Error; err != nil {
+		if err := updateQuery.Updates(updates).Error; err != nil {
 			log.Printf("[Error] UpdateUserPackage id=%d updates=%v err=%v", id, updates, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
 			return
@@ -234,6 +244,9 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
 	resyncSitesForUserPackage(id)
+	if dnsChanged {
+		resyncUserPackageGroupCnames(id)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
@@ -413,6 +426,9 @@ func (ctr *UserPackageController) SwitchUserPackage(c *gin.Context) {
 		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
 	resyncSitesForUserPackage(pack.ID)
+	if userPackageDNSFieldsChanged(pack, updates) {
+		resyncUserPackageGroupCnames(pack.ID)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": T("Updated")})
 }
@@ -421,21 +437,81 @@ func resyncSitesForUserPackage(userPackageID int64) {
 	if userPackageID == 0 {
 		return
 	}
-	var sites []models.Site
-	if err := db.DB.Where("user_package = ?", userPackageID).Find(&sites).Error; err != nil {
+	var siteIDs []int64
+	if err := db.DB.Model(&models.Site{}).Where("user_package = ?", userPackageID).Pluck("id", &siteIDs).Error; err != nil {
 		log.Printf("[WARN] resyncSitesForUserPackage load failed package=%d err=%v", userPackageID, err)
 		return
 	}
-	if len(sites) == 0 {
+	if len(siteIDs) == 0 {
 		return
 	}
-	siteIDs := make([]int64, 0, len(sites))
-	for _, site := range sites {
-		siteIDs = append(siteIDs, site.ID)
-	}
 	services.BumpConfigVersion("site", siteIDs)
-	for _, site := range sites {
-		resyncSiteCnameForSite(site)
+}
+
+func userPackageDNSFieldsChanged(current models.UserPackage, updates map[string]interface{}) bool {
+	for key, value := range updates {
+		switch key {
+		case "cname_domain":
+			if strings.TrimSpace(current.CnameDomain) != strings.TrimSpace(fmt.Sprint(value)) {
+				return true
+			}
+		case "cname_hostname":
+			if strings.TrimSpace(current.CnameHostname) != strings.TrimSpace(fmt.Sprint(value)) {
+				return true
+			}
+		case "cname_mode":
+			if strings.TrimSpace(current.CnameMode) != strings.TrimSpace(fmt.Sprint(value)) {
+				return true
+			}
+		case "node_group_id":
+			if current.NodeGroupID != toInt64Value(value) {
+				return true
+			}
+		case "backup_node_group":
+			if current.BackupNodeGroup != toInt64Value(value) {
+				return true
+			}
+		case "enable_backup_group":
+			if current.EnableBackup != toBoolValue(value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func toInt64Value(value interface{}) int64 {
+	switch v := value.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func toBoolValue(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1"
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	default:
+		return false
 	}
 }
 

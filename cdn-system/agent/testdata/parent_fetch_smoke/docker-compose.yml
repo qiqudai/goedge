@@ -1,0 +1,4 @@
+services:
+  parent-fetch-smoke:
+    build: .
+    image: cdn-parent-fetch-smoke:local

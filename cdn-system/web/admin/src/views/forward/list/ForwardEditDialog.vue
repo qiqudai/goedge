@@ -24,6 +24,7 @@
             <el-option v-for="p in userPackages" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
+        <el-alert v-if="!canCreateWithPackage" :title="noPackageMessage" type="warning" :closable="false" class="package-alert" />
 
         <template v-if="activeTab === 'single'">
             <el-form-item label="监听端口：" prop="listen_ports">
@@ -102,6 +103,8 @@ const isExpanded = ref(false)
 const users = ref([])
 const userPackages = ref([])
 const lastUserId = ref(0)
+const noPackageMessage = '当前用户没有可用套餐，不能添加 L4 转发'
+const canCreateWithPackage = computed(() => form.id || userPackages.value.length > 0)
 
 const form = reactive({
   id: 0,
@@ -178,6 +181,7 @@ const handleUserChange = async (userId) => {
   if (!userId) {
     userPackages.value = []
     lastUserId.value = 0
+    form.user_package_id = 0
     return
   }
   const resolvedId = Number(userId) || 0
@@ -221,6 +225,14 @@ const handleClosed = () => {
 }
 
 const handleSubmit = async () => {
+  if (!form.id && userPackages.value.length === 0) {
+    ElMessage.error(noPackageMessage)
+    return
+  }
+  if (!form.user_package_id) {
+    ElMessage.error('请选择套餐')
+    return
+  }
   await formRef.value?.validate()
   submitting.value = true
   try {
@@ -274,6 +286,7 @@ export default {
 .forward-dialog :deep(.el-dialog__body) { padding-top: 5px; }
 .dialog-tabs { margin-bottom: 20px; }
 .dialog-content { padding: 0 10px; }
+.package-alert { margin: -8px 0 14px 100px; width: calc(100% - 100px); }
 .expand-divider { 
     display: flex; 
     align-items: center; 

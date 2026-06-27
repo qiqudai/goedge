@@ -7,14 +7,12 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-acme/lego/v4/acme/api"
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge"
@@ -221,21 +219,6 @@ func (i *Issuer) Issue(domains []string) (*IssueResult, error) {
 	}
 
 	certPEM := string(res.Certificate)
-	if IsLetsEncryptDirectory(i.options.CADirURL) && UsesIncompatibleLetsEncryptChain(certPEM) {
-		kid := ""
-		if user.Registration != nil {
-			kid = user.Registration.URI
-		}
-		core, coreErr := api.New(cfg.HTTPClient, cfg.UserAgent, cfg.CADirURL, kid, user.key)
-		if coreErr != nil {
-			return nil, fmt.Errorf("letsencrypt issued incompatible YR chain and failed to rebuild: %w", coreErr)
-		}
-		fixed, chainErr := fetchCompatibleLetsEncryptChain(core, res.CertURL)
-		if chainErr != nil {
-			return nil, fmt.Errorf("letsencrypt issued incompatible YR2/Root YR chain: %w", chainErr)
-		}
-		certPEM = string(fixed)
-	}
 	keyPEM := string(res.PrivateKey)
 	notBefore, notAfter, _ := ParseCertTimes(certPEM)
 

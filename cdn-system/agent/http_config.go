@@ -952,6 +952,7 @@ func writeProxyBlock(b *strings.Builder, domain edgeDomain, tls bool, cacheCfg *
 	writeProxyRanges(b, domain, rule)
 	writeProxyAccessRules(b, domain)
 	writeProxyCORS(b, domain)
+	writeProxyCompatibilityRequestHeaders(b, domain, customHeaderSet)
 	writeStaticURLRules(b, domain)
 	writeProxyCustomHeaders(b, domain.Headers, domain.ResponseHeaders)
 	writeProxyHiddenResponseHeaders(b, domain)
@@ -1067,7 +1068,7 @@ func writeProxyLogVars(b *strings.Builder) {
 func writeProxyProtocol(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
 	if domain.EnableWebsocket {
 		b.WriteString("        proxy_http_version 1.1;\n")
-		writeProxyHeaderIfMissing(b, customHeaderSet, "Upgrade", "$http_upgrade")
+		writeProxyHeaderIfMissing(b, customHeaderSet, "Upgrade", "$cdn_websocket_upgrade")
 		writeProxyHeaderIfMissing(b, customHeaderSet, "Connection", "$connection_upgrade")
 		return
 	}
@@ -1108,6 +1109,21 @@ func originHTTPVersionPolicy(domain edgeDomain) string {
 			return "auto"
 		}
 		return "auto"
+	}
+}
+
+func writeProxyCompatibilityRequestHeaders(b *strings.Builder, domain edgeDomain, customHeaderSet map[string]struct{}) {
+	for _, name := range []string{
+		"Expect",
+		"Keep-Alive",
+		"Proxy-Connection",
+		"TE",
+		"Trailer",
+	} {
+		writeProxyHeaderIfMissing(b, customHeaderSet, name, "\"\"")
+	}
+	if !domain.EnableWebsocket {
+		writeProxyHeaderIfMissing(b, customHeaderSet, "Upgrade", "\"\"")
 	}
 }
 
@@ -1171,7 +1187,7 @@ func writeProxyHiddenResponseHeaders(b *strings.Builder, domain edgeDomain) {
 		// Some origins incorrectly emit hop-by-hop or protocol upgrade headers on
 		// normal page responses. Hiding them at the edge avoids client-side protocol
 		// errors, especially on HTTP/2 and HTTP/3 connections.
-		for _, name := range []string{"Upgrade", "Connection", "Keep-Alive", "Proxy-Connection"} {
+		for _, name := range []string{"Upgrade", "Connection", "Keep-Alive", "Proxy-Connection", "TE", "Trailer", "Transfer-Encoding"} {
 			b.WriteString("        proxy_hide_header " + name + ";\n")
 		}
 	}
@@ -1508,8 +1524,8 @@ func applyCacheDirectives(b *strings.Builder, cacheCfg *edgeCacheConfig, rule *e
 	}
 	b.WriteString("        set $cdn_cache_key " + cacheKey + ";\n")
 	b.WriteString("        proxy_cache_key $cdn_cache_key;\n")
-	b.WriteString("        proxy_cache_bypass $cache_bypass;\n")
-	b.WriteString("        proxy_no_cache $cache_bypass $cdn_no_cache_status;\n")
+	b.WriteString("        proxy_cache_bypass $cache_bypass $http_authorization;\n")
+	b.WriteString("        proxy_no_cache $cache_bypass $cdn_no_cache_status $http_authorization $upstream_http_set_cookie $cdn_no_cache_control $cdn_no_cache_vary;\n")
 }
 
 func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
@@ -1521,6 +1537,14 @@ func writeHTTPGlobalConfig(cfg *edgeNginxConfig, cacheEnabled bool) error {
 		b.WriteString("map $upstream_status $cdn_no_cache_status {\n")
 		b.WriteString("    default 1;\n")
 		b.WriteString("    ~^(" + strings.Join(statusCodes, "|") + ")$ 0;\n")
+		b.WriteString("}\n")
+		b.WriteString("map $upstream_http_cache_control $cdn_no_cache_control {\n")
+		b.WriteString("    default 0;\n")
+		b.WriteString("    ~*(^|[,[:space:]])(no-store|no-cache|private)([,[:space:]]|$) 1;\n")
+		b.WriteString("}\n")
+		b.WriteString("map $upstream_http_vary $cdn_no_cache_vary {\n")
+		b.WriteString("    default 0;\n")
+		b.WriteString("    ~*(^|[,[:space:]])(\\*|cookie|authorization)([,[:space:]]|$) 1;\n")
 		b.WriteString("}\n")
 
 		defaultCacheDir := filepath.ToSlash(filepath.Join(rootDir, "cache"))

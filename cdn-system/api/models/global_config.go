@@ -1,13 +1,13 @@
 package models
 
 type GlobalConfig struct {
-	WAF           WAFConfig                       `json:"waf"`
-	Nginx         NginxConfig                     `json:"nginx"`
-	DefaultConfig DefaultSiteConfig               `json:"default_config"`
-	ErrorPageI18n ErrorPageI18nSettings           `json:"error_page_i18n"`
-	ErrorPages    map[string]ErrorPageDefinition  `json:"error_pages"`
-	GuardPages    map[string]GuardPageDefinition  `json:"guard_pages"`
-	Resources     GlobalResourceConfig            `json:"resources"`
+	WAF           WAFConfig                      `json:"waf"`
+	Nginx         NginxConfig                    `json:"nginx"`
+	DefaultConfig DefaultSiteConfig              `json:"default_config"`
+	ErrorPageI18n ErrorPageI18nSettings          `json:"error_page_i18n"`
+	ErrorPages    map[string]ErrorPageDefinition `json:"error_pages"`
+	GuardPages    map[string]GuardPageDefinition `json:"guard_pages"`
+	Resources     GlobalResourceConfig           `json:"resources"`
 }
 
 type WAFConfig struct {
@@ -45,18 +45,18 @@ type WAFConfig struct {
 	DefaultPageProtectionThreshold int    `json:"default_page_protection_threshold"` // req/s
 
 	// System Keys & Logs
-	SecretKey            string `json:"secret_key"`
-	NodeLogCleanStrategy string `json:"node_log_clean_strategy"` // none, log_only, log_cache
-	CCRuleAutoSwitch     bool   `json:"cc_rule_auto_switch"`
+	SecretKey            string          `json:"secret_key"`
+	NodeLogCleanStrategy string          `json:"node_log_clean_strategy"` // none, log_only, log_cache
+	CCRuleAutoSwitch     bool            `json:"cc_rule_auto_switch"`
 	CCAutoSwitch         WAFCCAutoSwitch `json:"cc_auto_switch"`
 
 	// Anti-CC Page
-	AntiCCImageSource      string `json:"anti_cc_image_source"` // system, custom
-	AntiCCImageCustomURL   string `json:"anti_cc_image_custom_url"`
-	AntiCCImageUpdateHour  int    `json:"anti_cc_image_update_hour"`
-	AntiCCType             string `json:"anti_cc_type"` // slide, click, 5s, rotate...
-	AntiCCPageCustom       string `json:"anti_cc_page_custom"`
-	AntiCCDebug            bool   `json:"anti_cc_debug"`
+	AntiCCImageSource     string `json:"anti_cc_image_source"` // system, custom
+	AntiCCImageCustomURL  string `json:"anti_cc_image_custom_url"`
+	AntiCCImageUpdateHour int    `json:"anti_cc_image_update_hour"`
+	AntiCCType            string `json:"anti_cc_type"` // slide, click, 5s, rotate...
+	AntiCCPageCustom      string `json:"anti_cc_page_custom"`
+	AntiCCDebug           bool   `json:"anti_cc_debug"`
 
 	// Complex Protection
 	WellKnownProtectionThreshold   int            `json:"well_known_protection_threshold"`
@@ -133,10 +133,10 @@ type DefaultSiteConfig struct {
 }
 
 type SiteTemplate struct {
-	CacheEnable bool `json:"cache_enable"`
-	CacheTTL    int  `json:"cache_ttl"` // seconds
-	Gzip        bool `json:"gzip"`
-	WAFEnable   bool `json:"waf_enable"`
+	CacheEnable bool   `json:"cache_enable"`
+	CacheTTL    int    `json:"cache_ttl"` // seconds
+	Gzip        bool   `json:"gzip"`
+	WAFEnable   bool   `json:"waf_enable"`
 	SSLCiphers  string `json:"ssl_ciphers"`
 }
 
@@ -151,9 +151,11 @@ type WebsiteResourceConfig struct {
 	MaxLimitMultiplier    int    `json:"max_limit_multiplier"`     // 200
 	MaxBlacklistIPs       int    `json:"max_blacklist_ips"`        // 50
 	MaxWhitelistIPs       int    `json:"max_whitelist_ips"`        // 50
+	MaxWAFPatternIPs      int    `json:"max_waf_pattern_ips"`      // 100
 	DailyURLPurgeLimit    int    `json:"daily_url_purge_limit"`    // 2000
 	DailyDirPurgeLimit    int    `json:"daily_dir_purge_limit"`    // 500
 	DailyPreloadLimit     int    `json:"daily_preload_limit"`      // 2000
+	PreloadTimeout        int    `json:"preload_timeout"`          // 120 seconds per URL
 	DailyUnlockIPLimit    int    `json:"daily_unlock_ip_limit"`    // 1000
 	UnlockIPBatchLimit    int    `json:"unlock_ip_batch_limit"`    // 50
 	MaxCCRulesPerGroup    int    `json:"max_cc_rules_per_group"`   // 5
@@ -173,6 +175,6 @@ type ForwardResourceConfig struct {
 }
 
 type PublicResourceConfig struct {
-	DisabledCustomPorts string `json:"disabled_custom_ports"` // 22
+	DisabledCustomPorts string `json:"disabled_custom_ports"` // 22 5000
 	AllowedCustomPorts  string `json:"allowed_custom_ports"`  // 1-65535
 }

@@ -420,6 +420,9 @@ func (p *DNSPodProvider) addRecordTC3(domain string, record dns.DNSRecord) error
 		return err
 	}
 	if parsed.Response.Error != nil {
+		if parsed.Response.Error.Code == "InvalidParameter.DomainRecordExist" {
+			return p.ensureExistingRecordTC3(domain, record)
+		}
 		if p.isIgnorableTC3(parsed.Response.Error.Code, parsed.Response.Error.Message) {
 			return nil
 		}
@@ -460,6 +463,97 @@ func (p *DNSPodProvider) replaceRecordTC3(domain string, record dns.DNSRecord, n
 		payload["Weight"] = record.Weight
 	}
 	resp, err := p.sendRequestTC3("ModifyRecord", payload)
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Response struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return err
+	}
+	if parsed.Response.Error != nil {
+		if p.isIgnorableTC3(parsed.Response.Error.Code, parsed.Response.Error.Message) {
+			return nil
+		}
+		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
+	}
+	return nil
+}
+
+func (p *DNSPodProvider) ensureExistingRecordTC3(domain string, record dns.DNSRecord) error {
+	recordID, err := p.findRecordIDTC3(domain, record)
+	if err != nil {
+		return err
+	}
+	if recordID == 0 {
+		recordID, err = p.findRecordIDByNameTC3(domain, record)
+		if err != nil {
+			return err
+		}
+	}
+	if recordID == 0 {
+		return errors.New("record exists but cannot be found")
+	}
+	if err := p.modifyRecordTC3(domain, recordID, record, record.Value); err != nil {
+		return err
+	}
+	return p.modifyRecordStatusTC3(domain, recordID, "ENABLE")
+}
+
+func (p *DNSPodProvider) modifyRecordTC3(domain string, recordID uint64, record dns.DNSRecord, newValue string) error {
+	line := strings.TrimSpace(record.Line)
+	if line == "" {
+		line = i18n.T("dns.line_default")
+	}
+	payload := map[string]interface{}{
+		"Domain":     domain,
+		"RecordId":   recordID,
+		"SubDomain":  record.Name,
+		"RecordType": record.Type,
+		"RecordLine": line,
+		"Value":      newValue,
+		"TTL":        record.TTL,
+	}
+	if record.Weight > 0 {
+		payload["Weight"] = record.Weight
+	}
+	resp, err := p.sendRequestTC3("ModifyRecord", payload)
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Response struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return err
+	}
+	if parsed.Response.Error != nil {
+		if p.isIgnorableTC3(parsed.Response.Error.Code, parsed.Response.Error.Message) {
+			return nil
+		}
+		return fmt.Errorf("api error code: %s message: %s response: %s", parsed.Response.Error.Code, parsed.Response.Error.Message, string(resp))
+	}
+	return nil
+}
+
+func (p *DNSPodProvider) modifyRecordStatusTC3(domain string, recordID uint64, status string) error {
+	payload := map[string]interface{}{
+		"Domain":   domain,
+		"RecordId": recordID,
+		"Status":   status,
+	}
+	resp, err := p.sendRequestTC3("ModifyRecordStatus", payload)
 	if err != nil {
 		return err
 	}
@@ -790,8 +884,7 @@ func (p *DNSPodProvider) isIgnorableTC3(code, message string) bool {
 	code = strings.TrimSpace(code)
 	switch code {
 	case "InvalidParameter.DomainRecordExist",
-		"ResourceNotFound.NoDataOfRecord",
-		"InvalidParameter.RecordLineInvalid":
+		"ResourceNotFound.NoDataOfRecord":
 		return true
 	}
 	_ = message
@@ -823,6 +916,10 @@ func NewDNSPodProviderIntl(credentials string) (dns.Provider, error) {
 	return p, nil
 }
 
+func (p *DNSPodProvider) UpsertRecordSet(domain string, record dns.DNSRecord, values []string) error {
+	return dns.ReconcileLineRecordSet(p, domain, record, values)
+}
+
 func init() {
 	dns.RegisterProvider("dnspod", NewDNSPodProvider)
 	dns.RegisterProvider("dnspod_intl", NewDNSPodProviderIntl)
@@ -850,6 +947,8 @@ func (p *DNSPodProvider) getRecordsV2(domain string) ([]dns.DNSRecord, error) {
 			Line   string `json:"line"`
 			TTL    string `json:"ttl"`
 			Weight string `json:"weight"`
+			Status string `json:"status"`
+			Enable string `json:"enabled"`
 		} `json:"records"`
 	}
 
@@ -871,6 +970,14 @@ func (p *DNSPodProvider) getRecordsV2(domain string) ([]dns.DNSRecord, error) {
 		if strings.TrimSpace(r.Weight) != "" {
 			fmt.Sscanf(r.Weight, "%d", &weight)
 		}
+		status := strings.TrimSpace(r.Status)
+		if status == "" && strings.TrimSpace(r.Enable) != "" {
+			if strings.TrimSpace(r.Enable) == "1" {
+				status = "ENABLE"
+			} else {
+				status = "DISABLE"
+			}
+		}
 		results = append(results, dns.DNSRecord{
 			Type:   r.Type,
 			Name:   r.Name,
@@ -878,6 +985,7 @@ func (p *DNSPodProvider) getRecordsV2(domain string) ([]dns.DNSRecord, error) {
 			Line:   r.Line,
 			TTL:    ttl,
 			Weight: weight,
+			Status: status,
 		})
 	}
 	return results, nil
@@ -905,6 +1013,7 @@ func (p *DNSPodProvider) getRecordsTC3(domain string) ([]dns.DNSRecord, error) {
 				Line   string `json:"Line"`
 				TTL    uint64 `json:"TTL"`
 				Weight uint64 `json:"Weight"`
+				Status string `json:"Status"`
 			} `json:"RecordList"`
 		} `json:"Response"`
 	}
@@ -927,6 +1036,7 @@ func (p *DNSPodProvider) getRecordsTC3(domain string) ([]dns.DNSRecord, error) {
 			Line:   r.Line,
 			TTL:    int(r.TTL),
 			Weight: int(r.Weight),
+			Status: r.Status,
 		})
 	}
 	return results, nil

@@ -131,7 +131,6 @@ const t = {
   action: '\u64cd\u4f5c',
   edit: '\u7f16\u8f91',
   delete: '\u5220\u9664',
-  createUserTip: '\u521b\u5efa\u7528\u6237\u529f\u80fd\u5f00\u53d1\u4e2d',
   editUserTip: '\u7f16\u8f91\u7528\u6237: ',
   statusUpdated: '\u72b6\u6001\u66f4\u65b0\u6210\u529f',
   deleteConfirm: '\u786e\u8ba4\u5220\u9664\u8be5\u7528\u6237?',
@@ -191,12 +190,8 @@ const handleFilter = () => {
 }
 
 const handleCreate = () => {
-   // Assuming create is same as edit but empty?
-   // Or kept as "Development"
-   // User requested: "Edit User Information". Did not explicitly ask for Create in this prompt.
-   // But let's assume create functionality is not the focus, prompt said: "http://localhost:5173/system/users 该页面 能点击用户名，邮箱 手机号 弹出编辑框"
-   // It implies update.
-   ElMessage.info(t.createUserTip)
+  currentUserData.value = {}
+  popupVisible.value = true
 }
 
 const handleUpdate = row => {

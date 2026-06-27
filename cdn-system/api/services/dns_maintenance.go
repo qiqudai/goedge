@@ -5,6 +5,7 @@ import (
 	"cdn-api/models"
 	"cdn-api/services/dns"
 	"errors"
+	"log"
 	"strings"
 
 	"gorm.io/gorm"
@@ -121,6 +122,8 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 	errs := make([]string, 0)
 	allowedAValues := map[string]struct{}{}
 	allowedCnameValues := map[string]struct{}{}
+	managedARecords := map[string]struct{}{}
+	managedCnameRecords := map[string]struct{}{}
 	domainSet := map[string]struct{}{}
 	groupIDs := make([]int64, 0, len(groups))
 	for _, group := range groups {
@@ -138,6 +141,7 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 		domainSet[domainKey] = struct{}{}
 		lineValue := buildLineCnameValue(domainKey, group.CnameHostname)
 		addAllowedCnameValue(allowedCnameValues, lineValue)
+		addManagedRecordName(managedARecords, domainKey, group.CnameHostname)
 	}
 	if len(groupIDs) > 0 {
 		var lines []models.Line
@@ -180,6 +184,29 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 					continue
 				}
 				domainSet[domainKey] = struct{}{}
+				if info.Hostname != "" && info.Hostname != "@" {
+					addAllowedCnameValue(allowedCnameValues, info.Hostname+"."+domainKey)
+					addManagedRecordName(managedCnameRecords, domainKey, info.Hostname)
+				}
+			}
+		}
+	}
+	var userPackages []models.UserPackage
+	if err := db.DB.Select("cname_mode", "cname_hostname", "cname_domain", "record_id").Find(&userPackages).Error; err != nil {
+		errs = append(errs, err.Error())
+	} else {
+		for _, pack := range userPackages {
+			if strings.TrimSpace(strings.ToLower(pack.CnameMode)) != "package" {
+				continue
+			}
+			domainKey, host := resolveSiteCnameTarget(models.Site{UserPackageID: pack.ID}, pack)
+			if domainKey == "" {
+				continue
+			}
+			domainSet[normalizeDomainInput(domainKey)] = struct{}{}
+			if host != "" && host != "@" {
+				addAllowedCnameValue(allowedCnameValues, host+"."+normalizeDomainInput(domainKey))
+				addManagedRecordName(managedCnameRecords, domainKey, host)
 			}
 		}
 	}
@@ -198,6 +225,8 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 		for _, row := range siteRows {
 			addAllowedCnameValue(allowedCnameValues, row.CnameHostname)
 			addAllowedCnameValue(allowedCnameValues, row.CnameHostname2)
+			addManagedRecordNameFromFQDN(managedCnameRecords, row.CnameHostname)
+			addManagedRecordNameFromFQDN(managedCnameRecords, row.CnameHostname2)
 		}
 	}
 	if len(domainSet) == 0 {
@@ -258,7 +287,14 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 			if isProtectedRecord(record.Name, domain.Domain, protected) {
 				continue
 			}
+			if isProtectedPackageCNAMERecord(domain.Domain, record.Type, record.Name) {
+				log.Printf("[DNS Cleanup] protected package cname kept domain=%s name=%s value=%s line=%s", domain.Domain, record.Name, record.Value, record.Line)
+				continue
+			}
 			if strings.EqualFold(record.Type, "A") {
+				if !isManagedRecordName(managedARecords, domain.Domain, record.Name) {
+					continue
+				}
 				value := strings.TrimSpace(record.Value)
 				if value != "" {
 					if _, ok := allowedAValues[value]; ok {
@@ -266,6 +302,9 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 					}
 				}
 			} else if strings.EqualFold(record.Type, "CNAME") {
+				if !isManagedRecordName(managedCnameRecords, domain.Domain, record.Name) {
+					continue
+				}
 				value := normalizeDomainInput(record.Value)
 				if value != "" {
 					if _, ok := allowedCnameValues[value]; ok {
@@ -273,6 +312,7 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 					}
 				}
 			}
+			log.Printf("[DNS Cleanup] delete invalid record domain=%s type=%s name=%s value=%s line=%s", domain.Domain, record.Type, record.Name, record.Value, record.Line)
 			if err := provider.DeleteRecord(domain.Domain, record); err != nil {
 				errs = append(errs, err.Error())
 			}
@@ -436,6 +476,46 @@ func addAllowedCnameValue(values map[string]struct{}, value string) {
 		return
 	}
 	values[value] = struct{}{}
+}
+
+func addManagedRecordName(records map[string]struct{}, domain, name string) {
+	key := managedRecordKey(domain, name)
+	if key == "" {
+		return
+	}
+	records[key] = struct{}{}
+}
+
+func addManagedRecordNameFromFQDN(records map[string]struct{}, fqdn string) {
+	host := normalizeDomainInput(fqdn)
+	if host == "" || host == "@" {
+		return
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) < 3 {
+		return
+	}
+	domain := strings.Join(parts[len(parts)-2:], ".")
+	name := strings.Join(parts[:len(parts)-2], ".")
+	addManagedRecordName(records, domain, name)
+}
+
+func isManagedRecordName(records map[string]struct{}, domain, name string) bool {
+	key := managedRecordKey(domain, name)
+	if key == "" {
+		return false
+	}
+	_, ok := records[key]
+	return ok
+}
+
+func managedRecordKey(domain, name string) string {
+	domain = normalizeDomainInput(domain)
+	name = normalizeRecordHost(name, domain)
+	if domain == "" || name == "" {
+		return ""
+	}
+	return domain + "|" + name
 }
 
 func resyncGroupDNSRecords(groupID int64) []string {

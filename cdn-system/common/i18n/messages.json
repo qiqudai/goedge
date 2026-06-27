@@ -43,6 +43,9 @@
   "Domain Not Found": "域名不存在",
   "Domain already exists": "域名已存在",
   "Domain limit exceeded: %d": "域名数量超限：%d",
+  "Site domain count exceeds limit: %d": "单个站点域名数超过限制：%d",
+  "Blacklist IP count exceeds limit: %d": "黑名单 IP 数量超过限制：%d",
+  "Whitelist IP count exceeds limit: %d": "白名单 IP 数量超过限制：%d",
   "Domain name is required": "域名不能为空",
   "Downgrade is disabled": "禁止降级",
   "backup group cannot equal line group": "澶囩敤鍒嗙粍涓嶈兘涓庣嚎璺垎缁勭浉鍚?",
@@ -88,6 +91,8 @@
   "Failed to load task": "加载任务失败",
   "node_group.has_nodes": "该分组下仍有节点，无法删除",
   "node_group.has_packages": "该分组已绑定套餐，无法删除",
+  "node_group.has_parent_fetch_refs": "该分组被 L3 国内接入节点引用为父节点组，无法删除",
+  "parent_group_id is required for l1/l2 parent fetch mode": "L3 节点选择回源到 L1/L2 时必须指定父节点组",
   "node.region_change_blocked": "鑺傜偣宸插垎閰嶅埌绾胯矾锛岃鍏堜粠绾胯矾涓垹闄ゅ悗鍐嶄慨鏀瑰尯鍩?",
   "node.region_required": "鑺傜偣鏈垎閰嶅尯鍩燂紝鏃犳硶娣诲姞鍒扮嚎璺垎缁?",
   "node.region_mismatch": "鑺傜偣涓嶅湪褰撳墠鍖哄煙锛屾棤娉曟坊鍔犲埌绾胯矾",
@@ -470,6 +475,8 @@
   "acl.in_use_disable_first": "该 ACL 仍处于启用状态，请先禁用并解除站点引用后再删除",
   "plan.in_use": "该套餐已有用户购买记录，无法删除",
   "user_package.in_use": "该已购套餐下仍有网站，请先迁移或删除网站后再移除",
+  "user_package.required": "当前用户没有可用套餐，不能添加站点或 L4 转发",
+  "user_package.not_found": "请选择当前用户自己的有效套餐",
   "line.delete_disable_first": "线路仍处于启用状态，请先禁用后再删除",
   "cert.delete_site_ref_first": "该证书仍被站点引用，请先在站点设置中解除绑定后再删除"
 }

@@ -370,6 +370,9 @@ type edgeStream struct {
 	ProxyConnectTimeout string             `json:"proxy_connect_timeout"`
 	ProxyTimeout        string             `json:"proxy_timeout"`
 	ConnLimit           int                `json:"conn_limit"`
+	ParentFetchMode     string             `json:"parent_fetch_mode"`
+	ParentL1UpstreamKey string             `json:"parent_l1_upstream_key"`
+	ParentL2UpstreamKey string             `json:"parent_l2_upstream_key"`
 }
 
 type edgeUpstreamTarget struct {
@@ -442,6 +445,12 @@ type edgeDomain struct {
 	UseL2                 bool                     `json:"use_l2"`
 	L2HTTPPort            string                   `json:"l2_http_port"`
 	L2HTTPSPort           string                   `json:"l2_https_port"`
+	ParentFetchMode       string                   `json:"parent_fetch_mode"`
+	ParentL1UpstreamKey   string                   `json:"parent_l1_upstream_key"`
+	ParentL2UpstreamKey   string                   `json:"parent_l2_upstream_key"`
+	ParentHTTPPort        string                   `json:"parent_http_port"`
+	ParentHTTPSPort       string                   `json:"parent_https_port"`
+	L1RespectL2           bool                     `json:"l1_respect_l2"`
 	LoadBalancePolicy     string                   `json:"load_balance_policy"`
 	Headers               map[string]string        `json:"headers"`
 	ResponseHeaders       map[string]string        `json:"response_headers"`
@@ -553,6 +562,8 @@ type edgeConfig struct {
 	Streams            []edgeStream                `json:"streams"`
 	NodeBandwidthLimit string                      `json:"node_bandwidth_limit"`
 	NodeLevel          int                         `json:"node_level"`
+	ParentGroupID      int64                       `json:"parent_group_id"`
+	ParentFetchMode    string                      `json:"parent_fetch_mode"`
 	Nginx              *edgeNginxConfig            `json:"nginx"`
 	FallbackCertData   string                      `json:"fallback_cert_data"`
 	FallbackKeyData    string                      `json:"fallback_key_data"`

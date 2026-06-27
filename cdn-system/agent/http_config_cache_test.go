@@ -161,7 +161,18 @@ func TestApplyCacheDirectives_UsesConfiguredStatusCodesAndNoCacheFlag(t *testing
 	if !strings.Contains(out, "proxy_cache_valid 200 206 301 302 60s;") {
 		t.Fatalf("configured status codes were not used in proxy_cache_valid")
 	}
-	if !strings.Contains(out, "proxy_no_cache $cache_bypass $cdn_no_cache_status;") {
-		t.Fatalf("proxy_no_cache must include $cdn_no_cache_status")
+	if !strings.Contains(out, "proxy_cache_bypass $cache_bypass $http_authorization;") {
+		t.Fatalf("proxy_cache_bypass must include authorization")
+	}
+	for _, want := range []string{
+		"$cdn_no_cache_status",
+		"$http_authorization",
+		"$upstream_http_set_cookie",
+		"$cdn_no_cache_control",
+		"$cdn_no_cache_vary",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("proxy_no_cache must include %s", want)
+		}
 	}
 }

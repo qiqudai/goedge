@@ -19,7 +19,12 @@ end
 local config = _G.cdn_config or {}
 local node_id = tostring(config.node_id or "")
 local node_level = tonumber(config.node_level) or 1
-local role = node_level == 2 and "L2" or "L1"
+local role = "L1"
+if node_level == 2 then
+    role = "L2"
+elseif node_level == 3 then
+    role = "L3"
+end
 local shared_store = ngx.shared.config_store
 
 local function parse_bool(v, default_value)
@@ -237,11 +242,32 @@ local function lookup_domain_conf(cfg)
     return find_default_domain(cfg)
 end
 
+local hop_by_hop_response_headers = {
+    "Upgrade",
+    "Connection",
+    "Keep-Alive",
+    "Proxy-Connection",
+    "TE",
+    "Trailer",
+    "Transfer-Encoding",
+}
+
+local function hide_invalid_hop_by_hop_response_headers()
+    if tonumber(ngx.status) == 101 then
+        return
+    end
+    for _, name in ipairs(hop_by_hop_response_headers) do
+        ngx.header[name] = nil
+    end
+end
+
 local domain_conf = lookup_domain_conf(config)
 local realtime_return = true
 if domain_conf and domain_conf.realtime_return == false then
     realtime_return = false
 end
+
+hide_invalid_hop_by_hop_response_headers()
 
 -- Hide the concrete server product name. `server_tokens off` only strips
 -- version details and still leaves `openresty` in the Server header.

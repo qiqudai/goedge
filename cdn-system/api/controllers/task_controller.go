@@ -482,33 +482,12 @@ func isPurgeType(val string) bool {
 }
 
 func loadPurgeLimits() (purgeLimit, error) {
-	limits := purgeLimit{
-		RefreshURL: 2000,
-		RefreshDir: 500,
-		Preheat:    2000,
-	}
-	var configs []models.SysConfig
-	if err := db.DB.Where("type = ? AND name IN ?", "site", []string{"clean_url", "clean_dir", "pre_cache_url"}).Find(&configs).Error; err != nil {
-		return limits, err
-	}
-	for _, cfg := range configs {
-		val, _ := strconv.Atoi(strings.TrimSpace(cfg.Value))
-		switch cfg.Name {
-		case "clean_url":
-			if val > 0 {
-				limits.RefreshURL = val
-			}
-		case "clean_dir":
-			if val > 0 {
-				limits.RefreshDir = val
-			}
-		case "pre_cache_url":
-			if val > 0 {
-				limits.Preheat = val
-			}
-		}
-	}
-	return limits, nil
+	urlLimit, dirLimit, preheatLimit := services.LoadPurgeLimits()
+	return purgeLimit{
+		RefreshURL: urlLimit,
+		RefreshDir: dirLimit,
+		Preheat:    preheatLimit,
+	}, nil
 }
 
 func loadUserPurgeUsage(userID int64) (purgeUsage, error) {

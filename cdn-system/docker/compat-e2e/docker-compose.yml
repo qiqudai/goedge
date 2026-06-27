@@ -1,0 +1,25 @@
+name: compat-e2e
+
+services:
+  origin:
+    build:
+      context: .
+      dockerfile: Dockerfile.origin
+    networks:
+      - compatnet
+
+  edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    depends_on:
+      origin:
+        condition: service_started
+    ports:
+      - "${COMPAT_E2E_HTTPS_PORT:-18443}:18443"
+    networks:
+      - compatnet
+
+networks:
+  compatnet:
+    driver: bridge

@@ -224,11 +224,20 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 			return
 		}
 		req.Domains = &normalizedDomains
+		if err := services.CheckSiteDomainsPerSiteLimit(normalizedDomains); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
 	}
 
-	if isUserReq && req.UserPackageID != nil && *req.UserPackageID > 0 {
-		if err := ensureUserPackageOwnership(userID, *req.UserPackageID); err != nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
+	if req.UserPackageID != nil {
+		targetPackageID := *req.UserPackageID
+		if targetPackageID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_package.required")})
+			return
+		}
+		if err := ensureUserPackageOwnership(oldSite.UserID, targetPackageID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
 			return
 		}
 	}
@@ -288,6 +297,18 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	}
 	if hasWhitelist {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromSettings)
+	}
+	if hasBlacklist {
+		if err := services.CheckSiteIPListLimit("blacklist", len(blacklistFromSettings)); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
+	}
+	if hasWhitelist {
+		if err := services.CheckSiteIPListLimit("whitelist", len(whitelistFromSettings)); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
 	}
 	if req.Settings != nil {
 		delete(req.Settings, "backend_protocol")
@@ -412,9 +433,16 @@ func (ctrl *SiteController) AdminUpdate(c *gin.Context) {
 	var newSite models.Site
 	if err := db.DB.Where("id = ?", id).First(&newSite).Error; err == nil {
 		_, _ = refreshSiteCnameHostname(&newSite, nil, nil)
-		_ = services.SyncUserDNSRecords(&oldSite, &newSite)
-		if shouldResyncSiteCname(oldSite, newSite) {
-			resyncSiteCnameForSite(newSite)
+		if req.Enable != nil && !*req.Enable && oldSite.Enable {
+			for _, dnsErr := range services.RemoveSiteDNSOnDisable(newSite) {
+				fmt.Printf("[WARN] remove site dns on disable failed site=%d err=%v\n", newSite.ID, dnsErr)
+			}
+		} else if req.Enable != nil && *req.Enable && !oldSite.Enable {
+			for _, dnsErr := range services.RestoreSiteDNSRecords(newSite) {
+				fmt.Printf("[WARN] restore site dns on enable failed site=%d err=%v\n", newSite.ID, dnsErr)
+			}
+		} else {
+			_ = services.SyncUserDNSRecords(&oldSite, &newSite)
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": T("Site updated")})
@@ -445,7 +473,6 @@ func (ctrl *SiteController) AdminCreate(c *gin.Context) {
 
 	services.BumpConfigVersion("site", []int64{site.ID})
 	_ = ensureDNSRecords(site)
-	resyncSiteCnameForSite(*site)
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Site created successfully"), "data": site})
 }
@@ -475,7 +502,6 @@ func (ctrl *SiteController) Create(c *gin.Context) {
 
 	services.BumpConfigVersion("site", []int64{site.ID})
 	_ = ensureDNSRecords(site)
-	resyncSiteCnameForSite(*site)
 
 	c.JSON(http.StatusOK, gin.H{"message": T("Site created successfully"), "data": site})
 }
@@ -512,11 +538,9 @@ func (ctrl *SiteController) AdminBatchCreate(c *gin.Context) {
 		}
 		req.UserPackageID = defaultID
 	}
-	if isUserRequest(c) && req.UserPackageID > 0 {
-		if err := ensureUserPackageOwnership(req.UserID, req.UserPackageID); err != nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
-			return
-		}
+	if err := ensureUserPackageOwnership(req.UserID, req.UserPackageID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+		return
 	}
 	if strings.TrimSpace(req.Data) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("data is required")})
@@ -717,12 +741,6 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 			return
 		}
 		req.IDs = allowed
-		if req.UserPackageID != nil && *req.UserPackageID > 0 {
-			if err := ensureUserPackageOwnership(userID, *req.UserPackageID); err != nil {
-				c.JSON(http.StatusForbidden, gin.H{"error": T("forbidden")})
-				return
-			}
-		}
 		if req.GroupIDs != nil || req.GroupID != nil {
 			groupIDs := []int64{}
 			if req.GroupIDs != nil {
@@ -746,6 +764,28 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 					req.GroupID = &allowedGroups[0]
 				}
 			}
+		}
+	}
+	if req.UserPackageID != nil {
+		if *req.UserPackageID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_package.required")})
+			return
+		}
+		type sitePackageOwner struct {
+			UserID int64 `gorm:"column:uid"`
+		}
+		var owners []sitePackageOwner
+		if err := db.DB.Model(&models.Site{}).Select("DISTINCT uid").Where("id IN ?", req.IDs).Find(&owners).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
+		if len(owners) != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_package.not_found")})
+			return
+		}
+		if err := ensureUserPackageOwnership(owners[0].UserID, *req.UserPackageID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
 		}
 	}
 
@@ -791,6 +831,18 @@ func (ctrl *SiteController) AdminBatchUpdate(c *gin.Context) {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromInput)
 	} else if hasWhitelist {
 		setSecurityIPList(req.Settings, "whitelist", whitelistFromSettings)
+	}
+	if blacklist, ok := extractSecurityIPList(req.Settings, "blacklist"); ok {
+		if err := services.CheckSiteIPListLimit("blacklist", len(blacklist)); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
+	}
+	if whitelist, ok := extractSecurityIPList(req.Settings, "whitelist"); ok {
+		if err := services.CheckSiteIPListLimit("whitelist", len(whitelist)); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
 	}
 	if req.Settings != nil {
 		delete(req.Settings, "backend_protocol")
@@ -1020,13 +1072,26 @@ func (ctrl *SiteController) AdminBatchAction(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Update failed")})
 			return
 		}
+		restoreSiteDNSAfterEnable(req.IDs)
 	case "disable":
+		var sites []models.Site
+		if err := db.DB.Where("id IN ?", req.IDs).Find(&sites).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load sites")})
+			return
+		}
 		if err := db.DB.Model(&models.Site{}).Where("id IN ?", req.IDs).Updates(map[string]interface{}{
 			"enable": false,
 			"state":  "stop",
 		}).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Update failed")})
 			return
+		}
+		for _, site := range sites {
+			site.Enable = false
+			site.State = "stop"
+			for _, dnsErr := range services.RemoveSiteDNSOnDisable(site) {
+				fmt.Printf("[WARN] remove site dns on disable failed site=%d err=%v\n", site.ID, dnsErr)
+			}
 		}
 	case "delete":
 		var sites []models.Site
@@ -2224,6 +2289,22 @@ func shouldResyncSiteCname(oldSite, newSite models.Site) bool {
 
 func resyncSiteCnameForSite(site models.Site) {
 	services.ResyncSiteCnameForSite(site)
+}
+
+func restoreSiteDNSAfterEnable(siteIDs []int64) {
+	if len(siteIDs) == 0 {
+		return
+	}
+	var sites []models.Site
+	if err := db.DB.Where("id IN ?", siteIDs).Find(&sites).Error; err != nil {
+		fmt.Printf("[WARN] restore site dns load failed ids=%v err=%v\n", siteIDs, err)
+		return
+	}
+	for _, site := range sites {
+		for _, err := range services.RestoreSiteDNSRecords(site) {
+			fmt.Printf("[WARN] restore site dns failed site=%d err=%v\n", site.ID, err)
+		}
+	}
 }
 
 func resyncGroupLineCnames(groupID int64) {

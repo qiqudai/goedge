@@ -180,7 +180,6 @@ func processSiteCreateTask(task *models.Task) {
 
 	BumpConfigVersion("site", []int64{site.ID})
 	_ = SyncUserDNSRecords(nil, site)
-	ResyncSiteCnameForSite(*site)
 
 	// Success
 	db.DB.Model(task).Updates(map[string]interface{}{"state": "success", "end_at": time.Now(), "ret": ""})

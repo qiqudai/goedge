@@ -190,10 +190,7 @@ func findDefaultUserPackageID(userID int64) (int64, error) {
 			return pkg.ID, nil
 		}
 	}
-	if err := db.DB.Order("id asc").First(&pkg).Error; err != nil {
-		return 0, errors.New("user_package not found")
-	}
-	return pkg.ID, nil
+	return 0, errors.New("user_package.required")
 }
 
 func findDefaultDNSProviderID(userID int64) (int64, error) {
@@ -245,6 +242,9 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 		}
 		req.UserPackageID = defaultID
 	}
+	if err := ensureUserPackageOwnership(userID, req.UserPackageID); err != nil {
+		return nil, nil, err
+	}
 	if req.DNSProviderID == 0 {
 		defaultDNS, err := findDefaultDNSProviderID(userID)
 		if err != nil {
@@ -262,6 +262,9 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 	domains = normalizeSiteDomains(domains)
 	if len(domains) == 0 {
 		return nil, nil, errors.New("domain is required")
+	}
+	if err := services.CheckSiteDomainsPerSiteLimit(domains); err != nil {
+		return nil, nil, err
 	}
 
 	if err := services.CheckDomainLimit(userID, req.UserPackageID, domains); err != nil {
@@ -662,14 +665,14 @@ func filterSiteGroupIDsForUser(groupIDs []int64, userID int64) ([]int64, error) 
 
 func ensureUserPackageOwnership(userID, packageID int64) error {
 	if userID == 0 || packageID == 0 {
-		return errors.New("invalid user/package")
+		return errors.New("user_package.required")
 	}
 	var count int64
 	if err := db.DB.Model(&models.UserPackage{}).Where("uid = ? AND id = ?", userID, packageID).Count(&count).Error; err != nil {
 		return err
 	}
 	if count == 0 {
-		return errors.New("user_package not found")
+		return errors.New("user_package.not_found")
 	}
 	return nil
 }
@@ -1058,9 +1061,9 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 			NodeGroupName:   nodeGroupMap[site.NodeGroupID],
 			RegionID:        site.RegionID,
 			RegionName:      regionMap[site.RegionID],
-			Status:          site.Enable,
-			State:           site.State,
-			Settings:        settings,
+		Status:          site.Enable,
+		State:           site.State,
+		Settings:        settings,
 			ExpireTime:      pkg.EndAt.Format("2006-01-02"),
 			CreatedAt:       site.CreatedAt,
 			UpdatedAt:       site.UpdatedAt,

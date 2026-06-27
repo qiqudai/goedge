@@ -74,6 +74,33 @@ func TestCCGuardSecurityAssets(t *testing.T) {
 		t.Fatalf("guard.lua must not accept legacy stateless guard pass cookies")
 	}
 
+	for _, path := range []string{"assets/lua/response_headers.lua", "edge-node/lua/response_headers.lua"} {
+		responseHeadersLua := readAsset(t, path)
+		assertContains(t, path, responseHeadersLua,
+			"hide_invalid_hop_by_hop_response_headers",
+			"tonumber(ngx.status) == 101",
+			"ngx.header[name] = nil",
+			"Upgrade",
+			"Connection",
+			"TE",
+			"Trailer",
+			"Transfer-Encoding",
+		)
+	}
+
+	for _, path := range []string{"assets/conf/nginx.conf", "edge-node/conf/nginx.conf"} {
+		nginxConf := readAsset(t, path)
+		assertContains(t, path, nginxConf,
+			"map $http_upgrade $cdn_websocket_upgrade",
+			"~*^websocket$ $http_upgrade",
+			"map $http_upgrade $connection_upgrade",
+			"~*^websocket$ upgrade",
+		)
+		if strings.Contains(nginxConf, "default upgrade;") {
+			t.Fatalf("%s must not treat arbitrary Upgrade values as websocket upgrades", path)
+		}
+	}
+
 	ccLua := readAsset(t, "assets/lua/cc.lua")
 	assertContains(t, "cc.lua", ccLua,
 		"is_common_non_browser_request",

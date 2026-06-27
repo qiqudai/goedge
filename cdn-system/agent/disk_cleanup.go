@@ -93,6 +93,18 @@ func purgeLogFiles() {
 		}
 		removeDirContents(dir, true)
 	}
+	resetLogOffsetFiles(dirs)
+}
+
+func resetLogOffsetFiles(dirs []string) {
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		for _, name := range []string{"access.offset", "stream_access.offset"} {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
 }
 
 func purgeCacheFiles() {

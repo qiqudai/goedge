@@ -103,6 +103,10 @@ func (ctrl *ForwardController) AdminUpdate(c *gin.Context) {
 		forward.UserID = req.UserID
 	}
 	if req.UserPackageID != 0 {
+		if err := ensureUserPackageOwnership(forward.UserID, req.UserPackageID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
 		forward.UserPackageID = req.UserPackageID
 	}
 
@@ -234,6 +238,18 @@ func (ctrl *ForwardController) AdminBatchCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": T("data is required")})
 		return
 	}
+	if req.UserPackageID == 0 {
+		defaultID, err := findDefaultUserPackageID(req.UserID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
+		req.UserPackageID = defaultID
+	}
+	if err := ensureUserPackageOwnership(req.UserID, req.UserPackageID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+		return
+	}
 
 	defaults, err := services.GetStreamDefaultMap(req.UserID)
 	if err != nil {
@@ -347,6 +363,28 @@ func (ctrl *ForwardController) AdminBatchUpdate(c *gin.Context) {
 			return
 		}
 		req.IDs = allowed
+	}
+	if req.UserPackageID != nil {
+		if *req.UserPackageID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_package.required")})
+			return
+		}
+		type forwardPackageOwner struct {
+			UserID int64 `gorm:"column:uid"`
+		}
+		var owners []forwardPackageOwner
+		if err := db.DB.Model(&models.Forward{}).Select("DISTINCT uid").Where("id IN ?", req.IDs).Find(&owners).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load forwards")})
+			return
+		}
+		if len(owners) != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T("user_package.not_found")})
+			return
+		}
+		if err := ensureUserPackageOwnership(owners[0].UserID, *req.UserPackageID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": T(err.Error())})
+			return
+		}
 	}
 
 	err := db.DB.Transaction(func(tx *gorm.DB) error {

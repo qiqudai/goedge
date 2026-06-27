@@ -1,0 +1,7 @@
+services:
+  api:
+    ports:
+      - "18088:8080"
+  mysql:
+    ports:
+      - "13306:3306"

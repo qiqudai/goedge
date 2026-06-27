@@ -4,7 +4,9 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services/dns"
+	"errors"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +28,13 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 	}
 	action = strings.ToLower(strings.TrimSpace(action))
 	if action == "" {
+		return nil
+	}
+	// Package CNAME records are shared package entrypoints. Node disable/delete
+	// must only affect line A records; package CNAMEs are rebuilt by package or
+	// line-resolution resync paths.
+	if action == "delete" || action == "disable" {
+		log.Printf("[DNS] package cname sync skip action=%s nodes=%v", action, nodeIDs)
 		return nil
 	}
 	nodeIDs = uniquePackageIDs(nodeIDs)
@@ -94,6 +103,7 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 		return nil
 	}
 
+	errs := make([]string, 0)
 	for _, info := range siteInfos {
 		if info.Hostname == "" || info.DomainKey == "" {
 			continue
@@ -129,9 +139,13 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 				}
 				if err := dns.SyncPackageLineRecords(domainInfo, info.Hostname, gid, key.ID, key.Name, action, nodeList); err != nil {
 					log.Printf("[DNS] package cname sync failed site=%d group=%d host=%s.%s line=%s err=%v", info.SiteID, gid, info.Hostname, info.DomainKey, key.ID, err)
+					errs = append(errs, err.Error())
 				}
 			}
 		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
 	}
 
 	log.Printf("[DNS] package cname sync finished action=%s nodes=%v", action, nodeIDs)
@@ -139,7 +153,7 @@ func SyncPackageCnameForNodes(nodeIDs []int64, action string) error {
 }
 
 // SyncPackageCnameForLineChange syncs package DNS records when a line assignment changes.
-// action: add, delete
+// action: add, delete, resync
 func SyncPackageCnameForLineChange(groupID int64, lineID, lineName string, nodeIDs []int64, action string) error {
 	if db.DB == nil {
 		return nil
@@ -156,6 +170,10 @@ func SyncPackageCnameForLineChange(groupID int64, lineID, lineName string, nodeI
 		action = "add"
 	case "disable":
 		action = "delete"
+	}
+	// Package CNAME must survive line/node disable/delete; only line A records are adjusted elsewhere.
+	if action == "delete" {
+		return nil
 	}
 	if action == "resync" {
 		nodeIDs = loadLineNodeIDs(groupID, lineID)
@@ -177,6 +195,7 @@ func SyncPackageCnameForLineChange(groupID int64, lineID, lineName string, nodeI
 		return nil
 	}
 
+	errs := make([]string, 0)
 	for _, info := range siteInfos {
 		if info.Hostname == "" || info.DomainKey == "" {
 			continue
@@ -191,7 +210,11 @@ func SyncPackageCnameForLineChange(groupID int64, lineID, lineName string, nodeI
 		}
 		if err := dns.SyncPackageLineRecords(domainInfo, info.Hostname, groupID, lineID, lineName, action, nodeIDs); err != nil {
 			log.Printf("[DNS] package line sync failed site=%d group=%d host=%s.%s line=%s err=%v", info.SiteID, groupID, info.Hostname, info.DomainKey, lineID, err)
+			errs = append(errs, err.Error())
 		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
 	}
 
 	log.Printf("[DNS] package line sync finished group=%d line=%s action=%s", groupID, lineID, action)
@@ -440,12 +463,73 @@ func loadPlanGroupMap(packageIDs []int64) map[int64]planGroup {
 }
 
 type siteCnameInfo struct {
-	SiteID       int64
-	Hostname     string
-	DomainKey    string
-	PrimaryGroup int64
-	BackupGroup  int64
-	EnableBackup bool
+	SiteID        int64
+	UserPackageID int64
+	PackageMode   bool
+	Hostname      string
+	DomainKey     string
+	PrimaryGroup  int64
+	BackupGroup   int64
+	EnableBackup  bool
+}
+
+func isPackageCnameMode(site models.Site, pkg models.UserPackage) bool {
+	siteMode := strings.TrimSpace(strings.ToLower(site.CnameMode))
+	if siteMode == "package" {
+		return true
+	}
+	if siteMode != "" {
+		return false
+	}
+	return strings.TrimSpace(strings.ToLower(pkg.CnameMode)) == "package"
+}
+
+func appendPackageLevelCnameInfos(infos []siteCnameInfo, infoSet map[string]struct{}, packMap map[int64]models.UserPackage, planGroupMap map[int64]planGroup, domainSet map[string]struct{}) []siteCnameInfo {
+	for _, pack := range packMap {
+		if strings.TrimSpace(strings.ToLower(pack.CnameMode)) != "package" {
+			continue
+		}
+		dummySite := models.Site{UserPackageID: pack.ID}
+		domainKey, host := resolveSiteCnameTarget(dummySite, pack)
+		if domainKey == "" || host == "" {
+			continue
+		}
+		plan := planGroupMap[int64(pack.PackageID)]
+		primary := pack.NodeGroupID
+		if primary == 0 {
+			primary = plan.NodeGroupID
+		}
+		enableBackup := pack.EnableBackup
+		backup := int64(0)
+		if enableBackup {
+			backup = pack.BackupNodeGroup
+			if backup == 0 {
+				backup = plan.BackupNodeGroup
+			}
+		}
+		infoKey := strings.Join([]string{
+			domainKey,
+			host,
+			int64Key(primary),
+			int64Key(backup),
+			boolKey(enableBackup),
+		}, "|")
+		if _, ok := infoSet[infoKey]; ok {
+			continue
+		}
+		infoSet[infoKey] = struct{}{}
+		infos = append(infos, siteCnameInfo{
+			UserPackageID: pack.ID,
+			PackageMode:   true,
+			Hostname:      host,
+			DomainKey:     domainKey,
+			PrimaryGroup:  primary,
+			BackupGroup:   backup,
+			EnableBackup:  enableBackup,
+		})
+		domainSet[domainKey] = struct{}{}
+	}
+	return infos
 }
 
 func loadSiteCnameInfos(groupIDs []int64) ([]siteCnameInfo, map[string]models.CnameDomain, error) {
@@ -524,6 +608,7 @@ func loadSiteCnameInfos(groupIDs []int64) ([]siteCnameInfo, map[string]models.Cn
 	planGroupMap := loadPlanGroupMap(planIDs)
 
 	domainSet := make(map[string]struct{})
+	infoSet := make(map[string]struct{})
 	infos := make([]siteCnameInfo, 0, len(sites))
 	for _, site := range sites {
 		pkg := packMap[site.UserPackageID]
@@ -532,16 +617,30 @@ func loadSiteCnameInfos(groupIDs []int64) ([]siteCnameInfo, map[string]models.Cn
 			continue
 		}
 		primary, backup, enableBackup := resolveSiteGroups(site, pkg, planGroupMap[int64(pkg.PackageID)])
+		infoKey := strings.Join([]string{
+			domainKey,
+			host,
+			int64Key(primary),
+			int64Key(backup),
+			boolKey(enableBackup),
+		}, "|")
+		if _, ok := infoSet[infoKey]; ok {
+			continue
+		}
+		infoSet[infoKey] = struct{}{}
 		infos = append(infos, siteCnameInfo{
-			SiteID:       site.ID,
-			Hostname:     host,
-			DomainKey:    domainKey,
-			PrimaryGroup: primary,
-			BackupGroup:  backup,
-			EnableBackup: enableBackup,
+			SiteID:        site.ID,
+			UserPackageID: site.UserPackageID,
+			PackageMode:   isPackageCnameMode(site, pkg),
+			Hostname:      host,
+			DomainKey:     domainKey,
+			PrimaryGroup:  primary,
+			BackupGroup:   backup,
+			EnableBackup:  enableBackup,
 		})
 		domainSet[domainKey] = struct{}{}
 	}
+	infos = appendPackageLevelCnameInfos(infos, infoSet, packMap, planGroupMap, domainSet)
 	if len(domainSet) == 0 {
 		return infos, map[string]models.CnameDomain{}, nil
 	}
@@ -562,6 +661,17 @@ func loadSiteCnameInfos(groupIDs []int64) ([]siteCnameInfo, map[string]models.Cn
 		}
 	}
 	return infos, domainMap, nil
+}
+
+func int64Key(v int64) string {
+	return strconv.FormatInt(v, 10)
+}
+
+func boolKey(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
 }
 
 func resolveSiteGroups(site models.Site, pkg models.UserPackage, plan planGroup) (int64, int64, bool) {

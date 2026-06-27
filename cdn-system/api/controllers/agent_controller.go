@@ -193,6 +193,83 @@ func (ctr *AgentController) GetL2Nodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"nodes": result})
 }
 
+func (ctr *AgentController) GetParentNodes(c *gin.Context) {
+	nodeID := resolveAgentNodeID(c)
+	if nodeID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": T("node_id is required")})
+		return
+	}
+
+	var self models.Node
+	if err := db.DB.Where("id = ?", nodeID).First(&self).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": T("node not found")})
+		return
+	}
+	if self.Level != 3 {
+		c.JSON(http.StatusOK, gin.H{"l1_nodes": []gin.H{}, "l2_nodes": []gin.H{}})
+		return
+	}
+
+	parentCfg := services.LoadParentFetchConfig(nodeID)
+	if parentCfg.ParentGroupID <= 0 {
+		c.JSON(http.StatusOK, gin.H{"l1_nodes": []gin.H{}, "l2_nodes": []gin.H{}})
+		return
+	}
+
+	l1Targets := services.LoadL1TargetsByGroup([]int64{parentCfg.ParentGroupID})[parentCfg.ParentGroupID]
+	l2Targets := services.LoadL2TargetsByGroup([]int64{parentCfg.ParentGroupID})[parentCfg.ParentGroupID]
+	nodeIDs := make([]int64, 0, len(l1Targets)+len(l2Targets))
+	for _, t := range l1Targets {
+		nodeIDs = append(nodeIDs, t.NodeID)
+	}
+	for _, t := range l2Targets {
+		nodeIDs = append(nodeIDs, t.NodeID)
+	}
+	if len(nodeIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"l1_nodes": []gin.H{}, "l2_nodes": []gin.H{}})
+		return
+	}
+
+	var nodes []models.Node
+	if err := db.DB.Where("id IN ? AND enable = ?", nodeIDs, true).
+		Select("id", "ip", "port", "region_id", "level", "check_protocol", "check_port", "check_host", "check_path", "check_timeout").
+		Find(&nodes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": T("failed to load parent nodes")})
+		return
+	}
+
+	metaMap := services.LoadRegionMetaMap()
+	l1Result := make([]gin.H, 0)
+	l2Result := make([]gin.H, 0)
+	for _, n := range nodes {
+		checkPort := n.CheckPort
+		if checkPort == 0 && n.Level == 2 {
+			checkPort = services.ResolveRegionL2CheckPort(metaMap, n.RegionID)
+		}
+		checkProtocol := strings.TrimSpace(n.CheckProtocol)
+		if checkProtocol == "" {
+			checkProtocol = "tcp"
+		}
+		entry := gin.H{
+			"id":             n.ID,
+			"ip":             n.IP,
+			"port":           n.Port,
+			"level":          n.Level,
+			"check_protocol": checkProtocol,
+			"check_port":     checkPort,
+			"check_host":     n.CheckHost,
+			"check_path":     n.CheckPath,
+			"check_timeout":  n.CheckTimeout,
+		}
+		if n.Level == 1 {
+			l1Result = append(l1Result, entry)
+		} else if n.Level == 2 {
+			l2Result = append(l2Result, entry)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"l1_nodes": l1Result, "l2_nodes": l2Result})
+}
+
 func (ctr *AgentController) ReportL2Heartbeat(c *gin.Context) {
 	var req struct {
 		Nodes []int64 `json:"nodes"`

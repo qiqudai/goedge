@@ -61,7 +61,7 @@ func TestWriteProxyBlockOriginWebsocketPreserved(t *testing.T) {
 	var b strings.Builder
 	writeProxyBlock(&b, edgeDomain{OriginHTTPVersionPolicy: "auto", EnableWebsocket: true}, false, nil, nil)
 	out := b.String()
-	if !strings.Contains(out, "proxy_set_header Upgrade $http_upgrade;") ||
+	if !strings.Contains(out, "proxy_set_header Upgrade $cdn_websocket_upgrade;") ||
 		!strings.Contains(out, "proxy_set_header Connection $connection_upgrade;") {
 		t.Fatalf("websocket upgrade headers not preserved:\n%s", out)
 	}

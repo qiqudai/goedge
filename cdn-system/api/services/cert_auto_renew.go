@@ -64,7 +64,7 @@ func runCertAutoRenew() {
 	taskMap := map[int64]models.Task{}
 	if len(taskIDs) > 0 {
 		var tasks []models.Task
-		if err := db.DB.Select("id", "state", "end_at").Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
+		if err := db.DB.Select("id", "state", "end_at", "retry_at").Where("id IN ?", taskIDs).Find(&tasks).Error; err == nil {
 			for _, task := range tasks {
 				taskMap[task.ID] = task
 			}
@@ -98,10 +98,15 @@ func shouldSkipCertAutoRenew(cert models.Cert, taskMap map[int64]models.Task, no
 	if !ok {
 		return false
 	}
+	if task.RetryAt != nil && task.RetryAt.After(now) {
+		return true
+	}
 	taskState := strings.ToLower(strings.TrimSpace(task.State))
 	switch taskState {
-	case "waiting", "running", "retrying":
+	case "waiting", "running":
 		return true
+	case "retrying":
+		return task.RetryAt == nil || task.RetryAt.After(now)
 	}
 	if task.EndAt != nil && now.Sub(*task.EndAt) < certAutoRenewRetryDelay {
 		return true

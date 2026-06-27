@@ -25,6 +25,8 @@ type EdgeConfig struct {
 	Version            int64                      `json:"version"`
 	NodeID             string                     `json:"node_id,omitempty"`
 	NodeLevel          int                        `json:"node_level,omitempty"`
+	ParentGroupID      int64                      `json:"parent_group_id,omitempty"`
+	ParentFetchMode    string                     `json:"parent_fetch_mode,omitempty"`
 	NodeBandwidthLimit string                     `json:"node_bandwidth_limit,omitempty"`
 	AntiBlocking       bool                       `json:"anti_blocking"`
 	Domains            []EdgeDomain               `json:"domains"`
@@ -59,6 +61,12 @@ type EdgeDomain struct {
 	UseL2                          bool                     `json:"use_l2,omitempty"`
 	L2HTTPPort                     string                   `json:"l2_http_port,omitempty"`
 	L2HTTPSPort                    string                   `json:"l2_https_port,omitempty"`
+	ParentFetchMode                string                   `json:"parent_fetch_mode,omitempty"`
+	ParentL1UpstreamKey            string                   `json:"parent_l1_upstream_key,omitempty"`
+	ParentL2UpstreamKey            string                   `json:"parent_l2_upstream_key,omitempty"`
+	ParentHTTPPort                 string                   `json:"parent_http_port,omitempty"`
+	ParentHTTPSPort                string                   `json:"parent_https_port,omitempty"`
+	L1RespectL2                    bool                     `json:"l1_respect_l2,omitempty"`
 	LoadBalancePolicy              string                   `json:"load_balance_policy,omitempty"` // round_robin, random, ip_hash
 	Headers                        map[string]string        `json:"headers,omitempty"`
 	ResponseHeaders                map[string]string        `json:"response_headers,omitempty"`
@@ -255,6 +263,9 @@ type EdgeStream struct {
 	ProxyConnectTimeout string             `json:"proxy_connect_timeout,omitempty"`
 	ProxyTimeout        string             `json:"proxy_timeout,omitempty"`
 	ConnLimit           int                `json:"conn_limit,omitempty"`
+	ParentFetchMode     string             `json:"parent_fetch_mode,omitempty"`
+	ParentL1UpstreamKey string             `json:"parent_l1_upstream_key,omitempty"`
+	ParentL2UpstreamKey string             `json:"parent_l2_upstream_key,omitempty"`
 }
 
 type EdgeStreamTarget struct {

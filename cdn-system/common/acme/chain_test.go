@@ -24,30 +24,11 @@ MIIDXTCCAkWgAwIBAgIQRootYR
 func TestUsesIncompatibleLetsEncryptChain(t *testing.T) {
 	t.Parallel()
 
-	legacy := sampleLegacyChain
-	legacy = legacy[:len(legacy)-1] // keep invalid PEM out of parse path
-	if UsesIncompatibleLetsEncryptChain(legacy) {
-		t.Fatalf("expected invalid/legacy sample not to trigger incompatible detection via parse failure")
+	if UsesIncompatibleLetsEncryptChain(sampleLegacyChain) {
+		t.Fatalf("legacy sample should not be rejected")
 	}
-
-	cases := []struct {
-		name string
-		cn   string
-		want bool
-	}{
-		{name: "yr2 intermediate", cn: "YR2", want: true},
-		{name: "root yr", cn: "Root YR", want: true},
-		{name: "legacy r12", cn: "R12", want: false},
-		{name: "leaf domain", cn: "h5.example.com", want: false},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := hasIncompatibleLetsEncryptCN(tc.cn); got != tc.want {
-				t.Fatalf("hasIncompatibleLetsEncryptCN(%q) = %v, want %v", tc.cn, got, tc.want)
-			}
-		})
+	if UsesIncompatibleLetsEncryptChain(sampleYRChain) {
+		t.Fatalf("YR2/Root YR chain should not be rejected")
 	}
 }
 

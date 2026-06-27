@@ -31,6 +31,7 @@ type DNSRecord struct {
 	TTL    int
 	Line   string // vendor-specific line value
 	Weight int    // vendor-specific weight
+	Status string // vendor-specific status; empty means active/unknown
 }
 
 type ProviderFactory func(credentials string) (Provider, error)

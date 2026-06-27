@@ -206,6 +206,8 @@ func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 	if req.Ipv4Resolution == "" {
 		req.Ipv4Resolution = strings.TrimSpace(existing.Ipv4Resolution)
 	}
+	dnsNameChanged := strings.TrimSpace(existing.CnameHostname) != strings.TrimSpace(req.CnameHostname) ||
+		strings.TrimSpace(existing.CnameDomain) != strings.TrimSpace(req.CnameDomain)
 
 	backupPolicy := buildNodeGroupPolicy(&req, req.BackupSwitchPolicy)
 
@@ -224,6 +226,18 @@ func (ctr *NodeGroupController) UpdateNodeGroup(c *gin.Context) {
 		return
 	}
 	services.BumpConfigVersion("node_group", []int64{id})
+	if dnsNameChanged {
+		if err := syncNodeGroupLineRecords(id, "resync"); err != nil {
+			msg, detail := resolveDNSSyncErrorMessage(err)
+			c.JSON(http.StatusOK, gin.H{"code": 1, "msg": msg, "error": msg, "detail": detail})
+			return
+		}
+		for _, err := range services.ResyncGroupLineCnamesWithErrors(id) {
+			msg, detail := resolveDNSSyncErrorMessage(err)
+			c.JSON(http.StatusOK, gin.H{"code": 1, "msg": msg, "error": msg, "detail": detail})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -264,6 +278,10 @@ func (ctr *NodeGroupController) DeleteNodeGroup(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"msg": T("node_group.has_packages")})
 			return
 		}
+	}
+	if parentRefCount, err := services.CountParentGroupReferences(id); err == nil && parentRefCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"msg": T("node_group.has_parent_fetch_refs")})
+		return
 	}
 	if err := db.DB.Delete(&models.NodeGroup{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"msg": T("Delete Failed")})
@@ -866,6 +884,48 @@ func loadLineNodeIDs(groupID int64, lineID string) []int64 {
 		}
 	}
 	return uniqueInt64List(nodeIDs)
+}
+
+func syncNodeGroupLineRecords(groupID int64, action string) error {
+	if groupID == 0 {
+		return nil
+	}
+	var lines []models.Line
+	if err := db.DB.Select("line_id", "line_name", "node_id", "node_ip_id", "enable").
+		Where("node_group_id = ?", groupID).
+		Find(&lines).Error; err != nil {
+		return err
+	}
+	type syncLineKey struct {
+		ID   string
+		Name string
+	}
+	lineNodes := map[syncLineKey][]int64{}
+	for _, line := range lines {
+		if !line.Enable {
+			continue
+		}
+		key := syncLineKey{ID: strings.TrimSpace(line.LineID), Name: strings.TrimSpace(line.LineName)}
+		if key.ID == "" {
+			key.ID = "default"
+		}
+		if key.Name == "" {
+			key.Name = key.ID
+		}
+		nodeID := line.NodeIPID
+		if nodeID == 0 {
+			nodeID = line.NodeID
+		}
+		if nodeID != 0 {
+			lineNodes[key] = append(lineNodes[key], nodeID)
+		}
+	}
+	for key, nodeIDs := range lineNodes {
+		if err := dns.SyncLineRecords(groupID, key.ID, key.Name, action, uniqueInt64List(nodeIDs)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func buildAvailableLineItems(group models.NodeGroup, assignedIPIDs map[int64]struct{}) ([]lineIPItem, error) {
