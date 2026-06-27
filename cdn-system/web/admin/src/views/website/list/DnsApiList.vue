@@ -52,8 +52,8 @@
       <el-form-item label="备注"><el-input v-model="form.remark" /></el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="handleSubmit">确定</el-button>
+      <el-button @click="visible = false" :disabled="submitting">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
     </template>
   </el-dialog>
 </template>
@@ -68,6 +68,7 @@ import { DNS_PROVIDERS, DNS_API_FIELD_LABELS } from '@/constants/dns'
 const list = ref([])
 const types = ref([])
 const loading = ref(false)
+const submitting = ref(false)
 const selectedRows = ref([])
 const visible = ref(false)
 const form = reactive({ id: 0, name: '', type: '', remark: '', auth: {} })
@@ -168,19 +169,25 @@ const handleEdit = (row) => {
 }
 
 const handleSubmit = async () => {
+  if (submitting.value) return
   if (!form.name || !form.type) {
     ElMessage.error('请填写必要信息')
     return
   }
   const payload = { ...form, auth: JSON.stringify(form.auth) }
-  if (form.id) {
-    await request.put(`/dnsapi/${form.id}`, payload)
-  } else {
-    await request.post('/dnsapi', payload)
+  submitting.value = true
+  try {
+    if (form.id) {
+      await request.put(`/dnsapi/${form.id}`, payload)
+    } else {
+      await request.post('/dnsapi', payload)
+    }
+    ElMessage.success('保存成功')
+    visible.value = false
+    fetchData()
+  } finally {
+    submitting.value = false
   }
-  ElMessage.success('保存成功')
-  visible.value = false
-  fetchData()
 }
 
 const handleDelete = (row) => {

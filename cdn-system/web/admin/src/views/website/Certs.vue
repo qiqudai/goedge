@@ -100,12 +100,18 @@
           <el-icon v-else color="#C0C4CC"><CircleCloseFilled /></el-icon>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
+      <el-table-column label="状态" width="120" align="center">
         <template #default="{ row }">
           <el-tag v-if="!row.enable" type="danger" size="small">禁用</el-tag>
-          <el-tag v-else-if="displayState(row) === 'dns_pending'" type="warning" size="small">DNS验证中</el-tag>
-          <el-tag v-else-if="displayState(row) === 'waiting'" type="info" size="small">待签发</el-tag>
-          <el-tag v-else-if="displayState(row) === 'issuing'" type="warning" size="small">签发中</el-tag>
+          <el-tag v-else-if="displayState(row) === 'dns_pending'" type="warning" size="small">
+            <InlineLoading text="DNS验证中" size="xs" />
+          </el-tag>
+          <el-tag v-else-if="displayState(row) === 'waiting'" type="info" size="small">
+            <InlineLoading text="待签发" size="xs" />
+          </el-tag>
+          <el-tag v-else-if="displayState(row) === 'issuing'" type="warning" size="small">
+            <InlineLoading text="签发中" size="xs" />
+          </el-tag>
           <el-tag v-else-if="displayState(row) === 'ready' || displayState(row) === 'success' || !displayState(row)" type="success" size="small">已签发</el-tag>
           <el-tag v-else-if="displayState(row) === 'fail'" type="danger" size="small">失败</el-tag>
           <el-tag v-else type="info" size="small">正常</el-tag>
@@ -192,7 +198,7 @@
             </div>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="saveDefaultSettings">保存</el-button>
+            <el-button type="primary" :loading="savingDefault" @click="saveDefaultSettings">保存</el-button>
           </el-form-item>
         </template>
 
@@ -208,12 +214,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, CircleCheckFilled, CircleCloseFilled, CopyDocument } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import CertEditPopup from './CertEditPopup.vue'
 import DnsApiTab from './components/DnsApiTab.vue'
+import InlineLoading from '@/components/InlineLoading.vue'
+import { usePolling } from '@/composables/usePolling'
 
 const activeTopTab = ref('list')
 const list = ref([])
@@ -262,8 +270,14 @@ const resolvePagedResult = (res) => {
 const popupVisible = ref(false)
 const editingId = ref(0)
 const currentCertData = ref({})
+const savingDefault = ref(false)
 
 const handleTopTab = () => {}
+
+const TRANSIENT_CERT_STATES = new Set(['waiting', 'issuing', 'dns_pending'])
+const hasTransientCert = computed(() =>
+  Array.isArray(list.value) && list.value.some(row => TRANSIENT_CERT_STATES.has(displayState(row)))
+)
 
 const fetchList = () => {
   listLoading.value = true
@@ -273,7 +287,8 @@ const fetchList = () => {
       pageSize: listQuery.pageSize,
       keyword: listQuery.keyword,
       search_field: listQuery.searchField
-    }
+    },
+    skipLoading: true
   }).then(res => {
     const { list: rows, total: count } = resolvePagedResult(res)
     list.value = rows
@@ -283,6 +298,13 @@ const fetchList = () => {
     listLoading.value = false
   })
 }
+
+// 自动轮询：列表中存在非终态证书时每 10s 拉取一次
+const { start: startCertPolling, stop: stopCertPolling } = usePolling(fetchList, {
+  interval: 10000,
+  immediate: false,
+  shouldRun: () => hasTransientCert.value && activeTopTab.value === 'list'
+})
 
 const handleFilter = () => {
   listQuery.page = 1
@@ -493,6 +515,7 @@ const handleDnsapiListUpdated = (list) => {
 
 
 const saveDefaultSettings = () => {
+  if (savingDefault.value) return
   if (isAdmin.value && !selectedDefaultUser.value) {
     ElMessage.warning('请选择用户')
     return
@@ -501,8 +524,11 @@ const saveDefaultSettings = () => {
   if (isAdmin.value) {
     payload.user_id = selectedDefaultUser.value
   }
+  savingDefault.value = true
   request.post('/certs/default_settings', payload).then(() => {
     ElMessage.success('保存成功')
+  }).finally(() => {
+    savingDefault.value = false
   })
 }
 
@@ -512,6 +538,11 @@ onMounted(() => {
   if (!isAdmin.value) {
     loadDefaultSettings()
   }
+  startCertPolling()
+})
+
+onBeforeUnmount(() => {
+  stopCertPolling()
 })
 </script>
 

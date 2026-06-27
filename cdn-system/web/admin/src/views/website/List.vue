@@ -76,6 +76,18 @@
       @completed="handleTaskCompleted"
     />
 
+    <BatchProgressDialog
+      v-model="batchProgressVisible"
+      :total="batchProgress.total"
+      :done="batchProgress.done"
+      :success="batchProgress.success"
+      :fail="batchProgress.fail"
+      :running="batchProgress.running"
+      :fail-items="batchProgress.failItems"
+      @cancel="handleBatchProgressCancel"
+      @closed="handleBatchProgressClosed"
+    />
+
     <el-dialog v-model="resolveCheckVisible" class="site-list-dialog" title="解析检测结果" width="900px" :close-on-click-modal="false">
       <div v-if="resolveCheckLoading" style="color: #909399; margin-bottom: 10px;">正在检测解析，请稍候...</div>
       <el-table :data="resolveCheckResults" size="small" border style="width: 100%" max-height="420">
@@ -133,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
@@ -147,6 +159,8 @@ import DefaultSettings from './list/DefaultSettings.vue'
 import DnsApiTab from './components/DnsApiTab.vue'
 import ResolvePage from './Resolve.vue'
 import TaskMonitorDialog from '@/components/TaskMonitorDialog.vue'
+import BatchProgressDialog from '@/components/BatchProgressDialog.vue'
+import { usePolling } from '@/composables/usePolling'
 
 const router = useRouter()
 const isAdmin = ref(localStorage.getItem('role') === 'admin')
@@ -179,6 +193,51 @@ const taskMonitorVisible = ref(false)
 const taskMonitorId = ref('')
 const taskMonitorTitle = ref('任务详情')
 
+// 批量操作进度窗口
+const batchProgressVisible = ref(false)
+const batchProgress = reactive({
+  total: 0,
+  done: 0,
+  success: 0,
+  fail: 0,
+  running: false,
+  failItems: []
+})
+let batchProgressTimer = null
+let currentBatchCancelToken = null
+
+const startBatchProgress = (total) => {
+  batchProgress.total = total
+  batchProgress.done = 0
+  batchProgress.success = 0
+  batchProgress.fail = 0
+  batchProgress.running = true
+  batchProgress.failItems = []
+  batchProgressVisible.value = true
+  stopBatchProgressPolling()
+}
+
+const stopBatchProgressPolling = () => {
+  if (batchProgressTimer) {
+    clearInterval(batchProgressTimer)
+    batchProgressTimer = null
+  }
+}
+
+const handleBatchProgressCancel = () => {
+  if (currentBatchCancelToken) {
+    currentBatchCancelToken.cancelled = true
+  }
+  batchProgress.running = false
+  stopBatchProgressPolling()
+}
+
+const handleBatchProgressClosed = () => {
+  stopBatchProgressPolling()
+  currentBatchCancelToken = null
+  fetchSites()
+}
+
 const resolveCheckVisible = ref(false)
 const resolveCheckLoading = ref(false)
 const resolveCheckResults = ref([])
@@ -198,13 +257,26 @@ const handleTabChange = (name) => {
 const fetchSites = async () => {
   listLoading.value = true
   try {
-    const res = await request.get('/sites', { params: { ...siteQuery, ...advQuery } })
+    const res = await request.get('/sites', { params: { ...siteQuery, ...advQuery }, skipLoading: true })
     siteList.value = res.data?.list || res.list || []
     totalSites.value = res.data?.total || res.total || 0
   } finally {
     listLoading.value = false
   }
 }
+
+// 自动轮询：列表中存在 CNAME 未生效的站点时每 10s 拉取一次
+const hasPendingCname = computed(() =>
+  Array.isArray(siteList.value) && siteList.value.some(row => {
+    const s = String(row?.cname_status || row?.resolve_status || '').toLowerCase()
+    return s === 'pending' || s === 'generating' || s === 'syncing' || s === 'waiting'
+  })
+)
+const { start: startSitePolling, stop: stopSitePolling } = usePolling(fetchSites, {
+  interval: 10000,
+  immediate: false,
+  shouldRun: () => hasPendingCname.value && activeTab.value === 'list'
+})
 
 const handleSearch = (q) => {
   Object.assign(siteQuery, q)
@@ -267,7 +339,7 @@ const handleSiteAction = async (type, data) => {
       ElMessage.warning('请先选择站点')
       return
   }
-  
+
   if (type.endsWith('delete')) {
     const targets = data ? [data] : selectedSites.value
     const enabledSites = targets.filter(site => site.enable)
@@ -276,12 +348,12 @@ const handleSiteAction = async (type, data) => {
       return
     }
     await ElMessageBox.confirm('确定删除吗？删除后不可恢复。', '提示', { type: 'warning' })
-    await request.post('/sites/batch_action', { action: 'delete', ids })
+    await runBatchWithProgress(ids, 'delete')
   } else if (type.endsWith('enable') || type.endsWith('disable')) {
     const action = type.split('-').pop()
-    await request.post('/sites/batch_action', { action, ids })
+    await runBatchWithProgress(ids, action)
   } else if (type.endsWith('unlock')) {
-     await request.post('/sites/batch_action', { action: 'unlock', ids })
+    await runBatchWithProgress(ids, 'unlock')
   } else if (type.endsWith('clear_cache')) {
      await ElMessageBox.confirm('确定清空缓存吗？系统将创建任务并分发到所有节点执行。', '提示', { type: 'warning' })
      const res = await request.post('/sites/batch_action', { action: 'clear_cache', ids })
@@ -298,6 +370,39 @@ const handleSiteAction = async (type, data) => {
   fetchSites()
 }
 
+const runBatchWithProgress = async (ids, action) => {
+  const total = ids.length
+  const cancelToken = { cancelled: false }
+  currentBatchCancelToken = cancelToken
+  startBatchProgress(total)
+
+  // 模拟逐项推进进度（实际为单次 batch_action 调用，前端按总数推进 0→90%）
+  const stepMs = Math.max(60, Math.min(300, 2000 / Math.max(total, 1)))
+  let stepped = 0
+  batchProgressTimer = setInterval(() => {
+    if (cancelToken.cancelled) return
+    if (stepped >= Math.max(1, Math.floor(total * 0.9))) return
+    stepped += 1
+    batchProgress.done = stepped
+  }, stepMs)
+
+  try {
+    await request.post('/sites/batch_action', { action, ids }, { skipLoading: true })
+    if (cancelToken.cancelled) return
+    stopBatchProgressPolling()
+    batchProgress.done = total
+    batchProgress.success = total
+    batchProgress.running = false
+  } catch (e) {
+    stopBatchProgressPolling()
+    batchProgress.fail = total
+    batchProgress.done = total
+    batchProgress.running = false
+    batchProgress.failItems = ids.map(id => ({ name: `站点 #${id}`, reason: e?.message || '操作失败' }))
+    throw e
+  }
+}
+
 
 const handleExport = () => {
   window.open(`${request.defaults.baseURL}/sites/export`, '_blank')
@@ -310,6 +415,11 @@ const applyAdvancedSearch = () => {
 
 onMounted(() => {
   fetchSites()
+  startSitePolling()
+})
+
+onBeforeUnmount(() => {
+  stopSitePolling()
 })
 
 const handleTaskCompleted = (t) => {

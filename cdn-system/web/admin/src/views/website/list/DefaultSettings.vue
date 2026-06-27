@@ -133,8 +133,8 @@
 
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button @click="visible = false" :disabled="submitting">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -152,6 +152,7 @@ const props = defineProps({
 })
 
 const loading = ref(false)
+const submitting = ref(false)
 const list = ref([])
 const selectedRows = ref([])
 const visible = ref(false)
@@ -448,6 +449,7 @@ const buildValue = () => {
 }
 
 const handleSubmit = async () => {
+    if (submitting.value) return
     if (!form.name) return ElMessage.error('请选择设置项')
     if (form.scope === 'group' && !form.group_id) return ElMessage.error('请选择分组')
     if (props.isAdmin && !form.user_id) return ElMessage.error('请选择用户')
@@ -457,25 +459,18 @@ const handleSubmit = async () => {
         value: buildValue(),
         scope_name: form.scope
     }
-    
+
     if (form.scope === 'group') payload.scope_id = form.group_id
-    else payload.scope_id = form.user_id // global scope maps to user_id usually in this system, or 0 maybe? 
-    // Wait, List-old says: scopes are 'group' or 'global'. If global, scope_id=user_id. If group, scope_id=group_id.
-    
-    // Actually, in List-old submitDefault:
-    // payload.scope_id = defaultForm.group_id (if group)
-    // else payload.scope_id = defaultForm.user_id
-    
+
     if (form.scope !== 'group') payload.scope_id = form.user_id
 
     if (props.isAdmin) payload.user_id = form.user_id
 
+    submitting.value = true
     try {
         if (mode.value === 'edit') {
             payload.old_scope_name = editScope.scopeName
             payload.old_scope_id = editScope.scopeId
-            
-            // The API uses name in URL
             await request.put(`/site_defaults/${encodeURIComponent(editScope.originalName)}`, payload)
         } else {
             await request.post('/site_defaults', payload)
@@ -485,6 +480,8 @@ const handleSubmit = async () => {
         fetchData()
     } catch(e) {
         // error handled by interceptor
+    } finally {
+        submitting.value = false
     }
 }
 

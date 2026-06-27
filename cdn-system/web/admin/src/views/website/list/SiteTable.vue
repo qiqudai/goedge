@@ -91,6 +91,8 @@
        <template #default="{ row }">
         <span>{{ row.cname }}</span>
         <el-icon class="copy-icon" @click.stop="copyText(row.cname)"><CopyDocument /></el-icon>
+        <InlineLoading v-if="isCnamePending(row)" text="生成中" size="xs" />
+        <el-icon v-else-if="isCnameOk(row)" color="#67C23A" class="cname-ok-icon"><CircleCheckFilled /></el-icon>
       </template>
     </el-table-column>
     <el-table-column label="HTTPS" width="100" align="center">
@@ -142,9 +144,10 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { Search, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
+import { Search, ArrowDown, CopyDocument, CircleCheckFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import BrowserOpenIcon from '@/components/BrowserOpenIcon.vue'
+import InlineLoading from '@/components/InlineLoading.vue'
 import { isHttpsEnabled, openSiteInBrowser } from '@/utils/openSite'
 
 const props = defineProps({
@@ -253,6 +256,16 @@ const getHttpsStatus = (row) => {
   }
   return { text: '关闭', type: 'info', error: '' }
 }
+
+const isCnamePending = (row) => {
+  const s = String(row?.cname_status || row?.resolve_status || '').toLowerCase()
+  return s === 'pending' || s === 'generating' || s === 'syncing' || s === 'waiting'
+}
+
+const isCnameOk = (row) => {
+  const s = String(row?.cname_status || row?.resolve_status || '').toLowerCase()
+  return s === 'ok' || s === 'success' || s === 'done' || s === 'active'
+}
 </script>
 
 <style scoped>
@@ -268,6 +281,7 @@ const getHttpsStatus = (row) => {
 .open-icon:hover { color: #409eff; }
 .copyable-text { cursor: pointer; }
 .copyable-text:hover { color: #409eff; }
+.cname-ok-icon { margin-left: 5px; vertical-align: middle; }
 
 :global(:root[data-theme="dark"] .site-table-toolbar .el-button--default) {
   background-color: #2a2f36;

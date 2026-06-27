@@ -220,8 +220,8 @@
 
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" @click="submit">确定</el-button>
+        <el-button @click="handleClose" :disabled="submitting">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit">确定</el-button>
       </span>
     </template>
   </el-dialog>
@@ -261,6 +261,7 @@ const showCertFields = computed(() => form.type === 'upload' || (props.certId &&
 // Data Sources
 const userOptions = ref([])
 const userLoading = ref(false)
+const submitting = ref(false)
 const dnsapiOptions = ref([])
 
 // Forms
@@ -438,13 +439,14 @@ const handleKeyPemBlur = () => {
   }
 }
 
-const submit = () => {
+const submit = async () => {
+  if (submitting.value) return
   if (activeTab.value === 'batch') {
-     submitBatch()
+     await submitBatch()
      return
   }
   if (activeTab.value === 'wildcard') {
-     submitWildcard()
+     await submitWildcard()
      return
   }
 
@@ -452,7 +454,7 @@ const submit = () => {
   // Logic from Certs.vue:
   // If not upload and new, maybe use batch logic if multiple domains?
   // But let's stick to standard single update/create for now unless domains > 1 and it's new.
-  
+
   const payload = { ...form }
   if (showCertFields.value) {
     const normalized = normalizeUploadPemFields(payload.cert, payload.key)
@@ -470,46 +472,49 @@ const submit = () => {
   // Backend permissions check:
   // If not admin, user_id should be ignored by backend or enforced to current user.
   // Frontend sends it if isAdmin is true.
-  
-  if (props.certId) {
-    request.put(`/certs/${props.certId}`, payload).then(() => {
+
+  submitting.value = true
+  try {
+    if (props.certId) {
+      await request.put(`/certs/${props.certId}`, payload)
       ElMessage.success('更新成功')
       handleClose()
       emits('saved')
-    })
-  } else {
-    // New
-    // Handle split domains if not upload
-    if (form.type !== 'upload') {
-        const domains = form.domain.split(/[\s,;]+/).filter(Boolean)
-        const hasWildcard = domains.some(d => d.trim().startsWith('*.'))
-        if (hasWildcard && !form.dnsapi) {
-            ElMessage.warning('泛证书请在泛证书申请页或选择 DNS 接口')
-            return
-        }
-        const batchPayload = {
-            user_id: Number(form.user_id) || 0,
-            type: form.type,
-            domains: domains,
-            dnsapi: Number(form.dnsapi) || 0,
-            auto_renew: true
-        }
-        request.post('/certs/batch', batchPayload).then(() => {
-             ElMessage.success('已提交申请')
-             handleClose()
-             emits('saved')
-        })
     } else {
-        request.post('/certs', payload).then(() => {
-           ElMessage.success('添加成功')
-           handleClose()
-           emits('saved')
-        })
+      // New
+      // Handle split domains if not upload
+      if (form.type !== 'upload') {
+          const domains = form.domain.split(/[\s,;]+/).filter(Boolean)
+          const hasWildcard = domains.some(d => d.trim().startsWith('*.'))
+          if (hasWildcard && !form.dnsapi) {
+              ElMessage.warning('泛证书请在泛证书申请页或选择 DNS 接口')
+              return
+          }
+          const batchPayload = {
+              user_id: Number(form.user_id) || 0,
+              type: form.type,
+              domains: domains,
+              dnsapi: Number(form.dnsapi) || 0,
+              auto_renew: true
+          }
+          await request.post('/certs/batch', batchPayload)
+          ElMessage.success('已提交申请')
+          handleClose()
+          emits('saved')
+      } else {
+          await request.post('/certs', payload)
+          ElMessage.success('添加成功')
+          handleClose()
+          emits('saved')
+      }
     }
+  } finally {
+    submitting.value = false
   }
 }
 
-const submitBatch = () => {
+const submitBatch = async () => {
+    if (submitting.value) return
     const domains = batchForm.domains.split('\n').map(s=>s.trim()).filter(Boolean)
     if (!domains.length) {
         ElMessage.warning('请输入域名')
@@ -527,14 +532,19 @@ const submitBatch = () => {
         dnsapi: Number(batchForm.dnsapi) || 0,
         auto_renew: true
     }
-    request.post('/certs/batch', payload).then(() => {
-         ElMessage.success('批量提交成功')
-         handleClose()
-         emits('saved')
-    })
+    submitting.value = true
+    try {
+        await request.post('/certs/batch', payload)
+        ElMessage.success('批量提交成功')
+        handleClose()
+        emits('saved')
+    } finally {
+        submitting.value = false
+    }
 }
 
 const submitWildcard = async () => {
+  if (submitting.value) return
   const domain = (wildcardForm.domain || '').trim()
   if (!domain) {
     ElMessage.warning('请输入泛域名')
@@ -553,6 +563,7 @@ const submitWildcard = async () => {
     auto_renew: true
   }
 
+  submitting.value = true
   try {
     const res = await request.post('/certs/wildcard', payload)
     wildcardCertId.value = res.id || res.data?.id || 0
@@ -563,6 +574,8 @@ const submitWildcard = async () => {
     emits('saved')
   } catch (e) {
     // errors are handled by request interceptor
+  } finally {
+    submitting.value = false
   }
 }
 
