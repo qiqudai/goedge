@@ -58,7 +58,7 @@ release/
 # local temp
 .DS_Store
 
-# cnn.net local build and runtime outputs
+# cnn.net local build and runtime outputs (repo lives at ../cnn.net with its own .git)
 /cnn.net/**/bin/
 /cnn.net/**/obj/
 /cnn.net/**/.vs/
@@ -68,7 +68,13 @@ release/
 /cnn.net/**/.runtime/
 /cnn.net/**/preprocessed_configs/
 /cnn.net/**/access/
+/cnn.net/**/TestResults/
+/cnn.net/**/test-results/
+/cnn.net/**/playwright-report/
 /cnn.net/docs/**/node_modules/
 /cnn.net/docs/**/test-results/
+/cnn.net/tools/**/bin/
+/cnn.net/tools/**/obj/
 
+# Entire cnn.net tree is a separate git repo; do not track here
 /cnn.net

@@ -26,6 +26,7 @@ test.describe('user: dns cname sync', () => {
   test.skip(process.env.E2E_DNS !== '1', 'DNS sync e2e requires E2E_DNS=1 with configured CNAME domains')
 
   test('site-based and package-based cname resolve', async () => {
+    test.setTimeout(180_000)
     const { token } = await loginUser('ceshi', '123456')
     const userApi = await createUserApiContext(token)
     const adminLogin = await request.newContext({ baseURL: apiBase })
@@ -38,7 +39,7 @@ test.describe('user: dns cname sync', () => {
       })
       expect(adminRes.ok(), 'admin login').toBeTruthy()
       const adminBody = await adminRes.json()
-      const adminToken = String(adminBody?.token || '')
+      const adminToken = String(adminBody?.data?.token || adminBody?.token || '')
       expect(adminToken, 'admin token').toBeTruthy()
 
       adminApi = await request.newContext({

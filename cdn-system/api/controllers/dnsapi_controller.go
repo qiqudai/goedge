@@ -22,7 +22,8 @@ func (ctr *DNSAPIController) List(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": T("Forbidden")})
 			return
 		}
-		query = query.Where("uid = ?", uid)
+		// Include platform/admin DNS APIs; mask auth for non-owned entries.
+		query = query.Where("uid = ? OR uid IN (SELECT id FROM user WHERE type = 1)", uid)
 	} else if uidStr := c.Query("user_id"); uidStr != "" {
 		if uid, err := strconv.Atoi(uidStr); err == nil {
 			query = query.Where("uid = ?", uid)
@@ -35,6 +36,13 @@ func (ctr *DNSAPIController) List(c *gin.Context) {
 	if err := query.Order("id desc").Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Database Error")})
 		return
+	}
+	if isUserRequest(c) && uid != 0 {
+		for i := range items {
+			if items[i].UserID != uid {
+				items[i].Auth = ""
+			}
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": items}})
 }

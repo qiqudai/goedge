@@ -4,6 +4,9 @@
 # Local build and test outputs
 build/
 test-results/
+**/test-results/
+**/playwright-report/
+**/.playwright/
 api/build/
 
 # Local runtime/generated data

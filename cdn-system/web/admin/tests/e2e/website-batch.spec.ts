@@ -217,7 +217,9 @@ test('website list: batch CNAME domain uses dropdown and runs resolve check', as
       body: JSON.stringify({
         domain: 'example.com',
         cname: 'example.com.new-cname.test',
-        ips: ['127.0.0.1']
+        ips: ['127.0.0.1'],
+        dns_ok: true,
+        cname_matches_expected: true
       })
     })
   })
