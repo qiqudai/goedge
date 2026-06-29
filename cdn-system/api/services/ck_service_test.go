@@ -66,21 +66,19 @@ func TestCloneGlobalConfigForEdgeIsIndependent(t *testing.T) {
 }
 
 func TestHashConfigVersionConcurrentNoPanic(t *testing.T) {
-	cfg := &models.EdgeConfig{
-		ErrorPages: map[string]models.ErrorPageDefinition{
-			"403": {Template: "<html></html>"},
-		},
-		CCRules: map[int64][]models.EdgeCCRuleItem{
-			1: {{MatcherID: 1}},
-		},
-	}
 	var wg sync.WaitGroup
 	for i := 0; i < 64; i++ {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			cfg.ErrorPages["403"] = models.ErrorPageDefinition{Template: "<html>" + string(rune('a'+n%26)) + "</html>"}
-			cfg.CCRules[int64(n%3+1)] = []models.EdgeCCRuleItem{{MatcherID: int64(n)}}
+			cfg := &models.EdgeConfig{
+				ErrorPages: map[string]models.ErrorPageDefinition{
+					"403": {Template: "<html>" + string(rune('a'+n%26)) + "</html>"},
+				},
+				CCRules: map[int64][]models.EdgeCCRuleItem{
+					int64(n%3 + 1): {{MatcherID: int64(n)}},
+				},
+			}
 			_ = hashConfigVersion(cfg)
 		}(i)
 	}
