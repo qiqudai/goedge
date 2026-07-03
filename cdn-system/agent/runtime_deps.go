@@ -110,17 +110,42 @@ func detectMissingSharedLibraries(binPath string) ([]string, error) {
 	if strings.TrimSpace(binPath) == "" {
 		return nil, errors.New("binary path is empty")
 	}
-	cmd := exec.Command("ldd", binPath)
-	setNginxEnv(cmd)
-	out, err := cmd.CombinedOutput()
+	out, err := runLdd(binPath)
 	missing := parseMissingSharedLibraries(string(out))
 	if len(missing) > 0 {
 		return uniqueStrings(missing), nil
+	}
+	if err != nil && strings.Contains(strings.TrimSpace(string(out)), "not a dynamic executable") {
+		if resolvedPath := resolveDynamicBinaryPath(binPath); resolvedPath != "" && resolvedPath != binPath {
+			out, err = runLdd(resolvedPath)
+			missing = parseMissingSharedLibraries(string(out))
+			if len(missing) > 0 {
+				return uniqueStrings(missing), nil
+			}
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("ldd failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil, nil
+}
+
+func runLdd(binPath string) ([]byte, error) {
+	cmd := exec.Command("ldd", binPath)
+	setNginxEnv(cmd)
+	return cmd.CombinedOutput()
+}
+
+func resolveDynamicBinaryPath(binPath string) string {
+	candidates := []string{binPath + ".real"}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		return candidate
+	}
+	return ""
 }
 
 func parseMissingSharedLibraries(output string) []string {

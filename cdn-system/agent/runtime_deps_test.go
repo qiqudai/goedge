@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -28,5 +30,22 @@ func TestRuntimePackagesForMissingLibrariesUbuntu(t *testing.T) {
 	want := []string{"libluajit-5.1-2", "libpcre3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected packages: got=%v want=%v", got, want)
+	}
+}
+
+func TestResolveDynamicBinaryPathFallsBackToRealBinary(t *testing.T) {
+	dir := t.TempDir()
+	wrapperPath := filepath.Join(dir, "nginx")
+	realPath := wrapperPath + ".real"
+	if err := os.WriteFile(wrapperPath, []byte("#!/bin/sh\nexec \"$0.real\" \"$@\"\n"), 0o755); err != nil {
+		t.Fatalf("write wrapper: %v", err)
+	}
+	if err := os.WriteFile(realPath, []byte("elf"), 0o755); err != nil {
+		t.Fatalf("write real binary: %v", err)
+	}
+
+	got := resolveDynamicBinaryPath(wrapperPath)
+	if got != realPath {
+		t.Fatalf("unexpected resolved path: got=%q want=%q", got, realPath)
 	}
 }
