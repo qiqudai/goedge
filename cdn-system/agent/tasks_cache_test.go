@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/md5"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -87,6 +89,24 @@ func TestPurgeURL_UsesResolvedCacheDirAndPurgesVariants(t *testing.T) {
 	}
 }
 
+func TestPurgeURL_RemovesCacheFileByFullURLKeyHeader(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	setCacheTestEnv(t, cacheDir)
+
+	targetPath := writeCacheFileByKey(t, cacheDir, "https://example.com/static/a.png?b=2&a=1", true)
+	otherPath := writeCacheFileByKey(t, cacheDir, "https://example.com/static/other.png?b=2&a=1", true)
+
+	if err := purgeURL("https://example.com/static/a.png?b=2&a=1"); err != nil {
+		t.Fatalf("purgeURL failed: %v", err)
+	}
+	if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("full URL cache key should be removed")
+	}
+	if _, err := os.Stat(otherPath); err != nil {
+		t.Fatalf("unmatched full URL cache key should remain: %v", err)
+	}
+}
+
 func TestPurgeDomains_RemovesOnlyTargetDomain(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	setCacheTestEnv(t, cacheDir)
@@ -105,6 +125,54 @@ func TestPurgeDomains_RemovesOnlyTargetDomain(t *testing.T) {
 	}
 }
 
+func TestPurgeDomains_WildcardRemovesAllSubdomainLevelsOnly(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	setCacheTestEnv(t, cacheDir)
+
+	firstLevelPath := writeCacheFileByKey(t, cacheDir, "630.example.com/static/app.js", true)
+	deepLevelPath := writeCacheFileByKey(t, cacheDir, "https://img.630.example.com/static/app.css?v=1", true)
+	rootPath := writeCacheFileByKey(t, cacheDir, "example.com/static/app.js", true)
+	suffixAttackPath := writeCacheFileByKey(t, cacheDir, "badexample.com/static/app.js", true)
+	otherPath := writeCacheFileByKey(t, cacheDir, "630.other.com/static/app.js", true)
+
+	if err := purgeDomains([]string{"*.example.com"}); err != nil {
+		t.Fatalf("purgeDomains failed: %v", err)
+	}
+	if _, err := os.Stat(firstLevelPath); !os.IsNotExist(err) {
+		t.Fatalf("first-level wildcard subdomain cache should be removed")
+	}
+	if _, err := os.Stat(deepLevelPath); !os.IsNotExist(err) {
+		t.Fatalf("deep wildcard subdomain cache should be removed")
+	}
+	for label, path := range map[string]string{
+		"root domain":        rootPath,
+		"suffix attack host": suffixAttackPath,
+		"other domain":       otherPath,
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s cache should remain: %v", label, err)
+		}
+	}
+}
+
+func TestPurgeDirs_RemovesFullURLCacheKeys(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	setCacheTestEnv(t, cacheDir)
+
+	targetPath := writeCacheFileByKey(t, cacheDir, "https://example.com/static/assets/app.js?v=1", true)
+	otherPath := writeCacheFileByKey(t, cacheDir, "https://example.com/static/other/app.js?v=1", true)
+
+	if err := purgeDirs([]string{"https://example.com/static/assets/"}); err != nil {
+		t.Fatalf("purgeDirs failed: %v", err)
+	}
+	if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("directory full URL cache key should be removed")
+	}
+	if _, err := os.Stat(otherPath); err != nil {
+		t.Fatalf("non-matching directory cache key should remain: %v", err)
+	}
+}
+
 func TestParseCacheDirTarget(t *testing.T) {
 	target, ok := parseCacheDirTarget("https://TT.WMZIH.CN/assets")
 	if !ok {
@@ -115,5 +183,26 @@ func TestParseCacheDirTarget(t *testing.T) {
 	}
 	if target.pathPrefix != "/assets/" {
 		t.Fatalf("unexpected path prefix: %s", target.pathPrefix)
+	}
+}
+
+func TestPreheatURL_UsesLocalPortAndOriginalHost(t *testing.T) {
+	gotHost := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server url failed: %v", err)
+	}
+	raw := fmt.Sprintf("http://example.com:%s/preheat.js?x=1", u.Port())
+	if err := preheatURL(raw); err != nil {
+		t.Fatalf("preheatURL failed: %v", err)
+	}
+	if gotHost != "example.com:"+u.Port() {
+		t.Fatalf("unexpected preheat host header: %q", gotHost)
 	}
 }

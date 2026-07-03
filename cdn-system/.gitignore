@@ -32,3 +32,4 @@ agent/testdata/cc_smoke/docker-build/
 agent/testdata/cc_smoke/manual-run/
 agent/testdata/cc_smoke/runtime/
 docker/cc-e2e/stage/
+docker/cache-type-e2e/

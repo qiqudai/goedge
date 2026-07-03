@@ -298,8 +298,10 @@ func purgeURL(raw string) error {
 	}
 	cacheDir := resolveCacheDir()
 	keys := buildPurgeCacheKeys(u)
+	keySet := make(map[string]struct{}, len(keys))
 	var lastErr error
 	for _, cacheKey := range keys {
+		keySet[cacheKey] = struct{}{}
 		sum := md5.Sum([]byte(cacheKey))
 		hash := fmt.Sprintf("%x", sum)
 		if len(hash) < 3 {
@@ -309,6 +311,14 @@ func purgeURL(raw string) error {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			lastErr = err
 		}
+	}
+	if err := purgeCacheEntriesByMatch(cacheDir, func(cacheKey string) bool {
+		if _, ok := keySet[cacheKey]; ok {
+			return true
+		}
+		return cacheKeyMatchesURL(cacheKey, u)
+	}); err != nil {
+		lastErr = err
 	}
 	return lastErr
 }
@@ -404,13 +414,28 @@ func buildPurgeCacheKeys(u *url.URL) []string {
 	out := make([]string, 0, 8)
 	addUnique(&out, seen, host+escapedPath)
 	addUnique(&out, seen, host+decodedPath)
+	if u.Scheme != "" {
+		scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+		addUnique(&out, seen, scheme+"://"+host+escapedPath)
+		addUnique(&out, seen, scheme+"://"+host+decodedPath)
+	}
 	if rawQuery != "" {
 		addUnique(&out, seen, host+escapedPath+"?"+rawQuery)
 		addUnique(&out, seen, host+decodedPath+"?"+rawQuery)
+		if u.Scheme != "" {
+			scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+			addUnique(&out, seen, scheme+"://"+host+escapedPath+"?"+rawQuery)
+			addUnique(&out, seen, scheme+"://"+host+decodedPath+"?"+rawQuery)
+		}
 	}
 	if normalizedQuery != "" && normalizedQuery != rawQuery {
 		addUnique(&out, seen, host+escapedPath+"?"+normalizedQuery)
 		addUnique(&out, seen, host+decodedPath+"?"+normalizedQuery)
+		if u.Scheme != "" {
+			scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+			addUnique(&out, seen, scheme+"://"+host+escapedPath+"?"+normalizedQuery)
+			addUnique(&out, seen, scheme+"://"+host+decodedPath+"?"+normalizedQuery)
+		}
 	}
 	return out
 }
@@ -531,6 +556,16 @@ func splitCacheKeyHostPath(cacheKey string) (string, string) {
 	if cacheKey == "" {
 		return "", ""
 	}
+	if u, err := url.Parse(cacheKey); err == nil && u.Host != "" {
+		path := u.EscapedPath()
+		if path == "" {
+			path = "/"
+		}
+		if u.RawQuery != "" {
+			path += "?" + u.RawQuery
+		}
+		return strings.ToLower(strings.TrimSpace(u.Hostname())), path
+	}
 	idx := strings.IndexAny(cacheKey, "/?")
 	if idx <= 0 {
 		return strings.ToLower(cacheKey), "/"
@@ -541,6 +576,47 @@ func splitCacheKeyHostPath(cacheKey string) (string, string) {
 		path = "/" + path
 	}
 	return host, path
+}
+
+func cacheKeyMatchesURL(cacheKey string, u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host, path := splitCacheKeyHostPath(cacheKey)
+	if host == "" || host != strings.ToLower(strings.TrimSpace(u.Hostname())) {
+		return false
+	}
+	escapedPath := u.EscapedPath()
+	if escapedPath == "" {
+		escapedPath = "/"
+	}
+	decodedPath := u.Path
+	if decodedPath == "" {
+		decodedPath = escapedPath
+	}
+	rawQuery := strings.TrimSpace(u.RawQuery)
+	if rawQuery == "" {
+		return path == escapedPath || path == decodedPath
+	}
+	normalizedQuery := ""
+	if values, err := url.ParseQuery(rawQuery); err == nil {
+		normalizedQuery = values.Encode()
+	}
+	candidates := []string{
+		escapedPath,
+		decodedPath,
+		escapedPath + "?" + rawQuery,
+		decodedPath + "?" + rawQuery,
+	}
+	if normalizedQuery != "" && normalizedQuery != rawQuery {
+		candidates = append(candidates, escapedPath+"?"+normalizedQuery, decodedPath+"?"+normalizedQuery)
+	}
+	for _, candidate := range candidates {
+		if path == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func preheatURLs(urls []string) error {
