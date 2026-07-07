@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestExtractRegionBlockAccessDisabledFallsThroughToSecurity(t *testing.T) {
@@ -87,12 +90,18 @@ func TestGenerateConfigRegionBlock447(t *testing.T) {
 			break
 		}
 	}
-	if domain == nil {
-		t.Fatalf("domain www.boisconfort235.com not found in node 56 config")
-	}
 	var site models.Site
 	if err := db.DB.First(&site, 447).Error; err != nil {
 		t.Fatalf("load site 447: %v", err)
+	}
+	if !site.Enable {
+		if domain != nil {
+			t.Fatalf("disabled site www.boisconfort235.com must not be included in edge config")
+		}
+		return
+	}
+	if domain == nil {
+		t.Fatalf("enabled domain www.boisconfort235.com not found in node 56 config")
 	}
 	want := len(extractRegionBlock(site))
 	if len(domain.RegionBlock) != want || want == 0 {
@@ -127,6 +136,46 @@ func TestSiteConfigGroupMatchesIncludesEnabledBackupOnly(t *testing.T) {
 	}
 	if !siteConfigGroupMatches(6, 0, false, groups) {
 		t.Fatalf("primary group should match")
+	}
+}
+
+func TestLoadSitesForConfigGroupsSkipsDisabledSites(t *testing.T) {
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := gdb.AutoMigrate(&models.Site{}, &models.UserPackage{}, &models.Package{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	oldDB := db.DB
+	db.DB = gdb
+	t.Cleanup(func() { db.DB = oldDB })
+
+	sites := []models.Site{
+		{ID: 1, NodeGroupID: 6, Enable: true, State: "running"},
+		{ID: 2, NodeGroupID: 6, Enable: false, State: "stop"},
+		{ID: 3, NodeGroupID: 10, BackupNodeGroupID: 6, EnableBackupGroup: true, Enable: false, State: "stop"},
+		{ID: 4, NodeGroupID: 10, BackupNodeGroupID: 6, EnableBackupGroup: true, Enable: true, State: "running"},
+	}
+	for _, site := range sites {
+		if err := gdb.Create(&site).Error; err != nil {
+			t.Fatalf("create site %d: %v", site.ID, err)
+		}
+	}
+
+	got, err := loadSitesForConfigGroups(gdb, []int64{6})
+	if err != nil {
+		t.Fatalf("loadSitesForConfigGroups: %v", err)
+	}
+	gotIDs := map[int64]bool{}
+	for _, site := range got {
+		gotIDs[site.ID] = true
+	}
+	if !gotIDs[1] || !gotIDs[4] {
+		t.Fatalf("enabled primary and backup sites must be included, got %#v", gotIDs)
+	}
+	if gotIDs[2] || gotIDs[3] {
+		t.Fatalf("disabled sites must not be included, got %#v", gotIDs)
 	}
 }
 

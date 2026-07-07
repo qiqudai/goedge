@@ -526,7 +526,7 @@ func loadSitesForConfigGroups(siteDB *gorm.DB, groupIDs []int64) ([]models.Site,
 	}
 
 	var direct []models.Site
-	if err := siteDB.Where("node_group_id IN ? OR (enable_backup_group = ? AND backup_node_group IN ?)", groupIDs, true, groupIDs).Find(&direct).Error; err != nil {
+	if err := siteDB.Where("enable = ? AND (node_group_id IN ? OR (enable_backup_group = ? AND backup_node_group IN ?))", true, groupIDs, true, groupIDs).Find(&direct).Error; err != nil {
 		return nil, err
 	}
 	appendSites(direct)
@@ -534,7 +534,7 @@ func loadSitesForConfigGroups(siteDB *gorm.DB, groupIDs []int64) ([]models.Site,
 	packageIDs := loadConfigPackageIDsByGroups(groupIDs)
 	if len(packageIDs) > 0 {
 		var byPackage []models.Site
-		if err := siteDB.Where("user_package IN ?", packageIDs).Find(&byPackage).Error; err != nil {
+		if err := siteDB.Where("enable = ? AND user_package IN ?", true, packageIDs).Find(&byPackage).Error; err != nil {
 			return nil, err
 		}
 		appendSites(byPackage)
