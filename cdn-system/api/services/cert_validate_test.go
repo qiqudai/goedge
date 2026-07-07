@@ -108,6 +108,87 @@ func TestNormalizeUploadCertKeyInputsSplitsBundle(t *testing.T) {
 	}
 }
 
+func TestNormalizeStoredCertPEMRepairsLiteralNewlines(t *testing.T) {
+	certPEM, _ := testCertAndKeyPEM(t, "hhhhh.app")
+	escaped := strings.ReplaceAll(certPEM, "\n", `\n`)
+	got := NormalizeStoredCertPEM(escaped)
+	if !CertificateCoversDomain(got, "hhhhh.app").OK {
+		t.Fatalf("expected escaped PEM to parse after normalization")
+	}
+}
+
+func TestNormalizeUploadCertKeyInputsKeyBundleOverridesStaleCert(t *testing.T) {
+	oldCert, _ := testCertAndKeyPEM(t, "v.xmmybuy.cn")
+	newCert, newKey := testCertAndKeyPEM(t, "hhhhh.app")
+	bundle := newCert + "\n" + newKey
+	gotCert, gotKey := NormalizeUploadCertKeyInputs(oldCert, bundle)
+	if gotKey == "" {
+		t.Fatalf("expected private key extracted from key bundle")
+	}
+	if _, err := ParsePrivateKeyPEM(gotKey); err != nil {
+		t.Fatalf("extracted key invalid: %v", err)
+	}
+	result := CertificateCoversDomain(gotCert, "hhhhh.app")
+	if !result.OK {
+		t.Fatalf("expected new cert to cover hhhhh.app, got reason=%s names=%v", result.Reason, result.Names)
+	}
+	if CertificateCoversDomain(gotCert, "v.xmmybuy.cn").OK {
+		t.Fatalf("stale cert must be replaced by key bundle")
+	}
+	if err := ValidateUploadCertKeyPair(gotCert, gotKey); err != nil {
+		t.Fatalf("expected normalized pair to validate: %v", err)
+	}
+}
+
+func TestAttachTLSCertToDomainRejectsInvalidStoredKey(t *testing.T) {
+	certPEM, _ := testCertAndKeyPEM(t, "hhhhh.app")
+	cert := models.Cert{
+		ID:   269,
+		Cert: certPEM,
+		Key:  "not a private key",
+	}
+	domain := models.EdgeDomain{
+		Name:        "hhhhh.app",
+		HttpsListen: []string{"443"},
+		HTTPSForce:  true,
+		HTTPSHSTS:   true,
+		HTTPSHTTP2:  true,
+		HTTPSOCSP:   true,
+		HTTPSHTTP3:  true,
+		SSLCertData: "stale",
+		SSLKeyData:  "stale",
+	}
+	if attachTLSCertToDomain(&domain, &cert) {
+		t.Fatal("invalid private key must not be attached to edge config")
+	}
+	disableDomainHTTPS(&domain)
+	if len(domain.HttpsListen) != 0 || domain.HTTPSForce || domain.HTTPSHSTS || domain.HTTPSHTTP2 || domain.HTTPSOCSP || domain.HTTPSHTTP3 {
+		t.Fatalf("invalid cert must disable HTTPS flags: %#v", domain)
+	}
+	if domain.SSLCertData != "" || domain.SSLKeyData != "" {
+		t.Fatalf("invalid cert data must be cleared")
+	}
+}
+
+func TestAttachTLSCertToDomainAcceptsEncryptedStoredKey(t *testing.T) {
+	certPEM, keyPEM := testCertAndKeyPEM(t, "hhhhh.app")
+	encrypted, err := EncryptCertKeyForStore(keyPEM)
+	if err != nil {
+		t.Fatalf("encrypt key: %v", err)
+	}
+	cert := models.Cert{ID: 269, Cert: certPEM, Key: encrypted}
+	domain := models.EdgeDomain{Name: "hhhhh.app"}
+	if !attachTLSCertToDomain(&domain, &cert) {
+		t.Fatal("valid encrypted private key should be attached")
+	}
+	if domain.SSLCertData == "" || domain.SSLKeyData == "" {
+		t.Fatalf("expected cert/key data to be populated")
+	}
+	if err := ValidateUploadCertKeyPair(domain.SSLCertData, domain.SSLKeyData); err != nil {
+		t.Fatalf("attached pair invalid: %v", err)
+	}
+}
+
 func TestExposeStoredPrivateKeyRejectsCertificate(t *testing.T) {
 	certPEM, _ := testCertAndKeyPEM(t, "www.example.com")
 	if got := ExposeStoredPrivateKey(certPEM); got != "" {

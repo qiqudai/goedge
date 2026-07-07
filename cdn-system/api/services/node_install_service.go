@@ -226,7 +226,7 @@ func dialSSH(cfg *NodeInstallConfig) (*ssh.Client, error) {
 		Timeout:         12 * time.Second,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := sshAddress(cfg.Host, cfg.Port)
 	dialer := net.Dialer{Timeout: 12 * time.Second}
 	conn, err := dialer.Dial("tcp", addr)
 	if err != nil {
@@ -238,6 +238,10 @@ func dialSSH(cfg *NodeInstallConfig) (*ssh.Client, error) {
 		return nil, err
 	}
 	return ssh.NewClient(sshConn, chans, reqs), nil
+}
+
+func sshAddress(host string, port int) string {
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
 }
 
 func runRemoteCommand(client *ssh.Client, cmd string) error {

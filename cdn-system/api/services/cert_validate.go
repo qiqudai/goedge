@@ -12,7 +12,23 @@ import (
 )
 
 func NormalizePEMInput(pemData string) string {
-	return strings.TrimSpace(pemData)
+	return NormalizeStoredCertPEM(pemData)
+}
+
+// NormalizeStoredCertPEM repairs PEM text loaded from DB or pasted input.
+// Some legacy rows store literal "\\n" instead of real line breaks.
+func NormalizeStoredCertPEM(pemData string) string {
+	pemData = strings.TrimSpace(pemData)
+	if pemData == "" {
+		return ""
+	}
+	if strings.Contains(pemData, `\n`) && !strings.Contains(pemData, "\n") {
+		pemData = strings.ReplaceAll(pemData, `\n`, "\n")
+	}
+	if strings.Contains(pemData, `\r`) && !strings.Contains(pemData, "\r") {
+		pemData = strings.ReplaceAll(pemData, `\r`, "\r")
+	}
+	return pemData
 }
 
 // SplitPEMBundle extracts certificate chain and private key from a combined PEM paste.
@@ -57,7 +73,9 @@ func NormalizeUploadCertKeyInputs(certPEM, keyPEM string) (string, string) {
 	}
 	if certFromKey, keyFromKey := SplitPEMBundle(keyPEM); keyFromKey != "" {
 		keyPEM = keyFromKey
-		if certPEM == "" && certFromKey != "" {
+		// Key field may contain a full paste (private key + chain). When present,
+		// bundled certificates must override any stale cert field left from edit forms.
+		if certFromKey != "" {
 			certPEM = certFromKey
 		}
 	}

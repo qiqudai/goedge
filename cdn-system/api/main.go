@@ -15,6 +15,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -65,14 +67,22 @@ func main() {
 
 	// CORS Middleware
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		origin := strings.TrimSpace(c.GetHeader("Origin"))
+		if allowedOrigin := resolveAllowedCORSOrigin(origin); allowedOrigin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Add("Vary", "Origin")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, Pragma, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Auth-Token")
 
 		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+			if origin != "" && resolveAllowedCORSOrigin(origin) == "" {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 
@@ -140,6 +150,43 @@ func main() {
 		}
 		return
 	}
+}
+
+func resolveAllowedCORSOrigin(origin string) string {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return ""
+	}
+	allowed := parseAllowedCORSOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if len(allowed) == 0 {
+		allowed = parseAllowedCORSOrigins(os.Getenv("APP_ALLOWED_ORIGINS"))
+	}
+	if len(allowed) == 0 {
+		allowed = parseAllowedCORSOrigins(config.App.CORSAllowedOrigins)
+	}
+	if len(allowed) == 0 {
+		return ""
+	}
+	for _, item := range allowed {
+		if item == origin {
+			return origin
+		}
+	}
+	return ""
+}
+
+func parseAllowedCORSOrigins(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimRight(strings.TrimSpace(part), "/")
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func runMigrationsWithRetry() {

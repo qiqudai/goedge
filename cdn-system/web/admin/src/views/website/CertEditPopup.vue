@@ -430,7 +430,7 @@ const handleKeyPemBlur = () => {
   if (normalized.key) {
     form.key = normalized.key
   }
-  if (!form.cert && normalized.cert) {
+  if (normalized.cert) {
     form.cert = normalized.cert
   }
   if (form.key && looksLikeCertificatePem(form.key) && !looksLikePrivateKeyPem(form.key)) {

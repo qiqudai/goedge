@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"regexp"
 	"sort"
 	"strconv"
@@ -437,23 +438,15 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 			if hasHTTPS {
 				cert := findCertForSiteDomain(selectedCertID, normalizedDomain, certs)
 				if cert != nil {
-					domainConf.SSLCertData = cert.Cert
-					// Decrypt key
-					plainKey := cert.Key
-					if dec, err := Crypto.Decrypt(cert.Key); err == nil {
-						plainKey = dec
+					if !attachTLSCertToDomain(&domainConf, cert) {
+						log.Printf("[Warn] invalid TLS cert/key skipped for domain=%s site_id=%d cert_id=%d", normalizedDomain, effectiveSite.ID, cert.ID)
+						disableDomainHTTPS(&domainConf)
 					}
-					domainConf.SSLKeyData = plainKey
 				} else if selectedCertID > 0 {
 					// A selected certificate that does not cover this domain is
 					// unsafe to serve. Keep the site out of HTTPS instead of
 					// exposing the fallback certificate as if HTTPS succeeded.
-					domainConf.HttpsListen = nil
-					domainConf.HTTPSForce = false
-					domainConf.HTTPSHSTS = false
-					domainConf.HTTPSHTTP2 = false
-					domainConf.HTTPSOCSP = false
-					domainConf.HTTPSHTTP3 = false
+					disableDomainHTTPS(&domainConf)
 				} else {
 					// Keep cert path empty so agent can always fall back to its local fallback cert.
 					// Avoid machine-specific absolute placeholder paths in payload.
@@ -478,6 +471,39 @@ func (s *ConfigService) GenerateConfigForNode(nodeID string) (*models.EdgeConfig
 
 	payload.Version = hashConfigVersion(payload)
 	return payload, nil
+}
+
+func attachTLSCertToDomain(domain *models.EdgeDomain, cert *models.Cert) bool {
+	if domain == nil || cert == nil {
+		return false
+	}
+	certPEM := NormalizeStoredCertPEM(cert.Cert)
+	keyPEM := ExposeStoredPrivateKey(cert.Key)
+	if certPEM == "" || keyPEM == "" {
+		return false
+	}
+	if err := ValidateUploadCertKeyPair(certPEM, keyPEM); err != nil {
+		return false
+	}
+	domain.SSLCertData = certPEM
+	domain.SSLKeyData = keyPEM
+	return true
+}
+
+func disableDomainHTTPS(domain *models.EdgeDomain) {
+	if domain == nil {
+		return
+	}
+	domain.HttpsListen = nil
+	domain.HTTPSForce = false
+	domain.HTTPSHSTS = false
+	domain.HTTPSHTTP2 = false
+	domain.HTTPSOCSP = false
+	domain.HTTPSHTTP3 = false
+	domain.SSLCertData = ""
+	domain.SSLKeyData = ""
+	domain.SSLCertPath = ""
+	domain.SSLKeyPath = ""
 }
 
 func loadSitesForConfigGroups(siteDB *gorm.DB, groupIDs []int64) ([]models.Site, error) {

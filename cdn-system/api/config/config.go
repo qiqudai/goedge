@@ -10,29 +10,33 @@ import (
 )
 
 var App = &AppConfig{
-	Port:              "8080",
-	DBDSN:             "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
-	Debug:             false,
-	AgentToken:        "",
-	ClickHouseEnabled: false,
-	ClickHouseDSN:     "",
-	AcmeEmail:         "",
-	AcmeWebroot:       "./acme",
-	AcmeAccountDir:    "./acme/accounts",
-	SecretKey:         "0123456789abcdef0123456789abcdef",
+	Port:               "8080",
+	DBDSN:              "root:123456@tcp(127.0.0.1:3306)/cdn_system?charset=utf8mb4&parseTime=True&loc=Local",
+	Debug:              false,
+	AgentToken:         "",
+	ClickHouseEnabled:  false,
+	ClickHouseDSN:      "",
+	AcmeEmail:          "",
+	AcmeWebroot:        "./acme",
+	AcmeAccountDir:     "./acme/accounts",
+	SecretKey:          "0123456789abcdef0123456789abcdef",
+	JWTSecret:          "",
+	CORSAllowedOrigins: "",
 }
 
 type AppConfig struct {
-	Port              string `yaml:"port"`
-	DBDSN             string `yaml:"db_dsn"`
-	Debug             bool   `yaml:"debug"`
-	AgentToken        string `yaml:"agent_token"`
-	ClickHouseEnabled bool   `yaml:"clickhouse_enabled"`
-	ClickHouseDSN     string `yaml:"clickhouse_dsn"`
-	AcmeEmail         string `yaml:"acme_email"`
-	AcmeWebroot       string `yaml:"acme_webroot"`
-	AcmeAccountDir    string `yaml:"acme_account_dir"`
-	SecretKey         string `yaml:"secret_key"`
+	Port               string `yaml:"port"`
+	DBDSN              string `yaml:"db_dsn"`
+	Debug              bool   `yaml:"debug"`
+	AgentToken         string `yaml:"agent_token"`
+	ClickHouseEnabled  bool   `yaml:"clickhouse_enabled"`
+	ClickHouseDSN      string `yaml:"clickhouse_dsn"`
+	AcmeEmail          string `yaml:"acme_email"`
+	AcmeWebroot        string `yaml:"acme_webroot"`
+	AcmeAccountDir     string `yaml:"acme_account_dir"`
+	SecretKey          string `yaml:"secret_key"`
+	JWTSecret          string `yaml:"jwt_secret"`
+	CORSAllowedOrigins string `yaml:"cors_allowed_origins"`
 }
 
 var (

@@ -1087,7 +1087,8 @@ func stopIssueTasksByID(taskIDs ...int64) {
 }
 
 func parseCert(certPEM string) ([]string, time.Time, time.Time, error) {
-	block, _ := pem.Decode([]byte(strings.TrimSpace(certPEM)))
+	certPEM = services.NormalizeStoredCertPEM(certPEM)
+	block, _ := pem.Decode([]byte(certPEM))
 	if block == nil {
 		return nil, time.Time{}, time.Time{}, errors.New("invalid PEM certificate")
 	}

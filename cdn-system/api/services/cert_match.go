@@ -18,7 +18,8 @@ func CertificateCoversDomain(certPEM string, domain string) CertCoverageResult {
 	if domain == "" {
 		return CertCoverageResult{Reason: "domain is empty"}
 	}
-	block, _ := pem.Decode([]byte(strings.TrimSpace(certPEM)))
+	certPEM = NormalizeStoredCertPEM(certPEM)
+	block, _ := pem.Decode([]byte(certPEM))
 	if block == nil {
 		return CertCoverageResult{Reason: "invalid PEM certificate"}
 	}

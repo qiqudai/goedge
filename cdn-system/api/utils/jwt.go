@@ -1,20 +1,34 @@
 package utils
 
 import (
+	"cdn-api/config"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var SecretKey = []byte(getJWTSecret())
+var insecureJWTSecrets = map[string]struct{}{
+	"":                                 {},
+	"YOUR_SECRET_KEY_SHOULD_BE_IN_ENV": {},
+	"0123456789abcdef0123456789abcdef": {},
+}
 
-func getJWTSecret() string {
-	if v := os.Getenv("JWT_SECRET"); v != "" {
-		return v
+func jwtSecret() ([]byte, error) {
+	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if secret == "" {
+		secret = strings.TrimSpace(config.App.JWTSecret)
 	}
-	return "YOUR_SECRET_KEY_SHOULD_BE_IN_ENV"
+	if secret == "" {
+		secret = strings.TrimSpace(config.App.SecretKey)
+	}
+	if _, insecure := insecureJWTSecrets[secret]; insecure || len(secret) < 32 {
+		return nil, fmt.Errorf("JWT secret is not securely configured")
+	}
+	return []byte(secret), nil
 }
 
 type Claims struct {
@@ -30,6 +44,10 @@ func GenerateToken(userID int64, role string) (string, error) {
 
 // GenerateTokenWithExpiry creates a JWT token for a user with a custom TTL.
 func GenerateTokenWithExpiry(userID int64, role string, ttl time.Duration) (string, error) {
+	secret, err := jwtSecret()
+	if err != nil {
+		return "", err
+	}
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
 	}
@@ -44,13 +62,17 @@ func GenerateTokenWithExpiry(userID int64, role string, ttl time.Duration) (stri
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(SecretKey)
+	return token.SignedString(secret)
 }
 
 // ParseToken validates the token and returns the claims
 func ParseToken(tokenString string) (*Claims, error) {
+	secret, err := jwtSecret()
+	if err != nil {
+		return nil, err
+	}
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return SecretKey, nil
+		return secret, nil
 	})
 
 	if err != nil {

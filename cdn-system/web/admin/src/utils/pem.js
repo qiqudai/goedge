@@ -46,7 +46,8 @@ export function normalizeUploadPemFields (cert, key) {
   const fromKey = splitPemBundle(keyValue)
   if (fromKey.key) {
     keyValue = fromKey.key
-    if (!certValue && fromKey.cert) {
+    // Full paste in key field (private key + chain) overrides stale cert textarea.
+    if (fromKey.cert) {
       certValue = fromKey.cert
     }
   }
