@@ -678,6 +678,23 @@ func buildHTTPConfig() *httpCKConfig {
 	}
 }
 
+// ClickHouseHTTPEnabled reports whether the configured ClickHouse endpoint uses HTTP.
+func ClickHouseHTTPEnabled() bool {
+	return buildHTTPConfig() != nil
+}
+
+// QueryClickHouseHTTPJSON executes a parameterized HTTP ClickHouse query and
+// returns JSONEachRow data for controller-level read paths.
+func QueryClickHouseHTTPJSON(query string, args ...interface{}) ([]byte, error) {
+	cfg := buildHTTPConfig()
+	if cfg == nil {
+		return nil, fmt.Errorf("clickhouse http config missing")
+	}
+	query = interpolateQuery(query, args...)
+	query += "\nFORMAT JSONEachRow"
+	return queryClickHouseHTTP(cfg, query)
+}
+
 func insertHTTPRows(cfg *httpCKConfig, table string, rows []map[string]interface{}) int {
 	if cfg == nil || len(rows) == 0 {
 		return 0

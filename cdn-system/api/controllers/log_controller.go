@@ -1,10 +1,14 @@
 package controllers
 
 import (
+	"bytes"
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -338,7 +342,7 @@ func (ctr *LogController) ListMailLogs(c *gin.Context) {
 // ListAccessLogs
 // GET /api/v1/admin/logs/access
 func (ctr *LogController) ListAccessLogs(c *gin.Context) {
-	if !db.ClickHouseEnabled() {
+	if !db.ClickHouseEnabled() && !services.ClickHouseHTTPEnabled() {
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
 		return
 	}
@@ -494,6 +498,45 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 	whereSQL := strings.Join(conditions, " AND ")
 	countSQL := fmt.Sprintf("SELECT count() FROM node_access_logs WHERE %s", whereSQL)
 	var total int64
+	if services.ClickHouseHTTPEnabled() {
+		countBody, err := services.QueryClickHouseHTTPJSON(countSQL, args...)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+			return
+		}
+		total, err = decodeAccessLogHTTPCount(countBody)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+			return
+		}
+
+		querySQL := fmt.Sprintf(`SELECT ts, node_id, node_ip, remote_addr, %s AS host, method, uri, status, bytes,
+			request_time, upstream_addr, upstream_connect_time, upstream_header_time, upstream_response_time, upstream_cache_status,
+			slow_reason, slow_advice, http_referer, http_user_agent,
+			scheme, ssl_protocol, ssl_cipher
+			FROM node_access_logs WHERE %s ORDER BY ts DESC LIMIT ? OFFSET ?`, siteExpr, whereSQL)
+		queryArgs := append(append([]interface{}{}, args...), pageSize, (page-1)*pageSize)
+		rowsBody, err := services.QueryClickHouseHTTPJSON(querySQL, queryArgs...)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+			return
+		}
+		list, err := decodeAccessLogHTTPRows(rowsBody)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
+			return
+		}
+		for i := range list {
+			if isUser {
+				list[i].UpstreamAddr = ""
+				list[i].NodeIP = ""
+			} else if !services.IsSpiderIP(list[i].RemoteAddr) {
+				list[i].UpstreamAddr = ""
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list, "total": total}})
+		return
+	}
 	if err := db.CK.QueryRow(countSQL, args...).Scan(&total); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []interface{}{}, "total": 0}})
 		return
@@ -558,6 +601,104 @@ func (ctr *LogController) ListAccessLogs(c *gin.Context) {
 			"total": total,
 		},
 	})
+}
+
+func decodeAccessLogHTTPCount(body []byte) (int64, error) {
+	var row struct {
+		Count int64 `json:"count()"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&row); err != nil {
+		return 0, err
+	}
+	return row.Count, nil
+}
+
+func decodeAccessLogHTTPRows(body []byte) ([]AccessLogRow, error) {
+	type rawAccessLogRow struct {
+		Timestamp            string  `json:"ts"`
+		NodeID               string  `json:"node_id"`
+		NodeIP               string  `json:"node_ip"`
+		RemoteAddr           string  `json:"remote_addr"`
+		Host                 string  `json:"host"`
+		Method               string  `json:"method"`
+		URI                  string  `json:"uri"`
+		Status               int     `json:"status"`
+		Bytes                uint64  `json:"bytes"`
+		RequestTime          float64 `json:"request_time"`
+		UpstreamAddr         string  `json:"upstream_addr"`
+		UpstreamConnectTime  float64 `json:"upstream_connect_time"`
+		UpstreamHeaderTime   float64 `json:"upstream_header_time"`
+		UpstreamResponseTime float64 `json:"upstream_response_time"`
+		UpstreamCacheStatus  string  `json:"upstream_cache_status"`
+		SlowReason           string  `json:"slow_reason"`
+		SlowAdvice           string  `json:"slow_advice"`
+		HTTPReferer          string  `json:"http_referer"`
+		HTTPUserAgent        string  `json:"http_user_agent"`
+		Scheme               string  `json:"scheme"`
+		SSLProtocol          string  `json:"ssl_protocol"`
+		SSLCipher            string  `json:"ssl_cipher"`
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	list := make([]AccessLogRow, 0)
+	for {
+		var raw rawAccessLogRow
+		if err := decoder.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		timestamp, err := parseAccessLogHTTPTime(raw.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, AccessLogRow{
+			Timestamp:            timestamp,
+			NodeID:               raw.NodeID,
+			NodeIP:               raw.NodeIP,
+			RemoteAddr:           raw.RemoteAddr,
+			Host:                 raw.Host,
+			Method:               raw.Method,
+			URI:                  raw.URI,
+			Status:               raw.Status,
+			Bytes:                raw.Bytes,
+			RequestTime:          raw.RequestTime,
+			UpstreamAddr:         raw.UpstreamAddr,
+			UpstreamConnectTime:  raw.UpstreamConnectTime,
+			UpstreamHeaderTime:   raw.UpstreamHeaderTime,
+			UpstreamResponseTime: raw.UpstreamResponseTime,
+			UpstreamCacheStatus:  raw.UpstreamCacheStatus,
+			SlowReason:           raw.SlowReason,
+			SlowAdvice:           raw.SlowAdvice,
+			HTTPReferer:          raw.HTTPReferer,
+			HTTPUserAgent:        raw.HTTPUserAgent,
+			Scheme:               raw.Scheme,
+			SSLProtocol:          raw.SSLProtocol,
+			SSLCipher:            raw.SSLCipher,
+		})
+	}
+	return list, nil
+}
+
+func parseAccessLogHTTPTime(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, fmt.Errorf("empty access log timestamp")
+	}
+	for _, layout := range []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.000",
+		"2006-01-02 15:04:05.000000",
+	} {
+		if timestamp, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return timestamp, nil
+		}
+	}
+	if timestamp, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return timestamp, nil
+	}
+	return time.Time{}, fmt.Errorf("unsupported access log timestamp: %s", value)
 }
 
 func parseTimeRange(c *gin.Context) (time.Time, time.Time) {

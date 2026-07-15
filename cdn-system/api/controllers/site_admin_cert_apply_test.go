@@ -92,3 +92,28 @@ func TestFindCertForUserDomainUsesPEMBeforeMetadata(t *testing.T) {
 		t.Fatalf("metadata must not override certificate SAN mismatch, got %#v", got)
 	}
 }
+
+func TestIssuedCertCoversSiteRequiresPEMAndValidWildcardCoverage(t *testing.T) {
+	now := time.Now()
+	cert := models.Cert{
+		ID:       1004,
+		UserID:   7,
+		Domain:   "*.icztev.cam",
+		Cert:     testApplyCertPEM(t, "", "*.icztev.cam"),
+		State:    "ready",
+		Enable:   true,
+		CreateAt: now,
+		UpdateAt: now,
+	}
+
+	if !issuedCertCoversSite(&cert, []string{"web.icztev.cam"}) {
+		t.Fatal("expected issued wildcard certificate to cover a one-label subdomain")
+	}
+	if issuedCertCoversSite(&cert, []string{"icztev.cam"}) {
+		t.Fatal("wildcard certificate must not activate the apex domain")
+	}
+	cert.Cert = ""
+	if issuedCertCoversSite(&cert, []string{"web.icztev.cam"}) {
+		t.Fatal("issued certificate without PEM must not be attached to a site")
+	}
+}

@@ -1322,6 +1322,7 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 	skipped := make([]applyCertSkipItem, 0, len(sites))
 	createdIDs := make([]int64, 0, len(sites))
 	reissuedIDs := make([]int64, 0, len(sites))
+	reusedIDs := make([]int64, 0, len(sites))
 	appliedSiteIDs := make([]int64, 0, len(sites))
 	for _, site := range sites {
 		if len(site.Domains) == 0 {
@@ -1342,12 +1343,16 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to load certificates")})
 			return
 		}
-		if existingAction == "issued" {
-			skipped = append(skipped, applyCertSkipItem{
-				SiteID: site.ID,
-				Domain: existingDomain,
-				Reason: fmt.Sprintf(T("Certificate already issued for domain %s"), existingDomain),
-			})
+		if existingAction == "issued" && issuedCertCoversSite(existingCert, site.Domains) {
+			certID := int64(existingCert.ID)
+			if err := db.DB.Transaction(func(tx *gorm.DB) error {
+				return updateSitePendingCertificate(tx, site, certID)
+			}); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": T("Failed to create cert")})
+				return
+			}
+			services.ActivatePendingHTTPSForCert(certID, existingCert.Cert)
+			reusedIDs = append(reusedIDs, certID)
 			continue
 		}
 		if existingAction == "in_progress" {
@@ -1449,7 +1454,9 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 	}
 
 	messageKey := "Certificate apply queued"
-	if len(issueIDs) == 0 && len(skipped) > 0 {
+	if len(issueIDs) == 0 && len(reusedIDs) > 0 {
+		messageKey = "Existing certificate applied"
+	} else if len(issueIDs) == 0 && len(skipped) > 0 {
 		messageKey = "Certificate apply skipped, already issued"
 	} else if len(reissuedIDs) > 0 && len(createdIDs) == 0 {
 		messageKey = "Certificate reissue queued"
@@ -1462,6 +1469,7 @@ func (ctrl *SiteController) AdminApplyCert(c *gin.Context) {
 		"data": gin.H{
 			"created_ids":  createdIDs,
 			"reissued_ids": reissuedIDs,
+			"reused_ids":   reusedIDs,
 			"skipped":      skipped,
 		},
 	})
@@ -1568,6 +1576,24 @@ func resolveExistingCertForApply(userID int64, domains []string) (*models.Cert, 
 		return failedCert, "failed", failedDomain, nil
 	}
 	return nil, "", "", nil
+}
+
+func issuedCertCoversSite(cert *models.Cert, domains []string) bool {
+	if cert == nil || strings.TrimSpace(cert.Cert) == "" {
+		return false
+	}
+	coveredDomain := false
+	for _, domain := range domains {
+		domain = normalizeDomainHost(domain)
+		if domain == "" {
+			continue
+		}
+		coveredDomain = true
+		if result := services.CertificateCoversDomain(cert.Cert, domain); !result.OK {
+			return false
+		}
+	}
+	return coveredDomain
 }
 
 func certIsIssuedState(state string) bool {
