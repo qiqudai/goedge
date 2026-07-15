@@ -476,7 +476,7 @@ const handleSave = () => {
 }
 
 const handleBlurSave = (event) => {
-  if (shouldSkipBlurSave(event, { skipEmpty: true })) {
+  if (shouldSkipBlurSave(event)) {
     return
   }
   handleSave()

@@ -30,8 +30,9 @@ export const shouldSkipBlurSave = (event) => {
     return false
   }
   const value = normalizeValue(el.value)
+  const hasCachedValue = Object.prototype.hasOwnProperty.call(el.dataset, 'lastValue')
   const lastValue = normalizeValue(el.dataset.lastValue)
-  if (value === lastValue) {
+  if (hasCachedValue && value === lastValue) {
     return true
   }
   if (value === '' && isRequiredField(el)) {

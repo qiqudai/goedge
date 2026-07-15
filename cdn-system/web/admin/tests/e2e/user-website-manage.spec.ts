@@ -153,6 +153,33 @@ test.describe.serial('user: website manage', () => {
     await guards.assertClean()
   })
 
+  test('security config: blacklist add and remove', async ({ page }) => {
+    await loginWithToken(page)
+    const guards = attachGuards(page)
+    await gotoManage(page, siteId)
+    await openManageTab(page, '安全设置')
+
+    const blacklist = page
+      .locator('.security-config .el-form-item')
+      .filter({ has: page.locator('.el-form-item__label', { hasText: 'IP黑名单' }) })
+      .locator('textarea')
+
+    const addUpdate = waitForSiteUpdate(page)
+    await blacklist.fill('203.0.113.254')
+    await blacklist.press('Tab')
+    await addUpdate
+
+    const removeUpdate = waitForSiteUpdate(page)
+    await blacklist.fill('')
+    await blacklist.press('Tab')
+    await removeUpdate
+
+    await page.reload()
+    await openManageTab(page, '安全设置')
+    await expect(blacklist).toHaveValue('')
+    await guards.assertClean()
+  })
+
   test('cache config: quick preset add/remove', async ({ page }) => {
     await loginWithToken(page)
     const guards = attachGuards(page)
