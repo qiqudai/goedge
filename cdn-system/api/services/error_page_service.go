@@ -310,10 +310,7 @@ func DefaultErrorPageDefinitions() map[string]models.ErrorPageDefinition {
 	defaults := defaultErrorPageStrings()
 	out := make(map[string]models.ErrorPageDefinition, len(errorPageKeys))
 	for _, key := range errorPageKeys {
-		stringsByLang := defaults[key]
-		if stringsByLang == nil {
-			stringsByLang = map[string]map[string]string{}
-		}
+		stringsByLang := cloneErrorPageStrings(defaults[key])
 		if key == "access_blocked" {
 			if len(stringsByLang) == 0 {
 				stringsByLang = defaultAccessBlockedStrings()
@@ -330,6 +327,19 @@ func DefaultErrorPageDefinitions() map[string]models.ErrorPageDefinition {
 		}
 	}
 	return out
+}
+
+// cloneErrorPageStrings prevents callers from mutating the process-wide i18n defaults.
+func cloneErrorPageStrings(source map[string]map[string]string) map[string]map[string]string {
+	cloned := make(map[string]map[string]string, len(source))
+	for lang, values := range source {
+		clonedValues := make(map[string]string, len(values))
+		for key, value := range values {
+			clonedValues[key] = value
+		}
+		cloned[lang] = clonedValues
+	}
+	return cloned
 }
 
 func NormalizeGlobalConfigErrorPages(cfg *models.GlobalConfig) {

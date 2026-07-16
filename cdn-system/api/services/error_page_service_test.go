@@ -2,7 +2,9 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"cdn-api/models"
@@ -56,6 +58,29 @@ func TestDefaultAccessBlockedPage(t *testing.T) {
 	if !strings.Contains(html, "Sorry, you have been blocked") {
 		t.Fatalf("unexpected render: %s", html)
 	}
+}
+
+func TestNormalizeGlobalConfigErrorPagesConcurrentDefaults(t *testing.T) {
+	const workers = 64
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+
+			cfg := &models.GlobalConfig{}
+			NormalizeGlobalConfigErrorPages(cfg)
+			def := cfg.ErrorPages["traffic_limit"]
+			def.Strings["en"]["title"] = fmt.Sprintf("worker-%d", index)
+			cfg.ErrorPages["traffic_limit"] = def
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
 }
 
 func TestExtractErrorPageLang(t *testing.T) {

@@ -1,0 +1,25 @@
+[Unit]
+Description=CDN API
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/server/go_project/openresty
+ExecStart=/www/server/go_project/openresty/api
+Restart=always
+RestartSec=2s
+TimeoutStopSec=20s
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cdn-api
+
+[Install]
+WantedBy=multi-user.target
