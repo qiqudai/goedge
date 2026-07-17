@@ -57,6 +57,9 @@ release/
 
 # local temp
 .DS_Store
+.planning/
+**/.planning/
+
 
 # cnn.net local build and runtime outputs (repo lives at ../cnn.net with its own .git)
 /cnn.net/**/bin/
