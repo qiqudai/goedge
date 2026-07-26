@@ -13,6 +13,15 @@ import (
 const (
 	configVersionKey  = "edge_config_version"
 	configChangeTopic = "config:changed"
+	// ConfigResourceCNAME is deliberately delivered to every enabled primary
+	// node. A CNAME root/prefix change changes the generated virtual-host
+	// configuration, so limiting it to a current site-line scope can leave
+	// stale configurations on other nodes.
+	ConfigResourceCNAME = "cname"
+	// ConfigResourceUserPackage is delivered to every enabled primary node.
+	// A sold-package change affects package eligibility and limits independently
+	// of the site's currently assigned line group.
+	ConfigResourceUserPackage = "user_package"
 )
 
 type ConfigChange struct {
@@ -64,6 +73,20 @@ func BumpConfigVersion(resource string, ids []int64) int64 {
 		Timestamp: cfg.UpdatedAt,
 	})
 	return version
+}
+
+// BumpCnameConfigVersion queues CNAME configuration for every enabled primary
+// node. It is intentionally separate from normal site-scoped configuration
+// changes so unrelated site updates retain their existing scoped delivery.
+func BumpCnameConfigVersion(siteIDs []int64) int64 {
+	return BumpConfigVersion(ConfigResourceCNAME, siteIDs)
+}
+
+// BumpUserPackageConfigVersion queues sold-package configuration for every
+// enabled primary node. It deliberately does not use site-scoped delivery:
+// nodes need the latest package limits and expiry before a site is reassigned.
+func BumpUserPackageConfigVersion(userPackageIDs []int64) int64 {
+	return BumpConfigVersion(ConfigResourceUserPackage, userPackageIDs)
 }
 
 // GetConfigVersion returns the latest global config version.
@@ -127,7 +150,12 @@ func createConfigSyncTask(change ConfigChange, nodeIDs []int64) {
 		RetryAt:  &now,
 	}
 	if len(nodeIDs) == 0 {
-		nodeIDs = ConnectedNodeIDs()
+		if strings.EqualFold(change.Resource, ConfigResourceCNAME) ||
+			strings.EqualFold(change.Resource, ConfigResourceUserPackage) {
+			nodeIDs = enabledPrimaryNodeIDs()
+		} else {
+			nodeIDs = ConnectedNodeIDs()
+		}
 	}
 	if len(nodeIDs) > 0 {
 		targets := NewTaskTargets(nodeIDs)
@@ -136,6 +164,19 @@ func createConfigSyncTask(change ConfigChange, nodeIDs []int64) {
 	if err := db.DB.Create(&task).Error; err == nil {
 		TriggerDispatchPending()
 	}
+}
+
+func enabledPrimaryNodeIDs() []int64 {
+	if db.DB == nil {
+		return nil
+	}
+	var nodeIDs []int64
+	if err := db.DB.Model(&models.Node{}).
+		Where("pid = 0 AND enable = ?", true).
+		Pluck("id", &nodeIDs).Error; err != nil {
+		return nil
+	}
+	return uniqueInt64List(nodeIDs)
 }
 
 func TriggerNodeConfigSync(nodeID int64) {

@@ -3,6 +3,7 @@ package controllers
 import (
 	"cdn-api/db"
 	"cdn-api/models"
+	"cdn-api/services"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -436,13 +437,7 @@ func splitByComma(input string) []string {
 }
 
 func buildSiteCname(domain string, cnameDomain string) string {
-	if domain == "" || cnameDomain == "" {
-		return ""
-	}
-	if net.ParseIP(domain) != nil {
-		return domain + "." + cnameDomain
-	}
-	return domain + "." + cnameDomain
+	return services.ComposeSiteCname(domain, cnameDomain)
 }
 
 func splitRootDomain(domain string) (string, string) {

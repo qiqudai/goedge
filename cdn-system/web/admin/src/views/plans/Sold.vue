@@ -76,7 +76,7 @@
           {{ formatDateTime(row.end_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="调试:域名" min-width="120">
+      <el-table-column label="CNAME 根域名" min-width="120">
           <template #default="{ row }">
              {{ row.cname_domain }}
           </template>
@@ -331,12 +331,12 @@
         <el-divider content-position="left">CNAME设置</el-divider>
         <el-row>
           <el-col :span="8">
-            <el-form-item label="主机名">
-              <el-input v-model="editForm.cname_hostname" placeholder="" />
+            <el-form-item label="主机名前缀">
+              <el-input v-model="editForm.cname_hostname" placeholder="例如 api" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="CNAME域名">
+            <el-form-item label="CNAME 根域名">
               <el-select v-model="editForm.cname_domain" placeholder="请选择">
                  <el-option v-for="item in cnameOptions" :key="item.id" :label="item.domain" :value="item.domain" />
               </el-select>
@@ -351,6 +351,7 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <div class="form-helper">保存后会将该套餐下全部站点同步为“主机名前缀.根域名”，并下发到关联节点。</div>
 
       </el-form>
       <template #footer>

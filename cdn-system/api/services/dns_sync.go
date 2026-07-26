@@ -19,7 +19,7 @@ func SyncUserDNSRecords(oldSite, newSite *models.Site) error {
 
 	if oldSite != nil && (newSite == nil || newSite.DNSProviderID != oldSite.DNSProviderID) {
 		if api, err := resolveDNSAPIForSite(oldSite); err == nil {
-			_ = deleteSiteDomains(api, oldSite.Domains, oldSite.CnameHostname)
+			_ = deleteSiteDomains(api, oldSite.Domains, siteCnameValue(oldSite))
 		}
 	}
 
@@ -35,11 +35,11 @@ func SyncUserDNSRecords(oldSite, newSite *models.Site) error {
 	if oldSite != nil && oldSite.DNSProviderID == newSite.DNSProviderID {
 		removed := diffDomains(oldSite.Domains, newSite.Domains)
 		if len(removed) > 0 {
-			_ = deleteSiteDomains(api, removed, oldSite.CnameHostname)
+			_ = deleteSiteDomains(api, removed, siteCnameValue(oldSite))
 		}
 	}
 
-	return upsertSiteDomains(api, newSite.Domains, newSite.CnameHostname)
+	return upsertSiteDomains(api, newSite.Domains, siteCnameValue(newSite))
 }
 
 func loadDNSAPI(id, uid int64) (*models.DNSAPI, error) {
@@ -64,7 +64,10 @@ func resolveDNSAPIForSite(site *models.Site) (*models.DNSAPI, error) {
 	if site.DNSProviderID != 0 {
 		return loadDNSAPI(site.DNSProviderID, site.UserID)
 	}
-	domainKey := normalizeCnameDomain(site.CnameDomain)
+	domainKey := normalizeCnameDomain(site.CnameHostname)
+	if legacyRoot := normalizeCnameDomain(site.CnameDomain); legacyRoot != "" && strings.HasSuffix(normalizeCnameDomain(site.CnameHostname), "."+legacyRoot) {
+		domainKey = legacyRoot
+	}
 	if domainKey == "" && strings.TrimSpace(site.CnameHostname) != "" {
 		root, _ := splitRootDomain(site.CnameHostname)
 		domainKey = normalizeCnameDomain(root)
@@ -84,6 +87,19 @@ func resolveDNSAPIForSite(site *models.Site) (*models.DNSAPI, error) {
 		return nil, err
 	}
 	return &api, nil
+}
+
+func siteCnameValue(site *models.Site) string {
+	if site == nil {
+		return ""
+	}
+	prefix := NormalizeSiteCnamePart(site.CnameDomain)
+	root := NormalizeSiteCnamePart(site.CnameHostname)
+	if prefix != "" && strings.HasSuffix(root, "."+prefix) {
+		// Read legacy rows safely until the one-time schema/data migration runs.
+		return root
+	}
+	return ComposeSiteCname(prefix, root)
 }
 
 func normalizeCnameDomain(input string) string {

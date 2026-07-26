@@ -211,10 +211,11 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 		}
 	}
 	type siteCnameRow struct {
+		CnameDomain    string `gorm:"column:cname_domain"`
 		CnameHostname  string `gorm:"column:cname_hostname"`
 		CnameHostname2 string `gorm:"column:cname_hostname2"`
 	}
-	siteCols := []string{"cname_hostname"}
+	siteCols := []string{"cname_domain", "cname_hostname"}
 	if db.DB.Migrator().HasColumn(&models.Site{}, "cname_hostname2") {
 		siteCols = append(siteCols, "cname_hostname2")
 	}
@@ -223,9 +224,9 @@ func cleanupInvalidDNSRecords(protected map[string]struct{}) []string {
 		errs = append(errs, err.Error())
 	} else {
 		for _, row := range siteRows {
-			addAllowedCnameValue(allowedCnameValues, row.CnameHostname)
+			addAllowedCnameValue(allowedCnameValues, siteCnameValue(&models.Site{CnameDomain: row.CnameDomain, CnameHostname: row.CnameHostname}))
 			addAllowedCnameValue(allowedCnameValues, row.CnameHostname2)
-			addManagedRecordNameFromFQDN(managedCnameRecords, row.CnameHostname)
+			addManagedRecordNameFromFQDN(managedCnameRecords, siteCnameValue(&models.Site{CnameDomain: row.CnameDomain, CnameHostname: row.CnameHostname}))
 			addManagedRecordNameFromFQDN(managedCnameRecords, row.CnameHostname2)
 		}
 	}

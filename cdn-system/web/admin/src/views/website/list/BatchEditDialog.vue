@@ -10,10 +10,10 @@
       
       <!-- CNAME Domain Mode -->
       <template v-if="mode === 'cname-domain'">
-        <el-form-item label="CNAME域名">
+        <el-form-item label="CNAME 根域名">
           <el-select
-            v-model="form.cname_domain"
-            placeholder="请选择CNAME域名"
+            v-model="form.cname_hostname"
+            placeholder="请选择CNAME根域名"
             style="width: 100%"
             filterable
             :loading="cnameDomainsLoading"
@@ -85,7 +85,7 @@ const cnameDomains = ref([])
 const cnameDomainsLoading = ref(false)
 
 const form = reactive({
-  cname_domain: '',
+  cname_hostname: '',
   cname_mode: 'custom',
   region_id: '',
   node_group_id: '',
@@ -94,7 +94,7 @@ const form = reactive({
 
 const title = computed(() => {
   switch (props.mode) {
-    case 'cname-domain': return '修改CNAME域名'
+    case 'cname-domain': return '修改CNAME根域名'
     case 'cname-mode': return '修改CNAME生成模式'
     case 'node-group': return '修改线路分组'
     default: return '批量修改'
@@ -123,7 +123,7 @@ watch(() => visible.value, (val) => {
 })
 
 const handleClosed = () => {
-    form.cname_domain = ''
+    form.cname_hostname = ''
     form.cname_mode = 'custom'
     form.region_id = ''
     form.node_group_id = ''
@@ -170,11 +170,11 @@ const handleSubmit = async () => {
     const payload = { ids: props.ids }
     
     if (props.mode === 'cname-domain') {
-      if (!form.cname_domain) {
-        ElMessage.error('请选择CNAME域名')
+      if (!form.cname_hostname) {
+        ElMessage.error('请选择CNAME根域名')
         return
       }
-      payload.cname_domain = form.cname_domain
+      payload.cname_hostname = form.cname_hostname
     } else if (props.mode === 'cname-mode') {
       payload.cname_mode = form.cname_mode
     } else if (props.mode === 'node-group') {
@@ -191,7 +191,7 @@ const handleSubmit = async () => {
 
     const successPayload = { mode: props.mode, ids: props.ids }
     if (props.mode === 'cname-domain') {
-      successPayload.cname_domain = form.cname_domain
+      successPayload.cname_hostname = form.cname_hostname
     } else if (props.mode === 'cname-mode') {
       successPayload.cname_mode = form.cname_mode
     } else if (props.mode === 'node-group') {

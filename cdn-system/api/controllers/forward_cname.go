@@ -87,7 +87,7 @@ func generateUniqueForwardHostname(domain string) (string, error) {
 			continue
 		}
 		var count int64
-		if err := db.DB.Model(&models.Site{}).Where("cname_hostname = ?", full).Count(&count).Error; err != nil {
+		if err := db.DB.Model(&models.Site{}).Where("cname_domain = ? AND cname_hostname = ?", token, domain).Count(&count).Error; err != nil {
 			return "", err
 		}
 		if count != 0 {

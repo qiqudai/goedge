@@ -702,58 +702,35 @@ func resolveSiteGroups(site models.Site, pkg models.UserPackage, plan planGroup)
 func resolveSiteCnameTarget(site models.Site, pkg models.UserPackage) (string, string) {
 	siteMode := strings.TrimSpace(site.CnameMode)
 	pkgMode := strings.TrimSpace(pkg.CnameMode)
+	prefix := normalizePackageDomain(site.CnameDomain)
+	root := normalizePackageDomain(site.CnameHostname)
+
+	// During rollout, accept legacy rows where cname_hostname still contains the
+	// whole name and cname_domain still contains the root domain.
+	if prefix != "" && strings.HasSuffix(root, "."+prefix) {
+		root, prefix = prefix, strings.TrimSuffix(root, "."+prefix)
+	}
 
 	if siteMode == "package" || (siteMode == "" && pkgMode == "package") {
-		domainKey := normalizePackageDomain(pkg.CnameDomain)
-		host := normalizePackageDomain(pkg.CnameHostname)
-		if host == "" {
-			host = normalizePackageDomain(pkg.RecordID)
-		}
-		if host == "" {
-			return domainKey, ""
-		}
-		if domainKey == "" {
-			root, name := splitRootDomain(host)
-			if root == "" || name == "" {
-				return "", ""
+		if prefix == "" {
+			prefix = normalizePackageDomain(pkg.CnameHostname)
+			if prefix == "" {
+				prefix = normalizePackageDomain(pkg.RecordID)
 			}
-			return normalizePackageDomain(root), name
 		}
-		suffix := "." + domainKey
-		if host == domainKey {
-			host = "@"
-		} else if strings.HasSuffix(host, suffix) {
-			host = strings.TrimSuffix(host, suffix)
+		if root == "" {
+			root = normalizePackageDomain(pkg.CnameDomain)
 		}
-		host = strings.TrimSuffix(host, ".")
-		return domainKey, host
-	}
-
-	domainKey := normalizePackageDomain(site.CnameDomain)
-	if domainKey == "" {
-		domainKey = normalizePackageDomain(pkg.CnameDomain)
-	}
-	full := normalizePackageDomain(site.CnameHostname)
-	if full == "" && len(site.Domains) > 0 && domainKey != "" {
-		full = normalizePackageDomain(site.Domains[0] + "." + domainKey)
-	}
-	if full == "" {
-		return domainKey, ""
-	}
-	if domainKey == "" {
-		root, name := splitRootDomain(full)
-		if root == "" || name == "" {
-			return "", ""
+	} else {
+		if prefix == "" && len(site.Domains) > 0 {
+			prefix = normalizePackageDomain(site.Domains[0])
 		}
-		return normalizePackageDomain(root), name
+		if root == "" {
+			root = normalizePackageDomain(pkg.CnameDomain)
+		}
 	}
-	host := full
-	suffix := "." + domainKey
-	if full == domainKey {
-		host = "@"
-	} else if strings.HasSuffix(full, suffix) {
-		host = strings.TrimSuffix(full, suffix)
+	if root == "" || prefix == "" {
+		return root, ""
 	}
-	host = strings.TrimSuffix(host, ".")
-	return domainKey, host
+	return root, strings.TrimSuffix(prefix, ".")
 }

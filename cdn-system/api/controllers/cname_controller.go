@@ -240,12 +240,23 @@ func isCnameDomainInUse(domain string) (bool, error) {
 	if domain == "" {
 		return false, nil
 	}
+	// Site CNAME rows use (cname_domain=prefix, cname_hostname=root). During
+	// the one-time migration also retain the legacy-column check so neither the
+	// source nor the target root can be removed while referenced.
+	if db.DB.Migrator().HasColumn(&models.Site{}, "cname_hostname") && db.DB.Migrator().HasColumn(&models.Site{}, "cname_domain") {
+		var count int64
+		if err := db.DB.Model(&models.Site{}).Where("cname_hostname = ? OR cname_domain = ?", domain, domain).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
 	type refCheck struct {
 		model  interface{}
 		column string
 	}
 	checks := []refCheck{
-		{&models.Site{}, "cname_domain"},
 		{&models.Forward{}, "cname_domain"},
 		{&models.NodeGroup{}, "cname_domain"},
 		{&models.Package{}, "cname_domain"},

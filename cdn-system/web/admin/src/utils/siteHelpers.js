@@ -400,13 +400,14 @@ export function parsePortList(raw) {
  * @returns {string} CNAME地址
  */
 export function computeCname(data) {
-  if (data.cname_hostname) return data.cname_hostname
-  
-  if (data.domains?.length && data.cname_domain) {
-    return `${data.domains[0]}.${data.cname_domain}`
+  const prefix = String(data?.cname_domain || '').trim().replace(/^\.+|\.+$/g, '')
+  const root = String(data?.cname_hostname || '').trim().replace(/^\.+|\.+$/g, '')
+  if (prefix && root) {
+    // Support a legacy row during a rolling deployment without duplicating its root.
+    if (root.toLowerCase().endsWith(`.${prefix.toLowerCase()}`)) return root
+    return `${prefix}.${root}`
   }
-  
-  return '-'
+  return root || '-'
 }
 
 /**

@@ -4,7 +4,6 @@ import (
 	"cdn-api/db"
 	"cdn-api/models"
 	"cdn-api/services"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -102,9 +101,9 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		PriceMonthly   float64 `json:"price_monthly"`
 		PriceQuarterly float64 `json:"price_quarterly"`
 		PriceYearly    float64 `json:"price_yearly"`
-		CnameHostname  string  `json:"cname_hostname"`
-		CnameDomain    string  `json:"cname_domain"`
-		CnameMode      string  `json:"cname_mode"`
+		CnameHostname  *string `json:"cname_hostname"`
+		CnameDomain    *string `json:"cname_domain"`
+		CnameMode      *string `json:"cname_mode"`
 		Http3Enabled   *bool   `json:"http3_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -195,45 +194,62 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		updates["year_price"] = req.PriceYearly
 	}
 
-	// CNAME
-	cnameHostname := strings.TrimSpace(req.CnameHostname)
-	cnameDomain := strings.TrimSpace(req.CnameDomain)
-	cnameMode := strings.TrimSpace(req.CnameMode)
-	if cnameHostname != "" || !isUserReq {
-		updates["cname_hostname"] = cnameHostname
+	// Package fields retain their existing contract: cname_hostname is the
+	// prefix and cname_domain is the root domain. Linked site rows use the
+	// inverse storage contract and are updated together below.
+	packageCnameChanged := req.CnameHostname != nil || req.CnameDomain != nil
+	nextCnameHostname := strings.TrimSpace(current.CnameHostname)
+	nextCnameDomain := strings.TrimSpace(current.CnameDomain)
+	if req.CnameHostname != nil {
+		nextCnameHostname = services.NormalizeSiteCnamePart(*req.CnameHostname)
+		updates["cname_hostname"] = nextCnameHostname
 	}
-	if cnameDomain != "" || !isUserReq {
-		updates["cname_domain"] = cnameDomain
+	if req.CnameDomain != nil {
+		nextCnameDomain = services.NormalizeSiteCnamePart(*req.CnameDomain)
+		updates["cname_domain"] = nextCnameDomain
 	}
-	if cnameMode != "" || !isUserReq {
-		updates["cname_mode"] = cnameMode
+	if req.CnameMode != nil {
+		updates["cname_mode"] = strings.TrimSpace(*req.CnameMode)
 	}
-
-	// DEBUG LOG
-	fmt.Printf("[DEBUG] UpdateUserPackage ID=%d ReqDomain=%s UpdatesDomain=%v\n", id, req.CnameDomain, updates["cname_domain"])
+	if packageCnameChanged && (nextCnameHostname == "" || nextCnameDomain == "") {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("cname hostname and cname domain are required")})
+		return
+	}
 
 	dnsChanged := userPackageDNSFieldsChanged(current, updates)
-	updateQuery := db.DB.Model(&models.UserPackage{}).Where("id = ?", id)
-	if isUserReq {
-		updateQuery = updateQuery.Where("uid = ?", current.UserID)
-	}
-	if len(updates) > 0 {
-		if err := updateQuery.Updates(updates).Error; err != nil {
+	propagatedSiteIDs := []int64(nil)
+	if len(updates) > 0 || packageCnameChanged || req.IPv6 != nil || req.Http3Enabled != nil {
+		if err := db.DB.Transaction(func(tx *gorm.DB) error {
+			updateQuery := tx.Model(&models.UserPackage{}).Where("id = ?", id)
+			if isUserReq {
+				updateQuery = updateQuery.Where("uid = ?", current.UserID)
+			}
+			if len(updates) > 0 {
+				if err := updateQuery.Updates(updates).Error; err != nil {
+					return err
+				}
+			}
+			if packageCnameChanged {
+				var err error
+				propagatedSiteIDs, err = services.PropagateUserPackageCnameToSites(tx, id, nextCnameHostname, nextCnameDomain)
+				if err != nil {
+					return err
+				}
+			}
+			if req.IPv6 != nil {
+				if err := saveUserPackageBoolConfigWithDB(tx, id, "ipv6", *req.IPv6); err != nil {
+					return err
+				}
+			}
+			if req.Http3Enabled != nil {
+				if err := saveUserPackageBoolConfigWithDB(tx, id, "http3_enabled", *req.Http3Enabled); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
 			log.Printf("[Error] UpdateUserPackage id=%d updates=%v err=%v", id, updates, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
-			return
-		}
-	}
-
-	if req.IPv6 != nil {
-		if err := saveUserPackageBoolConfig(id, "ipv6", *req.IPv6); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Config Update Failed")})
-			return
-		}
-	}
-	if req.Http3Enabled != nil {
-		if err := saveUserPackageBoolConfig(id, "http3_enabled", *req.Http3Enabled); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Config Update Failed")})
 			return
 		}
 	}
@@ -243,7 +259,11 @@ func (ctr *UserPackageController) UpdateUserPackage(c *gin.Context) {
 		// Log error but don't fail request? Or warning?
 		fmt.Printf("[WARN] SyncUserPackage Failed: %v\n", err)
 	}
-	resyncSitesForUserPackage(id)
+	if len(propagatedSiteIDs) > 0 {
+		services.BumpCnameConfigVersion(propagatedSiteIDs)
+	} else {
+		resyncSitesForUserPackage(id)
+	}
 	if dnsChanged {
 		resyncUserPackageGroupCnames(id)
 	}
@@ -437,15 +457,7 @@ func resyncSitesForUserPackage(userPackageID int64) {
 	if userPackageID == 0 {
 		return
 	}
-	var siteIDs []int64
-	if err := db.DB.Model(&models.Site{}).Where("user_package = ?", userPackageID).Pluck("id", &siteIDs).Error; err != nil {
-		log.Printf("[WARN] resyncSitesForUserPackage load failed package=%d err=%v", userPackageID, err)
-		return
-	}
-	if len(siteIDs) == 0 {
-		return
-	}
-	services.BumpConfigVersion("site", siteIDs)
+	services.BumpUserPackageConfigVersion([]int64{userPackageID})
 }
 
 func userPackageDNSFieldsChanged(current models.UserPackage, updates map[string]interface{}) bool {
@@ -538,6 +550,13 @@ func loadUserPackageBoolConfig(packs []models.UserPackage, name string) (map[int
 }
 
 func saveUserPackageBoolConfig(userPackageID int64, name string, value bool) error {
+	return saveUserPackageBoolConfigWithDB(db.DB, userPackageID, name, value)
+}
+
+func saveUserPackageBoolConfigWithDB(database *gorm.DB, userPackageID int64, name string, value bool) error {
+	if database == nil {
+		return fmt.Errorf("database is not configured")
+	}
 	if userPackageID == 0 {
 		return nil
 	}
@@ -546,19 +565,22 @@ func saveUserPackageBoolConfig(userPackageID int64, name string, value bool) err
 		val = "1"
 	}
 
-	query := db.DB.Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", name, "user_package_config", "user_package", userPackageID)
-	var cfg models.ConfigItem
-	if err := query.First(&cfg).Error; err == nil {
-		cfg.Value = val
-		cfg.Enable = true
-		cfg.UpdatedAt = time.Now()
-		return db.DB.Omit("CreatedAt").Save(&cfg).Error
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	now := time.Now()
+	result := database.Model(&models.ConfigItem{}).
+		Where("name = ? AND type = ? AND scope_name = ? AND scope_id = ?", name, "user_package_config", "user_package", userPackageID).
+		Updates(map[string]interface{}{
+			"value":     val,
+			"enable":    true,
+			"update_at": now,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
 	}
 
-	now := time.Now()
-	cfg = models.ConfigItem{
+	cfg := models.ConfigItem{
 		Name:      name,
 		Value:     val,
 		Type:      "user_package_config",
@@ -568,7 +590,7 @@ func saveUserPackageBoolConfig(userPackageID int64, name string, value bool) err
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	return db.DB.Create(&cfg).Error
+	return database.Create(&cfg).Error
 }
 
 func parseBoolString(val string) bool {

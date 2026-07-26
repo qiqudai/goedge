@@ -178,7 +178,7 @@ func processSiteCreateTask(task *models.Task) {
 		return
 	}
 
-	BumpConfigVersion("site", []int64{site.ID})
+	BumpCnameConfigVersion([]int64{site.ID})
 	_ = SyncUserDNSRecords(nil, site)
 
 	// Success
@@ -209,26 +209,21 @@ func applySiteCnameForTask(site *models.Site, domain string) {
 		}
 		if pkgHost != "" {
 			site.CnameMode = "package"
-			site.CnameDomain = pkgDomain
-			site.CnameHostname = buildSiteCnameForTask(pkgHost, pkgDomain)
+			site.CnameDomain = NormalizeSiteCnamePart(pkgHost)
+			site.CnameHostname = NormalizeSiteCnamePart(pkgDomain)
 			return
 		}
 	}
 
 	if strings.TrimSpace(domain) != "" {
 		site.CnameMode = "domain"
-		site.CnameDomain = pkgDomain
-		site.CnameHostname = buildSiteCnameForTask(domain, pkgDomain)
+		site.CnameDomain = NormalizeSiteCnamePart(domain)
+		site.CnameHostname = NormalizeSiteCnamePart(pkgDomain)
 	}
 }
 
 func buildSiteCnameForTask(hostname, cnameDomain string) string {
-	hostname = strings.TrimSpace(hostname)
-	cnameDomain = strings.TrimSpace(cnameDomain)
-	if hostname == "" || cnameDomain == "" {
-		return ""
-	}
-	return hostname + "." + cnameDomain
+	return ComposeSiteCname(hostname, cnameDomain)
 }
 
 func normalizeTaskSiteDomain(value string) string {

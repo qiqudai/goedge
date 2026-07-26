@@ -96,26 +96,10 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 		agentConfig.Status = "expired"
 	}
 
-	// 4. Identify Nodes
-	var groupIDs []int64
-	if up.NodeGroupID > 0 {
-		groupIDs = append(groupIDs, up.NodeGroupID)
-	}
-	if up.EnableBackup && up.BackupNodeGroup > 0 {
-		groupIDs = append(groupIDs, up.BackupNodeGroup)
-	}
-
-	var nodeIDs []int64
-	if len(groupIDs) > 0 {
-		if err := db.DB.Model(&models.Line{}).
-			Select("distinct node_id").
-			Where("node_group_id IN ?", groupIDs).
-			Where("node_id <> 0").
-			Pluck("node_id", &nodeIDs).Error; err != nil {
-			return err
-		}
-	}
-	nodeIDs = uniqueInt64List(nodeIDs)
+	// 4. Identify Nodes. Sold-package state is global node configuration: a
+	// node can begin serving this package after a later line reassignment, so a
+	// package update must never be restricted to its current line group.
+	nodeIDs := enabledPrimaryNodeIDs()
 
 	// 5. Create Task
 	// task.data: packages: [{package_id, version, config: {...}}]
@@ -153,7 +137,7 @@ func (s *UserPackageService) SyncUserPackage(userPackageID int64, trigger string
 	if len(nodeIDs) > 0 {
 		change := ConfigChange{
 			Version:   GetConfigVersion(),
-			Resource:  "package_sync",
+			Resource:  ConfigResourceUserPackage,
 			IDs:       []int64{up.ID},
 			Timestamp: time.Now(),
 		}

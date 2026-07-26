@@ -882,28 +882,33 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	if hasKey(payload, "price_yearly") {
 		updates["year_price"] = getInt64(payload, "price_yearly")
 	}
-	// CNAME Fields support
+	// A sold package stores its CNAME as (root domain, hostname prefix), while
+	// linked sites store (hostname prefix, root domain). Keep the two records
+	// consistent inside the same transaction.
+	packageCnameChanged := hasKey(payload, "cname_domain") || hasKey(payload, "cname_hostname")
+	nextCnameDomain := strings.TrimSpace(current.CnameDomain)
+	nextCnameHostname := strings.TrimSpace(current.CnameHostname)
 	if hasKey(payload, "cname_domain") {
-		updates["cname_domain"] = getString(payload, "cname_domain")
+		nextCnameDomain = services.NormalizeSiteCnamePart(getString(payload, "cname_domain"))
+		updates["cname_domain"] = nextCnameDomain
 	}
 	if hasKey(payload, "cname_hostname") {
-		updates["cname_hostname"] = getString(payload, "cname_hostname")
+		nextCnameHostname = services.NormalizeSiteCnamePart(getString(payload, "cname_hostname"))
+		updates["cname_hostname"] = nextCnameHostname
 	}
+	if packageCnameChanged && (nextCnameDomain == "" || nextCnameHostname == "") {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": T("cname hostname and cname domain are required")})
+		return
+	}
+	cnameModeChanged := false
 	if hasKey(payload, "cname_mode") {
-		newMode := getString(payload, "cname_mode")
+		newMode := strings.TrimSpace(getString(payload, "cname_mode"))
 		updates["cname_mode"] = newMode
 		currentMode := strings.TrimSpace(current.CnameMode)
 		if currentMode == "" {
 			currentMode = "domain"
 		}
-		if strings.TrimSpace(newMode) != "" && strings.TrimSpace(newMode) != currentMode {
-			if err := db.DB.Model(&models.Site{}).
-				Where("user_package = ?", current.ID).
-				Update("cname_mode", newMode).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
-				return
-			}
-		}
+		cnameModeChanged = strings.TrimSpace(newMode) != "" && strings.TrimSpace(newMode) != currentMode
 	}
 
 	http3Update := hasKey(payload, "http3_enabled")
@@ -915,15 +920,31 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	}
 
 	dnsChanged := userPackageDNSFieldsChanged(current, updates)
-	if len(updates) > 0 {
-		if err := db.DB.Model(&models.UserPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if len(updates) > 0 || http3Update {
+		if err := db.DB.Transaction(func(tx *gorm.DB) error {
+			if len(updates) > 0 {
+				if err := tx.Model(&models.UserPackage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+					return err
+				}
+			}
+			if packageCnameChanged {
+				if _, err := services.PropagateUserPackageCnameToSites(tx, id, nextCnameHostname, nextCnameDomain); err != nil {
+					return err
+				}
+			}
+			if cnameModeChanged {
+				if err := tx.Model(&models.Site{}).Where("user_package = ?", id).Update("cname_mode", updates["cname_mode"]).Error; err != nil {
+					return err
+				}
+			}
+			if http3Update {
+				if err := saveUserPackageBoolConfigWithDB(tx, id, "http3_enabled", http3Enabled); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Update Failed")})
-			return
-		}
-	}
-	if http3Update {
-		if err := saveUserPackageBoolConfig(id, "http3_enabled", http3Enabled); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": T("Config Update Failed")})
 			return
 		}
 	}
@@ -932,10 +953,10 @@ func (ctr *PlanController) UpdateUserPlan(c *gin.Context) {
 	if err := services.NewUserPackageService().SyncUserPackage(id, "update"); err != nil {
 		fmt.Printf("[WARN] SyncUserPackage (Update) Failed: %v\n", err)
 	}
-	// Resync site configs so nodes pick up updated package state (e.g. end_at).
-	var siteIDs []int64
-	if err := db.DB.Model(&models.Site{}).Where("user_package = ?", id).Pluck("id", &siteIDs).Error; err == nil && len(siteIDs) > 0 {
-		services.BumpConfigVersion("site", siteIDs)
+	if packageCnameChanged || cnameModeChanged {
+		services.BumpCnameConfigVersion([]int64{id})
+	} else {
+		services.BumpUserPackageConfigVersion([]int64{id})
 	}
 	if dnsChanged {
 		resyncUserPackageGroupCnames(id)

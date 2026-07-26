@@ -314,26 +314,27 @@ func parseSiteCreateRequest(c *gin.Context, admin bool) (*models.Site, []int64, 
 			site.BackupNodeGroupID = userPkg.BackupNodeGroup
 		}
 		fmt.Printf("[DEBUG] CreateSite PkgID=%d Mode='%s' Host='%s' Dom='%s'\n", req.UserPackageID, userPkg.CnameMode, userPkg.CnameHostname, userPkg.CnameDomain)
-		if strings.TrimSpace(userPkg.CnameMode) == "package" && userPkg.CnameHostname != "" {
+		pkgCnamePrefix := strings.TrimSpace(userPkg.CnameHostname)
+		if pkgCnamePrefix == "" {
+			pkgCnamePrefix = strings.TrimSpace(userPkg.RecordID)
+		}
+		pkgCnameRoot := services.NormalizeSiteCnamePart(userPkg.CnameDomain)
+		if pkgCnameRoot == "" {
+			pkgCnameRoot = "cdn.node.com"
+		}
+		if strings.TrimSpace(userPkg.CnameMode) == "package" && pkgCnamePrefix != "" {
 			fmt.Println("[DEBUG] Using Package CNAME Mode")
-			site.CnameHostname = userPkg.CnameHostname
-			if userPkg.CnameDomain != "" {
-				site.CnameHostname += "." + userPkg.CnameDomain
-			}
+			site.CnameDomain = services.NormalizeSiteCnamePart(pkgCnamePrefix)
+			site.CnameHostname = pkgCnameRoot
 		} else {
 			fmt.Println("[DEBUG] Using Default CNAME Mode")
-			if userPkg.CnameDomain != "" {
-				site.CnameDomain = userPkg.CnameDomain
-			} else {
-				// Fallback to default
-				site.CnameDomain = "cdn.node.com"
-			}
 			if len(domains) > 0 {
-				site.CnameHostname = buildSiteCname(domains[0], site.CnameDomain)
+				site.CnameDomain = services.NormalizeSiteCnamePart(domains[0])
+				site.CnameHostname = pkgCnameRoot
 			}
 		}
 	} else {
-		fmt.Printf("[DEBUG] CreateSite Failed to load pkg: %v\n", err)
+		return nil, nil, fmt.Errorf("load user package for cname: %w", err)
 	}
 	if site.RegionID == 0 {
 		site.RegionID = resolveRegionFromPackage(req.UserPackageID, site.NodeGroupID)
@@ -716,7 +717,7 @@ func ensureDNSRecords(site *models.Site) error {
 	if site == nil || len(site.Domains) == 0 {
 		return nil
 	}
-	_, _ = refreshSiteCnameHostname(site, nil, nil)
+	_, _ = refreshSiteCnameHostname(site, nil, nil, nil)
 	if site.DNSProviderID == 0 {
 		return nil
 	}
@@ -1020,7 +1021,7 @@ func buildSiteListItems(sites []models.Site) ([]siteListItem, error) {
 		listenPorts := strings.Join(listenParts, " ")
 
 		pkg := pkgMap[site.UserPackageID]
-		cname := strings.TrimSpace(site.CnameHostname)
+		cname := services.ComposeSiteCname(site.CnameDomain, site.CnameHostname)
 		if cname == "" {
 			cname = "-"
 		}
